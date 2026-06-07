@@ -1,0 +1,50 @@
+type Department @table {
+  name: String!
+  managerName: String!
+  officeLocation: String
+}
+
+type Employee @table {
+  fullName: String!
+  email: String!
+  position: String!
+  department: Department
+  joinDate: Date!
+  phoneNumber: String
+  directManager: Employee
+}
+
+type Attendance @table {
+  employee: Employee!
+  date: Date!
+  status: String!
+  checkInTime: Timestamp
+  checkOutTime: Timestamp
+}
+
+type Order @table {
+  title: String!
+  status: String!
+  priority: String!
+  assignedTo: Employee
+  deadline: Date
+}
+
+type TravelRequest @table {
+  employee: Employee!
+  destination: String!
+  startDate: Date!
+  endDate: Date!
+  status: String!
+  purpose: String
+  budgetApproved: Float
+}
+
+type PerformanceRecord @table {
+  employee: Employee!
+  reviewDate: Date!
+  score: Int!
+  feedbackComments: String
+  discountAmount: Float
+  bonusAmount: Float
+}

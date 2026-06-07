@@ -1,0 +1,19 @@
+mutation CreateDepartment($name: String!, $managerName: String!, $officeLocation: String) @auth(level: USER) {
+  department_insert(data: { name: $name, managerName: $managerName, officeLocation: $officeLocation })
+}
+
+mutation CreateEmployee($fullName: String!, $email: String!, $position: String!, $joinDate: Date!) @auth(level: USER) {
+  employee_insert(data: { fullName: $fullName, email: $email, position: $position, joinDate: $joinDate })
+}
+
+mutation CreateOrder($title: String!, $status: String!, $priority: String!) @auth(level: USER) {
+  order_insert(data: { title: $title, status: $status, priority: $priority })
+}
+
+query ListDepartments @auth(level: USER) {
+  departments {
+    name
+    managerName
+    officeLocation
+  }
+}

@@ -1,0 +1,32 @@
+mutation CreateSeedData @transaction {
+  department_insertMany(data: [
+    {
+      id: "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11",
+      name: "Engineering",
+      managerName: "Alice Smith"
+    },
+    {
+      id: "b0eebc99-9c0b-4ef8-bb6d-6bb9bd380a22",
+      name: "Human Resources",
+      managerName: "Bob Jones"
+    }
+  ])
+  employee_insertMany(data: [
+    {
+      id: "c0eebc99-9c0b-4ef8-bb6d-6bb9bd380a33",
+      fullName: "John Doe",
+      email: "john.doe@example.com",
+      position: "Software Engineer",
+      joinDate: "2023-01-15",
+      departmentId: "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11"
+    },
+    {
+      id: "d0eebc99-9c0b-4ef8-bb6d-6bb9bd380a44",
+      fullName: "Jane Roe",
+      email: "jane.roe@example.com",
+      position: "HR Specialist",
+      joinDate: "2023-02-20",
+      departmentId: "b0eebc99-9c0b-4ef8-bb6d-6bb9bd380a22"
+    }
+  ])
+}
