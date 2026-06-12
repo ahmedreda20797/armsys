@@ -2,6 +2,13 @@ import { getAll, createRecord, sortByDateField, findFirst } from '@/lib/db';
 import { NextResponse } from 'next/server';
 import { getPermissionsForRole } from '@/config/permissions';
 
+/** Safely parse permissions — handles both string (JSON) and object from Firebase */
+function safeParsePerms(permissions: any): Record<string, any> {
+  if (!permissions) return {};
+  if (typeof permissions === 'object') return permissions;
+  try { return JSON.parse(permissions); } catch { return {}; }
+}
+
 export async function GET() {
   try {
     let users = await getAll('users');
@@ -12,7 +19,7 @@ export async function GET() {
       email: u.email,
       name: u.name,
       role: u.role,
-      permissions: JSON.parse(u.permissions || '{}'),
+      permissions: safeParsePerms(u.permissions),
       isSuspended: u.isSuspended || false,
       suspendedAt: u.suspendedAt || null,
       createdAt: u.createdAt,

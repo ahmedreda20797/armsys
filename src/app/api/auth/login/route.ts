@@ -1,6 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { findFirst } from '@/lib/db';
 
+/** Safely parse permissions — handles both string (JSON) and object from Firebase */
+function safeParsePerms(permissions: any): Record<string, any> {
+  if (!permissions) return {};
+  if (typeof permissions === 'object') return permissions;
+  try { return JSON.parse(permissions); } catch { return {}; }
+}
+
 export async function POST(request: NextRequest) {
   try {
     const { email, password } = await request.json();
@@ -34,14 +41,19 @@ export async function POST(request: NextRequest) {
         email: user.email,
         name: user.name,
         role: user.role,
-        permissions: JSON.parse(user.permissions || '{}'),
+        permissions: safeParsePerms(user.permissions),
         rank: user.rank,
         isSuspended: user.isSuspended || false,
         suspendedAt: user.suspendedAt || null,
       },
     });
   } catch (error) {
-    console.error('Login error:', error);
+    const msg = error instanceof Error ? error.message : String(error);
+    console.error('Login error:', msg, error);
+    // In non-production, return detailed error for debugging
+    if (process.env.NODE_ENV !== 'production') {
+      return NextResponse.json({ error: 'Login failed', details: msg, stack: error instanceof Error ? error.stack : undefined }, { status: 500 });
+    }
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }

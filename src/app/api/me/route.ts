@@ -1,6 +1,12 @@
-// src/app/api/auth/me/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import { getById } from '@/lib/db';
+
+/** Safely parse permissions — handles both string (JSON) and object from Firebase */
+function safeParsePerms(permissions: any): Record<string, any> {
+  if (!permissions) return {};
+  if (typeof permissions === 'object') return permissions;
+  try { return JSON.parse(permissions); } catch { return {}; }
+}
 
 export async function GET(request: NextRequest) {
   try {
@@ -20,7 +26,7 @@ export async function GET(request: NextRequest) {
       name: user.name,
       role: user.role,
       rank: user.rank,
-      permissions: JSON.parse(user.permissions || '{}'),
+      permissions: safeParsePerms(user.permissions),
       isSuspended: user.isSuspended || false,
       suspendedAt: user.suspendedAt || null,
     });
