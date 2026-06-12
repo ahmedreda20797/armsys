@@ -34,7 +34,7 @@ function getMonthKey(dateStr: string): string {
   return `${p[2]}-${p[1]}`;
 }
 
-function getTripCategory(depDate: string, retDate: string | null): 'upcoming' | 'in_progress' | 'returned' {
+function getTripCategory(depDate: string, retDate: string | null): 'upcoming' | 'in_progress' | 'returned' | 'canceled' {
   const retDays = retDate ? getDaysRemaining(retDate) : null;
   if (retDays !== null && retDays < 0) return 'returned';
   if (getDaysRemaining(depDate) < 0) return 'in_progress';
@@ -68,29 +68,32 @@ export async function GET(request: NextRequest) {
     }));
 
     // ── Compute tab counts (needed for UI badges) ──
-    let tabCounts = { all: 0, upcoming: 0, in_progress: 0, returned: 0 };
+    const isCanceled = (t: any) => t.status === 'canceled';
+    let tabCounts = { all: 0, upcoming: 0, in_progress: 0, returned: 0, canceled: 0 };
     for (const t of tripsWithCategory) {
+      if (isCanceled(t)) {
+        tabCounts.canceled++;
+        continue;
+      }
       tabCounts.all++;
       if (t._category === 'upcoming') tabCounts.upcoming++;
       else if (t._category === 'in_progress') tabCounts.in_progress++;
       else tabCounts.returned++;
     }
 
-    // If only counts requested, return early
-    if (countsOnly) {
-      return NextResponse.json({ counts: tabCounts });
-    }
-
     // ── Apply filters ──
     let filtered = tripsWithCategory;
 
-    // Tab filter
     if (tab === 'upcoming') {
-      filtered = filtered.filter((t) => t._category === 'upcoming');
+      filtered = filtered.filter((t) => t._category === 'upcoming' && !isCanceled(t));
     } else if (tab === 'in_progress') {
-      filtered = filtered.filter((t) => t._category === 'in_progress');
+      filtered = filtered.filter((t) => t._category === 'in_progress' && !isCanceled(t));
     } else if (tab === 'returned') {
-      filtered = filtered.filter((t) => t._category === 'returned');
+      filtered = filtered.filter((t) => t._category === 'returned' && !isCanceled(t));
+    } else if (tab === 'canceled') {
+      filtered = filtered.filter((t) => isCanceled(t));
+    } else {
+      filtered = filtered.filter((t) => !isCanceled(t));
     }
 
     // Employee filter
@@ -114,7 +117,7 @@ export async function GET(request: NextRequest) {
 
         // ── Sort: nearest travel first ──
     filtered.sort((a, b) => {
-      if (tab === 'returned') {
+      if (tab === 'returned' || tab === 'canceled') {
         // Most recently returned first
         return parseDateToSortable(b.returnDate || b.departureDate) - parseDateToSortable(a.returnDate || a.departureDate);
       }
@@ -148,7 +151,7 @@ export async function GET(request: NextRequest) {
 
     // ── Urgent trips (upcoming within 14 days) ──
     const urgentTrips = tripsWithCategory
-      .filter((t) => t._category === 'upcoming' && t._daysLeft >= 0 && t._daysLeft <= 14)
+      .filter((t) => t._category === 'upcoming' && !isCanceled(t) && t._daysLeft >= 0 && t._daysLeft <= 14)
       .sort((a, b) => a._daysLeft - b._daysLeft)
       .map(({ _category, _daysLeft, _retDays, _monthKey, ...rest }) => rest);
 

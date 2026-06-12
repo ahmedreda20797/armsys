@@ -121,7 +121,7 @@ const arabicMonths: Record<string, string> = {
   '9': 'سبتمبر', '10': 'أكتوبر', '11': 'نوفمبر', '12': 'ديسمبر',
 };
 
-type CategoryTab = 'all' | 'upcoming' | 'in_progress' | 'returned';
+type CategoryTab = 'all' | 'upcoming' | 'in_progress' | 'returned' | 'canceled';
 type UrgencyLevel = 'critical' | 'urgent' | 'soon' | 'normal';
 
 const PAGE_SIZE_OPTIONS = [25, 50, 100];
@@ -157,6 +157,12 @@ const categoryConfig: Record<CategoryTab, {
     activeClass: 'border-slate-500/30 bg-gradient-to-br from-slate-500/10 to-slate-500/5 text-slate-300 shadow-lg shadow-slate-500/5',
     badgeClass: 'bg-slate-500/20 text-slate-400',
     emptyTitle: 'لا توجد رحلات عائدة', emptySubtitle: 'الرحلات التي مر تاريخ عودتها ستظهر هنا',
+  },
+  canceled: {
+    label: 'ملغاة', icon: XCircle,
+    activeClass: 'border-red-500/40 bg-gradient-to-br from-red-500/15 to-red-500/5 text-red-400 shadow-lg shadow-red-500/5',
+    badgeClass: 'bg-red-500/25 text-red-300',
+    emptyTitle: 'لا توجد رحلات ملغاة', emptySubtitle: 'الرحلات الملغاة أو المتكنسلة ستظهر هنا',
   },
 };
 
@@ -449,6 +455,11 @@ const TripCard = memo(function TripCard({
                       العودة {trip.returnDate}
                     </span>
                   )}
+                  {!trip.returnDate && (
+                    <span className="text-[10px] font-medium text-amber-400 bg-amber-500/15 px-1.5 py-0.5 rounded-full inline-flex items-center gap-0.5">
+                      <AlertTriangle className="size-2.5" /> بدون عودة
+                    </span>
+                  )}
                 </div>
               </div>
             </div>
@@ -494,7 +505,7 @@ const TripCard = memo(function TripCard({
                         {daysLeft < 0 ? 'تم السفر' : `${daysLeft} يوم`}
                       </Badge>
                     </div>
-                    {trip.returnDate && (
+                    {trip.returnDate ? (
                       <div className="flex items-center gap-2 text-slate-300">
                         <span className="text-xs">↩️</span>
                         <span className="text-slate-500">العودة:</span>
@@ -506,6 +517,11 @@ const TripCard = memo(function TripCard({
                             {retDays < 0 ? 'رجعوا' : `${retDays} يوم`}
                           </Badge>
                         )}
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-2 text-amber-400 bg-amber-500/10 border border-amber-500/20 rounded-lg px-3 py-2">
+                        <AlertTriangle className="size-3.5 shrink-0" />
+                        <span className="text-xs font-medium">تاريخ العودة غير محدد — يرجى إكمال البيانات</span>
                       </div>
                     )}
                   </div>
@@ -956,7 +972,7 @@ export default function TravelPage() {
   // Extract data from server response
   const trips = (data?.data || []) as TravelWithEmployee[];
   const pagination = data?.pagination || { page: 1, pageSize: 50, total: 0, totalPages: 1 };
-  const tabCounts = data?.counts || { all: 0, upcoming: 0, in_progress: 0, returned: 0 };
+  const tabCounts = data?.counts || { all: 0, upcoming: 0, in_progress: 0, returned: 0, canceled: 0 };
   const availableMonths = data?.availableMonths || [];
   const urgentTrips = data?.urgentTrips || [];
 
@@ -1241,9 +1257,68 @@ export default function TravelPage() {
 
   const renderGroups = () => {
     if (activeTab === 'returned') return groupedByMonth.map(renderReturnedGroup);
+    if (activeTab === 'canceled') return groupedByMonth.map(renderCanceledGroup);
     if (activeTab === 'all') return groupedByMonth.map(renderAllMonthGroup);
     return groupedByMonth.map(renderActiveGroup);
   };
+
+  // ── Canceled tab renderer (compact table with red tint) ──
+  const renderCanceledGroup = (group: { key: string; label: string; trips: TravelWithEmployee[] }) => (
+    <motion.div key={group.key} initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} className="space-y-3">
+      <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-red-500/10 border border-red-500/30">
+          <XCircle className="size-4 text-red-400" />
+          <span className="text-red-300 font-semibold text-sm">{group.label}</span>
+        </div>
+        <span className="text-[11px] px-2 py-0.5 rounded-full bg-red-500/10 text-red-400 border border-red-500/20">{group.trips.length} ملغاة</span>
+        <div className="flex-1 h-px bg-red-500/20" />
+        <span className="text-slate-500 text-xs">{group.trips.length} رحلة</span>
+      </div>
+      <div className="rounded-xl border border-red-500/20 bg-red-500/5 overflow-hidden">
+        <div className="overflow-x-auto">
+          <Table>
+            <TableHeader>
+              <TableRow className="border-red-500/20 hover:bg-transparent">
+                <TableHead className="text-red-400/60 text-xs font-medium">الديل</TableHead>
+                <TableHead className="text-red-400/60 text-xs font-medium">الوجهة</TableHead>
+                <TableHead className="text-red-400/60 text-xs font-medium hidden sm:table-cell">السفر</TableHead>
+                <TableHead className="text-red-400/60 text-xs font-medium">العودة</TableHead>
+                <TableHead className="text-red-400/60 text-xs font-medium">الحالة</TableHead>
+                <TableHead className="text-red-400/60 text-xs font-medium hidden sm:table-cell">ملاحظات</TableHead>
+                {canEdit && <TableHead className="w-16" />}
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {group.trips.map((trip) => (
+                <TableRow key={trip.id} className="border-red-500/10 hover:bg-red-500/5">
+                  <TableCell className="text-red-300/80 text-xs font-medium">{trip.dealerName || trip.employeeName}</TableCell>
+                  <TableCell className="text-slate-400 text-xs">{trip.destination}</TableCell>
+                  <TableCell className="text-slate-500 text-xs hidden sm:table-cell" dir="ltr">{trip.departureDate}</TableCell>
+                  <TableCell className="text-slate-500 text-xs" dir="ltr">
+                    {trip.returnDate ? (
+                      trip.returnDate
+                    ) : (
+                      <span className="inline-flex items-center gap-1 text-amber-400"><AlertTriangle className="size-3" /> غير محدد</span>
+                    )}
+                  </TableCell>
+                  <TableCell><StatusBadge status={trip.status} /></TableCell>
+                  <TableCell className="text-slate-500 text-xs hidden sm:table-cell truncate max-w-32">{trip.notes || '—'}</TableCell>
+                  {canEdit && (
+                    <TableCell>
+                      <div className="flex gap-0.5">
+                        <Button variant="ghost" size="icon" onClick={() => openEdit(trip)} className="text-slate-500 hover:text-emerald-400 size-6"><Pencil className="size-2.5" /></Button>
+                        <Button variant="ghost" size="icon" onClick={() => setDeletingId(trip.id)} className="text-slate-500 hover:text-red-400 size-6"><Trash2 className="size-2.5" /></Button>
+                      </div>
+                    </TableCell>
+                  )}
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      </div>
+    </motion.div>
+  );
 
   // ═══════════════════════════════════════════════════════════════
   //  RENDER
@@ -1259,7 +1334,7 @@ export default function TravelPage() {
             إدارة السفر
             {isFetching && <span className="size-3 border-2 border-violet-400 border-t-transparent rounded-full animate-spin" />}
           </h1>
-          <p className="text-slate-400 mt-1 text-sm">{tabCounts.upcoming + tabCounts.in_progress} رحلة نشطة • {tabCounts.all} إجمالي</p>
+          <p className="text-slate-400 mt-1 text-sm">{tabCounts.upcoming + tabCounts.in_progress} رحلة نشطة • {tabCounts.all} إجمالي{'canceled' in tabCounts && tabCounts.canceled > 0 ? ` • ${tabCounts.canceled} ملغاة` : ''}</p>
         </div>
         {canEdit && (
           <div className="flex gap-2">
@@ -1280,8 +1355,8 @@ export default function TravelPage() {
 
       {/* ━━━ CATEGORY TABS ━━━ */}
       <motion.div initial={{ opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.12 }}>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3">
-          {(['all', 'upcoming', 'in_progress', 'returned'] as CategoryTab[]).map((tabKey) => {
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 sm:gap-3">
+          {(['all', 'upcoming', 'in_progress', 'returned', 'canceled'] as CategoryTab[]).map((tabKey) => {
             const config = categoryConfig[tabKey];
             const TabIcon = config.icon;
             const isActive = activeTab === tabKey;

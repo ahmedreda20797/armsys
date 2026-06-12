@@ -102,7 +102,7 @@ export interface TravelDeal {
   toursStatus: string | null;
   transportationStatus: string | null;
   notes: string | null;
-  status: 'upcoming' | 'in_progress' | 'completed';
+  status: 'upcoming' | 'in_progress' | 'completed' | 'canceled';
   createdAt: string;
 }
 
