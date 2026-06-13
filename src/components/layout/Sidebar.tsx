@@ -256,7 +256,7 @@ export function Sidebar({ currentPage, onNavigate, isOpen, onToggle, isCollapsed
                   <span className="truncate">{page.title}</span>
                   {isActive && (
                     <motion.div
-                      className="mr-auto w-1.5 h-1.5 rounded-full bg-indigo-600/90"
+                      className="mr-auto w-1.5 h-1.5 rounded-full bg-red-600/90"
                       layoutId="activeIndicator"
                       transition={{ type: 'spring', stiffness: 350, damping: 30 }}
                     />

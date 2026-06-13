@@ -55,7 +55,7 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen w-full relative overflow-hidden bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900">
+    <div className="min-h-screen w-full relative overflow-hidden bg-linear-to-br from-slate-900 via-slate-800 to-slate-900">
       {/* Animated background orbs */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
         <motion.div
@@ -103,7 +103,7 @@ export default function LoginPage() {
               animate={{ scale: [1, 1.08, 1], rotate: [0, 3, -3, 0] }}
               transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }}
             >
-              <div className="absolute inset-0 rounded-full bg-gradient-to-r from-cyan-500/30 to-purple-500/30 blur-3xl scale-150" />
+              <div className="absolute inset-0 rounded-full bg-linear-to-r from-cyan-500/30 to-purple-500/30 blur-3xl scale-150" />
               <div className="relative w-40 h-40 flex items-center justify-center">
                 <img
                   src="/logo-letter-a.png"
@@ -118,7 +118,7 @@ export default function LoginPage() {
               <h1 className="text-3xl md:text-4xl font-bold text-white leading-relaxed">
                 {typedText}
                 <motion.span
-                  className="inline-block w-0.5 h-8 bg-emerald-400 mr-1 align-middle"
+                  className="inline-block w-0.5 h-8 bg-indigo-400 mr-1 align-middle"
                   animate={{ opacity: [1, 0] }}
                   transition={{ duration: 0.6, repeat: Infinity }}
                 />
@@ -130,7 +130,7 @@ export default function LoginPage() {
               {[0, 1, 2].map((i) => (
                 <motion.div
                   key={i}
-                  className="w-2.5 h-2.5 rounded-full bg-gradient-to-r from-blue-400 to-purple-400"
+                  className="w-2.5 h-2.5 rounded-full bg-linear-to-r from-blue-400 to-purple-400"
                   animate={{ y: [0, -8, 0] }}
                   transition={{ duration: 0.6, repeat: Infinity, delay: i * 0.15 }}
                 />
@@ -148,14 +148,14 @@ export default function LoginPage() {
             {/* Glass card */}
             <div dir="rtl" className="w-full max-w-md">
               <motion.div
-                className="relative rounded-2xl p-8 md:p-10 shadow-2xl backdrop-blur-2xl bg-white/[0.06] border border-white/[0.08] shadow-black/30"
+                className="relative rounded-2xl p-8 md:p-10 shadow-2xl backdrop-blur-2xl bg-white/6 border border-white/8 shadow-black/30"
                 initial={{ scale: 0.9, opacity: 0, y: 20 }}
                 animate={{ scale: 1, opacity: 1, y: 0 }}
                 transition={{ duration: 0.6, delay: 0.1, ease: [0.4, 0, 0.2, 1] }}
               >
                 {/* Subtle inner glow */}
-                <div className="absolute inset-0 rounded-2xl bg-gradient-to-br from-emerald-500/[0.04] via-transparent to-teal-500/[0.04] pointer-events-none" />
-                <div className="absolute -inset-px rounded-2xl bg-gradient-to-br from-white/[0.06] via-transparent to-white/[0.03] pointer-events-none" />
+                <div className="absolute inset-0 rounded-2xl bg-linear-to-br from-emerald-500/4 via-transparent to-teal-500/4 pointer-events-none" />
+                <div className="absolute -inset-px rounded-2xl bg-linear-to-br from-white/6 via-transparent to-white/3 pointer-events-none" />
                 {/* Logo - Full ARM Logo */}
                 <div className="flex justify-center mb-6">
                   <motion.div
@@ -244,7 +244,7 @@ export default function LoginPage() {
                   <Button
                     type="submit"
                     disabled={localLoading || loading}
-                    className="w-full h-11 bg-gradient-to-l from-emerald-600 to-emerald-700 hover:from-emerald-500 hover:to-emerald-600 text-white font-semibold text-base rounded-xl transition-all duration-300 shadow-lg shadow-emerald-500/25 hover:shadow-emerald-500/40 disabled:opacity-60"
+                    className="w-full h-11 bg-linear-to-l from-blue-600 to-blue-700 hover:from-blue-500 hover:to-blue-600 text-white font-semibold text-base rounded-xl transition-all duration-300 shadow-lg shadow-emerald-500/25 hover:shadow-emerald-500/40 disabled:opacity-60"
                   >
                     {localLoading || loading ? (
                       <>

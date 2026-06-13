@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getAll, createRecord, updateRecord, findFirst, sortByField } from '@/lib/db';
+import { getAll, createRecord, findFirst, updateRecord, sortByField, invalidateCache } from '@/lib/db';
 
 // ══════════════════════════════════════════════════════════════
 // Canonical rule definitions — amounts MUST match these values
@@ -43,6 +43,7 @@ export async function GET() {
   try {
     // Always sync rules to canonical values before returning
     await syncRulesToCanonical();
+    invalidateCache('deductionRules');
 
     let rules = await getAll('deductionRules');
     rules = sortByField(rules, 'amount', 'desc');

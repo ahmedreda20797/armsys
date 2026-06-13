@@ -22,8 +22,8 @@ const cairo = Cairo({
 });
 
 export const metadata: Metadata = {
-  title: "ARM ERP - نظام إدارة الموارد البشرية والجودة",
-  description: "نظام متكامل لإدارة الموارد البشرية والجودة | ARM - CODE • CREATE • SOLVE",
+  title: "ARM - نظام إدارة الجودة وتتبع الحجوزات",
+  description: "نظام متكامل لإدارة الجودة وتتبع الحجوزات | ARM",
   icons: {
     icon: "/favicon.ico",
   },

@@ -1040,7 +1040,7 @@ export default function HomePage() {
                       <div className="grid grid-cols-2 gap-3">
                         <div className="p-3 rounded-xl bg-slate-700/20 text-center border border-slate-700/10"><p className="text-amber-400 text-xl font-bold">{perf.totalDelays}</p><p className="text-slate-400 text-[10px] mt-0.5">تأخير</p></div>
                         <div className="p-3 rounded-xl bg-slate-700/20 text-center border border-slate-700/10"><p className="text-red-400 text-xl font-bold">{perf.totalDeductionAmount.toFixed(0)}</p><p className="text-slate-400 text-[10px] mt-0.5">ج.م خصم</p></div>
-                        <div className="p-3 rounded-xl bg-slate-700/20 text-center border border-slate-700/10"><p className="text-emerald-400 text-xl font-bold">{perf.totalPresent}</p><p className="text-slate-400 text-[10px] mt-0.5">يوم حضور</p></div>
+                        <div className="p-3 rounded-xl bg-slate-700/20 text-center border border-slate-700/10"><p className="text-indigo-400 text-xl font-bold">{perf.totalPresent}</p><p className="text-slate-400 text-[10px] mt-0.5">يوم حضور</p></div>
                         <div className="p-3 rounded-xl bg-slate-700/20 text-center border border-slate-700/10"><p className="text-purple-400 text-xl font-bold">{perf.totalDeductionDays.toFixed(1)}</p><p className="text-slate-400 text-[10px] mt-0.5">أيام مخصومة</p></div>
                       </div>
                     </div>
@@ -1093,10 +1093,10 @@ function StatusRow({ icon, label, value, ok }: { icon: React.ReactNode; label: s
   return (
     <div className="flex items-center justify-between p-3 rounded-xl bg-slate-700/10 border border-slate-700/10">
       <div className="flex items-center gap-2.5">
-        <span className={ok ? 'text-emerald-400' : 'text-slate-500'}>{icon}</span>
+        <span className={ok ? 'text-indigo-400' : 'text-slate-500'}>{icon}</span>
         <span className="text-slate-400 text-[11px]">{label}</span>
       </div>
-      <span className={`text-[11px] font-medium ${ok ? 'text-emerald-400' : 'text-slate-500'}`}>{value}</span>
+      <span className={`text-[11px] font-medium ${ok ? 'text-indigo-400' : 'text-slate-500'}`}>{value}</span>
     </div>
   );
 }
