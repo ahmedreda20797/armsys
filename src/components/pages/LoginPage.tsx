@@ -9,7 +9,7 @@ import { Label } from '@/components/ui/label';
 import { Lock, Mail, Eye, EyeOff, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 
-const FULL_TEXT = 'نظام إدارة الموارد البشرية';
+const FULL_TEXT = 'نظام إدارة الجودة ARM';
 
 export default function LoginPage() {
   const { login, error, loading, clearError } = useAuth();
@@ -206,7 +206,7 @@ export default function LoginPage() {
                         placeholder="admin@erp.com"
                         value={email}
                         onChange={(e) => setEmail(e.target.value)}
-                        className="bg-white/5 border-white/10 text-white placeholder:text-slate-500 pr-10 focus:border-emerald-500/50 focus:ring-emerald-500/20"
+                        className="bg-white/5 border-white/10 text-white placeholder:text-slate-500 pr-10 focus:border-indigo-500/50 focus:ring-indigo-500/20"
                         required
                         dir="ltr"
                         autoComplete="email"
@@ -226,7 +226,7 @@ export default function LoginPage() {
                         placeholder="••••••••"
                         value={password}
                         onChange={(e) => setPassword(e.target.value)}
-                        className="bg-white/5 border-white/10 text-white placeholder:text-slate-500 pr-10 pl-10 focus:border-emerald-500/50 focus:ring-emerald-500/20"
+                        className="bg-white/5 border-white/10 text-white placeholder:text-slate-500 pr-10 pl-10 focus:border-indigo-500/50 focus:ring-indigo-500/20"
                         required
                         dir="ltr"
                         autoComplete="current-password"
@@ -244,7 +244,7 @@ export default function LoginPage() {
                   <Button
                     type="submit"
                     disabled={localLoading || loading}
-                    className="w-full h-11 bg-linear-to-l from-blue-600 to-blue-700 hover:from-blue-500 hover:to-blue-600 text-white font-semibold text-base rounded-xl transition-all duration-300 shadow-lg shadow-emerald-500/25 hover:shadow-emerald-500/40 disabled:opacity-60"
+                    className="w-full h-11 bg-linear-to-l from-blue-600 to-blue-700 hover:from-blue-500 hover:to-blue-600 text-white font-semibold text-base rounded-xl transition-all duration-300 shadow-lg shadow-indigo-500/25 hover:shadow-indigo-500/40 disabled:opacity-60"
                   >
                     {localLoading || loading ? (
                       <>
