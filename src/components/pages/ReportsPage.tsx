@@ -51,6 +51,7 @@ import {
   Ban,
   CheckCircle2,
   UserCheck,
+  Search,
 } from 'lucide-react';
 
 /* ════════════════════════════════════════════════════════════════
@@ -72,6 +73,9 @@ interface ReportRow {
   totalAttendanceDeductionDays: number;
   totalQualityDays: number;
   totalQualityAmount: number;
+  totalHrDeductionDays: number;
+  totalHrDeductionAmount: number;
+  hrDeductionCount: number;
   totalDeductionDays: number;
   attendanceCompliance: number;
   workDays: number;
@@ -100,6 +104,8 @@ interface ReportSummary {
   totalDeductionDaysAll: number;
   totalQualityDaysAll: number;
   totalQualityAmountAll: number;
+  totalHrDeductionDaysAll: number;
+  totalHrDeductionAmountAll: number;
   avgCompliance: number;
   highComplianceCount: number;
   lowComplianceCount: number;
@@ -132,6 +138,8 @@ interface EmployeeDetail {
     totalAttendanceDeductionDays: number;
     totalQualityDays: number;
     totalQualityAmount: number;
+    totalHrDeductionDays: number;
+    totalHrDeductionAmount: number;
     totalDeductionDays: number;
     attendanceCompliance: number;
     unaccountedDays: number;
@@ -187,7 +195,7 @@ type FilterMode = 'all' | 'committed' | 'delayed' | 'absent' | 'quality' | 'prob
    Component
    ════════════════════════════════════════════════════════════════ */
 export default function ReportsPage() {
-  const { canEdit } = usePermissions('reports');
+  const { canEdit, canExport } = usePermissions('reports');
   const [month, setMonth] = useState('');
   const [report, setReport] = useState<ReportRow[]>([]);
   const [meta, setMeta] = useState<ReportMeta | null>(null);
@@ -198,6 +206,7 @@ export default function ReportsPage() {
   const [sortField, setSortField] = useState<SortField>('attendanceCompliance');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
   const [filterMode, setFilterMode] = useState<FilterMode>('all');
+  const [empSearch, setEmpSearch] = useState('');
   const months = generateMonthOptions('YYYY-MM');
 
   // Inline expanded employee detail
@@ -391,6 +400,14 @@ export default function ReportsPage() {
 
   const processed = useMemo(() => {
     let rows = [...report];
+    // Employee name search filter
+    if (empSearch.trim()) {
+      const q = empSearch.trim().toLowerCase();
+      rows = rows.filter((r) =>
+        r.employeeName.toLowerCase().includes(q) ||
+        r.department.toLowerCase().includes(q)
+      );
+    }
     switch (filterMode) {
       case 'committed': rows = rows.filter((r) => r.attendanceCompliance >= 90); break;
       case 'delayed': rows = rows.filter((r) => r.totalLate > 0); break;
@@ -407,7 +424,7 @@ export default function ReportsPage() {
       return sortDir === 'asc' ? cmp : -cmp;
     });
     return rows;
-  }, [report, filterMode, sortField, sortDir]);
+  }, [report, empSearch, filterMode, sortField, sortDir]);
 
   // ── Color helpers ──
   const getComplianceColor = (val: number) => {
@@ -462,15 +479,16 @@ export default function ReportsPage() {
   const totalLate = processed.reduce((s, r) => s + r.totalLate, 0);
   const totalAbsent = processed.reduce((s, r) => s + r.totalAbsent, 0);
   const totalExempt = processed.reduce((s, r) => s + r.totalExempt, 0);
-  const totalDed = processed.reduce((s, r) => s + r.totalDeductionDays, 0);
+  const totalHrDedDays = processed.reduce((s, r) => s + (r.totalHrDeductionDays || 0), 0);
   const totalQualDays = processed.reduce((s, r) => s + r.totalQualityDays, 0);
+  const totalDed = processed.reduce((s, r) => s + r.totalDeductionDays, 0);
 
   return (
     <div dir="rtl" className="space-y-5">
       {/* ═══════════ Header ═══════════ */}
       <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div className="flex items-center gap-3">
-          <div className="flex items-center justify-center size-11 rounded-xl bg-gradient-to-br from-violet-500/20 to-indigo-500/20 border border-violet-500/30">
+          <div className="flex items-center justify-center size-11 rounded-xl bg-linear-to-br from-violet-500/20 to-indigo-500/20 border border-violet-500/30">
             <BarChart3 className="size-5 text-violet-400" />
           </div>
           <div>
@@ -512,17 +530,37 @@ export default function ReportsPage() {
               </SelectContent>
             </Select>
           </div>
+          <div className="space-y-1.5 flex-1 max-w-xs">
+            <label className="text-slate-400 text-xs font-medium flex items-center gap-1"><Search className="size-3" />بحث بالاسم</label>
+            <div className="relative">
+              <Search className="absolute right-2.5 top-1/2 -translate-y-1/2 size-3.5 text-slate-500 pointer-events-none" />
+              <input
+                type="text"
+                placeholder="اسم الموظف أو القسم..."
+                value={empSearch}
+                onChange={(e) => setEmpSearch(e.target.value)}
+                className="w-full bg-slate-900/60 border border-slate-700/60 text-white rounded-md h-9 px-9 text-sm placeholder:text-slate-600 focus:outline-none focus:ring-1 focus:ring-violet-500/50 focus:border-violet-500/50"
+              />
+              {empSearch && (
+                <button onClick={() => setEmpSearch('')} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300">
+                  <X className="size-3.5" />
+                </button>
+              )}
+            </div>
+          </div>
           <div className="flex gap-2 sm:mr-auto">
-            <Button onClick={handleGenerate} disabled={!month || generating} size="sm" className="bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white h-9 px-5 shadow-lg shadow-violet-500/20 transition-all">
+            <Button onClick={handleGenerate} disabled={!month || generating} size="sm" className="bg-linear-to-r from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white h-9 px-5 shadow-lg shadow-violet-500/20 transition-all">
               {generating ? (
                 <span className="flex items-center gap-1.5"><span className="size-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />جاري الإنشاء...</span>
               ) : (
                 <span className="flex items-center gap-1.5"><Play className="size-3.5" />إنشاء التقرير</span>
               )}
             </Button>
+            {canExport && (
             <Button variant="outline" onClick={handleExport} disabled={report.length === 0} size="sm" className="border-slate-600 text-slate-300 hover:bg-slate-700 h-9 px-3">
               <Download className="size-3.5 ml-1" />تصدير Excel
             </Button>
+            )}
           </div>
         </div>
         {error && (
@@ -573,7 +611,7 @@ export default function ReportsPage() {
           {/* Summary Cards */}
           {summary && (
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5">
-              <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.02 }} className="rounded-xl border border-emerald-500/20 bg-gradient-to-br from-emerald-500/10 to-emerald-500/5 px-3.5 py-3">
+              <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.02 }} className="rounded-xl border border-emerald-500/20 bg-linear-to-br from-emerald-500/10 to-emerald-500/5 px-3.5 py-3">
                 <div className="flex items-center gap-1.5 mb-1.5"><Target className="size-3.5 text-emerald-400" /><span className="text-slate-400 text-[10px] font-medium">متوسط الالتزام</span></div>
                 <p className={`text-2xl font-bold leading-tight ${getComplianceColor(summary.avgCompliance)}`} dir="ltr">{summary.avgCompliance}%</p>
                 <div className="mt-2 h-1.5 rounded-full bg-slate-700/40 overflow-hidden">
@@ -606,6 +644,7 @@ export default function ReportsPage() {
                 <div className="flex items-center gap-2 mt-1">
                   <span className="text-slate-500 text-[10px]">يوم</span>
                   {summary.totalQualityDaysAll > 0 && <span className="text-orange-400/70 text-[10px]">+{summary.totalQualityDaysAll.toFixed(1)}ج</span>}
+                  {summary.totalHrDeductionDaysAll > 0 && <span className="text-pink-400/70 text-[10px]">+{summary.totalHrDeductionDaysAll.toFixed(1)}HR</span>}
                 </div>
               </motion.div>
             </div>
@@ -662,16 +701,17 @@ export default function ReportsPage() {
             <Table dir="rtl">
               <TableHeader>
                 <TableRow className="border-slate-700/50 hover:bg-transparent bg-slate-900/60">
-                  <TableHead className="text-slate-400 text-xs font-bold py-3 px-3 w-[200px]"><SortButton field="employeeName" label="الموظف" /></TableHead>
-                  <TableHead className="text-slate-400 text-xs font-bold py-3 px-3 text-center w-[80px]">القسم</TableHead>
-                  <TableHead className="text-slate-400 text-xs font-bold py-3 px-3 text-center w-[65px]"><SortButton field="totalPresent" label="حضور" /></TableHead>
-                  <TableHead className="text-slate-400 text-xs font-bold py-3 px-3 text-center w-[70px]"><SortButton field="totalLate" label="تأخير" /></TableHead>
-                  <TableHead className="text-slate-400 text-xs font-bold py-3 px-3 text-center w-[65px]"><SortButton field="totalAbsent" label="غياب" /></TableHead>
-                  <TableHead className="text-slate-400 text-xs font-bold py-3 px-3 text-center w-[55px]">معفى</TableHead>
-                  <TableHead className="text-slate-400 text-xs font-bold py-3 px-3 text-center w-[80px]">خصم حضور</TableHead>
-                  <TableHead className="text-slate-400 text-xs font-bold py-3 px-3 text-center w-[80px]">خصم جودة</TableHead>
-                  <TableHead className="text-slate-400 text-xs font-bold py-3 px-3 text-center w-[80px]"><SortButton field="attendanceCompliance" label="الالتزام" /></TableHead>
-                  <TableHead className="text-slate-400 text-xs font-bold py-3 px-3 text-center w-[75px]"><SortButton field="totalDeductionDays" label="الإجمالي" /></TableHead>
+                  <TableHead className="text-slate-400 text-xs font-bold py-3 px-3 w-50"><SortButton field="employeeName" label="الموظف" /></TableHead>
+                  <TableHead className="text-slate-400 text-xs font-bold py-3 px-3 text-center w-20">القسم</TableHead>
+                  <TableHead className="text-slate-400 text-xs font-bold py-3 px-3 text-center w-16.25"><SortButton field="totalPresent" label="حضور" /></TableHead>
+                  <TableHead className="text-slate-400 text-xs font-bold py-3 px-3 text-center w-17.5"><SortButton field="totalLate" label="تأخير" /></TableHead>
+                  <TableHead className="text-slate-400 text-xs font-bold py-3 px-3 text-center w-16.25"><SortButton field="totalAbsent" label="غياب" /></TableHead>
+                  <TableHead className="text-slate-400 text-xs font-bold py-3 px-3 text-center w-13.75">معفى</TableHead>
+                  <TableHead className="text-slate-400 text-xs font-bold py-3 px-3 text-center w-20">خصم حضور</TableHead>
+                  <TableHead className="text-slate-400 text-xs font-bold py-3 px-3 text-center w-20">خصم جودة</TableHead>
+                  <TableHead className="text-slate-400 text-xs font-bold py-3 px-3 text-center w-20">خصم HR</TableHead>
+                  <TableHead className="text-slate-400 text-xs font-bold py-3 px-3 text-center w-20"><SortButton field="attendanceCompliance" label="الالتزام" /></TableHead>
+                  <TableHead className="text-slate-400 text-xs font-bold py-3 px-3 text-center w-18.75"><SortButton field="totalDeductionDays" label="الإجمالي" /></TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -682,7 +722,7 @@ export default function ReportsPage() {
                     <React.Fragment key={row.employeeId}>
                       {/* ── Main Row ── */}
                       <TableRow
-                        className={`border-slate-700/20 hover:bg-slate-700/15 transition-colors cursor-pointer ${hasIssues ? 'bg-red-500/[0.03]' : ''} ${isExpanded ? 'bg-violet-500/[0.06]' : ''}`}
+                        className={`border-slate-700/20 hover:bg-slate-700/15 transition-colors cursor-pointer ${hasIssues ? 'bg-red-500/30' : ''} ${isExpanded ? 'bg-violet-500/6' : ''}`}
                         onClick={() => handleToggleDetail(row.employeeId)}
                       >
                         <TableCell className="py-3 px-3">
@@ -721,6 +761,14 @@ export default function ReportsPage() {
                             <div className="flex flex-col items-center leading-tight">
                               <span className="text-orange-400 font-medium text-xs" dir="ltr">{row.totalQualityDays.toFixed(1)} يوم</span>
                               {row.totalQualityAmount > 0 && <span className="text-[10px] text-slate-500" dir="ltr">{row.totalQualityAmount} جنيه</span>}
+                            </div>
+                          ) : <span className="text-slate-600 text-xs">—</span>}
+                        </TableCell>
+                        <TableCell className="text-center py-3 px-3">
+                          {(row.totalHrDeductionDays || 0) > 0 || (row.totalHrDeductionAmount || 0) > 0 ? (
+                            <div className="flex flex-col items-center leading-tight">
+                              {(row.totalHrDeductionDays || 0) > 0 && <span className="text-pink-400 font-medium text-xs" dir="ltr">{row.totalHrDeductionDays.toFixed(1)} يوم</span>}
+                              {(row.totalHrDeductionAmount || 0) > 0 && <span className="text-[10px] text-slate-500" dir="ltr">{row.totalHrDeductionAmount} جنيه</span>}
                             </div>
                           ) : <span className="text-slate-600 text-xs">—</span>}
                         </TableCell>
@@ -813,7 +861,7 @@ export default function ReportsPage() {
                                     </div>
 
                                     {/* ── Actual Attendance Summary Card ── */}
-                                    <div className="rounded-xl border border-emerald-500/20 bg-gradient-to-br from-emerald-500/10 to-emerald-500/5 p-5">
+                                    <div className="rounded-xl border border-emerald-500/20 bg-linear-to-br from-emerald-500/10 to-emerald-500/5 p-5">
                                       <h3 className="text-emerald-400 text-sm font-bold mb-4 flex items-center gap-2">
                                         <UserCheck className="size-4" />ملخص الحضور الفعلي
                                       </h3>
@@ -863,12 +911,12 @@ export default function ReportsPage() {
                                               <TableHead className="text-slate-400 text-xs font-bold py-2.5 px-3 text-center">خصم غياب</TableHead>
                                               <TableHead className="text-slate-400 text-xs font-bold py-2.5 px-3 text-center">خصم تأخير</TableHead>
                                               <TableHead className="text-slate-400 text-xs font-bold py-2.5 px-3">المصدر</TableHead>
-                                              <TableHead className="text-slate-400 text-xs font-bold py-2.5 px-3 text-center w-[60px]">إجراء</TableHead>
+                                              <TableHead className="text-slate-400 text-xs font-bold py-2.5 px-3 text-center w-15">إجراء</TableHead>
                                             </TableRow>
                                           </TableHeader>
                                           <TableBody>
                                             {detailData.dailyBreakdown.map((day, dIdx) => (
-                                              <TableRow key={dIdx} className={`border-slate-700/20 hover:bg-slate-700/15 ${day.waived ? 'bg-emerald-500/[0.04]' : day.status === 'absent' ? 'bg-red-500/[0.03]' : day.status === 'exempt' ? 'bg-cyan-500/[0.03]' : ''}`}>
+                                              <TableRow key={dIdx} className={`border-slate-700/20 hover:bg-slate-700/15 ${day.waived ? 'bg-emerald-500/4' : day.status === 'absent' ? 'bg-red-500/3' : day.status === 'exempt' ? 'bg-cyan-500/3' : ''}`}>
                                                 <TableCell className="text-slate-300 text-xs py-2 px-3" dir="ltr">{day.date}</TableCell>
                                                 <TableCell className="text-slate-400 text-xs py-2 px-3">{day.dayName}</TableCell>
                                                 <TableCell className="py-2 px-3">
@@ -893,7 +941,7 @@ export default function ReportsPage() {
                                                 <TableCell className="text-center py-2 px-3 text-xs">
                                                   {(day.lateDeduction || 0) > 0 && !day.waived ? <span className="text-amber-400 font-medium" dir="ltr">{day.lateDeduction}</span> : day.waived && day.waivedType === 'late' ? <span className="text-emerald-400 text-[10px]">0 (ملغى)</span> : <span className="text-slate-600">—</span>}
                                                 </TableCell>
-                                                <TableCell className="py-2 px-3 text-xs text-slate-500 max-w-[220px] truncate">{day.source}</TableCell>
+                                                <TableCell className="py-2 px-3 text-xs text-slate-500 max-w-55 truncate">{day.source}</TableCell>
                                                 <TableCell className="text-center py-2 px-2">
                                                   {/* Waive absence deduction */}
                                                   {canEdit && day.absenceDeduction > 0 && !day.waived && (
@@ -1011,6 +1059,7 @@ export default function ReportsPage() {
                   <TableCell className="text-center py-3 px-3"><span className="text-cyan-400 text-sm">{totalExempt > 0 ? totalExempt : '—'}</span></TableCell>
                   <TableCell />
                   <TableCell className="text-center py-3 px-3"><span className="text-orange-400 text-sm">{totalQualDays > 0 ? totalQualDays.toFixed(1) : '—'}</span></TableCell>
+                  <TableCell className="text-center py-3 px-3"><span className="text-pink-400 text-sm">{totalHrDedDays > 0 ? totalHrDedDays.toFixed(1) : '—'}</span></TableCell>
                   <TableCell />
                   <TableCell className="text-center py-3 px-3"><span className="text-rose-400 text-sm font-bold" dir="ltr">{totalDed > 0 ? totalDed.toFixed(2) : '—'}</span></TableCell>
                 </TableRow>

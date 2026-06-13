@@ -232,7 +232,7 @@ export default function ActivityMonitor() {
           </p>
         </div>
         <Button
-          onClick={refreshAll => {}}
+          onClick={async () => { await Promise.all([fetchLogs(), fetchOnlineUsers()]); }}
           variant="outline"
           size="sm"
           className="border-slate-600 text-slate-300 hover:bg-slate-700"

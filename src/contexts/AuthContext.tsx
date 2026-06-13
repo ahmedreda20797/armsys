@@ -40,8 +40,24 @@ function getRankForRole(role: string): string {
     case 'admin': return 'مدير النظام';
     case 'hr': return 'موارد بشرية';
     case 'manager': return 'مدير';
+    case 'quality': return 'جودة';
     default: return 'موظف';
   }
+}
+
+/** Override global fetch to include x-user-id header for server-side permission verification */
+function setupAuthFetch(userId: string | undefined) {
+  const originalFetch = window.fetch.bind(window);
+  window.fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+    if (userId) {
+      const headers = new Headers(init?.headers);
+      if (!headers.has('x-user-id')) {
+        headers.set('x-user-id', userId);
+      }
+      return originalFetch(input, { ...init, headers });
+    }
+    return originalFetch(input, init);
+  };
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -114,6 +130,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       try {
         const parsed = JSON.parse(stored);
         setUser(parsed);
+        // Override global fetch to include user ID
+        setupAuthFetch(parsed.id);
       } catch {
         localStorage.removeItem('erp_user');
       }
@@ -132,6 +150,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     };
   }, [refreshUser]);
+
+  // Update global fetch when user changes
+  useEffect(() => {
+    if (user?.id) {
+      setupAuthFetch(user.id);
+    }
+  }, [user?.id]);
 
   const clearError = useCallback(() => {
     setError(null);
@@ -170,6 +195,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const authUser = buildAuthUser(userData);
       setUser(authUser);
       localStorage.setItem('erp_user', JSON.stringify(authUser));
+      // Override global fetch to include user ID
+      setupAuthFetch(authUser.id);
       // Log login activity (fire-and-forget)
       logLogin(authUser.name);
       return true;
@@ -189,6 +216,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null);
     localStorage.removeItem('erp_user');
     setError(null);
+    // Remove fetch override
+    setupAuthFetch(undefined);
   }, [user]);
 
   return (

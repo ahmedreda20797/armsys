@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAll, getAllBatch, withEmployee } from '@/lib/db';
+import { verifyPermission } from '@/lib/verify-permission';
 
 /** Parse DD/MM/YYYY to a comparable number YYYYMMDD for sorting */
 function parseDateToSortable(dateStr: string): number {
@@ -34,7 +35,7 @@ function getMonthKey(dateStr: string): string {
   return `${p[2]}-${p[1]}`;
 }
 
-function getTripCategory(depDate: string, retDate: string | null): 'upcoming' | 'in_progress' | 'returned' | 'canceled' {
+function getTripCategory(depDate: string, retDate: string | null): 'upcoming' | 'in_progress' | 'returned' {
   const retDays = retDate ? getDaysRemaining(retDate) : null;
   if (retDays !== null && retDays < 0) return 'returned';
   if (getDaysRemaining(depDate) < 0) return 'in_progress';
@@ -46,7 +47,7 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
 
     // ── Server-side filtering parameters ──
-    const tab = searchParams.get('tab') || 'all';           // all | upcoming | in_progress | returned
+    const tab = searchParams.get('tab') || 'all';           // all | upcoming | in_progress | returned | canceled
     const employeeId = searchParams.get('employeeId') || '';
     const month = searchParams.get('month') || '';
     const search = searchParams.get('search') || '';
@@ -68,12 +69,13 @@ export async function GET(request: NextRequest) {
     }));
 
     // ── Compute tab counts (needed for UI badges) ──
+    // Separate canceled trips — excluded from main counts
     const isCanceled = (t: any) => t.status === 'canceled';
     let tabCounts = { all: 0, upcoming: 0, in_progress: 0, returned: 0, canceled: 0 };
     for (const t of tripsWithCategory) {
       if (isCanceled(t)) {
         tabCounts.canceled++;
-        continue;
+        continue; // Don't count canceled in 'all'
       }
       tabCounts.all++;
       if (t._category === 'upcoming') tabCounts.upcoming++;
@@ -81,9 +83,15 @@ export async function GET(request: NextRequest) {
       else tabCounts.returned++;
     }
 
+    // If only counts requested, return early
+    if (countsOnly) {
+      return NextResponse.json({ counts: tabCounts });
+    }
+
     // ── Apply filters ──
     let filtered = tripsWithCategory;
 
+    // Tab filter
     if (tab === 'upcoming') {
       filtered = filtered.filter((t) => t._category === 'upcoming' && !isCanceled(t));
     } else if (tab === 'in_progress') {
@@ -93,6 +101,7 @@ export async function GET(request: NextRequest) {
     } else if (tab === 'canceled') {
       filtered = filtered.filter((t) => isCanceled(t));
     } else {
+      // 'all' — exclude canceled
       filtered = filtered.filter((t) => !isCanceled(t));
     }
 
@@ -115,10 +124,10 @@ export async function GET(request: NextRequest) {
       );
     }
 
-        // ── Sort: nearest travel first ──
+    // ── Sort: nearest travel first ──
     filtered.sort((a, b) => {
       if (tab === 'returned' || tab === 'canceled') {
-        // Most recently returned first
+        // Most recently returned/canceled first
         return parseDateToSortable(b.returnDate || b.departureDate) - parseDateToSortable(a.returnDate || a.departureDate);
       }
       if (tab === 'in_progress') {
@@ -149,7 +158,7 @@ export async function GET(request: NextRequest) {
       return distA - distB;
     });
 
-    // ── Urgent trips (upcoming within 14 days) ──
+    // ── Urgent trips (upcoming within 14 days, not canceled) ──
     const urgentTrips = tripsWithCategory
       .filter((t) => t._category === 'upcoming' && !isCanceled(t) && t._daysLeft >= 0 && t._daysLeft <= 14)
       .sort((a, b) => a._daysLeft - b._daysLeft)
@@ -185,6 +194,12 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
+    // Verify permission: need 'create' on 'travel'
+    const permCheck = await verifyPermission(request, 'travel', 'create');
+    if (!permCheck.allowed) {
+      return NextResponse.json({ error: permCheck.error }, { status: 403 });
+    }
+
     const body = await request.json();
     const {
       employeeId,

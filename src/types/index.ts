@@ -95,6 +95,7 @@ export interface HrDeduction {
   approvedBy: string | null;
   approvedAt: string | null;
   month: string;
+  deductionDate: string | null;
   createdAt: string;
   updatedAt: string;
 }

@@ -1,8 +1,15 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { findWhereContains, deleteByIds } from '@/lib/db';
+import { verifyPermission } from '@/lib/verify-permission';
 
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
   try {
+    // Verify permission: need 'delete' on 'biometric'
+    const permCheck = await verifyPermission(request, 'biometric', 'delete');
+    if (!permCheck.allowed) {
+      return NextResponse.json({ error: permCheck.error }, { status: 403 });
+    }
+
     const body = await request.json();
     const { month } = body;
 

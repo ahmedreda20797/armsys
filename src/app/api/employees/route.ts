@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAll, createRecord, sortByDateField, withRelatedCounts } from '@/lib/db';
+import { verifyPermission } from '@/lib/verify-permission';
 
 export async function GET(request: NextRequest) {
   try {
@@ -36,6 +37,12 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
+    // Verify permission: need 'create' on 'employees'
+    const permCheck = await verifyPermission(request, 'employees', 'create');
+    if (!permCheck.allowed) {
+      return NextResponse.json({ error: permCheck.error }, { status: 403 });
+    }
+
     const body = await request.json();
     const { code, name, department, position, shiftStart, shiftEnd, hireDate, mobile, createdById } = body;
 

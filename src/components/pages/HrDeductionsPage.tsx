@@ -71,6 +71,11 @@ function generateMonthOptions(): { value: string; label: string }[] {
 
 const MONTH_OPTIONS = generateMonthOptions();
 
+function getTodayDate(): string {
+  const now = new Date();
+  return `${String(now.getDate()).padStart(2, '0')}/${String(now.getMonth() + 1).padStart(2, '0')}/${now.getFullYear()}`;
+}
+
 interface HrDeductionWithEmployee extends HrDeduction {
   employeeName: string;
   employeeDepartment: string | null;
@@ -83,6 +88,7 @@ const EMPTY_FORM = {
   unit: 'EGP' as 'days' | 'EGP',
   month: MONTH_OPTIONS[1]?.value || MONTH_OPTIONS[0]?.value || '',
   reason: '',
+  deductionDate: '',
 };
 
 export default function HrDeductionsPage() {
@@ -140,6 +146,7 @@ export default function HrDeductionsPage() {
           unit: addForm.unit,
           month: addForm.month,
           reason: addForm.reason,
+          deductionDate: addForm.deductionDate || null,
         }),
       });
       if (res.ok) {
@@ -167,6 +174,7 @@ export default function HrDeductionsPage() {
           unit: editForm.unit,
           month: editForm.month,
           reason: editForm.reason,
+          deductionDate: editForm.deductionDate || null,
         }),
       });
       if (res.ok) {
@@ -219,6 +227,7 @@ export default function HrDeductionsPage() {
       unit: deduction.unit,
       month: deduction.month,
       reason: deduction.reason,
+      deductionDate: deduction.deductionDate || '',
     });
     setIsEditOpen(true);
   };
@@ -281,7 +290,7 @@ export default function HrDeductionsPage() {
         <div className="flex items-center gap-2">
           {canCreate && (
             <Button
-              onClick={() => setIsAddOpen(true)}
+              onClick={() => { setIsAddOpen(true); setAddForm({ ...EMPTY_FORM, deductionDate: getTodayDate() }); }}
               className="bg-emerald-600 hover:bg-emerald-700 text-white"
             >
               <Plus className="size-4" />
@@ -368,6 +377,9 @@ export default function HrDeductionsPage() {
                               {ded.amount} {getUnitLabel(ded.unit)}
                             </span>
                             <span className="text-slate-500 text-sm">{MONTH_OPTIONS.find((m) => m.value === ded.month)?.label || ded.month}</span>
+                            {ded.deductionDate && (
+                              <span className="text-slate-500 text-xs" dir="ltr">({ded.deductionDate})</span>
+                            )}
                           </div>
                           <p className="text-slate-400 text-sm">{ded.reason}</p>
                         </div>
@@ -441,8 +453,12 @@ export default function HrDeductionsPage() {
                       <TableHead className="text-slate-400 text-sm font-medium">النوع</TableHead>
                       <TableHead className="text-slate-400 text-sm font-medium">المبلغ</TableHead>
                       <TableHead className="text-slate-400 text-sm font-medium">الشهر</TableHead>
+                      <TableHead className="text-slate-400 text-sm font-medium">تاريخ الخصم</TableHead>
                       <TableHead className="text-slate-400 text-sm font-medium">السبب</TableHead>
                       <TableHead className="text-slate-400 text-sm font-medium">الحالة</TableHead>
+                      {(canUpdate || canDelete) && (
+                        <TableHead className="text-slate-400 text-sm font-medium">إجراءات</TableHead>
+                      )}
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -459,8 +475,37 @@ export default function HrDeductionsPage() {
                         <TableCell className="text-slate-300">
                           {MONTH_OPTIONS.find((m) => m.value === ded.month)?.label || ded.month}
                         </TableCell>
+                        <TableCell className="text-slate-300" dir="ltr">
+                          {ded.deductionDate || '—'}
+                        </TableCell>
                         <TableCell className="text-slate-400 text-sm max-w-xs truncate">{ded.reason}</TableCell>
                         <TableCell>{getStatusBadge(ded.status)}</TableCell>
+                        {(canUpdate || canDelete) && (
+                          <TableCell>
+                            <div className="flex items-center gap-1">
+                              {canUpdate && (
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  onClick={() => openEditDialog(ded)}
+                                  className="text-slate-400 hover:text-emerald-400 hover:bg-emerald-500/10"
+                                >
+                                  <Pencil className="size-3.5" />
+                                </Button>
+                              )}
+                              {canDelete && (
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  onClick={() => handleDelete(ded.id)}
+                                  className="text-slate-400 hover:text-red-400 hover:bg-red-500/10"
+                                >
+                                  <Trash2 className="size-3.5" />
+                                </Button>
+                              )}
+                            </div>
+                          </TableCell>
+                        )}
                       </TableRow>
                     ))}
                   </TableBody>
@@ -560,6 +605,16 @@ export default function HrDeductionsPage() {
                   ))}
                 </SelectContent>
               </Select>
+            </div>
+            <div className="space-y-2 sm:col-span-2">
+              <Label className="text-slate-300">تاريخ الخصم</Label>
+              <Input
+                value={addForm.deductionDate}
+                onChange={(e) => setAddForm((p) => ({ ...p, deductionDate: e.target.value }))}
+                className="bg-slate-800 border-slate-600 text-white"
+                placeholder="DD/MM/YYYY"
+                dir="ltr"
+              />
             </div>
             <div className="space-y-2 sm:col-span-2">
               <Label className="text-slate-300">السبب</Label>
@@ -662,6 +717,16 @@ export default function HrDeductionsPage() {
                   ))}
                 </SelectContent>
               </Select>
+            </div>
+            <div className="space-y-2 sm:col-span-2">
+              <Label className="text-slate-300">تاريخ الخصم</Label>
+              <Input
+                value={editForm.deductionDate}
+                onChange={(e) => setEditForm((p) => ({ ...p, deductionDate: e.target.value }))}
+                className="bg-slate-800 border-slate-600 text-white"
+                placeholder="DD/MM/YYYY"
+                dir="ltr"
+              />
             </div>
             <div className="space-y-2 sm:col-span-2">
               <Label className="text-slate-300">السبب</Label>

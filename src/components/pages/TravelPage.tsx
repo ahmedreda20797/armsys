@@ -71,6 +71,7 @@ import {
   ChevronsRight,
 } from 'lucide-react';
 import type { TravelDeal, Employee } from '@/types';
+import { logCreate, logUpdate, logDelete } from '@/lib/activity-logger';
 
 // ═══════════════════════════════════════════════════════════════
 //  TYPES
@@ -801,7 +802,7 @@ const UrgentAlertBanner = memo(function UrgentAlertBanner({
 
   return (
     <motion.div initial={{ opacity: 0, y: -5 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}>
-      <div className="rounded-xl border border-red-500/30 bg-gradient-to-l from-red-500/10 via-slate-900 to-slate-900 overflow-hidden">
+      <div className="rounded-xl border border-red-500/30 bg-linear-to-l from-red-500/10 via-slate-900 to-slate-900 overflow-hidden">
         <button
           onClick={() => setAlertOpen(!alertOpen)}
           className="w-full flex items-center justify-between px-4 py-3 cursor-pointer hover:bg-red-500/5 transition-colors"
@@ -931,7 +932,7 @@ const PaginationBar = memo(function PaginationBar({
 // ═══════════════════════════════════════════════════════════════
 
 export default function TravelPage() {
-  const { canEdit } = usePermissions('travel');
+  const { canEdit, canCreate, canUpdate, canDelete, canExport } = usePermissions('travel');
   const highlightId = useAppStore((s) => s.highlightId);
   const setHighlightId = useAppStore((s) => s.setHighlightId);
 
@@ -1018,20 +1019,24 @@ export default function TravelPage() {
   const handleSave = useCallback(() => {
     if (editingTrip) {
       updateTravel.mutate({ id: editingTrip.id, data: form }, {
-        onSuccess: () => { setEditingTrip(null); setIsAddOpen(false); setForm(emptyForm); },
+        onSuccess: () => { logUpdate('travel', 'رحلة', form.destination); setEditingTrip(null); setIsAddOpen(false); setForm(emptyForm); },
       });
     } else {
       createTravel.mutate(form, {
-        onSuccess: () => { setIsAddOpen(false); setForm(emptyForm); },
+        onSuccess: () => { logCreate('travel', 'رحلة', form.destination); setIsAddOpen(false); setForm(emptyForm); },
       });
     }
   }, [editingTrip, form, updateTravel, createTravel]);
 
   const handleDelete = useCallback((id: string) => {
     deleteTravel.mutate(id, {
-      onSuccess: () => setDeletingId(null),
+      onSuccess: () => {
+        const trip = trips.find((t: any) => t.id === id);
+        if (trip) logDelete('travel', 'رحلة', trip.destination);
+        setDeletingId(null);
+      },
     });
-  }, [deleteTravel]);
+  }, [deleteTravel, trips]);
 
   const openEdit = useCallback((trip: TravelWithEmployee) => {
     setEditingTrip(trip);
@@ -1127,7 +1132,7 @@ export default function TravelPage() {
                 <TripCard
                   key={trip.id} trip={trip} showCategoryBadge={true}
                   isHighlighted={highlightId === trip.id} isExpanded={expandedCardId === trip.id}
-                  canEdit={canEdit} highlightRef={highlightRef}
+                  canEdit={canUpdate} highlightRef={highlightRef}
                   onToggleExpand={handleToggleExpand} onEdit={openEdit} onDelete={setDeletingId}
                   onQuickChangeStatus={quickChangeStatus} onQuickToggleService={quickToggleService}
                 />
@@ -1147,7 +1152,7 @@ export default function TravelPage() {
                     <TableHead className="text-slate-500 text-xs font-medium hidden sm:table-cell">التاريخ</TableHead>
                     <TableHead className="text-slate-500 text-xs font-medium hidden md:table-cell">العملاء</TableHead>
                     <TableHead className="text-slate-500 text-xs font-medium">الحالة</TableHead>
-                    {canEdit && <TableHead className="w-16" />}
+                    {(canUpdate || canDelete) && <TableHead className="w-16" />}
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -1158,11 +1163,11 @@ export default function TravelPage() {
                       <TableCell className="text-slate-400 text-xs hidden sm:table-cell" dir="ltr">{trip.departureDate}</TableCell>
                       <TableCell className="text-slate-400 text-xs hidden md:table-cell truncate max-w-36">{trip.customerNames || '—'}</TableCell>
                       <TableCell><StatusBadge status={trip.status} /></TableCell>
-                      {canEdit && (
+                      {(canUpdate || canDelete) && (
                         <TableCell>
                           <div className="flex gap-0.5">
-                            <Button variant="ghost" size="icon" onClick={() => openEdit(trip)} className="text-slate-500 hover:text-emerald-400 size-6"><Pencil className="size-2.5" /></Button>
-                            <Button variant="ghost" size="icon" onClick={() => setDeletingId(trip.id)} className="text-slate-500 hover:text-red-400 size-6"><Trash2 className="size-2.5" /></Button>
+                            {canUpdate && <Button variant="ghost" size="icon" onClick={() => openEdit(trip)} className="text-slate-500 hover:text-emerald-400 size-6"><Pencil className="size-2.5" /></Button>}
+                            {canDelete && <Button variant="ghost" size="icon" onClick={() => setDeletingId(trip.id)} className="text-slate-500 hover:text-red-400 size-6"><Trash2 className="size-2.5" /></Button>}
                           </div>
                         </TableCell>
                       )}
@@ -1196,7 +1201,7 @@ export default function TravelPage() {
               <TripCard
                 key={trip.id} trip={trip} showCategoryBadge={false}
                 isHighlighted={highlightId === trip.id} isExpanded={expandedCardId === trip.id}
-                canEdit={canEdit} highlightRef={highlightRef}
+                canEdit={canUpdate} highlightRef={highlightRef}
                 onToggleExpand={handleToggleExpand} onEdit={openEdit} onDelete={setDeletingId}
                 onQuickChangeStatus={quickChangeStatus} onQuickToggleService={quickToggleService}
               />
@@ -1227,7 +1232,7 @@ export default function TravelPage() {
                 <TableHead className="text-slate-500 text-xs font-medium hidden sm:table-cell">السفر</TableHead>
                 <TableHead className="text-slate-500 text-xs font-medium">العودة</TableHead>
                 <TableHead className="text-slate-500 text-xs font-medium">الحالة</TableHead>
-                {canEdit && <TableHead className="w-16" />}
+                {(canUpdate || canDelete) && <TableHead className="w-16" />}
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -1238,11 +1243,11 @@ export default function TravelPage() {
                   <TableCell className="text-slate-400 text-xs hidden sm:table-cell" dir="ltr">{trip.departureDate}</TableCell>
                   <TableCell className="text-slate-400 text-xs" dir="ltr">{trip.returnDate || '—'}</TableCell>
                   <TableCell><StatusBadge status={trip.status} /></TableCell>
-                  {canEdit && (
+                  {(canUpdate || canDelete) && (
                     <TableCell>
                       <div className="flex gap-0.5">
-                        <Button variant="ghost" size="icon" onClick={() => openEdit(trip)} className="text-slate-500 hover:text-emerald-400 size-6"><Pencil className="size-2.5" /></Button>
-                        <Button variant="ghost" size="icon" onClick={() => setDeletingId(trip.id)} className="text-slate-500 hover:text-red-400 size-6"><Trash2 className="size-2.5" /></Button>
+                        {canUpdate && <Button variant="ghost" size="icon" onClick={() => openEdit(trip)} className="text-slate-500 hover:text-emerald-400 size-6"><Pencil className="size-2.5" /></Button>}
+                        {canDelete && <Button variant="ghost" size="icon" onClick={() => setDeletingId(trip.id)} className="text-slate-500 hover:text-red-400 size-6"><Trash2 className="size-2.5" /></Button>}
                       </div>
                     </TableCell>
                   )}
@@ -1285,7 +1290,7 @@ export default function TravelPage() {
                 <TableHead className="text-red-400/60 text-xs font-medium">العودة</TableHead>
                 <TableHead className="text-red-400/60 text-xs font-medium">الحالة</TableHead>
                 <TableHead className="text-red-400/60 text-xs font-medium hidden sm:table-cell">ملاحظات</TableHead>
-                {canEdit && <TableHead className="w-16" />}
+                {(canUpdate || canDelete) && <TableHead className="w-16" />}
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -1303,11 +1308,11 @@ export default function TravelPage() {
                   </TableCell>
                   <TableCell><StatusBadge status={trip.status} /></TableCell>
                   <TableCell className="text-slate-500 text-xs hidden sm:table-cell truncate max-w-32">{trip.notes || '—'}</TableCell>
-                  {canEdit && (
+                  {(canUpdate || canDelete) && (
                     <TableCell>
                       <div className="flex gap-0.5">
-                        <Button variant="ghost" size="icon" onClick={() => openEdit(trip)} className="text-slate-500 hover:text-emerald-400 size-6"><Pencil className="size-2.5" /></Button>
-                        <Button variant="ghost" size="icon" onClick={() => setDeletingId(trip.id)} className="text-slate-500 hover:text-red-400 size-6"><Trash2 className="size-2.5" /></Button>
+                        {canUpdate && <Button variant="ghost" size="icon" onClick={() => openEdit(trip)} className="text-slate-500 hover:text-emerald-400 size-6"><Pencil className="size-2.5" /></Button>}
+                        {canDelete && <Button variant="ghost" size="icon" onClick={() => setDeletingId(trip.id)} className="text-slate-500 hover:text-red-400 size-6"><Trash2 className="size-2.5" /></Button>}
                       </div>
                     </TableCell>
                   )}
@@ -1336,7 +1341,7 @@ export default function TravelPage() {
           </h1>
           <p className="text-slate-400 mt-1 text-sm">{tabCounts.upcoming + tabCounts.in_progress} رحلة نشطة • {tabCounts.all} إجمالي{'canceled' in tabCounts && tabCounts.canceled > 0 ? ` • ${tabCounts.canceled} ملغاة` : ''}</p>
         </div>
-        {canEdit && (
+        {canCreate && (
           <div className="flex gap-2">
             <Button onClick={() => { setForm(emptyForm); setEditingTrip(null); setIsAddOpen(true); }} className="bg-emerald-600 hover:bg-emerald-700 text-white">
               <Plus className="size-4" /> إضافة رحلة
@@ -1370,7 +1375,7 @@ export default function TravelPage() {
               >
                 <TabIcon className="size-4 sm:size-5 shrink-0" />
                 <span className="text-xs sm:text-sm font-semibold">{config.label}</span>
-                <span className={`text-[10px] sm:text-xs font-bold min-w-[22px] text-center px-1.5 py-0.5 rounded-full transition-colors duration-300 ${isActive ? config.badgeClass : 'bg-slate-700/50 text-slate-500'}`}>
+                <span className={`text-[10px] sm:text-xs font-bold min-w-5.5 text-center px-1.5 py-0.5 rounded-full transition-colors duration-300 ${isActive ? config.badgeClass : 'bg-slate-700/50 text-slate-500'}`}>
                   {tabCounts[tabKey as keyof typeof tabCounts]}
                 </span>
               </button>

@@ -37,6 +37,7 @@ import {
   Loader2,
 } from 'lucide-react';
 import type { Employee } from '@/types';
+import { logCreate, logUpdate, logDelete } from '@/lib/activity-logger';
 
 interface EmployeeFormData {
   code: string;
@@ -61,7 +62,7 @@ const emptyForm: EmployeeFormData = {
 };
 
 export default function EmployeesPage() {
-  const { canEdit } = usePermissions('employees');
+  const { canEdit, canCreate, canUpdate, canDelete, canExport, canUpload } = usePermissions('employees');
   const { highlightId, setHighlightId } = useAppStore();
   
   // ── React Query: data fetching with automatic caching ──
@@ -132,6 +133,7 @@ export default function EmployeesPage() {
         { id: editingEmployee.id, data: form },
         {
           onSuccess: () => {
+            logUpdate('employees', 'موظف', form.name);
             setEditingEmployee(null);
             setIsAddOpen(false);
             setForm(emptyForm);
@@ -141,6 +143,7 @@ export default function EmployeesPage() {
     } else {
       createEmployee.mutate(form, {
         onSuccess: () => {
+          logCreate('employees', 'موظف', form.name);
           setIsAddOpen(false);
           setForm(emptyForm);
         },
@@ -149,8 +152,10 @@ export default function EmployeesPage() {
   };
 
   const handleDelete = async (id: string) => {
+    const empName = employees.find((e: any) => e.id === id)?.name || '';
     deleteEmployee.mutate(id, {
       onSuccess: () => {
+        logDelete('employees', 'موظف', empName);
         setSwipeId(null);
         setDeletingId(null);
       },
@@ -337,7 +342,7 @@ export default function EmployeesPage() {
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
-          {canEdit && (
+          {canUpload && (
             <>
               <Button
                 variant="outline"
@@ -361,18 +366,20 @@ export default function EmployeesPage() {
                 onChange={handleUpload}
                 className="hidden"
               />
-              <Button
-                onClick={() => {
-                  setForm(emptyForm);
-                  setEditingEmployee(null);
-                  setIsAddOpen(true);
-                }}
-                className="bg-emerald-600 hover:bg-emerald-700 text-white"
-              >
-                <Plus className="size-4" />
-                إضافة موظف
-              </Button>
             </>
+          )}
+          {canCreate && (
+            <Button
+              onClick={() => {
+                setForm(emptyForm);
+                setEditingEmployee(null);
+                setIsAddOpen(true);
+              }}
+              className="bg-emerald-600 hover:bg-emerald-700 text-white"
+            >
+              <Plus className="size-4" />
+              إضافة موظف
+            </Button>
           )}
         </div>
       </motion.div>
@@ -430,7 +437,7 @@ export default function EmployeesPage() {
                   <TableHead className="text-slate-400 text-sm font-medium hidden md:table-cell">الوظيفة</TableHead>
                   <TableHead className="text-slate-400 text-sm font-medium hidden lg:table-cell">الدوام</TableHead>
                   <TableHead className="text-slate-400 text-sm font-medium hidden lg:table-cell">الموبايل</TableHead>
-                  {canEdit && <TableHead className="text-slate-400 text-sm font-medium">إجراءات</TableHead>}
+                  {(canUpdate || canDelete) && <TableHead className="text-slate-400 text-sm font-medium">إجراءات</TableHead>}
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -459,26 +466,30 @@ export default function EmployeesPage() {
                       <TableCell className="text-slate-300 hidden lg:table-cell" dir="ltr">
                         {emp.mobile || '—'}
                       </TableCell>
-                      {canEdit && (
+                      {(canUpdate || canDelete) && (
                         <TableCell>
                           <div className="flex items-center gap-1">
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => openEdit(emp)}
-                              className="text-slate-400 hover:text-emerald-400 hover:bg-emerald-500/10"
-                            >
-                              <Pencil className="size-4" />
-                            </Button>
+                            {canUpdate && (
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => openEdit(emp)}
+                                className="text-slate-400 hover:text-emerald-400 hover:bg-emerald-500/10"
+                              >
+                                <Pencil className="size-4" />
+                              </Button>
+                            )}
                             {/* Desktop delete button */}
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => setDeletingId(emp.id)}
-                              className="text-slate-400 hover:text-red-400 hover:bg-red-500/10 hidden sm:flex"
-                            >
-                              <Trash2 className="size-4" />
-                            </Button>
+                            {canDelete && (
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => setDeletingId(emp.id)}
+                                className="text-slate-400 hover:text-red-400 hover:bg-red-500/10 hidden sm:flex"
+                              >
+                                <Trash2 className="size-4" />
+                              </Button>
+                            )}
                           </div>
                         </TableCell>
                       )}

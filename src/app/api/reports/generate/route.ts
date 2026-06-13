@@ -78,7 +78,7 @@ export async function POST(request: NextRequest) {
     await syncRulesToCanonical();
     invalidateCache('deductionRules');
 
-    const [employees, deductionRules, biometricRecords, attendanceRecords, allRequests, qualityDeductions, waivedDeductions] = await Promise.all([
+    const [employees, deductionRules, biometricRecords, attendanceRecords, allRequests, qualityDeductions, waivedDeductions, hrDeductions] = await Promise.all([
       getAll('employees'),
       getAll('deductionRules'),
       findWhereContains('biometrics', 'date', datePattern),
@@ -86,6 +86,7 @@ export async function POST(request: NextRequest) {
       findWhereContains('requests', 'date', datePattern),
       findWhere('qualityDeductions', { month }),
       findWhere('waivedDeductions', { month }),
+      findWhere('hrDeductions', { month, status: 'approved' }),
     ]);
 
     // ── Lookup Maps ──
@@ -114,6 +115,20 @@ export async function POST(request: NextRequest) {
     for (const q of qualityDeductions) {
       if (!qualityByEmp.has(q.employeeId)) qualityByEmp.set(q.employeeId, []);
       qualityByEmp.get(q.employeeId)!.push(q);
+    }
+
+    // HR deductions: sum approved deductions per employee
+    const hrDedByEmp = new Map<string, { totalDays: number; totalAmount: number; items: any[] }>();
+    for (const h of hrDeductions) {
+      if (!hrDedByEmp.has(h.employeeId)) hrDedByEmp.set(h.employeeId, { totalDays: 0, totalAmount: 0, items: [] });
+      const entry = hrDedByEmp.get(h.employeeId)!;
+      if (h.unit === 'days') {
+        entry.totalDays += (parseFloat(h.amount) || 0);
+      } else {
+        // Convert EGP amount to days using a base of 300 EGP/day (standard daily wage assumption)
+        entry.totalAmount += (parseFloat(h.amount) || 0);
+      }
+      entry.items.push(h);
     }
 
     const waivedByEmp = new Map<string, Map<string, string[]>>(); // employeeId -> date -> type[]
@@ -200,8 +215,27 @@ export async function POST(request: NextRequest) {
         const att = empAtt.get(dateStr);
         const req = empReqs.get(dateStr);
 
-        // ── PRIORITY 1: Attendance record with approved status ──
-        if (att && (att.status === 'approved' || att.approvedRequestId)) {
+        // ── PRIORITY 1: Attendance record with approved request (excuse absence) ──
+        // For excuse-type absences: approved = 1 day deduction, rejected = 2 days deduction
+        if (att && att.approvedRequestId) {
+          const excReq = empReqs.get(dateStr);
+          if (excReq && excReq.status === 'approved') {
+            absentDaysList.push({ date: dateStr, deduction: 1 });
+            totalAbsent++;
+          } else if (excReq && excReq.status === 'rejected') {
+            absentDaysList.push({ date: dateStr, deduction: 2 });
+            totalAbsent++;
+          } else {
+            // Request pending or unknown - treat as absent with 1 day deduction
+            absentDaysList.push({ date: dateStr, deduction: 1 });
+            totalAbsent++;
+            unaccountedDays++;
+          }
+          continue;
+        }
+
+        // ── PRIORITY 1b: Attendance record with approved status (non-excuse, like leave) ──
+        if (att && att.status === 'approved') {
           totalExempt++;
           continue;
         }
@@ -365,9 +399,14 @@ export async function POST(request: NextRequest) {
       const totalQualityDays = empQuality.reduce((sum: number, q: any) => sum + (q.deductionDays || 0), 0);
       const totalQualityAmount = empQuality.reduce((sum: number, q: any) => sum + (q.deductionAmount || 0), 0);
 
+      // HR deductions (approved)
+      const empHrDed = hrDedByEmp.get(emp.id) || { totalDays: 0, totalAmount: 0, items: [] };
+      const totalHrDeductionDays = Math.round(empHrDed.totalDays * 100) / 100;
+      const totalHrDeductionAmount = Math.round(empHrDed.totalAmount * 100) / 100;
+
       // Totals
       const totalAttendanceDeductionDays = Math.round((lateDeductionDays + absenceDeductionDays) * 100) / 100;
-      const totalDeductionDays = Math.round((totalAttendanceDeductionDays + totalQualityDays) * 100) / 100;
+      const totalDeductionDays = Math.round((totalAttendanceDeductionDays + totalQualityDays + totalHrDeductionDays) * 100) / 100;
 
       // ══════════════════════════════════════════════════════
       // Compliance: (present + late + exempt + bonus) / actualWorkDays * 100
@@ -396,6 +435,9 @@ export async function POST(request: NextRequest) {
         totalAttendanceDeductionDays,
         totalQualityDays: Math.round(totalQualityDays * 100) / 100,
         totalQualityAmount: Math.round(totalQualityAmount * 100) / 100,
+        totalHrDeductionDays,
+        totalHrDeductionAmount,
+        hrDeductionCount: empHrDed.items.length,
         totalDeductionDays,
         attendanceCompliance: Math.min(Math.max(attendanceCompliance, 0), 100),
         workDays: monthWorkingDays,
@@ -429,6 +471,8 @@ export async function POST(request: NextRequest) {
       totalDeductionDaysAll: Math.round(rows.reduce((s, r) => s + r.totalDeductionDays, 0) * 100) / 100,
       totalQualityDaysAll: Math.round(rows.reduce((s, r) => s + r.totalQualityDays, 0) * 100) / 100,
       totalQualityAmountAll: rows.reduce((s, r) => s + r.totalQualityAmount, 0),
+      totalHrDeductionDaysAll: Math.round(rows.reduce((s, r) => s + (r.totalHrDeductionDays || 0), 0) * 100) / 100,
+      totalHrDeductionAmountAll: rows.reduce((s, r) => s + (r.totalHrDeductionAmount || 0), 0),
       avgCompliance: rows.length > 0 ? Math.round(rows.reduce((s, r) => s + r.attendanceCompliance, 0) / rows.length) : 0,
       highComplianceCount: rows.filter(r => r.attendanceCompliance >= 90).length,
       lowComplianceCount: rows.filter(r => r.attendanceCompliance < 75).length,

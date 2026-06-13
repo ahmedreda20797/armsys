@@ -42,6 +42,7 @@ import {
   Trash2,
 } from 'lucide-react';
 import type { Employee } from '@/types';
+import { logCreate, logUpdate, logDelete } from '@/lib/activity-logger';
 
 interface AttendanceRecord {
   id: string;
@@ -87,7 +88,7 @@ function isLate(minutesLate: number): boolean {
 }
 
 export default function AttendancePage() {
-  const { canEdit } = usePermissions('attendance');
+  const { canEdit, canCreate, canUpdate, canDelete, canExport } = usePermissions('attendance');
   const [records, setRecords] = useState<AttendanceRecord[]>([]);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [loading, setLoading] = useState(true);
@@ -176,6 +177,8 @@ export default function AttendancePage() {
         }),
       });
       if (res.ok) {
+        const empName = employees.find((e: any) => e.id === addForm.employeeId)?.name || '';
+        logCreate('attendance', 'سجل حضور', `${empName} - ${addForm.date}`);
         await fetchData();
         setIsAddOpen(false);
         setAddForm({
@@ -206,6 +209,8 @@ export default function AttendancePage() {
         }),
       });
       if (res.ok) {
+        const empName = employees.find((e: any) => e.id === checkoutRecord.employeeId)?.name || '';
+        logUpdate('attendance', 'تسجيل خروج', `${empName} - ${checkoutRecord.date}`);
         await fetchData();
         setCheckoutRecord(null);
         setEditForm({ checkOut: '' });
@@ -221,6 +226,8 @@ export default function AttendancePage() {
     try {
       const res = await fetch(`/api/attendance/${id}`, { method: 'DELETE' });
       if (res.ok) {
+        const rec = records.find((r) => r.id === id);
+        if (rec) logDelete('attendance', 'سجل حضور', `${rec.employee?.name || ''} - ${rec.date}`);
         setRecords((prev) => prev.filter((r) => r.id !== id));
         setDeletingId(null);
       }
@@ -293,7 +300,7 @@ export default function AttendancePage() {
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
-          {canEdit && (
+          {canCreate && (
             <Button
               onClick={() => {
                 setAddForm({
@@ -407,7 +414,7 @@ export default function AttendancePage() {
                   <TableHead className="text-slate-400 text-sm font-medium">الانصراف</TableHead>
                   <TableHead className="text-slate-400 text-sm font-medium">الحالة</TableHead>
                   <TableHead className="text-slate-400 text-sm font-medium hidden md:table-cell">ملاحظات</TableHead>
-                  {canEdit && (
+                  {(canUpdate || canDelete) && (
                     <TableHead className="text-slate-400 text-sm font-medium">إجراءات</TableHead>
                   )}
                 </TableRow>
@@ -429,7 +436,7 @@ export default function AttendancePage() {
                       {rec.checkOut ? (
                         <span>{rec.checkOut}</span>
                       ) : (
-                        canEdit ? (
+                        canUpdate ? (
                           <Button
                             variant="ghost"
                             size="sm"
@@ -453,9 +460,10 @@ export default function AttendancePage() {
                     <TableCell className="text-slate-400 text-sm hidden md:table-cell">
                       {rec.notes || '—'}
                     </TableCell>
-                    {canEdit && (
+                    {(canUpdate || canDelete) && (
                       <TableCell>
                         <div className="flex items-center gap-1">
+                          {canDelete && (
                           <Button
                             variant="ghost"
                             size="icon"
@@ -464,6 +472,7 @@ export default function AttendancePage() {
                           >
                             <Trash2 className="size-4" />
                           </Button>
+                          )}
                         </div>
                       </TableCell>
                     )}

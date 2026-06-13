@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import * as XLSX from 'xlsx';
 import { getAll, createRecord, findFirst, deleteWhere } from '@/lib/db';
+import { verifyPermission } from '@/lib/verify-permission';
 
 const COLUMN_MAP: Record<string, string> = {
   'الاسم': 'name', 'اسم': 'name', 'name': 'name', 'Employee Name': 'name',
+  'الكود': 'code', 'كود': 'code', 'code': 'code', 'Code': 'code',
   'التاريخ': 'date', 'تاريخ': 'date', 'date': 'date', 'Date': 'date',
   'الحضور': 'checkIn', 'حضور': 'checkIn', 'check in': 'checkIn', 'checkIn': 'checkIn', 'Check In': 'checkIn', 'In': 'checkIn',
   'الانصراف': 'checkOut', 'انصراف': 'checkOut', 'check out': 'checkOut', 'checkOut': 'checkOut', 'Check Out': 'checkOut', 'Out': 'checkOut',
@@ -50,6 +52,12 @@ function extractMonth(dateStr: string): string {
 
 export async function POST(request: NextRequest) {
   try {
+    // Verify permission: need 'upload' on 'biometric'
+    const permCheck = await verifyPermission(request, 'biometric', 'upload');
+    if (!permCheck.allowed) {
+      return NextResponse.json({ error: permCheck.error }, { status: 403 });
+    }
+
     const formData = await request.formData();
     const file = formData.get('file') as File | null;
     if (!file) return NextResponse.json({ error: 'الملف مطلوب' }, { status: 400 });

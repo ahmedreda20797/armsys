@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { updateRecord, deleteRecord, getById } from '@/lib/db';
+import { verifyPermission } from '@/lib/verify-permission';
 
 export async function PATCH(
   request: NextRequest,
@@ -10,8 +11,13 @@ export async function PATCH(
     const body = await request.json();
     const { status, approvedBy } = body;
 
-    // If approving or rejecting, set approval fields
+    // If approving or rejecting, check 'approve' permission
     if (status === 'approved' || status === 'rejected') {
+      const permCheck = await verifyPermission(request, 'hrDeductions', 'approve');
+      if (!permCheck.allowed) {
+        return NextResponse.json({ error: permCheck.error }, { status: 403 });
+      }
+
       const existing = await getById('hrDeductions', id);
       if (!existing) {
         return NextResponse.json({ error: 'HR deduction not found' }, { status: 404 });
@@ -26,11 +32,18 @@ export async function PATCH(
       return NextResponse.json(updated);
     }
 
-    // Otherwise, just update the provided fields
-    const updated = await updateRecord('hrDeductions', id, body);
-    if (!updated) {
+    // Otherwise, check 'update' permission
+    const permCheck = await verifyPermission(request, 'hrDeductions', 'update');
+    if (!permCheck.allowed) {
+      return NextResponse.json({ error: permCheck.error }, { status: 403 });
+    }
+
+    const existing = await getById('hrDeductions', id);
+    if (!existing) {
       return NextResponse.json({ error: 'HR deduction not found' }, { status: 404 });
     }
+
+    const updated = await updateRecord('hrDeductions', id, body);
     return NextResponse.json(updated);
   } catch (error) {
     console.error('Update HR deduction error:', error);
@@ -43,17 +56,18 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    // Check 'delete' permission
+    const permCheck = await verifyPermission(request, 'hrDeductions', 'delete');
+    if (!permCheck.allowed) {
+      return NextResponse.json({ error: permCheck.error }, { status: 403 });
+    }
+
     const { id } = await params;
     const existing = await getById('hrDeductions', id);
     if (!existing) {
       return NextResponse.json({ error: 'HR deduction not found' }, { status: 404 });
     }
-    if (existing.status !== 'pending') {
-      return NextResponse.json(
-        { error: 'يمكن حذف الخصومات المعلقة فقط' },
-        { status: 400 }
-      );
-    }
+    // Allow deletion of any deduction (pending, approved, or rejected)
     await deleteRecord('hrDeductions', id);
     return NextResponse.json({ message: 'HR deduction deleted successfully' });
   } catch (error) {

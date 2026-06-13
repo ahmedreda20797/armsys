@@ -38,6 +38,7 @@ import {
   Trash2,
 } from 'lucide-react';
 import type { DeductionRule } from '@/types';
+import { logCreate, logUpdate, logDelete } from '@/lib/activity-logger';
 
 interface RuleFormData {
   key: string;
@@ -76,7 +77,7 @@ function getUnitDisplay(unit: string, amount: number): string {
 }
 
 export default function RulesPage() {
-  const { canEdit } = usePermissions('rules');
+  const { canEdit, canCreate, canUpdate, canDelete } = usePermissions('rules');
   const [rules, setRules] = useState<DeductionRule[]>([]);
   const [loading, setLoading] = useState(true);
   const [isAddOpen, setIsAddOpen] = useState(false);
@@ -117,7 +118,10 @@ export default function RulesPage() {
             unit: form.unit,
           }),
         });
-        if (res.ok) await fetchRules();
+        if (res.ok) {
+          logUpdate('rules', 'قاعدة خصم', form.label);
+          await fetchRules();
+        }
       } else {
         const res = await fetch('/api/rules', {
           method: 'POST',
@@ -129,7 +133,10 @@ export default function RulesPage() {
             unit: form.unit,
           }),
         });
-        if (res.ok) await fetchRules();
+        if (res.ok) {
+          logCreate('rules', 'قاعدة خصم', form.label);
+          await fetchRules();
+        }
       }
     } catch {
       // Error handled silently
@@ -143,8 +150,10 @@ export default function RulesPage() {
 
   const handleDelete = async (id: string) => {
     try {
+      const rule = rules.find((r: any) => r.id === id);
       const res = await fetch(`/api/rules/${id}`, { method: 'DELETE' });
       if (res.ok) {
+        if (rule) logDelete('rules', 'قاعدة خصم', rule.label);
         setRules((prev) => prev.filter((r) => r.id !== id));
         setDeletingId(null);
       }
@@ -277,15 +286,16 @@ export default function RulesPage() {
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           {canEdit && (
-            <>
-              <Button
-                variant="outline"
-                onClick={handleLoadDefaults}
-                className="border-slate-600 text-slate-300 hover:bg-slate-700"
-              >
-                مزامنة القواعد
-              </Button>
-              <Button
+            <Button
+              variant="outline"
+              onClick={handleLoadDefaults}
+              className="border-slate-600 text-slate-300 hover:bg-slate-700"
+            >
+              مزامنة القواعد
+            </Button>
+          )}
+          {canCreate && (
+            <Button
                 onClick={() => {
                   setForm(emptyForm);
                   setEditingRule(null);
@@ -296,7 +306,6 @@ export default function RulesPage() {
                 <Plus className="size-4" />
                 إضافة قاعدة
               </Button>
-            </>
           )}
         </div>
       </motion.div>
@@ -316,7 +325,7 @@ export default function RulesPage() {
             <p className="text-slate-500 text-sm mt-1">
               أضف قواعد الخصم لبدء حساب الاستقطاعات
             </p>
-            {canEdit && (
+            {canCreate && (
               <Button
                 onClick={handleLoadDefaults}
                 className="mt-4 bg-emerald-600 hover:bg-emerald-700 text-white"
@@ -340,7 +349,7 @@ export default function RulesPage() {
                   <TableHead className="text-slate-400 text-sm font-medium">الوصف</TableHead>
                   <TableHead className="text-slate-400 text-sm font-medium">الخصم</TableHead>
                   <TableHead className="text-slate-400 text-sm font-medium">الوحدة</TableHead>
-                  {canEdit && <TableHead className="text-slate-400 text-sm font-medium">إجراءات</TableHead>}
+                  {(canUpdate || canDelete) && <TableHead className="text-slate-400 text-sm font-medium">إجراءات</TableHead>}
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -359,9 +368,10 @@ export default function RulesPage() {
                     <TableCell className="text-slate-300">
                       {rule.unit === 'EGP' ? 'جنيه' : 'أيام'}
                     </TableCell>
-                    {canEdit && (
+                    {(canUpdate || canDelete) && (
                       <TableCell>
                         <div className="flex items-center gap-1">
+                          {canUpdate && (
                           <Button
                             variant="ghost"
                             size="icon"
@@ -370,6 +380,8 @@ export default function RulesPage() {
                           >
                             <Pencil className="size-4" />
                           </Button>
+                          )}
+                          {canDelete && (
                           <Button
                             variant="ghost"
                             size="icon"
@@ -378,6 +390,7 @@ export default function RulesPage() {
                           >
                             <Trash2 className="size-4" />
                           </Button>
+                          )}
                         </div>
                       </TableCell>
                     )}

@@ -1,11 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getById, updateRecord, deleteRecord, deleteWhere } from '@/lib/db';
+import { verifyPermission } from '@/lib/verify-permission';
 
 export async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    // Check 'update' permission
+    const permCheck = await verifyPermission(request, 'employees', 'update');
+    if (!permCheck.allowed) {
+      return NextResponse.json({ error: permCheck.error }, { status: 403 });
+    }
+
     const { id } = await params;
     const body = await request.json();
     const updated = await updateRecord('employees', id, body);
@@ -24,6 +31,12 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    // Check 'delete' permission
+    const permCheck = await verifyPermission(request, 'employees', 'delete');
+    if (!permCheck.allowed) {
+      return NextResponse.json({ error: permCheck.error }, { status: 403 });
+    }
+
     const { id } = await params;
 
     // Delete all related records first

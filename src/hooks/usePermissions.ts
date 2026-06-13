@@ -11,9 +11,11 @@ export function usePermissions(pageId?: PageId) {
 
   const isAdmin = user?.role === 'admin';
 
+  // Parse permission for a specific page
   const getPermission = (pid: string): PagePermission => {
     if (!user) return { level: 'none', actions: {} };
     if (isAdmin) {
+      // Admin gets edit with all actions
       const page = APP_PAGES.find(p => p.permissionKey === pid || p.id === pid);
       const actions: Partial<Record<ActionKey, boolean>> = {};
       page?.availableActions.forEach(a => { actions[a] = true; });
@@ -23,6 +25,7 @@ export function usePermissions(pageId?: PageId) {
     return migratePermission(raw);
   };
 
+  // Page-level checks
   const canView = (pid?: string): boolean => {
     const id = pid || pageId;
     if (!id) return true;
@@ -48,6 +51,7 @@ export function usePermissions(pageId?: PageId) {
     return perm === 'read' || perm === 'edit';
   };
 
+  // Action-level checks (only meaningful when level is 'edit')
   const canDoAction = (pid: string, action: ActionKey): boolean => {
     if (!user) return false;
     if (isAdmin) return true;
@@ -56,6 +60,7 @@ export function usePermissions(pageId?: PageId) {
     return perm.actions?.[action] === true;
   };
 
+  // Shortcut functions for specific actions
   const canCreate = (pid?: string) => canDoAction(pid || pageId || '', 'create');
   const canUpdate = (pid?: string) => canDoAction(pid || pageId || '', 'update');
   const canDelete = (pid?: string) => canDoAction(pid || pageId || '', 'delete');
@@ -64,9 +69,11 @@ export function usePermissions(pageId?: PageId) {
   const canUpload = (pid?: string) => canDoAction(pid || pageId || '', 'upload');
   const canOverride = (pid?: string) => canDoAction(pid || pageId || '', 'override');
 
+  // Page-level shortcut
   const canViewPage = (pid: string) => canView(pid);
   const canEditPage = (pid: string) => canEdit(pid);
 
+  // Visible pages for sidebar
   const visiblePages = useMemo(() => {
     if (!user) return [];
     if (isAdmin) return APP_PAGES;

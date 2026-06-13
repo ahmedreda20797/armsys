@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { updateRecord, deleteRecord, getById, createRecord } from '@/lib/db';
+import { verifyPermission } from '@/lib/verify-permission';
 
 export async function PATCH(
   request: NextRequest,
@@ -11,11 +12,23 @@ export async function PATCH(
     const { status, reviewedBy } = body;
 
     if (status !== 'approved' && status !== 'rejected') {
+      // Regular update — check 'update' permission
+      const permCheck = await verifyPermission(request, 'requests', 'update');
+      if (!permCheck.allowed) {
+        return NextResponse.json({ error: permCheck.error }, { status: 403 });
+      }
+
       const updated = await updateRecord('requests', id, body);
       if (!updated) {
         return NextResponse.json({ error: 'Request not found' }, { status: 404 });
       }
       return NextResponse.json(updated);
+    }
+
+    // Approve/Reject — check 'approve' permission
+    const permCheck = await verifyPermission(request, 'requests', 'approve');
+    if (!permCheck.allowed) {
+      return NextResponse.json({ error: permCheck.error }, { status: 403 });
     }
 
     // Get the full request to check type
@@ -67,6 +80,12 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    // Check 'delete' permission
+    const permCheck = await verifyPermission(request, 'requests', 'delete');
+    if (!permCheck.allowed) {
+      return NextResponse.json({ error: permCheck.error }, { status: 403 });
+    }
+
     const { id } = await params;
     await deleteRecord('requests', id);
     return NextResponse.json({ message: 'Request deleted' });

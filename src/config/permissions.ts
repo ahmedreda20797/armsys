@@ -131,7 +131,7 @@ export const ADMIN_PERMISSIONS: PermissionsMap = (() => {
 export const HR_PERMISSIONS: PermissionsMap = {
   home: 'read',
   employees: makeEditWithActions(['create', 'update', 'delete', 'export']),
-  biometric: makeEditWithActions(['create', 'update', 'delete', 'upload']),
+  biometric: makeEditWithActions(['create', 'update', 'delete']),
   attendance: makeEditWithActions(['create', 'update', 'delete', 'export']),
   requests: makeEditWithActions(['create', 'update', 'delete', 'approve']),
   rules: 'read',
@@ -152,6 +152,21 @@ export const MANAGER_PERMISSIONS: PermissionsMap = {
   rules: 'none',
   quality: 'read',
   hrDeductions: 'read',
+  travel: 'read',
+  reports: { level: 'edit', actions: { export: true } },
+  dashboard: 'none',
+  firebase: 'none',
+};
+
+export const QUALITY_PERMISSIONS: PermissionsMap = {
+  home: 'read',
+  employees: 'read',
+  biometric: 'read',
+  attendance: 'read',
+  requests: 'read',
+  rules: 'none',
+  quality: makeEditWithActions(['create', 'update', 'delete']),
+  hrDeductions: 'none',
   travel: 'read',
   reports: { level: 'edit', actions: { export: true } },
   dashboard: 'none',
@@ -189,6 +204,7 @@ export function getPermissionsForRole(role: string): PermissionsMap {
     case 'admin': return { ...ADMIN_PERMISSIONS };
     case 'hr': return { ...HR_PERMISSIONS };
     case 'manager': return { ...MANAGER_PERMISSIONS };
+    case 'quality': return { ...QUALITY_PERMISSIONS };
     default: return { ...DEFAULT_PERMISSIONS };
   }
 }

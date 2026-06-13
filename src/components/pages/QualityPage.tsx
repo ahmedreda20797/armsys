@@ -40,6 +40,7 @@ import {
   Users,
 } from 'lucide-react';
 import type { QualityDeduction, Employee } from '@/types';
+import { logCreate, logDelete } from '@/lib/activity-logger';
 
 interface QualityWithEmployee extends QualityDeduction {
   employee?: {
@@ -100,7 +101,7 @@ function getDaysColor(days: number): string {
 }
 
 export default function QualityPage() {
-  const { canEdit } = usePermissions('quality');
+  const { canEdit, canCreate, canUpdate, canDelete, canUpload } = usePermissions('quality');
   const [deductions, setDeductions] = useState<QualityWithEmployee[]>([]);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [loading, setLoading] = useState(true);
@@ -179,6 +180,8 @@ export default function QualityPage() {
         }),
       });
       if (res.ok) {
+        const empName = employees.find((e: any) => e.id === addForm.employeeId)?.name || '';
+        logCreate('quality', 'خصم جودة', `${empName} - ${addForm.description}`);
         await fetchData();
         setIsAddOpen(false);
         setAddForm({
@@ -202,8 +205,10 @@ export default function QualityPage() {
 
   const handleDelete = async (id: string) => {
     try {
+      const ded = deductions.find((d: any) => d.id === id);
       const res = await fetch(`/api/quality/${id}`, { method: 'DELETE' });
       if (res.ok) {
+        if (ded) logDelete('quality', 'خصم جودة', `${ded.employee?.name || ''} - ${ded.description || ''}`);
         setDeductions((prev) => prev.filter((d) => d.id !== id));
         setDeletingId(null);
       }
@@ -279,7 +284,7 @@ export default function QualityPage() {
             </p>
           </div>
         </div>
-        {canEdit && (
+        {canCreate && (
           <Button
             onClick={() => setIsAddOpen(true)}
             size="sm"
@@ -494,7 +499,7 @@ export default function QualityPage() {
                                 </div>
 
                                 {/* Delete */}
-                                {canEdit && (
+                                {canDelete && (
                                   <button
                                     onClick={(e) => {
                                       e.stopPropagation();

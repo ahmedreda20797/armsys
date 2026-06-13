@@ -48,6 +48,7 @@ import {
   ChevronUp,
 } from 'lucide-react';
 import { APP_PAGES, getActionLabel, type PermissionsMap, type PagePermission, type PermissionLevel, type ActionKey } from '@/config/permissions';
+import ActivityMonitor from './ActivityMonitor';
 
 interface UserRecord {
   id: string;
@@ -60,6 +61,7 @@ interface UserRecord {
   createdAt: string;
 }
 
+// Pages to exclude from permissions editing (system pages)
 const EXCLUDED_PAGES = ['home', 'dashboard', 'firebase'];
 
 export default function DashboardPage() {
@@ -113,6 +115,7 @@ export default function DashboardPage() {
         setAddForm({ email: '', name: '', password: '', role: 'user' });
       }
     } catch {
+      // Error handled silently
     } finally {
       setSaving(false);
     }
@@ -126,6 +129,7 @@ export default function DashboardPage() {
         setDeletingId(null);
       }
     } catch {
+      // Error handled silently
     }
   };
 
@@ -140,6 +144,7 @@ export default function DashboardPage() {
         await fetchUsers();
       }
     } catch {
+      // Error handled silently
     }
   };
 
@@ -150,6 +155,7 @@ export default function DashboardPage() {
     setExpandedPage(null);
   };
 
+  // Get permission level for display
   const getPermLevel = (pid: string): PermissionLevel => {
     const perm = tempPermissions[pid];
     if (!perm) return 'none';
@@ -157,6 +163,7 @@ export default function DashboardPage() {
     return (perm as PagePermission).level || 'none';
   };
 
+  // Get action state for a page
   const getActionState = (pid: string, action: ActionKey): boolean => {
     const perm = tempPermissions[pid];
     if (!perm) return false;
@@ -164,10 +171,12 @@ export default function DashboardPage() {
     return (perm as PagePermission).actions?.[action] === true;
   };
 
+  // Set permission level
   const setPermLevel = (pid: string, level: PermissionLevel) => {
     setTempPermissions((prev) => {
       const existing = prev[pid];
       if (typeof existing === 'string' || !existing) {
+        // Simple format or new
         if (level === 'edit') {
           const page = APP_PAGES.find(p => p.id === pid);
           const actions: Record<string, boolean> = {};
@@ -176,11 +185,13 @@ export default function DashboardPage() {
         }
         return { ...prev, [pid]: level };
       } else {
+        // PagePermission format
         return { ...prev, [pid]: { ...existing, level } };
       }
     });
   };
 
+  // Toggle a specific action
   const toggleAction = (pid: string, action: ActionKey) => {
     setTempPermissions((prev) => {
       const existing = prev[pid];
@@ -212,6 +223,7 @@ export default function DashboardPage() {
         setPermUser(null);
       }
     } catch {
+      // Error handled silently
     } finally {
       setSaving(false);
     }
@@ -225,11 +237,14 @@ export default function DashboardPage() {
         return <Badge className="bg-blue-500/15 text-blue-400 border-blue-500/20">موارد بشرية</Badge>;
       case 'manager':
         return <Badge className="bg-purple-500/15 text-purple-400 border-purple-500/20">مدير</Badge>;
+      case 'quality':
+        return <Badge className="bg-cyan-500/15 text-cyan-400 border-cyan-500/20">جودة</Badge>;
       default:
         return <Badge variant="outline">موظف</Badge>;
     }
   };
 
+  // Filtered pages for permissions editing (exclude system pages)
   const permissionPages = APP_PAGES.filter(p => !EXCLUDED_PAGES.includes(p.id));
 
   if (!isAdmin) {
@@ -244,6 +259,7 @@ export default function DashboardPage() {
 
   return (
     <div dir="rtl" className="space-y-6">
+      {/* Header */}
       <motion.div
         initial={{ opacity: 0, y: -10 }}
         animate={{ opacity: 1, y: 0 }}
@@ -267,6 +283,7 @@ export default function DashboardPage() {
         </Button>
       </motion.div>
 
+      {/* Users Table */}
       {loading ? (
         <div className="space-y-3">
           {[1, 2, 3].map((i) => (
@@ -314,9 +331,13 @@ export default function DashboardPage() {
                     <TableCell>{getRoleLabel(user.role)}</TableCell>
                     <TableCell>
                       {user.isSuspended ? (
-                        <Badge className="bg-amber-500/15 text-amber-400 border-amber-500/20">موقوف</Badge>
+                        <Badge className="bg-amber-500/15 text-amber-400 border-amber-500/20">
+                          موقوف
+                        </Badge>
                       ) : (
-                        <Badge className="bg-emerald-500/15 text-emerald-400 border-emerald-500/20">نشط</Badge>
+                        <Badge className="bg-emerald-500/15 text-emerald-400 border-emerald-500/20">
+                          نشط
+                        </Badge>
                       )}
                     </TableCell>
                     <TableCell className="text-slate-400 text-sm hidden md:table-cell" dir="ltr">
@@ -346,7 +367,11 @@ export default function DashboardPage() {
                               }`}
                               title={user.isSuspended ? 'تفعيل الحساب' : 'تعليق الحساب'}
                             >
-                              {user.isSuspended ? <CheckCircle2 className="size-4" /> : <Ban className="size-4" />}
+                              {user.isSuspended ? (
+                                <CheckCircle2 className="size-4" />
+                              ) : (
+                                <Ban className="size-4" />
+                              )}
                             </Button>
                             <Button
                               variant="ghost"
@@ -368,6 +393,9 @@ export default function DashboardPage() {
           </div>
         </motion.div>
       )}
+
+      {/* Activity Monitor Section */}
+      <ActivityMonitor />
 
       {/* Add User Dialog */}
       <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
@@ -421,6 +449,7 @@ export default function DashboardPage() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="user" className="text-white">موظف</SelectItem>
+                  <SelectItem value="quality" className="text-white">جودة</SelectItem>
                   <SelectItem value="hr" className="text-white">موارد بشرية</SelectItem>
                   <SelectItem value="manager" className="text-white">مدير</SelectItem>
                   <SelectItem value="admin" className="text-white">مدير النظام</SelectItem>
@@ -429,8 +458,18 @@ export default function DashboardPage() {
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setIsAddOpen(false)} className="border-slate-600 text-slate-300">إلغاء</Button>
-            <Button onClick={handleAddUser} disabled={saving || !addForm.email || !addForm.password} className="bg-emerald-600 hover:bg-emerald-700 text-white">
+            <Button
+              variant="outline"
+              onClick={() => setIsAddOpen(false)}
+              className="border-slate-600 text-slate-300"
+            >
+              إلغاء
+            </Button>
+            <Button
+              onClick={handleAddUser}
+              disabled={saving || !addForm.email || !addForm.password}
+              className="bg-emerald-600 hover:bg-emerald-700 text-white"
+            >
               {saving ? 'جاري الإنشاء...' : 'إنشاء'}
             </Button>
           </DialogFooter>
@@ -441,8 +480,12 @@ export default function DashboardPage() {
       <Dialog open={!!permUserId} onOpenChange={() => setPermUserId(null)}>
         <DialogContent className="backdrop-blur-xl bg-slate-900 border-slate-700 max-w-lg">
           <DialogHeader>
-            <DialogTitle className="text-white">صلاحيات: {permUser?.name || permUser?.email}</DialogTitle>
-            <DialogDescription className="text-slate-400">تعديل صلاحيات الوصول لكل صفحة</DialogDescription>
+            <DialogTitle className="text-white">
+              صلاحيات: {permUser?.name || permUser?.email}
+            </DialogTitle>
+            <DialogDescription className="text-slate-400">
+              تعديل صلاحيات الوصول لكل صفحة
+            </DialogDescription>
           </DialogHeader>
           <ScrollArea className="max-h-[60vh]">
             <div className="space-y-3 pr-4 pb-2">
@@ -450,8 +493,13 @@ export default function DashboardPage() {
                 const level = getPermLevel(page.id);
                 const isExpanded = expandedPage === page.id;
                 const hasActions = page.availableActions.length > 0;
+
                 return (
-                  <div key={page.id} className="rounded-lg bg-slate-800/50 border border-slate-700/50 overflow-hidden">
+                  <div
+                    key={page.id}
+                    className="rounded-lg bg-slate-800/50 border border-slate-700/50 overflow-hidden"
+                  >
+                    {/* Page row */}
                     <div className="flex items-center justify-between p-3">
                       <span className="text-white text-sm font-medium">{page.title}</span>
                       <div className="flex items-center gap-2">
@@ -463,15 +511,21 @@ export default function DashboardPage() {
                         >
                           <div className="flex items-center gap-1.5">
                             <RadioGroupItem value="none" id={`none-${page.id}`} className="border-slate-600" />
-                            <Label htmlFor={`none-${page.id}`} className="text-slate-400 text-xs cursor-pointer whitespace-nowrap">مخفي</Label>
+                            <Label htmlFor={`none-${page.id}`} className="text-slate-400 text-xs cursor-pointer whitespace-nowrap">
+                              مخفي
+                            </Label>
                           </div>
                           <div className="flex items-center gap-1.5">
                             <RadioGroupItem value="read" id={`read-${page.id}`} className="border-slate-600" />
-                            <Label htmlFor={`read-${page.id}`} className="text-slate-400 text-xs cursor-pointer whitespace-nowrap">قراءة</Label>
+                            <Label htmlFor={`read-${page.id}`} className="text-slate-400 text-xs cursor-pointer whitespace-nowrap">
+                              قراءة
+                            </Label>
                           </div>
                           <div className="flex items-center gap-1.5">
                             <RadioGroupItem value="edit" id={`edit-${page.id}`} className="border-slate-600" />
-                            <Label htmlFor={`edit-${page.id}`} className="text-slate-400 text-xs cursor-pointer whitespace-nowrap">تعديل</Label>
+                            <Label htmlFor={`edit-${page.id}`} className="text-slate-400 text-xs cursor-pointer whitespace-nowrap">
+                              تعديل
+                            </Label>
                           </div>
                         </RadioGroup>
                         {hasActions && level === 'edit' && (
@@ -486,6 +540,8 @@ export default function DashboardPage() {
                         )}
                       </div>
                     </div>
+
+                    {/* Expanded actions */}
                     {hasActions && level === 'edit' && isExpanded && (
                       <motion.div
                         initial={{ opacity: 0, height: 0 }}
@@ -503,7 +559,10 @@ export default function DashboardPage() {
                                 onCheckedChange={() => toggleAction(page.id, action)}
                                 className="border-slate-600 data-[state=checked]:bg-emerald-600 data-[state=checked]:border-emerald-600"
                               />
-                              <Label htmlFor={`action-${page.id}-${action}`} className="text-slate-300 text-xs cursor-pointer">
+                              <Label
+                                htmlFor={`action-${page.id}-${action}`}
+                                className="text-slate-300 text-xs cursor-pointer"
+                              >
                                 {getActionLabel(action)}
                               </Label>
                             </div>
@@ -517,8 +576,18 @@ export default function DashboardPage() {
             </div>
           </ScrollArea>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setPermUserId(null)} className="border-slate-600 text-slate-300">إلغاء</Button>
-            <Button onClick={savePermissions} disabled={saving} className="bg-emerald-600 hover:bg-emerald-700 text-white">
+            <Button
+              variant="outline"
+              onClick={() => setPermUserId(null)}
+              className="border-slate-600 text-slate-300"
+            >
+              إلغاء
+            </Button>
+            <Button
+              onClick={savePermissions}
+              disabled={saving}
+              className="bg-emerald-600 hover:bg-emerald-700 text-white"
+            >
               {saving ? 'جاري الحفظ...' : 'حفظ الصلاحيات'}
             </Button>
           </DialogFooter>
@@ -530,11 +599,26 @@ export default function DashboardPage() {
         <DialogContent className="backdrop-blur-xl bg-slate-900 border-slate-700">
           <DialogHeader>
             <DialogTitle className="text-white">تأكيد الحذف</DialogTitle>
-            <DialogDescription className="text-slate-400">هل أنت متأكد من حذف هذا المستخدم؟ لا يمكن التراجع عن هذا الإجراء.</DialogDescription>
+            <DialogDescription className="text-slate-400">
+              هل أنت متأكد من حذف هذا المستخدم؟ لا يمكن التراجع عن هذا الإجراء.
+            </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDeletingId(null)} className="border-slate-600 text-slate-300">إلغاء</Button>
-            <Button variant="destructive" onClick={() => { if (deletingId) handleDelete(deletingId); }}>حذف</Button>
+            <Button
+              variant="outline"
+              onClick={() => setDeletingId(null)}
+              className="border-slate-600 text-slate-300"
+            >
+              إلغاء
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => {
+                if (deletingId) handleDelete(deletingId);
+              }}
+            >
+              حذف
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

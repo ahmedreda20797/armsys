@@ -43,14 +43,17 @@ import {
 } from 'lucide-react';
 import type { RequestRecord, Employee } from '@/types';
 import { useAppStore } from '@/lib/store';
+import { useAuth } from '@/contexts/AuthContext';
 import { getRequestTypeLabel, getRequestTypeColor } from '@/lib/date-utils';
+import { logCreate, logApprove } from '@/lib/activity-logger';
 
 interface RequestWithEmployee extends RequestRecord {
   employeeName: string;
 }
 
 export default function RequestsPage() {
-  const { canEdit } = usePermissions('requests');
+  const { canEdit, canCreate, canApprove } = usePermissions('requests');
+  const { user } = useAuth();
   const { highlightId, setHighlightId } = useAppStore();
   const highlightRef = useRef<HTMLDivElement>(null);
   const [requests, setRequests] = useState<RequestWithEmployee[]>([]);
@@ -114,6 +117,8 @@ export default function RequestsPage() {
         body: JSON.stringify(addForm),
       });
       if (res.ok) {
+        const empName = employees.find((e: any) => e.id === addForm.employeeId)?.name || '';
+        logCreate('requests', 'طلب', `${getRequestTypeLabel(addForm.type)} - ${empName}`);
         await fetchData();
         setIsAddOpen(false);
         setAddForm({ employeeId: '', type: 'leave', date: '', reason: '' });
@@ -131,9 +136,11 @@ export default function RequestsPage() {
       const res = await fetch(`/api/requests/${id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status }),
+        body: JSON.stringify({ status, reviewedBy: user?.id }),
       });
       if (res.ok) {
+        const req = requests.find((r: any) => r.id === id);
+        if (req) logApprove('requests', 'طلب', `${req.employeeName || ''} - ${getRequestTypeLabel(req.type)}`, status);
         await fetchData();
       }
     } catch {
@@ -187,7 +194,7 @@ export default function RequestsPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          {canEdit && (
+          {canCreate && (
             <Button
               onClick={() => setIsAddOpen(true)}
               className="bg-emerald-600 hover:bg-emerald-700 text-white"
@@ -265,27 +272,29 @@ export default function RequestsPage() {
                             </div>
                             <p className="text-slate-400 text-sm">{req.reason}</p>
                           </div>
-                          <div className="flex items-center gap-2">
-                            <Button
-                              size="sm"
-                              onClick={() => handleReview(req.id, 'approved')}
-                              disabled={reviewing}
-                              className="bg-green-600 hover:bg-green-700 text-white"
-                            >
-                              <Check className="size-3.5" />
-                              قبول
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => handleReview(req.id, 'rejected')}
-                              disabled={reviewing}
-                              className="border-red-500/30 text-red-400 hover:bg-red-500/10"
-                            >
-                              <X className="size-3.5" />
-                              رفض
-                            </Button>
-                          </div>
+                          {canApprove && (
+                            <div className="flex items-center gap-2">
+                              <Button
+                                size="sm"
+                                onClick={() => handleReview(req.id, 'approved')}
+                                disabled={reviewing}
+                                className="bg-green-600 hover:bg-green-700 text-white"
+                              >
+                                <Check className="size-3.5" />
+                                قبول
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => handleReview(req.id, 'rejected')}
+                                disabled={reviewing}
+                                className="border-red-500/30 text-red-400 hover:bg-red-500/10"
+                              >
+                                <X className="size-3.5" />
+                                رفض
+                              </Button>
+                            </div>
+                          )}
                         </div>
                       </motion.div>
                     );

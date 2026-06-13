@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAll, findWhereContains, sortByDateField, withEmployeeFull, createRecord } from '@/lib/db';
+import { verifyPermission } from '@/lib/verify-permission';
 
 export async function GET(request: NextRequest) {
   try {
@@ -38,6 +39,12 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
+    // Verify permission: need 'create' on 'attendance'
+    const permCheck = await verifyPermission(request, 'attendance', 'create');
+    if (!permCheck.allowed) {
+      return NextResponse.json({ error: permCheck.error }, { status: 403 });
+    }
+
     const body = await request.json();
     const { employeeId, date, checkIn, checkOut, status, minutesLate, notes } = body;
 
