@@ -1,22 +1,20 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { db } from '@/lib/db';
+import { getAll, createRecord, sortByDateField, withEmployee } from '@/lib/db';
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
-    const requests = await db.request.findMany({
-      orderBy: { createdAt: 'desc' },
-      include: {
-        employee: {
-          select: { id: true, name: true, department: true },
-        },
-      },
-    });
-    const mapped = requests.map((r) => ({
-      ...r,
-      employeeName: r.employee?.name || '',
-      employeeDepartment: r.employee?.department || null,
-    }));
-    return NextResponse.json(mapped);
+    const { searchParams } = new URL(request.url);
+    const status = searchParams.get('status') || '';
+    const type = searchParams.get('type') || '';
+
+    let records = await getAll('requests');
+
+    if (status) records = records.filter((r: any) => r.status === status);
+    if (type) records = records.filter((r: any) => r.type === type);
+
+    records = sortByDateField(records, 'createdAt', 'desc');
+    const withEmp = await withEmployee(records as any[]);
+    return NextResponse.json(withEmp);
   } catch (error) {
     console.error('Fetch requests error:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
@@ -29,20 +27,16 @@ export async function POST(request: NextRequest) {
     const { employeeId, type, date, reason, status } = body;
 
     if (!employeeId || !type || !date) {
-      return NextResponse.json({ error: 'Employee ID, type, and date are required' }, { status: 400 });
+      return NextResponse.json({ error: 'employeeId, type, and date are required' }, { status: 400 });
     }
 
-    const req = await db.request.create({
-      data: {
-        employeeId,
-        type,
-        date,
-        reason: reason || '',
-        status: status || 'pending',
-      },
+    const record = await createRecord('requests', {
+      employeeId, type, date,
+      reason: reason || null,
+      status: status || 'pending',
     });
 
-    return NextResponse.json(req, { status: 201 });
+    return NextResponse.json(record, { status: 201 });
   } catch (error) {
     console.error('Create request error:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });

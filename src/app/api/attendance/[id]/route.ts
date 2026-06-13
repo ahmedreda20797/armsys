@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { db } from '@/lib/db';
+import { updateRecord, deleteRecord } from '@/lib/db';
 
 export async function PUT(
   request: NextRequest,
@@ -8,21 +8,11 @@ export async function PUT(
   try {
     const { id } = await params;
     const body = await request.json();
-    const { status, checkIn, checkOut, minutesLate, notes, approvedRequestId } = body;
-
-    const attendance = await db.attendance.update({
-      where: { id },
-      data: {
-        ...(status !== undefined && { status }),
-        ...(checkIn !== undefined && { checkIn: checkIn || null }),
-        ...(checkOut !== undefined && { checkOut: checkOut || null }),
-        ...(minutesLate !== undefined && { minutesLate: Number(minutesLate) }),
-        ...(notes !== undefined && { notes: notes || null }),
-        ...(approvedRequestId !== undefined && { approvedRequestId: approvedRequestId || null }),
-      },
-    });
-
-    return NextResponse.json(attendance);
+    const updated = await updateRecord('attendance', id, body);
+    if (!updated) {
+      return NextResponse.json({ error: 'Record not found' }, { status: 404 });
+    }
+    return NextResponse.json(updated);
   } catch (error) {
     console.error('Update attendance error:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
@@ -35,12 +25,8 @@ export async function DELETE(
 ) {
   try {
     const { id } = await params;
-
-    await db.attendance.delete({
-      where: { id },
-    });
-
-    return NextResponse.json({ message: 'Attendance record deleted successfully' });
+    await deleteRecord('attendance', id);
+    return NextResponse.json({ message: 'Attendance record deleted' });
   } catch (error) {
     console.error('Delete attendance error:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });

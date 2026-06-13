@@ -1,14 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { db } from '@/lib/db';
+import { getAll } from '@/lib/db';
 import { isFirebaseConfigured, getFirebaseAdmin } from '@/lib/firebase-server';
 import { getDatabase } from 'firebase-admin/database';
 
-// ──────────────────────────────────────────────
-// POST — sync all Prisma tables to Firebase RTDB
-// ──────────────────────────────────────────────
 export async function POST(_request: NextRequest) {
   try {
-    // Check Firebase is configured server-side
     if (!isFirebaseConfigured()) {
       return NextResponse.json(
         {
@@ -19,45 +15,28 @@ export async function POST(_request: NextRequest) {
       );
     }
 
-    // Get Firebase RTDB reference
     const app = getFirebaseAdmin();
     const rtdb = getDatabase(app);
     const erpRef = rtdb.ref('erp');
 
-    // Fetch all data from Prisma in parallel
     const [employees, attendance, requests, travelDeals, qualityDeductions, biometric, deductionRules] =
       await Promise.all([
-        db.employee.findMany(),
-        db.attendance.findMany(),
-        db.request.findMany(),
-        db.travelDeal.findMany(),
-        db.qualityDeduction.findMany(),
-        db.biometric.findMany(),
-        db.deductionRule.findMany(),
+        getAll('employees'),
+        getAll('attendance'),
+        getAll('requests'),
+        getAll('travelDeals'),
+        getAll('qualityDeductions'),
+        getAll('biometrics'),
+        getAll('deductionRules'),
       ]);
 
-    // Convert Date objects to ISO strings for JSON serialization
-    const serialize = (data: unknown[]) =>
-      data.map((item) => {
-        const serialized: Record<string, unknown> = {};
-        for (const [key, value] of Object.entries(item as Record<string, unknown>)) {
-          if (value instanceof Date) {
-            serialized[key] = value.toISOString();
-          } else {
-            serialized[key] = value;
-          }
-        }
-        return serialized;
-      });
-
-    // Write each table to Firebase RTDB at /erp/{tableName}
-    await erpRef.child('employees').set(serialize(employees));
-    await erpRef.child('attendance').set(serialize(attendance));
-    await erpRef.child('requests').set(serialize(requests));
-    await erpRef.child('travelDeals').set(serialize(travelDeals));
-    await erpRef.child('qualityDeductions').set(serialize(qualityDeductions));
-    await erpRef.child('biometric').set(serialize(biometric));
-    await erpRef.child('deductionRules').set(serialize(deductionRules));
+    await erpRef.child('employees').set(employees);
+    await erpRef.child('attendance').set(attendance);
+    await erpRef.child('requests').set(requests);
+    await erpRef.child('travelDeals').set(travelDeals);
+    await erpRef.child('qualityDeductions').set(qualityDeductions);
+    await erpRef.child('biometric').set(biometric);
+    await erpRef.child('deductionRules').set(deductionRules);
 
     return NextResponse.json({
       success: true,

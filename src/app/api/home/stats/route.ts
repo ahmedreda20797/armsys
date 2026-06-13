@@ -1,12 +1,15 @@
 import { NextResponse } from 'next/server';
-import { db } from '@/lib/db';
+import {
+  getAll, getAllBatch, count, countWhere,
+  findWhere, findWhereIn, groupByCount, sortByField,
+  sortByDateField, getEmployeeMap,
+} from '@/lib/db';
 
 function getTodayStr(): string {
   const now = new Date();
   return `${String(now.getDate()).padStart(2, '0')}/${String(now.getMonth() + 1).padStart(2, '0')}/${now.getFullYear()}`;
 }
 
-/** Parse DD/MM/YYYY to a comparable number YYYYMMDD for sorting */
 function parseDateToSortable(dateStr: string): number {
   const parts = dateStr.split('/');
   if (parts.length !== 3) return 0;
@@ -16,7 +19,6 @@ function parseDateToSortable(dateStr: string): number {
   return year * 10000 + month * 100 + day;
 }
 
-/** Generate date strings for a given month range in DD/MM/YYYY format */
 function getMonthDateRange(monthsAgo: number): { startStr: string; endStr: string; monthLabel: string; monthKey: string } {
   const now = new Date();
   const targetMonth = new Date(now.getFullYear(), now.getMonth() - monthsAgo, 1);
@@ -36,8 +38,6 @@ function getMonthDateRange(monthsAgo: number): { startStr: string; endStr: strin
 
   return { startStr, endStr, monthLabel, monthKey };
 }
-
-/* ── Interfaces ── */
 
 interface EmployeePerformanceItem {
   employeeId: string;
@@ -101,81 +101,72 @@ interface TopOffender {
   deductionAmount: number;
 }
 
-/* ── Monthly Performance Builder ── */
-
-async function getMonthlyPerformance(monthsAgo: number): Promise<MonthlyPerformance> {
+/** Pre-compute monthly performance from already-fetched data (no additional DB reads) */
+function computeMonthlyPerformance(
+  attendanceRecords: any[],
+  qualityDeductions: any[],
+  empMap: Map<string, any>,
+  monthsAgo: number
+): MonthlyPerformance {
   const { startStr, endStr, monthLabel, monthKey } = getMonthDateRange(monthsAgo);
   const startDateNum = parseDateToSortable(startStr);
   const endDateNum = parseDateToSortable(endStr);
 
-  // All attendance records (not just late)
-  const attendanceRecords = await db.attendance.findMany({
-    where: {},
-    include: { employee: { select: { id: true, name: true, department: true } } },
-  });
-
-  const monthRecords = attendanceRecords.filter((r) => {
+  const monthRecords = attendanceRecords.filter((r: any) => {
     const dateNum = parseDateToSortable(r.date);
     return dateNum >= startDateNum && dateNum <= endDateNum;
   });
 
-  // Quality deductions
-  const qualityDeductions = await db.qualityDeduction.findMany({
-    where: { month: monthKey },
-    include: { employee: { select: { id: true, name: true, department: true } } },
-  });
+  const monthQuality = qualityDeductions.filter((qd: any) => qd.month === monthKey);
 
-  // Calculate working days (unique dates in attendance for this month)
-  const workingDaysSet = new Set(monthRecords.map((r) => r.date));
-  const totalWorkingDays = workingDaysSet.size || 22; // fallback to 22
+  const workingDaysSet = new Set(monthRecords.map((r: any) => r.date));
+  const totalWorkingDays = workingDaysSet.size || 22;
 
-  const empMap = new Map<string, EmployeePerformanceItem>();
+  const perfMap = new Map<string, EmployeePerformanceItem>();
 
   for (const rec of monthRecords) {
-    const empId = rec.employee.id;
-    if (!empMap.has(empId)) {
-      empMap.set(empId, {
-        employeeId: empId,
-        employeeName: rec.employee.name,
-        department: rec.employee.department || 'بدون قسم',
-        delayCount: 0,
-        totalDelayMinutes: 0,
-        deductionAmount: 0,
-        deductionDays: 0,
-        presentDays: 0,
-        absentDays: 0,
+    const emp = empMap.get(rec.employeeId);
+    if (!emp) continue;
+
+    if (!perfMap.has(rec.employeeId)) {
+      perfMap.set(rec.employeeId, {
+        employeeId: rec.employeeId,
+        employeeName: emp.name,
+        department: emp.department || 'بدون قسم',
+        delayCount: 0, totalDelayMinutes: 0,
+        deductionAmount: 0, deductionDays: 0,
+        presentDays: 0, absentDays: 0,
       });
     }
-    const item = empMap.get(empId)!;
+    const item = perfMap.get(rec.employeeId)!;
     if (rec.status === 'present') item.presentDays += 1;
-    else if (rec.status === 'late') { item.delayCount += 1; item.totalDelayMinutes += rec.minutesLate; }
+    else if (rec.status === 'late') { item.delayCount += 1; item.totalDelayMinutes += rec.minutesLate || 0; }
     else if (rec.status === 'absent') item.absentDays += 1;
   }
 
-  for (const qd of qualityDeductions) {
-    const empId = qd.employee.id;
-    if (!empMap.has(empId)) {
-      empMap.set(empId, {
-        employeeId: empId,
-        employeeName: qd.employee.name,
-        department: qd.employee.department || 'بدون قسم',
-        delayCount: 0,
-        totalDelayMinutes: 0,
-        deductionAmount: 0,
-        deductionDays: 0,
-        presentDays: 0,
-        absentDays: 0,
+  for (const qd of monthQuality) {
+    const emp = empMap.get(qd.employeeId);
+    if (!emp) continue;
+
+    if (!perfMap.has(qd.employeeId)) {
+      perfMap.set(qd.employeeId, {
+        employeeId: qd.employeeId,
+        employeeName: emp.name,
+        department: emp.department || 'بدون قسم',
+        delayCount: 0, totalDelayMinutes: 0,
+        deductionAmount: 0, deductionDays: 0,
+        presentDays: 0, absentDays: 0,
       });
     }
-    const item = empMap.get(empId)!;
-    item.deductionAmount += qd.deductionAmount;
-    item.deductionDays += qd.deductionDays;
+    const item = perfMap.get(qd.employeeId)!;
+    item.deductionAmount += qd.deductionAmount || 0;
+    item.deductionDays += qd.deductionDays || 0;
   }
 
   const deptMap = new Map<string, DepartmentPerformanceSummary>();
   let totalDelays = 0, totalDelayMinutes = 0, totalDeductionAmount = 0, totalDeductionDays = 0, totalPresent = 0, totalAbsent = 0;
 
-  for (const item of empMap.values()) {
+  for (const item of perfMap.values()) {
     if (!deptMap.has(item.department)) {
       deptMap.set(item.department, {
         departmentName: item.department, employeeCount: 0,
@@ -207,64 +198,90 @@ async function getMonthlyPerformance(monthsAgo: number): Promise<MonthlyPerforma
   return { monthLabel, monthKey, totalDelays, totalDelayMinutes, totalDeductionAmount, totalDeductionDays, totalPresent, totalAbsent, totalWorkingDays, departments };
 }
 
-/* ── Main GET handler ── */
+// Enable edge-friendly caching
+export const dynamic = 'force-dynamic';
 
 export async function GET() {
   try {
     const todayStr = getTodayStr();
+    const { monthKey: currentMonthKey } = getMonthDateRange(0);
 
-    /* ── 1. Employee Count ── */
-    const totalEmployees = await db.employee.count();
-
-    /* ── 2. All Departments ── */
-    const allDepts = await db.employee.groupBy({
-      by: ['department'],
-      _count: { id: true },
-      where: { department: { not: null } },
-      orderBy: { _count: { id: 'desc' } },
-    });
-    const departmentList = allDepts.map(d => ({ name: d.department || 'بدون قسم', count: d._count.id }));
-
-    /* ── 3. Today's Attendance ── */
-    const [todayRecords, presentCount, absentCount, lateCount] = await Promise.all([
-      db.attendance.findMany({
-        where: { date: todayStr },
-        include: { employee: { select: { id: true, name: true, department: true } } },
-      }),
-      db.attendance.count({ where: { date: todayStr, status: 'present' } }),
-      db.attendance.count({ where: { date: todayStr, status: 'absent' } }),
-      db.attendance.count({ where: { date: todayStr, status: 'late' } }),
+    // ═══════════════════════════════════════════════════
+    // PHASE 1: Batch-load all required tables in parallel
+    // (Cache hit = instant, miss = 1 round-trip instead of N)
+    // ═══════════════════════════════════════════════════
+    const [batch, empMap] = await Promise.all([
+      getAllBatch([
+        'employees',
+        'attendance',
+        'requests',
+        'travelDeals',
+        'qualityDeductions',
+        'deductionRules',
+        'biometrics',
+      ]),
+      getEmployeeMap(),
     ]);
 
+    const employees = batch.get('employees') || [];
+    const attendanceRecords = batch.get('attendance') || [];
+    const allRequests = batch.get('requests') || [];
+    const travelDeals = batch.get('travelDeals') || [];
+    const allQualityDeductions = batch.get('qualityDeductions') || [];
+    const deductionRules = batch.get('deductionRules') || [];
+    const allBiometrics = batch.get('biometrics') || [];
+
+    const totalEmployees = employees.length;
+
+    // ═══════════════════════════════════════════════════
+    // PHASE 2: Pure in-memory computation (zero DB reads)
+    // ═══════════════════════════════════════════════════
+
+    // --- Department groups ---
+    const deptGroupMap = new Map<string, number>();
+    for (const e of employees) {
+      const d = e.department || 'بدون قسم';
+      deptGroupMap.set(d, (deptGroupMap.get(d) || 0) + 1);
+    }
+    const departmentList = Array.from(deptGroupMap.entries()).map(([name, count]) => ({ name, count }));
+
+    // --- Today's attendance (in-memory filter) ---
+    const todayRecords = attendanceRecords.filter((r: any) => r.date === todayStr);
+    const presentCount = todayRecords.filter((r: any) => r.status === 'present').length;
+    const absentCount = todayRecords.filter((r: any) => r.status === 'absent').length;
+    const lateCount = todayRecords.filter((r: any) => r.status === 'late').length;
     const todayAttendance = todayRecords.length;
 
-    /* ── 4. Department-level Today Stats ── */
-    const deptTodayStats: DepartmentStat[] = allDepts.map(d => {
-      const deptRecords = todayRecords.filter(r => r.employee.department === d.department);
+    // --- Dept today stats ---
+    const deptTodayStats: DepartmentStat[] = departmentList.map(d => {
+      const deptEmpIds = new Set(
+        employees.filter((e: any) => (e.department || 'بدون قسم') === d.name).map((e: any) => e.id)
+      );
+      const deptRecords = todayRecords.filter((r: any) => deptEmpIds.has(r.employeeId));
       return {
-        name: d.department || 'بدون قسم',
-        employeeCount: d._count.id,
-        presentToday: deptRecords.filter(r => r.status === 'present').length,
-        lateToday: deptRecords.filter(r => r.status === 'late').length,
-        absentToday: deptRecords.filter(r => r.status === 'absent').length,
+        name: d.name,
+        employeeCount: d.count,
+        presentToday: deptRecords.filter((r: any) => r.status === 'present').length,
+        lateToday: deptRecords.filter((r: any) => r.status === 'late').length,
+        absentToday: deptRecords.filter((r: any) => r.status === 'absent').length,
       };
     });
 
-    /* ── 5. Pending Requests ── */
-    const pendingRequests = await db.request.findMany({
-      where: { status: 'pending' },
-      include: { employee: { select: { id: true, name: true, department: true } } },
-      orderBy: { createdAt: 'desc' },
+    // --- Pending requests (in-memory filter) ---
+    const pendingRequestsRaw = allRequests.filter((r: any) => r.status === 'pending');
+    pendingRequestsRaw.sort((a: any, b: any) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+    const pendingRequestsDetails = pendingRequestsRaw.map((req: any) => {
+      const emp = empMap.get(req.employeeId);
+      return {
+        id: req.id, employeeId: req.employeeId, type: req.type,
+        date: req.date, reason: req.reason, status: req.status,
+        employeeName: emp?.name || 'غير معروف',
+        employeeDepartment: emp?.department || '',
+        createdAt: req.createdAt || '',
+      };
     });
-    const pendingRequestsDetails = pendingRequests.map(req => ({
-      id: req.id, employeeId: req.employeeId, type: req.type, date: req.date,
-      reason: req.reason, status: req.status, employeeName: req.employee.name,
-      employeeDepartment: req.employee.department || '',
-      createdAt: req.createdAt.toISOString(),
-    }));
 
-    /* ── 6. Request Type Breakdown ── */
-    const allRequests = await db.request.findMany();
+    // --- Request type summary (already have allRequests) ---
     const typeMap = new Map<string, { pending: number; approved: number; rejected: number }>();
     for (const r of allRequests) {
       if (!typeMap.has(r.type)) typeMap.set(r.type, { pending: 0, approved: 0, rejected: 0 });
@@ -280,49 +297,48 @@ export async function GET() {
       type, label: requestTypeLabels[type] || type, ...counts,
     }));
 
-    /* ── 7. Travel ── */
-    const activeTravelDeals = await db.travelDeal.findMany({
-      where: { status: { in: ['upcoming', 'in_progress'] } },
-      include: { employee: { select: { id: true, name: true, department: true } } },
+    // --- Travel ---
+    const activeStatusSet = new Set(['upcoming', 'in_progress']);
+    const upcomingTravel = travelDeals
+      .filter((deal: any) => activeStatusSet.has(deal.status))
+      .map((deal: any) => {
+        const emp = empMap.get(deal.employeeId);
+        return {
+          id: deal.id, employeeId: deal.employeeId, employeeName: emp?.name || 'غير معروف',
+          employeeDepartment: emp?.department || '',
+          destination: deal.destination, departureDate: deal.departureDate,
+          returnDate: deal.returnDate, dealerName: deal.dealerName, customerNames: deal.customerNames,
+          hasFlight: deal.hasFlight, hasHotel: deal.hasHotel, hasVisa: deal.hasVisa,
+          hasTours: deal.hasTours, hasTransportation: deal.hasTransportation,
+          flightStatus: deal.flightStatus, hotelStatus: deal.hotelStatus,
+          visaStatus: deal.visaStatus, toursStatus: deal.toursStatus,
+          transportationStatus: deal.transportationStatus, notes: deal.notes, status: deal.status,
+        };
+      })
+      .sort((a: any, b: any) => parseDateToSortable(a.departureDate) - parseDateToSortable(b.departureDate));
+
+    const completedTravelCount = travelDeals.filter((d: any) => d.status === 'completed').length;
+    const inProgressTravelCount = travelDeals.filter((d: any) => d.status === 'in_progress').length;
+
+    // --- Late employees (in-memory filter) ---
+    const lateEmployeesRaw = todayRecords.filter((r: any) => r.status === 'late');
+    lateEmployeesRaw.sort((a: any, b: any) => (b.minutesLate || 0) - (a.minutesLate || 0));
+    const lateEmployees = lateEmployeesRaw.slice(0, 10).map((att: any) => {
+      const emp = empMap.get(att.employeeId);
+      return {
+        id: emp?.id || att.employeeId,
+        employeeName: emp?.name || 'غير معروف',
+        department: emp?.department || '',
+        checkIn: att.checkIn,
+        minutesLate: att.minutesLate,
+      };
     });
-    const upcomingTravel = activeTravelDeals
-      .map(deal => ({
-        id: deal.id, employeeId: deal.employeeId, employeeName: deal.employee.name,
-        employeeDepartment: deal.employee.department || '',
-        destination: deal.destination, departureDate: deal.departureDate,
-        returnDate: deal.returnDate, dealerName: deal.dealerName, customerNames: deal.customerNames,
-        hasFlight: deal.hasFlight, hasHotel: deal.hasHotel, hasVisa: deal.hasVisa,
-        hasTours: deal.hasTours, hasTransportation: deal.hasTransportation,
-        flightStatus: deal.flightStatus, hotelStatus: deal.hotelStatus,
-        visaStatus: deal.visaStatus, toursStatus: deal.toursStatus,
-        transportationStatus: deal.transportationStatus, notes: deal.notes, status: deal.status,
-      }))
-      .sort((a, b) => parseDateToSortable(a.departureDate) - parseDateToSortable(b.departureDate));
 
-    // Completed travel stats
-    const completedTravelCount = await db.travelDeal.count({ where: { status: 'completed' } });
-    const inProgressTravelCount = await db.travelDeal.count({ where: { status: 'in_progress' } });
+    // --- Monthly performance (pure computation, no DB reads) ---
+    const lastMonthPerformance = computeMonthlyPerformance(attendanceRecords, allQualityDeductions, empMap, 1);
+    const currentMonthPerformance = computeMonthlyPerformance(attendanceRecords, allQualityDeductions, empMap, 0);
 
-    /* ── 8. Late Employees Today ── */
-    const lateEmployeesRaw = await db.attendance.findMany({
-      where: { date: todayStr, status: 'late' },
-      include: { employee: { select: { id: true, name: true, department: true } } },
-      orderBy: { minutesLate: 'desc' },
-      take: 10,
-    });
-    const lateEmployees = lateEmployeesRaw.map(att => ({
-      id: att.employee.id, employeeName: att.employee.name,
-      department: att.employee.department || '',
-      checkIn: att.checkIn, minutesLate: att.minutesLate,
-    }));
-
-    /* ── 9. Monthly Performance ── */
-    const [lastMonthPerformance, currentMonthPerformance] = await Promise.all([
-      getMonthlyPerformance(1),
-      getMonthlyPerformance(0),
-    ]);
-
-    /* ── 10. Top Offenders (current month) ── */
+    // --- Top 5 offenders ---
     const topOffenders: TopOffender[] = [];
     for (const dept of currentMonthPerformance.departments) {
       for (const emp of dept.employees) {
@@ -341,73 +357,57 @@ export async function GET() {
     topOffenders.sort((a, b) => b.totalDelayMinutes - a.totalDelayMinutes);
     const top5Offenders = topOffenders.slice(0, 5);
 
-    /* ── 11. Deduction Rules Summary ── */
-    const deductionRules = await db.deductionRule.findMany({ orderBy: { amount: 'desc' } });
-    const rulesSummary = deductionRules.map(r => ({
+    // --- Deduction rules summary ---
+    const rulesSorted = [...deductionRules].sort((a: any, b: any) => (b.amount || 0) - (a.amount || 0));
+    const rulesSummary = rulesSorted.map((r: any) => ({
       key: r.key, label: r.label, amount: r.amount, unit: r.unit,
     }));
 
-    /* ── 12. Quality Deductions Summary (current month) ── */
-    const { monthKey: currentMonthKey } = getMonthDateRange(0);
-    const qualityThisMonth = await db.qualityDeduction.findMany({ where: { month: currentMonthKey } });
+    // --- Quality summary ---
+    const qualityThisMonth = allQualityDeductions.filter((q: any) => q.month === currentMonthKey);
     const qualitySummary = {
       totalCases: qualityThisMonth.length,
-      totalAmount: qualityThisMonth.reduce((s, q) => s + q.deductionAmount, 0),
-      totalDays: qualityThisMonth.reduce((s, q) => s + q.deductionDays, 0),
+      totalAmount: qualityThisMonth.reduce((s: number, q: any) => s + (q.deductionAmount || 0), 0),
+      totalDays: qualityThisMonth.reduce((s: number, q: any) => s + (q.deductionDays || 0), 0),
       byType: {
-        quality_issue: qualityThisMonth.filter(q => q.type === 'quality_issue').length,
-        safety: qualityThisMonth.filter(q => q.type === 'safety').length,
-        compliance: qualityThisMonth.filter(q => q.type === 'compliance').length,
+        quality_issue: qualityThisMonth.filter((q: any) => q.type === 'quality_issue').length,
+        safety: qualityThisMonth.filter((q: any) => q.type === 'safety').length,
+        compliance: qualityThisMonth.filter((q: any) => q.type === 'compliance').length,
       } as Record<string, number>,
     };
 
-    /* ── 13. Biometric Sync Status ── */
-    const latestBiometric = await db.biometric.findFirst({ orderBy: { createdAt: 'desc' } });
-    const biometricLastSync = latestBiometric?.createdAt?.toISOString() || null;
-    const biometricRecordCount = await db.biometric.count();
+    // --- Biometric stats ---
+    const latestBiometric = allBiometrics.length > 0
+      ? allBiometrics.reduce((latest: any, b: any) => {
+          const bTime = new Date(b.createdAt || 0).getTime();
+          return bTime > new Date(latest.createdAt || 0).getTime() ? b : latest;
+        }, allBiometrics[0])
+      : null;
+    const biometricLastSync = latestBiometric?.createdAt || null;
+    const biometricRecordCount = allBiometrics.length;
 
-    /* ── Build Response ── */
     return NextResponse.json({
-      // Summary KPIs
       totalEmployees,
       todayAttendance,
       presentCount,
       absentCount,
       lateCount,
       attendanceRate: totalEmployees > 0 ? Math.round((presentCount / totalEmployees) * 100) : 0,
-
-      // Departments
       departmentList,
       deptTodayStats,
-
-      // Requests
       pendingRequests: pendingRequestsDetails.length,
       pendingRequestsDetails,
       requestTypeSummary,
-
-      // Travel
       activeTravel: upcomingTravel.length,
       completedTravelCount,
       inProgressTravelCount,
       upcomingTravel,
-
-      // Late employees today
       lateEmployees,
-
-      // Monthly performance
       lastMonthPerformance,
       currentMonthPerformance,
-
-      // Top offenders
       topOffenders: top5Offenders,
-
-      // Deduction rules
       rulesSummary,
-
-      // Quality
       qualitySummary,
-
-      // Biometric
       biometricLastSync,
       biometricRecordCount,
     });

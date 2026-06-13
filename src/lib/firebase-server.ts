@@ -18,9 +18,9 @@ export function getFirebaseAdmin(): FirebaseAdminInstance {
     'FIREBASE_PROJECT_ID',
     'FIREBASE_PRIVATE_KEY',
     'FIREBASE_CLIENT_EMAIL',
+    'FIREBASE_DATABASE_URL',
   ];
 
-  // Check if required env vars are present
   const missing = requiredEnvVars.filter((v) => !process.env[v]);
   if (missing.length > 0) {
     throw new Error(
@@ -37,7 +37,7 @@ export function getFirebaseAdmin(): FirebaseAdminInstance {
           privateKey,
           clientEmail: process.env.FIREBASE_CLIENT_EMAIL!,
         }),
-        databaseURL: process.env.FIREBASE_DATABASE_URL,
+        databaseURL: process.env.FIREBASE_DATABASE_URL!,
         storageBucket: process.env.FIREBASE_STORAGE_BUCKET,
       })
     : getApp();
@@ -49,32 +49,28 @@ export function getFirebaseAdmin(): FirebaseAdminInstance {
   return app;
 }
 
-/** Returns the Firebase Admin Realtime Database instance. */
 export function getAdminDb() {
   return getDatabase(getFirebaseAdmin());
 }
 
-/** Returns the Firebase Admin Auth instance. */
 export function getAdminAuth() {
   return getAuth(getFirebaseAdmin());
 }
 
-/** Returns the Firebase Admin Storage instance. */
 export function getAdminStorage() {
   return getStorage(getFirebaseAdmin());
 }
 
-/** Shorthand alias matching the expected import name. */
 export const adminDb = getAdminDb;
 export const adminAuth = getAdminAuth;
 export const adminStorage = getAdminStorage;
 
-/** Checks whether Firebase Admin is configured (env vars present). */
 export function isFirebaseConfigured(): boolean {
   const required = [
     'FIREBASE_PROJECT_ID',
     'FIREBASE_PRIVATE_KEY',
     'FIREBASE_CLIENT_EMAIL',
+    'FIREBASE_DATABASE_URL',
   ];
   return required.every((v) => !!process.env[v]);
 }

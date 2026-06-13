@@ -10,6 +10,7 @@ import {
   FileText,
   Scale,
   Award,
+  Banknote,
   Plane,
   BarChart3,
   Settings,
@@ -33,6 +34,7 @@ const ICON_MAP: Record<string, LucideIcon> = {
   FileText,
   Scale,
   Award,
+  Banknote,
   Plane,
   BarChart3,
   Settings,
@@ -121,7 +123,7 @@ export function Sidebar({ currentPage, onNavigate, isOpen, onToggle, isCollapsed
                 const isActive = currentPage === page.id;
                 return (
                   <li key={page.id}>
-                    <SidebarTooltip label={page.nameAr}>
+                    <SidebarTooltip label={page.title}>
                       <motion.button
                         onClick={() => onNavigate(page.id)}
                         whileHover={{ scale: 1.08 }}
@@ -139,7 +141,7 @@ export function Sidebar({ currentPage, onNavigate, isOpen, onToggle, isCollapsed
                         {/* Active indicator bar */}
                         {isActive && (
                           <motion.div
-                            className="absolute right-0 top-1/2 -translate-y-1/2 w-1 h-6 rounded-l-full bg-emerald-400"
+                            className="absolute right-0 top-1/2 -translate-y-1/2 w-1 h-6 rounded-l-full bg-indigo-600/90"
                             layoutId="collapsedIndicator"
                             transition={{ type: 'spring', stiffness: 350, damping: 30 }}
                           />
@@ -155,7 +157,7 @@ export function Sidebar({ currentPage, onNavigate, isOpen, onToggle, isCollapsed
           {/* Bottom: collapse toggle + logout */}
           <div className="border-t border-slate-700/50 p-2 flex flex-col items-center gap-2">
             <SidebarTooltip label={userName}>
-              <div className="w-10 h-10 rounded-full bg-gradient-to-br from-slate-600 to-slate-700 text-sm font-bold text-white ring-2 ring-slate-600 flex items-center justify-center cursor-default transition-all hover:ring-emerald-500/40">
+              <div className="w-10 h-10 rounded-full bg-linear-to-br from-slate-600 to-slate-700 text-sm font-bold text-white ring-2 ring-slate-600 flex items-center justify-center cursor-default transition-all hover:ring-emerald-500/40">
                 {userInitials}
               </div>
             </SidebarTooltip>
@@ -174,7 +176,7 @@ export function Sidebar({ currentPage, onNavigate, isOpen, onToggle, isCollapsed
                 whileHover={{ scale: 1.1 }}
                 whileTap={{ scale: 0.9 }}
                 onClick={onToggleCollapse}
-                className="w-10 h-10 rounded-lg text-slate-400 hover:text-emerald-400 hover:bg-emerald-500/10 transition-all flex items-center justify-center"
+                className="w-10 h-10 rounded-lg text-slate-400 hover:text-red-400 hover:bg-emerald-500/10 transition-all flex items-center justify-center"
               >
                 <ChevronLeft className="h-4 w-4" />
               </motion.button>
@@ -251,10 +253,10 @@ export function Sidebar({ currentPage, onNavigate, isOpen, onToggle, isCollapsed
                       )}
                     />
                   )}
-                  <span className="truncate">{page.nameAr}</span>
+                  <span className="truncate">{page.title}</span>
                   {isActive && (
                     <motion.div
-                      className="mr-auto w-1.5 h-1.5 rounded-full bg-emerald-300"
+                      className="mr-auto w-1.5 h-1.5 rounded-full bg-indigo-600/90"
                       layoutId="activeIndicator"
                       transition={{ type: 'spring', stiffness: 350, damping: 30 }}
                     />
@@ -269,7 +271,7 @@ export function Sidebar({ currentPage, onNavigate, isOpen, onToggle, isCollapsed
       {/* User Profile Section */}
       <div className="border-t border-slate-700/50 p-4">
         <div className="flex items-center gap-3 mb-3">
-          <div className="flex items-center justify-center w-10 h-10 rounded-full bg-gradient-to-br from-slate-600 to-slate-700 text-sm font-bold text-white ring-2 ring-slate-600">
+          <div className="flex items-center justify-center w-10 h-10 rounded-full bg-linear-to-br from-slate-600 to-slate-700 text-sm font-bold text-white ring-2 ring-slate-600">
             {userInitials}
           </div>
           <div className="flex-1 min-w-0">

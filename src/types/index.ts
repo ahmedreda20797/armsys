@@ -6,7 +6,9 @@ export interface AuthUser {
   name: string;
   role: string;
   rank: string;
-  permissions: Record<string, 'none' | 'read' | 'edit'>;
+  permissions: Record<string, any>;
+  isSuspended?: boolean;
+  suspendedAt?: string;
 }
 
 export interface Employee {
@@ -81,6 +83,22 @@ export interface QualityDeduction {
   createdAt: string;
 }
 
+export interface HrDeduction {
+  id: string;
+  employeeId: string;
+  employeeName?: string;
+  type: string;
+  amount: number;
+  unit: 'days' | 'EGP';
+  reason: string;
+  status: 'pending' | 'approved' | 'rejected';
+  approvedBy: string | null;
+  approvedAt: string | null;
+  month: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface TravelDeal {
   id: string;
   employeeId: string;
@@ -100,8 +118,20 @@ export interface TravelDeal {
   toursStatus: string | null;
   transportationStatus: string | null;
   notes: string | null;
-  status: 'upcoming' | 'in_progress' | 'completed';
+  status: 'upcoming' | 'in_progress' | 'completed' | 'canceled';
   createdAt: string;
 }
 
-export type PageId = 'home' | 'employees' | 'biometric' | 'attendance' | 'requests' | 'rules' | 'quality' | 'travel' | 'reports' | 'dashboard' | 'firebase';
+export type PageId = 'home' | 'employees' | 'biometric' | 'attendance' | 'requests' | 'rules' | 'quality' | 'hrDeductions' | 'travel' | 'reports' | 'dashboard' | 'firebase';
+
+export interface ActivityLog {
+  id: string;
+  userId: string;
+  userName: string;
+  userEmail: string;
+  action: string;      // e.g., 'login', 'create_employee', 'update_request', 'delete_rule', etc.
+  page: string;        // which page the action was on
+  details: string;     // description in Arabic
+  timestamp: string;   // ISO date string
+  metadata?: Record<string, any>;  // optional extra data (record ID, etc.)
+}

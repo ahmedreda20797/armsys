@@ -1,24 +1,28 @@
-import { db } from '@/lib/db';
+import { getAll, createRecord, sortByDateField, findFirst } from '@/lib/db';
 import { NextResponse } from 'next/server';
+import { getPermissionsForRole } from '@/config/permissions';
+
+/** Safely parse permissions — handles both string (JSON) and object from Firebase */
+function safeParsePerms(permissions: any): Record<string, any> {
+  if (!permissions) return {};
+  if (typeof permissions === 'object') return permissions;
+  try { return JSON.parse(permissions); } catch { return {}; }
+}
 
 export async function GET() {
   try {
-    const users = await db.user.findMany({
-      orderBy: { createdAt: 'desc' },
-      select: {
-        id: true,
-        email: true,
-        name: true,
-        role: true,
-        permissions: true,
-        createdAt: true,
-      },
-    });
+    let users = await getAll('users');
+    users = sortByDateField(users, 'createdAt', 'desc');
 
-    const usersWithParsedPerms = users.map((u) => ({
-      ...u,
-      permissions: JSON.parse(u.permissions || '{}'),
-      createdAt: u.createdAt.toISOString(),
+    const usersWithParsedPerms = users.map((u: any) => ({
+      id: u.id,
+      email: u.email,
+      name: u.name,
+      role: u.role,
+      permissions: safeParsePerms(u.permissions),
+      isSuspended: u.isSuspended || false,
+      suspendedAt: u.suspendedAt || null,
+      createdAt: u.createdAt,
     }));
 
     return NextResponse.json(usersWithParsedPerms);
@@ -37,32 +41,20 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Email and password are required' }, { status: 400 });
     }
 
-    const existing = await db.user.findUnique({ where: { email } });
+    const existing = await findFirst('users', { email });
     if (existing) {
       return NextResponse.json({ error: 'Email already exists' }, { status: 409 });
     }
 
-    const defaultPerms: Record<string, string> = {
-      home: 'read',
-      employees: 'read',
-      biometric: 'read',
-      attendance: 'read',
-      requests: 'read',
-      rules: 'none',
-      quality: 'read',
-      travel: 'read',
-      reports: 'read',
-      dashboard: 'none',
-    };
+    const defaultPerms = getPermissionsForRole(role || 'user');
 
-    const user = await db.user.create({
-      data: {
-        email,
-        name: name || email.split('@')[0],
-        password, // In production, hash with bcrypt
-        role: role || 'user',
-        permissions: JSON.stringify(defaultPerms),
-      },
+    const user = await createRecord('users', {
+      email,
+      name: name || email.split('@')[0],
+      password,
+      role: role || 'user',
+      permissions: JSON.stringify(defaultPerms),
+      isSuspended: false,
     });
 
     return NextResponse.json({
@@ -71,7 +63,8 @@ export async function POST(request: Request) {
       name: user.name,
       role: user.role,
       permissions: defaultPerms,
-      createdAt: user.createdAt.toISOString(),
+      isSuspended: false,
+      createdAt: user.createdAt,
     });
   } catch (error) {
     console.error('Create user error:', error);

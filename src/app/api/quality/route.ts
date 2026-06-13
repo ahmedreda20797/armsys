@@ -1,28 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { db } from '@/lib/db';
+import { getAll, findWhere, createRecord, sortByDateField, withEmployeeFull } from '@/lib/db';
 
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const month = searchParams.get('month'); // YYYY-MM format
 
-    let whereClause: Record<string, unknown> = {};
+    let records = await getAll('qualityDeductions');
 
     if (month) {
-      whereClause = { month };
+      records = await findWhere('qualityDeductions', { month });
     }
 
-    const qualityDeductions = await db.qualityDeduction.findMany({
-      where: whereClause,
-      orderBy: { createdAt: 'desc' },
-      include: {
-        employee: {
-          select: { id: true, name: true, department: true },
-        },
-      },
-    });
+    records = sortByDateField(records, 'createdAt', 'desc');
+    const recordsWithEmployee = await withEmployeeFull(records as any[]);
 
-    return NextResponse.json(qualityDeductions);
+    return NextResponse.json(recordsWithEmployee);
   } catch (error) {
     console.error('Fetch quality deductions error:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
@@ -38,17 +31,15 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Employee ID, date, type, and month are required' }, { status: 400 });
     }
 
-    const qualityDeduction = await db.qualityDeduction.create({
-      data: {
-        employeeId,
-        date,
-        type,
-        description: description || '',
-        deductionDays: deductionDays || 0,
-        deductionAmount: deductionAmount || 0,
-        evidence: evidence || null,
-        month,
-      },
+    const qualityDeduction = await createRecord('qualityDeductions', {
+      employeeId,
+      date,
+      type,
+      description: description || '',
+      deductionDays: deductionDays || 0,
+      deductionAmount: deductionAmount || 0,
+      evidence: evidence || null,
+      month,
     });
 
     return NextResponse.json(qualityDeduction, { status: 201 });

@@ -1,23 +1,14 @@
-import { db } from '@/lib/db';
 import { NextResponse } from 'next/server';
+import { getAll, sortByDateField, withEmployee } from '@/lib/db';
 
 export async function GET() {
   try {
-    const records = await db.biometric.findMany({
-      orderBy: { date: 'desc' },
-      include: { employee: { select: { name: true } } },
-      take: 500,
-    });
-
-    const recordsWithNames = records.map((r) => ({
-      ...r,
-      employeeName: r.employee.name,
-      createdAt: r.createdAt.toISOString(),
-    }));
-
-    return NextResponse.json(recordsWithNames);
+    let records = await getAll('biometrics');
+    records = sortByDateField(records, 'createdAt', 'desc');
+    const withEmp = await withEmployee(records as any[]);
+    return NextResponse.json(withEmp);
   } catch (error) {
     console.error('Fetch biometrics error:', error);
-    return NextResponse.json({ error: 'Failed to fetch biometrics' }, { status: 500 });
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }

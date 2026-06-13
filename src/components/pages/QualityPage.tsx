@@ -1,13 +1,12 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { usePermissions } from '@/hooks/usePermissions';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
   Dialog,
@@ -24,14 +23,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import {
-  Table,
-  TableHeader,
-  TableBody,
-  TableRow,
-  TableHead,
-  TableCell,
-} from '@/components/ui/table';
 import { Textarea } from '@/components/ui/textarea';
 import {
   Award,
@@ -40,6 +31,13 @@ import {
   X,
   Link as LinkIcon,
   Trash2,
+  ChevronDown,
+  ChevronUp,
+  ShieldAlert,
+  ShieldCheck,
+  AlertTriangle,
+  CalendarDays,
+  Users,
 } from 'lucide-react';
 import type { QualityDeduction, Employee } from '@/types';
 
@@ -83,6 +81,24 @@ function parseDateToMonth(dateStr: string): string {
   return '';
 }
 
+function getTypeBadge(type: string) {
+  switch (type) {
+    case 'safety':
+      return { label: 'سلامة', color: 'bg-red-500/15 text-red-400 border-red-500/30', icon: ShieldAlert };
+    case 'compliance':
+      return { label: 'التزام', color: 'bg-blue-500/15 text-blue-400 border-blue-500/30', icon: ShieldCheck };
+    default:
+      return { label: 'جودة', color: 'bg-amber-500/15 text-amber-400 border-amber-500/30', icon: AlertTriangle };
+  }
+}
+
+function getDaysColor(days: number): string {
+  if (days >= 5) return 'bg-red-500/20 text-red-300 border-red-500/40';
+  if (days >= 3) return 'bg-orange-500/20 text-orange-300 border-orange-500/40';
+  if (days >= 1) return 'bg-amber-500/20 text-amber-300 border-amber-500/40';
+  return 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40';
+}
+
 export default function QualityPage() {
   const { canEdit } = usePermissions('quality');
   const [deductions, setDeductions] = useState<QualityWithEmployee[]>([]);
@@ -93,6 +109,8 @@ export default function QualityPage() {
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [expandedRow, setExpandedRow] = useState<string | null>(null);
+  const [expandedEmp, setExpandedEmp] = useState<string | null>(null);
   const [addForm, setAddForm] = useState({
     employeeId: '',
     date: '',
@@ -196,26 +214,43 @@ export default function QualityPage() {
 
   const filtered = deductions.filter((d) => {
     const name = d.employee?.name?.toLowerCase() || '';
-    const matchesSearch = name.includes(search.toLowerCase());
+    const desc = d.description?.toLowerCase() || '';
+    const matchesSearch = name.includes(search.toLowerCase()) || desc.includes(search.toLowerCase());
     const matchesMonth = monthFilter && monthFilter !== 'all'
       ? d.month === monthFilter
       : true;
     return matchesSearch && matchesMonth;
   });
 
-  // Per-employee totals - emphasize DAYS
-  const totals = filtered.reduce<Record<string, { days: number; amount: number; name: string }>>((acc, d) => {
+  // ═══ Group by employee ═══
+  const groupedByEmployee = filtered.reduce<Record<string, {
+    name: string;
+    department: string | null;
+    deductions: QualityWithEmployee[];
+    totalDays: number;
+    totalAmount: number;
+  }>>((acc, d) => {
     if (!acc[d.employeeId]) {
-      acc[d.employeeId] = { days: 0, amount: 0, name: d.employee?.name || 'غير معروف' };
+      acc[d.employeeId] = {
+        name: d.employee?.name || 'غير معروف',
+        department: d.employee?.department || null,
+        deductions: [],
+        totalDays: 0,
+        totalAmount: 0,
+      };
     }
-    acc[d.employeeId].days += d.deductionDays;
-    acc[d.employeeId].amount += d.deductionAmount;
+    acc[d.employeeId].deductions.push(d);
+    acc[d.employeeId].totalDays += d.deductionDays;
+    acc[d.employeeId].totalAmount += d.deductionAmount;
     return acc;
   }, {});
 
-  // Grand totals
-  const grandTotalDays = Object.values(totals).reduce((sum, t) => sum + t.days, 0);
-  const grandTotalAmount = Object.values(totals).reduce((sum, t) => sum + t.amount, 0);
+  // Sort by totalDays desc
+  const sortedEmployees = Object.entries(groupedByEmployee)
+    .sort((a, b) => b[1].totalDays - a[1].totalDays);
+
+  const grandTotalDays = sortedEmployees.reduce((sum, [, e]) => sum + e.totalDays, 0);
+  const grandTotalAmount = sortedEmployees.reduce((sum, [, e]) => sum + e.totalAmount, 0);
 
   // Month options
   const now = new Date();
@@ -226,55 +261,88 @@ export default function QualityPage() {
   }
 
   return (
-    <div dir="rtl" className="space-y-6">
-      {/* Header */}
+    <div dir="rtl" className="space-y-5">
+      {/* ═══ Header ═══ */}
       <motion.div
         initial={{ opacity: 0, y: -10 }}
         animate={{ opacity: 1, y: 0 }}
-        className="flex flex-col sm:flex-row sm:items-center justify-between gap-4"
+        className="flex flex-col sm:flex-row sm:items-center justify-between gap-3"
       >
-        <div>
-          <h1 className="text-2xl font-bold text-white flex items-center gap-2">
-            <Award className="size-6 text-emerald-400" />
-            خصومات الجودة
-          </h1>
-          <p className="text-slate-400 mt-1 text-sm">
-            {filtered.length} سجل خصم — إجمالي {grandTotalDays} يوم
-          </p>
+        <div className="flex items-center gap-3">
+          <div className="flex items-center justify-center size-10 rounded-xl bg-emerald-500/15 border border-emerald-500/30">
+            <Award className="size-5 text-emerald-400" />
+          </div>
+          <div>
+            <h1 className="text-xl font-bold text-white">خصومات الجودة</h1>
+            <p className="text-slate-500 text-xs mt-0.5">
+              {filtered.length} سجل خصم — {sortedEmployees.length} موظف
+            </p>
+          </div>
         </div>
         {canEdit && (
           <Button
             onClick={() => setIsAddOpen(true)}
-            className="bg-emerald-600 hover:bg-emerald-700 text-white"
+            size="sm"
+            className="bg-emerald-600 hover:bg-emerald-700 text-white h-9 px-4"
           >
-            <Plus className="size-4" />
+            <Plus className="size-4 ml-1" />
             إضافة خصم
           </Button>
         )}
       </motion.div>
 
-      {/* Filters */}
-      <div className="flex flex-col sm:flex-row gap-3">
-        <div className="relative flex-1 max-w-md">
-          <Search className="absolute right-3 top-1/2 -translate-y-1/2 size-4 text-slate-400" />
+      {/* ═══ Stats Bar ═══ */}
+      {filtered.length > 0 && (
+        <motion.div
+          initial={{ opacity: 0, y: 5 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="grid grid-cols-3 gap-2.5"
+        >
+          <div className="rounded-lg border border-amber-500/25 bg-amber-500/8 px-3.5 py-2.5">
+            <p className="text-slate-500 text-[11px] mb-0.5">إجمالي الأيام</p>
+            <p className="text-amber-400 font-bold text-lg leading-tight">{grandTotalDays}</p>
+            <p className="text-slate-500 text-[10px]">يوم خصم</p>
+          </div>
+          {grandTotalAmount > 0 && (
+            <div className="rounded-lg border border-rose-500/25 bg-rose-500/8 px-3.5 py-2.5">
+              <p className="text-slate-500 text-[11px] mb-0.5">إجمالي المبلغ</p>
+              <p className="text-rose-400 font-bold text-lg leading-tight" dir="ltr">
+                {grandTotalAmount.toLocaleString()}
+              </p>
+              <p className="text-slate-500 text-[10px]">جنيه</p>
+            </div>
+          )}
+          <div className="rounded-lg border border-cyan-500/25 bg-cyan-500/8 px-3.5 py-2.5">
+            <p className="text-slate-500 text-[11px] mb-0.5">عدد الموظفين</p>
+            <p className="text-cyan-400 font-bold text-lg leading-tight">{sortedEmployees.length}</p>
+            <p className="text-slate-500 text-[10px]">موظف</p>
+          </div>
+        </motion.div>
+      )}
+
+      {/* ═══ Filters ═══ */}
+      <div className="flex flex-col sm:flex-row gap-2.5">
+        <div className="relative flex-1 max-w-sm">
+          <Search className="absolute right-3 top-1/2 -translate-y-1/2 size-4 text-slate-500" />
           <Input
-            placeholder="بحث باسم الموظف..."
+            placeholder="بحث بالاسم أو سبب الخصم..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="bg-slate-800 border-slate-600 text-white pr-10 placeholder:text-slate-500"
+            className="bg-slate-800/70 border-slate-700/70 text-white pr-9 placeholder:text-slate-500 h-9 text-sm"
           />
           {search && (
             <button
               onClick={() => setSearch('')}
-              className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-300"
+              className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300"
             >
-              <X className="size-4" />
+              <X className="size-3.5" />
             </button>
           )}
         </div>
         <Select value={monthFilter} onValueChange={setMonthFilter}>
-          <SelectTrigger className="bg-slate-800 border-slate-600 text-white w-full sm:w-48">
-            <SelectValue placeholder="تصفية بالشهر" />
+          <SelectTrigger className="bg-slate-800/70 border-slate-700/70 text-white w-full sm:w-40 h-9 text-sm">
+            <CalendarDays className="size-3.5 ml-1.5 text-slate-500" />
+            <SelectValue placeholder="الشهر" />
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all" className="text-white">الكل</SelectItem>
@@ -285,140 +353,213 @@ export default function QualityPage() {
         </Select>
       </div>
 
-      {/* Per-employee totals - DAYS emphasized */}
-      {Object.keys(totals).length > 0 && (
-        <motion.div
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3"
-        >
-          {/* Grand total card */}
-          <Card className="border-amber-500/30 bg-amber-500/5 col-span-1 sm:col-span-2 lg:col-span-1">
-            <CardContent className="p-4">
-              <p className="text-slate-400 text-xs mb-1">الإجمالي العام</p>
-              <p className="text-amber-400 font-bold text-2xl">{grandTotalDays} <span className="text-sm font-normal">يوم</span></p>
-              {grandTotalAmount > 0 && (
-                <p className="text-rose-400 text-sm mt-1" dir="ltr">
-                  {grandTotalAmount.toLocaleString()} جنيه
-                </p>
-              )}
-            </CardContent>
-          </Card>
-          {Object.entries(totals).map(([empId, total]) => (
-            <Card key={empId} className="border-slate-700/50 bg-slate-800/50">
-              <CardContent className="p-4">
-                <p className="text-white font-medium text-sm mb-2 truncate">{total.name}</p>
-                <div className="flex items-center gap-4">
-                  <div>
-                    <p className="text-slate-500 text-xs">أيام الخصم</p>
-                    <p className="text-amber-400 font-bold text-xl">{total.days}</p>
-                  </div>
-                  {total.amount > 0 && (
-                    <div>
-                      <p className="text-slate-500 text-xs">مبلغ</p>
-                      <p className="text-rose-400 font-bold text-lg" dir="ltr">
-                        {total.amount.toLocaleString()}
-                      </p>
-                    </div>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-        </motion.div>
-      )}
-
-      {/* Loading */}
+      {/* ═══ Loading ═══ */}
       {loading ? (
-        <div className="space-y-3">
+        <div className="space-y-2.5">
           {[1, 2, 3].map((i) => (
-            <Skeleton key={i} className="h-14 rounded-lg bg-slate-800" />
+            <Skeleton key={i} className="h-20 rounded-lg bg-slate-800/50" />
           ))}
         </div>
       ) : filtered.length === 0 ? (
-        <Card className="border-slate-700/50 bg-slate-800/50">
-          <CardContent className="flex flex-col items-center justify-center py-16">
-            <Award className="size-12 text-slate-600 mb-4" />
-            <p className="text-slate-400 text-lg font-medium">لا توجد خصومات</p>
-            <p className="text-slate-500 text-sm mt-1">
+        <Card className="border-slate-700/40 bg-slate-800/30">
+          <CardContent className="flex flex-col items-center justify-center py-14">
+            <div className="size-12 rounded-full bg-slate-800 flex items-center justify-center mb-3">
+              <Award className="size-6 text-slate-600" />
+            </div>
+            <p className="text-slate-400 text-sm font-medium">لا توجد خصومات</p>
+            <p className="text-slate-600 text-xs mt-1">
               {search || (monthFilter && monthFilter !== 'all') ? 'لم يتم العثور على نتائج' : 'لم يتم تسجيل أي خصومات بعد'}
             </p>
           </CardContent>
         </Card>
       ) : (
-        <motion.div
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="rounded-xl border border-slate-700/50 bg-slate-800/50 overflow-hidden"
-        >
-          <div className="overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow className="border-slate-700 hover:bg-transparent">
-                  <TableHead className="text-slate-400 text-sm font-medium">الموظف</TableHead>
-                  <TableHead className="text-slate-400 text-sm font-medium">التاريخ</TableHead>
-                  <TableHead className="text-slate-400 text-sm font-medium hidden sm:table-cell">النوع</TableHead>
-                  <TableHead className="text-slate-400 text-sm font-medium">الخصم</TableHead>
-                  <TableHead className="text-slate-400 text-sm font-medium hidden md:table-cell">الوصف</TableHead>
-                  <TableHead className="text-slate-400 text-sm font-medium hidden lg:table-cell">الدليل</TableHead>
-                  {canEdit && (
-                    <TableHead className="text-slate-400 text-sm font-medium">إجراءات</TableHead>
-                  )}
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filtered.map((d) => (
-                  <TableRow
-                    key={d.id}
-                    className="border-slate-700/50 hover:bg-slate-700/30"
-                  >
-                    <TableCell className="text-white font-medium">{d.employee?.name || 'غير معروف'}</TableCell>
-                    <TableCell className="text-slate-300" dir="ltr">{d.date}</TableCell>
-                    <TableCell className="text-slate-300 hidden sm:table-cell">
-                      {d.type === 'quality_issue' ? 'مشكلة جودة' : d.type === 'safety' ? 'سلامة' : 'التزام'}
-                    </TableCell>
-                    <TableCell className="text-amber-400 font-medium" dir="ltr">
-                      {getDayLabel(d.deductionDays)}
-                    </TableCell>
-                    <TableCell className="text-slate-400 text-sm max-w-xs truncate hidden md:table-cell">
-                      {d.description}
-                    </TableCell>
-                    <TableCell className="hidden lg:table-cell">
-                      {d.evidence ? (
-                        <a
-                          href={d.evidence}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-cyan-400 hover:text-cyan-300 inline-flex items-center gap-1 text-sm"
-                        >
-                          <LinkIcon className="size-3.5" />
-                          دليل
-                        </a>
-                      ) : (
-                        <span className="text-slate-500">—</span>
-                      )}
-                    </TableCell>
-                    {canEdit && (
-                      <TableCell>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => setDeletingId(d.id)}
-                          className="text-slate-400 hover:text-red-400 hover:bg-red-500/10"
-                        >
-                          <Trash2 className="size-4" />
-                        </Button>
-                      </TableCell>
+        <div className="space-y-3">
+          {sortedEmployees.map(([empId, emp]) => {
+            const isEmpExpanded = expandedEmp === empId;
+            const daysColor = getDaysColor(emp.totalDays);
+
+            return (
+              <motion.div
+                key={empId}
+                initial={{ opacity: 0, y: 5 }}
+                animate={{ opacity: 1, y: 0 }}
+                layout
+              >
+                {/* ═══ Employee Header Card ═══ */}
+                <div
+                  className="flex items-center gap-3 px-4 py-3 rounded-xl border border-slate-700/40 bg-slate-800/50 cursor-pointer hover:bg-slate-800/70 transition-colors"
+                  onClick={() => setExpandedEmp(isEmpExpanded ? null : empId)}
+                >
+                  {/* Avatar */}
+                  <div className="flex-shrink-0 size-10 rounded-full bg-gradient-to-br from-slate-700 to-slate-800 flex items-center justify-center border border-slate-600/50">
+                    <span className="text-white text-sm font-bold">
+                      {emp.name.charAt(0)}
+                    </span>
+                  </div>
+
+                  {/* Name + Dept */}
+                  <div className="flex-1 min-w-0">
+                    <p className="text-white font-semibold text-sm">{emp.name}</p>
+                    {emp.department && (
+                      <p className="text-slate-500 text-[11px]">{emp.department}</p>
                     )}
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
-        </motion.div>
+                  </div>
+
+                  {/* Bubbles: Total Days + Amount */}
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    {/* Deductions count */}
+                    <div className="flex items-center gap-1 px-2 py-1 rounded-full bg-slate-700/50 border border-slate-600/30">
+                      <span className="text-slate-400 text-[11px]">{emp.deductions.length}</span>
+                      <span className="text-slate-500 text-[10px]">خصم</span>
+                    </div>
+
+                    {/* Total Days Bubble */}
+                    <div className={`flex items-center gap-1 px-2.5 py-1 rounded-full border ${daysColor}`}>
+                      <span className="font-bold text-xs">{emp.totalDays}</span>
+                      <span className="text-[10px]">يوم</span>
+                    </div>
+
+                    {/* Total Amount Bubble */}
+                    {emp.totalAmount > 0 && (
+                      <div className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-rose-500/15 text-rose-300 border border-rose-500/30">
+                        <span className="font-bold text-xs" dir="ltr">{emp.totalAmount.toLocaleString()}</span>
+                        <span className="text-[10px]">ج</span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Expand Arrow */}
+                  <div className={`flex-shrink-0 text-slate-500 transition-transform duration-200 ${isEmpExpanded ? 'rotate-180' : ''}`}>
+                    <ChevronDown className="size-4" />
+                  </div>
+                </div>
+
+                {/* ═══ Employee Deductions (expandable) ═══ */}
+                <AnimatePresence>
+                  {isEmpExpanded && (
+                    <motion.div
+                      initial={{ height: 0, opacity: 0 }}
+                      animate={{ height: 'auto', opacity: 1 }}
+                      exit={{ height: 0, opacity: 0 }}
+                      transition={{ duration: 0.25 }}
+                      className="overflow-hidden"
+                    >
+                      <div className="pr-4 pl-1 py-2 space-y-2 mr-5 border-r-2 border-slate-700/40">
+                        {emp.deductions.map((d) => {
+                          const badge = getTypeBadge(d.type);
+                          const BadgeIcon = badge.icon;
+                          const isRowExpanded = expandedRow === d.id;
+
+                          return (
+                            <motion.div
+                              key={d.id}
+                              layout
+                              initial={{ opacity: 0, x: 10 }}
+                              animate={{ opacity: 1, x: 0 }}
+                              transition={{ duration: 0.15 }}
+                            >
+                              <div
+                                className="flex items-center gap-2.5 px-3 py-2.5 rounded-lg border border-slate-700/30 bg-slate-800/30 cursor-pointer hover:bg-slate-800/50 transition-colors"
+                                onClick={() => setExpandedRow(isRowExpanded ? null : d.id)}
+                              >
+                                {/* Type Badge */}
+                                <div className={`flex-shrink-0 flex items-center gap-1 px-1.5 py-0.5 rounded border text-[10px] font-medium ${badge.color}`}>
+                                  <BadgeIcon className="size-2.5" />
+                                  <span>{badge.label}</span>
+                                </div>
+
+                                {/* Date + Days */}
+                                <span className="flex-shrink-0 text-slate-500 text-[11px]" dir="ltr">{d.date}</span>
+
+                                {/* Description preview */}
+                                <div className="flex-1 min-w-0">
+                                  <p className="text-slate-300 text-xs truncate">
+                                    {d.description || 'بدون وصف'}
+                                  </p>
+                                </div>
+
+                                {/* Days */}
+                                <span className="flex-shrink-0 text-amber-400 font-bold text-xs">
+                                  {d.deductionDays}ي
+                                </span>
+                                {d.deductionAmount > 0 && (
+                                  <span className="flex-shrink-0 text-rose-400 font-medium text-[11px]" dir="ltr">
+                                    {d.deductionAmount.toLocaleString()}ج
+                                  </span>
+                                )}
+
+                                {/* Expand/Collapse */}
+                                <div className={`flex-shrink-0 text-slate-600 transition-transform duration-150 ${isRowExpanded ? 'rotate-180' : ''}`}>
+                                  <ChevronDown className="size-3" />
+                                </div>
+
+                                {/* Delete */}
+                                {canEdit && (
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setDeletingId(d.id);
+                                    }}
+                                    className="flex-shrink-0 text-slate-600 hover:text-red-400 transition-colors"
+                                  >
+                                    <Trash2 className="size-3" />
+                                  </button>
+                                )}
+                              </div>
+
+                              {/* Expanded Description */}
+                              <AnimatePresence>
+                                {isRowExpanded && (
+                                  <motion.div
+                                    initial={{ height: 0, opacity: 0 }}
+                                    animate={{ height: 'auto', opacity: 1 }}
+                                    exit={{ height: 0, opacity: 0 }}
+                                    transition={{ duration: 0.15 }}
+                                    className="overflow-hidden"
+                                  >
+                                    <div className="mr-6 mb-1 mt-1 px-3 py-2.5 rounded-lg bg-slate-900/60 border border-slate-700/25">
+                                      <p className="text-slate-400 text-[10px] mb-1">سبب الخصم</p>
+                                      <p className="text-slate-300 text-sm leading-relaxed whitespace-pre-wrap break-words">
+                                        {d.description || 'لا يوجد وصف'}
+                                      </p>
+                                      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-2 text-[11px]">
+                                        <span className="text-slate-500">التاريخ: <span className="text-slate-400" dir="ltr">{d.date}</span></span>
+                                        <span className="text-slate-500">الشهر: <span className="text-slate-400" dir="ltr">{d.month}</span></span>
+                                        <span className="text-slate-500">الخصم: <span className="text-amber-400">{getDayLabel(d.deductionDays)}</span></span>
+                                        {d.deductionAmount > 0 && (
+                                          <span className="text-slate-500">المبلغ: <span className="text-rose-400" dir="ltr">{d.deductionAmount.toLocaleString()} جنيه</span></span>
+                                        )}
+                                      </div>
+                                      {d.evidence && (
+                                        <a
+                                          href={d.evidence}
+                                          target="_blank"
+                                          rel="noopener noreferrer"
+                                          onClick={(e) => e.stopPropagation()}
+                                          className="inline-flex items-center gap-1 mt-2 text-cyan-400 hover:text-cyan-300 text-[11px] bg-cyan-500/10 px-2 py-1 rounded-md border border-cyan-500/20"
+                                        >
+                                          <LinkIcon className="size-2.5" />
+                                          عرض الدليل
+                                        </a>
+                                      )}
+                                    </div>
+                                  </motion.div>
+                                )}
+                              </AnimatePresence>
+                            </motion.div>
+                          );
+                        })}
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </motion.div>
+            );
+          })}
+        </div>
       )}
 
-      {/* Add Dialog */}
+      {/* ═══ Add Dialog ═══ */}
       <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
         <DialogContent className="backdrop-blur-xl bg-slate-900 border-slate-700 max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
@@ -427,7 +568,7 @@ export default function QualityPage() {
           </DialogHeader>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="space-y-2 sm:col-span-2">
-              <Label className="text-slate-300">الموظف</Label>
+              <Label className="text-slate-300 text-sm">الموظف</Label>
               <Select
                 value={addForm.employeeId}
                 onValueChange={(v) => setAddForm((p) => ({ ...p, employeeId: v }))}
@@ -445,7 +586,7 @@ export default function QualityPage() {
               </Select>
             </div>
             <div className="space-y-2">
-              <Label className="text-slate-300">التاريخ</Label>
+              <Label className="text-slate-300 text-sm">التاريخ</Label>
               <Input
                 value={addForm.date}
                 onChange={(e) => handleDateChange(e.target.value)}
@@ -455,7 +596,7 @@ export default function QualityPage() {
               />
             </div>
             <div className="space-y-2">
-              <Label className="text-slate-300">النوع</Label>
+              <Label className="text-slate-300 text-sm">النوع</Label>
               <Select
                 value={addForm.type}
                 onValueChange={(v) => setAddForm((p) => ({ ...p, type: v }))}
@@ -471,7 +612,7 @@ export default function QualityPage() {
               </Select>
             </div>
             <div className="space-y-2">
-              <Label className="text-slate-300">نوع الخصم (بالأيام)</Label>
+              <Label className="text-slate-300 text-sm">نوع الخصم (بالأيام)</Label>
               <Select
                 value={addForm.dayPreset}
                 onValueChange={(v) => setAddForm((p) => ({ ...p, dayPreset: v }))}
@@ -490,7 +631,7 @@ export default function QualityPage() {
             </div>
             {addForm.dayPreset === 'custom' && (
               <div className="space-y-2">
-                <Label className="text-slate-300">عدد الأيام (مخصص)</Label>
+                <Label className="text-slate-300 text-sm">عدد الأيام (مخصص)</Label>
                 <Input
                   type="number"
                   step="0.25"
@@ -503,7 +644,7 @@ export default function QualityPage() {
               </div>
             )}
             <div className="space-y-2">
-              <Label className="text-slate-300">مبلغ الخصم (اختياري)</Label>
+              <Label className="text-slate-300 text-sm">مبلغ الخصم (اختياري)</Label>
               <Input
                 type="number"
                 value={addForm.deductionAmount}
@@ -514,7 +655,7 @@ export default function QualityPage() {
               />
             </div>
             <div className="space-y-2">
-              <Label className="text-slate-300">الشهر (تلقائي)</Label>
+              <Label className="text-slate-300 text-sm">الشهر (تلقائي)</Label>
               <Input
                 value={addForm.month}
                 readOnly
@@ -524,17 +665,17 @@ export default function QualityPage() {
               />
             </div>
             <div className="space-y-2 sm:col-span-2">
-              <Label className="text-slate-300">الوصف</Label>
+              <Label className="text-slate-300 text-sm">سبب الخصم</Label>
               <Textarea
                 value={addForm.description}
                 onChange={(e) => setAddForm((p) => ({ ...p, description: e.target.value }))}
-                className="bg-slate-800 border-slate-600 text-white"
-                placeholder="وصف الخصم..."
-                rows={2}
+                className="bg-slate-800 border-slate-600 text-white resize-none"
+                placeholder="اكتب سبب الخصم بالتفصيل..."
+                rows={3}
               />
             </div>
             <div className="space-y-2 sm:col-span-2">
-              <Label className="text-slate-300">رابط الدليل (اختياري)</Label>
+              <Label className="text-slate-300 text-sm">رابط الدليل (اختياري)</Label>
               <Input
                 value={addForm.evidence}
                 onChange={(e) => setAddForm((p) => ({ ...p, evidence: e.target.value }))}
@@ -563,7 +704,7 @@ export default function QualityPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Delete Dialog */}
+      {/* ═══ Delete Dialog ═══ */}
       <Dialog open={!!deletingId} onOpenChange={() => setDeletingId(null)}>
         <DialogContent className="backdrop-blur-xl bg-slate-900 border-slate-700">
           <DialogHeader>

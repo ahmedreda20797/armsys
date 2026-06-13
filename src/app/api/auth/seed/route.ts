@@ -1,11 +1,9 @@
 import { NextResponse } from 'next/server';
-import { db } from '@/lib/db';
+import { findFirst, createRecord } from '@/lib/db';
 
 export async function POST() {
   try {
-    const existingAdmin = await db.user.findUnique({
-      where: { email: 'admin@erp.com' },
-    });
+    const existingAdmin = await findFirst('users', { email: 'admin@erp.com' });
 
     if (existingAdmin) {
       return NextResponse.json({
@@ -31,15 +29,13 @@ export async function POST() {
       reports: 'edit',
     });
 
-    const admin = await db.user.create({
-      data: {
-        email: 'admin@erp.com',
-        password: 'admin123',
-        name: 'System Admin',
-        role: 'admin',
-        permissions: defaultPermissions,
-        rank: 'Admin',
-      },
+    const admin = await createRecord('users', {
+      email: 'admin@erp.com',
+      password: 'admin123',
+      name: 'System Admin',
+      role: 'admin',
+      permissions: defaultPermissions,
+      rank: 'Admin',
     });
 
     return NextResponse.json({

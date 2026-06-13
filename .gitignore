@@ -6,3 +6,6 @@ swapfile
 .turbo/
 tsconfig.tsbuildinfo
 bun.lock
+.env*
+.vercel
+.env*

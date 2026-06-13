@@ -70,6 +70,8 @@ function getTodayDate(): string {
   return `${dd}/${mm}/${yyyy}`;
 }
 
+const LATE_GRACE_PERIOD = 15; // minutes — first 15 min are free, late starts at minute 16
+
 function calcMinutesLate(checkIn: string, shiftStart: string | null): number {
   if (!checkIn || !shiftStart) return 0;
   const [cH, cM] = checkIn.split(':').map(Number);
@@ -78,6 +80,10 @@ function calcMinutesLate(checkIn: string, shiftStart: string | null): number {
   const shiftStartMinutes = wH * 60 + wM;
   const diff = checkInMinutes - shiftStartMinutes;
   return diff > 0 ? diff : 0;
+}
+
+function isLate(minutesLate: number): boolean {
+  return minutesLate > LATE_GRACE_PERIOD;
 }
 
 export default function AttendancePage() {
@@ -143,7 +149,7 @@ export default function AttendancePage() {
 
     if (checkIn && shiftStart) {
       minutesLate = calcMinutesLate(checkIn, shiftStart);
-      if (minutesLate > 0) {
+      if (isLate(minutesLate)) {
         status = 'late';
       } else if (!checkIn) {
         status = 'absent';

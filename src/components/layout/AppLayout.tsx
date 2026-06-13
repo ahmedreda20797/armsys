@@ -1,12 +1,14 @@
 'use client';
 
-import React, { useMemo } from 'react';
+import React, { useMemo, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Sidebar } from './Sidebar';
 import { Header } from './Header';
 import { useAppStore } from '@/lib/store';
 import { APP_PAGES } from '@/config/permissions';
 import { useIsMobile } from '@/hooks/use-mobile';
+import { useAuth } from '@/contexts/AuthContext';
+import { logPageVisit } from '@/lib/activity-logger';
 
 interface AppLayoutProps {
   children: React.ReactNode;
@@ -22,6 +24,13 @@ export function AppLayout({ children }: AppLayoutProps) {
   const { currentPage, sidebarOpen, setCurrentPage, toggleSidebar, sidebarCollapsed, toggleSidebarCollapse } =
     useAppStore();
   const isMobile = useIsMobile();
+  const { refreshUser } = useAuth();
+
+  // Refresh permissions on every page navigation
+  useEffect(() => {
+    refreshUser();
+    logPageVisit(currentPage);
+  }, [currentPage, refreshUser]);
 
   const currentPageConfig = useMemo(
     () => APP_PAGES.find((p) => p.id === currentPage) || APP_PAGES[0],
@@ -51,7 +60,7 @@ export function AppLayout({ children }: AppLayoutProps) {
       >
         <div className="main-content-bg min-h-screen">
         <Header
-          title={currentPageConfig.nameAr}
+          title={currentPageConfig.title}
           onMenuToggle={toggleSidebar}
           onToggleSidebarCollapse={toggleSidebarCollapse}
           sidebarCollapsed={sidebarCollapsed}

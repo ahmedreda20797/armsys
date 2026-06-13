@@ -1,5 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { db } from '@/lib/db';
+import { findFirst } from '@/lib/db';
+
+/** Safely parse permissions — handles both string (JSON) and object from Firebase */
+function safeParsePerms(permissions: any): Record<string, any> {
+  if (!permissions) return {};
+  if (typeof permissions === 'object') return permissions;
+  try { return JSON.parse(permissions); } catch { return {}; }
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -9,12 +16,18 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Email and password are required' }, { status: 400 });
     }
 
-    const user = await db.user.findUnique({
-      where: { email },
-    });
+    const user = await findFirst('users', { email });
 
     if (!user) {
       return NextResponse.json({ error: 'Invalid email or password' }, { status: 401 });
+    }
+
+    // Check if account is suspended
+    if (user.isSuspended) {
+      return NextResponse.json(
+        { error: 'هذا الحساب موقوف مؤقتاً. تواصل مع مدير النظام.' },
+        { status: 403 }
+      );
     }
 
     // Plain text comparison for demo purposes
@@ -22,20 +35,25 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid email or password' }, { status: 401 });
     }
 
-    const { password: _, ...userWithoutPassword } = user;
-
     return NextResponse.json({
       user: {
-        id: userWithoutPassword.id,
-        email: userWithoutPassword.email,
-        name: userWithoutPassword.name,
-        role: userWithoutPassword.role,
-        permissions: JSON.parse(userWithoutPassword.permissions || '{}'),
-        rank: userWithoutPassword.rank,
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        role: user.role,
+        permissions: safeParsePerms(user.permissions),
+        rank: user.rank,
+        isSuspended: user.isSuspended || false,
+        suspendedAt: user.suspendedAt || null,
       },
     });
   } catch (error) {
-    console.error('Login error:', error);
+    const msg = error instanceof Error ? error.message : String(error);
+    console.error('Login error:', msg, error);
+    // In non-production, return detailed error for debugging
+    if (process.env.NODE_ENV !== 'production') {
+      return NextResponse.json({ error: 'Login failed', details: msg, stack: error instanceof Error ? error.stack : undefined }, { status: 500 });
+    }
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }

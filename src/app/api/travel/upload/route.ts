@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { db } from '@/lib/db';
+import { getAll, createRecord } from '@/lib/db';
 import * as XLSX from 'xlsx';
 
 export async function POST(request: NextRequest) {
@@ -12,9 +12,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Fetch all employees once for matching
-    const allEmployees = await db.employee.findMany({
-      select: { id: true, name: true },
-    });
+    const allEmployees = await getAll('employees');
 
     const buffer = Buffer.from(await file.arrayBuffer());
     const workbook = XLSX.read(buffer, { type: 'buffer' });
@@ -93,7 +91,6 @@ export async function POST(request: NextRequest) {
 
         // ── 2. Departure Date ──
         let departureDate = '';
-        // Priority: Start column > DEAL date
         if (colStart && row[colStart]) {
           const rawStart = String(row[colStart]).trim();
           if (rawStart) departureDate = normalizeDate(rawStart);
@@ -158,22 +155,20 @@ export async function POST(request: NextRequest) {
           }
         }
 
-        await db.travelDeal.create({
-          data: {
-            employeeId: empResult.employeeId,
-            destination,
-            departureDate,
-            returnDate: returnDate || null,
-            dealerName: rawDeal || null,
-            customerNames: customerNames || null,
-            notes: notes || null,
-            status,
-            hasFlight: false,
-            hasHotel: false,
-            hasVisa: false,
-            hasTours: false,
-            hasTransportation: false,
-          },
+        await createRecord('travelDeals', {
+          employeeId: empResult.employeeId,
+          destination,
+          departureDate,
+          returnDate: returnDate || null,
+          dealerName: rawDeal || null,
+          customerNames: customerNames || null,
+          notes: notes || null,
+          status,
+          hasFlight: false,
+          hasHotel: false,
+          hasVisa: false,
+          hasTours: false,
+          hasTransportation: false,
         });
 
         results.success++;
@@ -201,8 +196,6 @@ export async function POST(request: NextRequest) {
 
 // ═══════════════════════════════════════════════════════
 //  DEAL Column Parser
-//  Handles: Customer/Employee/Destination/Date
-//  Or: Date/Employee/Destination  (date at beginning)
 // ═══════════════════════════════════════════════════════
 
 function parseDealColumn(deal: string): {
@@ -215,7 +208,7 @@ function parseDealColumn(deal: string): {
 
   if (parts.length === 0) return { customerName: '', employeeName: '', destination: '', date: '' };
 
-  // ── Check if LAST 3 parts form a date: DD/M/YYYY ──
+  // Check if LAST 3 parts form a date: DD/M/YYYY
   if (parts.length >= 5) {
     const [p1, p2, p3] = [parts[parts.length - 3], parts[parts.length - 2], parts[parts.length - 1]];
     if (/^\d{1,2}$/.test(p1) && /^\d{1,2}$/.test(p2) && /^\d{2,4}$/.test(p3)) {
@@ -230,7 +223,7 @@ function parseDealColumn(deal: string): {
     }
   }
 
-  // ── Check if FIRST 3 parts form a date: DD/MM/YYYY ──
+  // Check if FIRST 3 parts form a date: DD/MM/YYYY
   if (parts.length >= 4) {
     const [p1, p2, p3] = [parts[0], parts[1], parts[2]];
     if (/^\d{1,2}$/.test(p1) && /^\d{1,2}$/.test(p2) && /^\d{2,4}$/.test(p3)) {
@@ -245,7 +238,7 @@ function parseDealColumn(deal: string): {
     }
   }
 
-  // ── No date detected - treat all as names ──
+  // No date detected - treat all as names
   return assignNameParts(parts, '');
 }
 
@@ -317,18 +310,17 @@ async function findOrCreateEmployee(
   const normalized = normalizeName(trimmed);
   const threshold = Math.max(3, Math.floor(Math.min(normalized.length, 30) * 0.3));
 
-  // ── 1. Exact match (normalized) ──
+  // 1. Exact match (normalized)
   for (const emp of existingEmployees) {
     if (normalizeName(emp.name) === normalized) {
       return { employeeId: emp.id, created: false, fuzzyMatch: false };
     }
   }
 
-  // ── 2. Contains match (one contains the other) ──
+  // 2. Contains match (one contains the other)
   for (const emp of existingEmployees) {
     const empNorm = normalizeName(emp.name);
     if (empNorm.includes(normalized) || normalized.includes(empNorm)) {
-      // Additional check: the shorter one must be at least 3 chars
       const shorter = Math.min(empNorm.length, normalized.length);
       if (shorter >= 3) {
         return { employeeId: emp.id, created: false, fuzzyMatch: true };
@@ -336,7 +328,7 @@ async function findOrCreateEmployee(
     }
   }
 
-  // ── 3. Levenshtein fuzzy match ──
+  // 3. Levenshtein fuzzy match
   let bestMatch: { id: string; dist: number } | null = null;
   for (const emp of existingEmployees) {
     const dist = levenshtein(normalized, normalizeName(emp.name));
@@ -350,18 +342,12 @@ async function findOrCreateEmployee(
     return { employeeId: bestMatch.id, created: false, fuzzyMatch: true };
   }
 
-  // ── 4. Auto-create new employee ──
+  // 4. Auto-create new employee
   try {
-    const newEmp = await db.employee.create({
-      data: {
-        name: trimmed,
-        email: '',
-        phone: '',
-        department: 'سفر',
-        position: 'موظف',
-        salary: 0,
-        joinDate: new Date().toISOString().split('T')[0],
-      },
+    const newEmp = await createRecord('employees', {
+      name: trimmed,
+      department: 'سفر',
+      position: 'موظف',
     });
     return { employeeId: newEmp.id, created: true, fuzzyMatch: false };
   } catch (err) {

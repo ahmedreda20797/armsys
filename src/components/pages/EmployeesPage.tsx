@@ -4,11 +4,11 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { usePermissions } from '@/hooks/usePermissions';
 import { useAppStore } from '@/lib/store';
+import { useEmployees, useCreateEmployee, useUpdateEmployee, useDeleteEmployee } from '@/hooks/use-queries';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Skeleton } from '@/components/ui/skeleton';
 import {
   Dialog,
   DialogContent,
@@ -34,6 +34,7 @@ import {
   Users,
   FileSpreadsheet,
   X,
+  Loader2,
 } from 'lucide-react';
 import type { Employee } from '@/types';
 
@@ -62,14 +63,18 @@ const emptyForm: EmployeeFormData = {
 export default function EmployeesPage() {
   const { canEdit } = usePermissions('employees');
   const { highlightId, setHighlightId } = useAppStore();
-  const [employees, setEmployees] = useState<Employee[]>([]);
-  const [loading, setLoading] = useState(true);
+  
+  // ── React Query: data fetching with automatic caching ──
+  const { data: employees = [], isLoading } = useEmployees();
+  const createEmployee = useCreateEmployee();
+  const updateEmployee = useUpdateEmployee();
+  const deleteEmployee = useDeleteEmployee();
+  
   const [search, setSearch] = useState('');
   const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [form, setForm] = useState<EmployeeFormData>(emptyForm);
   const [uploading, setUploading] = useState(false);
-  const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const highlightRowRef = useRef<HTMLTableRowElement | null>(null);
@@ -87,7 +92,6 @@ export default function EmployeesPage() {
       setHighlightId(null);
     }, 3000);
 
-    // Scroll the highlighted row into view after a small delay to let it render
     requestAnimationFrame(() => {
       highlightRowRef.current?.scrollIntoView({
         behavior: 'smooth',
@@ -97,24 +101,6 @@ export default function EmployeesPage() {
 
     return () => clearTimeout(timer);
   }, [highlightId, setHighlightId]);
-
-  useEffect(() => {
-    fetchEmployees();
-  }, []);
-
-  const fetchEmployees = async () => {
-    try {
-      const res = await fetch('/api/employees');
-      if (res.ok) {
-        const data = await res.json();
-        setEmployees(data);
-      }
-    } catch {
-      setEmployees([]);
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -128,7 +114,9 @@ export default function EmployeesPage() {
         body: formData,
       });
       if (res.ok) {
-        await fetchEmployees();
+        // React Query will auto-invalidate via mutation, but for upload we need manual
+        // The mutation onSuccess handles invalidation, so we can just let it refetch
+        window.location.reload();
       }
     } catch {
       // Error handled silently
@@ -139,43 +127,34 @@ export default function EmployeesPage() {
   };
 
   const handleSave = async () => {
-    setSaving(true);
-    try {
-      if (editingEmployee) {
-        const res = await fetch(`/api/employees/${editingEmployee.id}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(form),
-        });
-        if (res.ok) await fetchEmployees();
-      } else {
-        const res = await fetch('/api/employees', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(form),
-        });
-        if (res.ok) await fetchEmployees();
-      }
-    } catch {
-      // Error handled silently
-    } finally {
-      setSaving(false);
-      setEditingEmployee(null);
-      setIsAddOpen(false);
-      setForm(emptyForm);
+    if (editingEmployee) {
+      updateEmployee.mutate(
+        { id: editingEmployee.id, data: form },
+        {
+          onSuccess: () => {
+            setEditingEmployee(null);
+            setIsAddOpen(false);
+            setForm(emptyForm);
+          },
+        }
+      );
+    } else {
+      createEmployee.mutate(form, {
+        onSuccess: () => {
+          setIsAddOpen(false);
+          setForm(emptyForm);
+        },
+      });
     }
   };
 
   const handleDelete = async (id: string) => {
-    try {
-      const res = await fetch(`/api/employees/${id}`, { method: 'DELETE' });
-      if (res.ok) {
-        setEmployees((prev) => prev.filter((emp) => emp.id !== id));
+    deleteEmployee.mutate(id, {
+      onSuccess: () => {
         setSwipeId(null);
-      }
-    } catch {
-      // Error handled silently
-    }
+        setDeletingId(null);
+      },
+    });
   };
 
   const openEdit = (emp: Employee) => {
@@ -193,7 +172,7 @@ export default function EmployeesPage() {
   };
 
   const filtered = employees.filter(
-    (emp) =>
+    (emp: any) =>
       emp.name.toLowerCase().includes(search.toLowerCase()) ||
       (emp.code || '').toLowerCase().includes(search.toLowerCase()) ||
       (emp.department || '').toLowerCase().includes(search.toLowerCase()) ||
@@ -212,7 +191,6 @@ export default function EmployeesPage() {
     if (touchStartX.current === null) return;
     touchCurrentX.current = e.touches[0].clientX;
     const diff = touchStartX.current - touchCurrentX.current;
-    // In RTL, swiping left (negative diff in screen coords) reveals delete
     if (diff < -60) {
       setSwipeId(id);
     } else {
@@ -228,6 +206,8 @@ export default function EmployeesPage() {
   const updateForm = useCallback((field: keyof EmployeeFormData, value: string) => {
     setForm((prev) => ({ ...prev, [field]: value }));
   }, []);
+
+  const isSaving = createEmployee.isPending || updateEmployee.isPending;
 
   const renderFormDialog = (title: string, open: boolean, onOpenChange: (v: boolean) => void) => (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -327,10 +307,12 @@ export default function EmployeesPage() {
           </Button>
           <Button
             onClick={handleSave}
-            disabled={saving || !form.name}
+            disabled={isSaving || !form.name}
             className="bg-emerald-600 hover:bg-emerald-700 text-white"
           >
-            {saving ? 'جاري الحفظ...' : 'حفظ'}
+            {isSaving ? (
+              <><Loader2 className="size-4 animate-spin" /> جاري الحفظ...</>
+            ) : 'حفظ'}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -364,7 +346,7 @@ export default function EmployeesPage() {
                 className="border-slate-600 text-slate-300 hover:bg-slate-700"
               >
                 {uploading ? (
-                  <>جاري الرفع...</>
+                  <><Loader2 className="size-4 animate-spin" /> جاري الرفع...</>
                 ) : (
                   <>
                     <Upload className="size-4" />
@@ -415,10 +397,10 @@ export default function EmployeesPage() {
       </div>
 
       {/* Loading */}
-      {loading ? (
+      {isLoading ? (
         <div className="space-y-3">
           {[1, 2, 3].map((i) => (
-            <Skeleton key={i} className="h-14 rounded-lg bg-slate-800" />
+            <div key={i} className="h-14 rounded-lg bg-slate-800 animate-pulse" />
           ))}
         </div>
       ) : filtered.length === 0 ? (
@@ -452,7 +434,7 @@ export default function EmployeesPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filtered.map((emp) => {
+                {filtered.map((emp: any) => {
                   const isHighlighted = emp.id === highlightId;
                   return (
                     <TableRow
@@ -557,7 +539,6 @@ export default function EmployeesPage() {
               onClick={() => {
                 const id = deletingId || swipeId;
                 if (id) handleDelete(id);
-                setDeletingId(null);
               }}
             >
               حذف

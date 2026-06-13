@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { db } from '@/lib/db';
+import { updateRecord, deleteRecord, getById, createRecord } from '@/lib/db';
 
 export async function PATCH(
   request: NextRequest,
@@ -8,27 +8,49 @@ export async function PATCH(
   try {
     const { id } = await params;
     const body = await request.json();
-    const { status } = body;
+    const { status, reviewedBy } = body;
 
-    if (!status) {
-      return NextResponse.json({ error: 'Status is required' }, { status: 400 });
+    if (status !== 'approved' && status !== 'rejected') {
+      const updated = await updateRecord('requests', id, body);
+      if (!updated) {
+        return NextResponse.json({ error: 'Request not found' }, { status: 404 });
+      }
+      return NextResponse.json(updated);
     }
 
-    if (!['approved', 'rejected'].includes(status)) {
-      return NextResponse.json({ error: 'Status must be approved or rejected' }, { status: 400 });
-    }
+    // Get the full request to check type
+    const req = await getById('requests', id);
+    if (!req) return NextResponse.json({ error: 'Request not found' }, { status: 404 });
 
-    const req = await db.request.update({
-      where: { id },
-      data: {
-        status,
-        reviewedAt: new Date(),
-      },
+    // Update request status with reviewer info
+    const updated = await updateRecord('requests', id, {
+      status,
+      reviewedBy: reviewedBy || null,
+      reviewedAt: new Date().toISOString(),
     });
 
-    return NextResponse.json(req);
+    // Apply absence deduction logic
+    if (req.type === 'excuse') {
+      const deductionDays = status === 'approved' ? 1 : 2;
+      const notes = status === 'approved'
+        ? `خصم غياب - تم القبول: ${deductionDays} يوم`
+        : `خصم غياب - تم الرفض: ${deductionDays} أيام`;
+
+      await createRecord('attendance', {
+        employeeId: req.employeeId,
+        date: req.date,
+        status: 'absent',
+        approvedRequestId: id,
+        minutesLate: 0,
+        notes,
+        checkIn: null,
+        checkOut: null,
+      });
+    }
+
+    return NextResponse.json(updated);
   } catch (error) {
-    console.error('Patch request error:', error);
+    console.error('Update request error:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }
@@ -37,33 +59,7 @@ export async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  try {
-    const { id } = await params;
-    const body = await request.json();
-    const { status, reviewedBy } = body;
-
-    if (!status || !reviewedBy) {
-      return NextResponse.json({ error: 'Status and reviewedBy are required' }, { status: 400 });
-    }
-
-    if (!['approved', 'rejected'].includes(status)) {
-      return NextResponse.json({ error: 'Status must be approved or rejected' }, { status: 400 });
-    }
-
-    const req = await db.request.update({
-      where: { id },
-      data: {
-        status,
-        reviewedBy,
-        reviewedAt: new Date(),
-      },
-    });
-
-    return NextResponse.json(req);
-  } catch (error) {
-    console.error('Update request error:', error);
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
-  }
+  return PATCH(request, params as any);
 }
 
 export async function DELETE(
@@ -72,12 +68,8 @@ export async function DELETE(
 ) {
   try {
     const { id } = await params;
-
-    await db.request.delete({
-      where: { id },
-    });
-
-    return NextResponse.json({ message: 'Request deleted successfully' });
+    await deleteRecord('requests', id);
+    return NextResponse.json({ message: 'Request deleted' });
   } catch (error) {
     console.error('Delete request error:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });

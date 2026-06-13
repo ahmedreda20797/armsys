@@ -1,10 +1,11 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Menu, Bell, PanelRightClose, PanelRightOpen, X, Trash2 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useIsMobile } from '@/hooks/use-mobile';
+import { useNotifications } from '@/hooks/use-queries';
 import { Card, CardContent } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Badge } from '@/components/ui/badge';
@@ -28,36 +29,28 @@ interface HeaderProps {
 export function Header({ title, onMenuToggle, onToggleSidebarCollapse, sidebarCollapsed }: HeaderProps) {
   const { user } = useAuth();
   const isMobile = useIsMobile();
-  const [notifications, setNotifications] = useState<Notification[]>([]);
   const [showNotifPanel, setShowNotifPanel] = useState(false);
-
-  const unreadCount = notifications.filter((n) => !n.read).length;
-
-  const fetchNotifications = useCallback(async () => {
-    try {
-      const res = await fetch('/api/firebase/notifications');
-      if (res.ok) {
-        const data = await res.json();
-        if (Array.isArray(data)) {
-          setNotifications(data.slice(0, 20)); // keep latest 20
-        }
-      }
-    } catch {
-      // Firebase not configured - that's fine
-    }
-  }, []);
-
-  // Poll notifications every 30 seconds
+  
+  // Only fetch notifications when the panel is open or when user has them enabled
+  // This eliminates the constant 30-second polling in the background
+  const { data: notifData } = useNotifications(showNotifPanel);
+  
+  // Keep local state for read/unread tracking (doesn't re-fetch from server)
+  const [localNotifications, setLocalNotifications] = useState<Notification[]>([]);
+  
+  // Sync server data to local state when panel opens
   useEffect(() => {
-    const interval = setInterval(fetchNotifications, 30000);
-    return () => clearInterval(interval);
-  }, [fetchNotifications]);
+    if (showNotifPanel && notifData && Array.isArray(notifData)) {
+      setLocalNotifications(notifData.slice(0, 20));
+    }
+  }, [showNotifPanel, notifData]);
+
+  const unreadCount = localNotifications.filter((n) => !n.read).length;
 
   // Close panel on click outside
   useEffect(() => {
     if (!showNotifPanel) return;
     const handler = () => setShowNotifPanel(false);
-    // Delay to avoid immediate close
     const timer = setTimeout(() => {
       document.addEventListener('click', handler);
     }, 0);
@@ -170,10 +163,10 @@ export function Header({ title, onMenuToggle, onToggleSidebarCollapse, sidebarCo
                     الإشعارات
                   </h3>
                   <div className="flex items-center gap-2">
-                    {notifications.length > 0 && (
+                    {localNotifications.length > 0 && (
                       <button
                         onClick={() => {
-                          setNotifications([]);
+                          setLocalNotifications([]);
                           setShowNotifPanel(false);
                         }}
                         className="text-xs text-slate-400 hover:text-red-400 transition-colors flex items-center gap-1"
@@ -193,7 +186,7 @@ export function Header({ title, onMenuToggle, onToggleSidebarCollapse, sidebarCo
 
                 {/* Notifications list */}
                 <ScrollArea className="max-h-80">
-                  {notifications.length === 0 ? (
+                  {localNotifications.length === 0 ? (
                     <div className="flex flex-col items-center justify-center py-8 px-4">
                       <Bell className="size-8 text-slate-300 dark:text-slate-600 mb-2" />
                       <p className="text-slate-400 dark:text-slate-500 text-sm">لا توجد إشعارات</p>
@@ -203,7 +196,7 @@ export function Header({ title, onMenuToggle, onToggleSidebarCollapse, sidebarCo
                     </div>
                   ) : (
                     <div className="divide-y divide-slate-100 dark:divide-slate-700/30">
-                      {notifications.map((notif) => (
+                      {localNotifications.map((notif) => (
                         <motion.div
                           key={notif.id}
                           initial={{ opacity: 0 }}
@@ -212,7 +205,7 @@ export function Header({ title, onMenuToggle, onToggleSidebarCollapse, sidebarCo
                             !notif.read ? 'bg-blue-50/50 dark:bg-blue-500/5' : ''
                           }`}
                           onClick={() => {
-                            setNotifications((prev) =>
+                            setLocalNotifications((prev) =>
                               prev.map((n) => (n.id === notif.id ? { ...n, read: true } : n))
                             );
                           }}

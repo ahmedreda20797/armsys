@@ -47,10 +47,11 @@ interface RuleFormData {
 }
 
 const defaultRules: Omit<DeductionRule, 'id' | 'createdAt' | 'updatedAt'>[] = [
-  { key: 'late15', label: 'تأخير 15 دقيقة', amount: 0, unit: 'days' },
-  { key: 'late30', label: 'تأخير 30 دقيقة', amount: 0.25, unit: 'days' },
-  { key: 'late60', label: 'تأخير 60 دقيقة', amount: 0.5, unit: 'days' },
+  { key: 'late15', label: 'تأخير من 16 إلى 30 دقيقة', amount: 0.25, unit: 'days' },
+  { key: 'late30', label: 'تأخير من 31 إلى 60 دقيقة', amount: 0.5, unit: 'days' },
+  { key: 'late60', label: 'تأخير 61 دقيقة فأكثر', amount: 1, unit: 'days' },
   { key: 'absence', label: 'غياب', amount: 1, unit: 'days' },
+  { key: 'singleFingerprint', label: 'بصمة واحدة فقط (دخول أو خروج بدون الأخرى)', amount: 0.5, unit: 'days' },
 ];
 
 const emptyForm: RuleFormData = {
@@ -154,16 +155,8 @@ export default function RulesPage() {
 
   const handleLoadDefaults = async () => {
     try {
-      for (const rule of defaultRules) {
-        const exists = rules.find((r) => r.key === rule.key);
-        if (!exists) {
-          await fetch('/api/rules', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(rule),
-          });
-        }
-      }
+      // The GET /api/rules endpoint auto-syncs canonical amounts
+      // Just re-fetch to trigger sync and refresh UI
       await fetchRules();
     } catch {
       // Error handled silently
@@ -285,15 +278,13 @@ export default function RulesPage() {
         <div className="flex items-center gap-2 flex-wrap">
           {canEdit && (
             <>
-              {rules.length === 0 && (
-                <Button
-                  variant="outline"
-                  onClick={handleLoadDefaults}
-                  className="border-slate-600 text-slate-300 hover:bg-slate-700"
-                >
-                  تحميل القواعد الافتراضية
-                </Button>
-              )}
+              <Button
+                variant="outline"
+                onClick={handleLoadDefaults}
+                className="border-slate-600 text-slate-300 hover:bg-slate-700"
+              >
+                مزامنة القواعد
+              </Button>
               <Button
                 onClick={() => {
                   setForm(emptyForm);

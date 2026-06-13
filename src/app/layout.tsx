@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono, Cairo } from "next/font/google";
 import "./globals.css";
 import { Toaster } from "sonner";
+import { QueryProvider } from "@/lib/query-provider";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -39,8 +40,10 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} ${cairo.variable} antialiased bg-slate-950 text-slate-50`}
         style={{ fontFamily: 'var(--font-cairo), var(--font-geist-sans), "Segoe UI", Tahoma, sans-serif' }}
       >
-        {children}
-        <Toaster position="top-left" richColors />
+        <QueryProvider>
+          {children}
+          <Toaster position="top-left" richColors />
+        </QueryProvider>
       </body>
     </html>
   );

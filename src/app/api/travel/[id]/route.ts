@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { db } from '@/lib/db';
+import { updateRecord, deleteRecord } from '@/lib/db';
 
 export async function PUT(
   request: NextRequest,
@@ -9,10 +9,7 @@ export async function PUT(
     const { id } = await params;
     const body = await request.json();
 
-    const trip = await db.travelDeal.update({
-      where: { id },
-      data: body,
-    });
+    const trip = await updateRecord('travelDeals', id, body);
 
     return NextResponse.json(trip);
   } catch (error) {
@@ -27,7 +24,7 @@ export async function DELETE(
 ) {
   try {
     const { id } = await params;
-    await db.travelDeal.delete({ where: { id } });
+    await deleteRecord('travelDeals', id);
     return NextResponse.json({ message: 'تم حذف الرحلة بنجاح' });
   } catch (error) {
     console.error('Delete travel error:', error);

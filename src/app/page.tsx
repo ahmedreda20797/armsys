@@ -1,21 +1,57 @@
 'use client';
 
+import dynamic from 'next/dynamic';
+import { Skeleton } from '@/components/ui/skeleton';
 import { AuthProvider } from '@/contexts/AuthContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { useAppStore } from '@/lib/store';
 import { AppLayout } from '@/components/layout/AppLayout';
 import LoginPage from '@/components/pages/LoginPage';
-import HomePage from '@/components/pages/HomePage';
-import EmployeesPage from '@/components/pages/EmployeesPage';
-import BiometricPage from '@/components/pages/BiometricPage';
-import AttendancePage from '@/components/pages/AttendancePage';
-import RequestsPage from '@/components/pages/RequestsPage';
-import RulesPage from '@/components/pages/RulesPage';
-import QualityPage from '@/components/pages/QualityPage';
-import TravelPage from '@/components/pages/TravelPage';
-import ReportsPage from '@/components/pages/ReportsPage';
-import DashboardPage from '@/components/pages/DashboardPage';
-import FirebaseSettingsPage from '@/components/pages/FirebaseSettingsPage';
+
+// ═══════════════════════════════════════════════════
+//  Lazy-loaded pages — code splitting for faster initial load
+//  Only the active page's JS is downloaded & executed
+// ═══════════════════════════════════════════════════
+
+function PageSkeleton() {
+  return (
+    <div className="space-y-6">
+      <Skeleton className="h-10 w-48 rounded-lg bg-slate-800/60" />
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
+        {Array.from({ length: 6 }).map((_, i) => (
+          <Skeleton key={i} className="h-[120px] rounded-2xl bg-slate-800/40" />
+        ))}
+      </div>
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {Array.from({ length: 3 }).map((_, i) => (
+          <Skeleton key={i} className="h-[400px] rounded-2xl bg-slate-800/40" />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+const HomePage = dynamic(() => import('@/components/pages/HomePage'), { loading: () => <PageSkeleton />, ssr: false });
+const EmployeesPage = dynamic(() => import('@/components/pages/EmployeesPage'), { loading: () => <PageSkeleton />, ssr: false });
+const BiometricPage = dynamic(() => import('@/components/pages/BiometricPage'), { loading: () => <PageSkeleton />, ssr: false });
+const AttendancePage = dynamic(() => import('@/components/pages/AttendancePage'), { loading: () => <PageSkeleton />, ssr: false });
+const RequestsPage = dynamic(() => import('@/components/pages/RequestsPage'), { loading: () => <PageSkeleton />, ssr: false });
+const RulesPage = dynamic(() => import('@/components/pages/RulesPage'), { loading: () => <PageSkeleton />, ssr: false });
+const QualityPage = dynamic(() => import('@/components/pages/QualityPage'), { loading: () => <PageSkeleton />, ssr: false });
+const HrDeductionsPage = dynamic(() => import('@/components/pages/HrDeductionsPage'), { loading: () => <PageSkeleton />, ssr: false });
+const TravelPage = dynamic(() => import('@/components/pages/TravelPage'), { loading: () => <PageSkeleton />, ssr: false });
+const ReportsPage = dynamic(() => import('@/components/pages/ReportsPage'), { loading: () => <PageSkeleton />, ssr: false });
+const DashboardPage = dynamic(() => import('@/components/pages/DashboardPage'), { loading: () => <PageSkeleton />, ssr: false });
+const FirebaseSettingsPage = dynamic(() => import('@/components/pages/FirebaseSettingsPage'), { loading: () => <PageSkeleton />, ssr: false });
+
+// Preload the most-visited pages in background after mount
+if (typeof window !== 'undefined') {
+  // Preload common pages after idle
+  requestIdleCallback?.(() => {
+    import('@/components/pages/EmployeesPage');
+    import('@/components/pages/AttendancePage');
+  });
+}
 
 function PageRouter() {
   const currentPage = useAppStore((s) => s.currentPage);
@@ -35,6 +71,8 @@ function PageRouter() {
       return <RulesPage />;
     case 'quality':
       return <QualityPage />;
+    case 'hrDeductions':
+      return <HrDeductionsPage />;
     case 'travel':
       return <TravelPage />;
     case 'reports':
