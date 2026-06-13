@@ -33,6 +33,7 @@ import {
   TableCell,
 } from '@/components/ui/table';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import { Checkbox } from '@/components/ui/checkbox';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import {
   Settings,
@@ -41,18 +42,25 @@ import {
   Trash2,
   Shield,
   UserPlus,
+  Ban,
+  CheckCircle2,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
-import { APP_PAGES } from '@/config/permissions';
-import type { PermissionLevel } from '@/config/permissions';
+import { APP_PAGES, getActionLabel, type PermissionsMap, type PagePermission, type PermissionLevel, type ActionKey } from '@/config/permissions';
 
 interface UserRecord {
   id: string;
   email: string;
   name: string;
   role: string;
-  permissions: Record<string, PermissionLevel>;
+  permissions: PermissionsMap;
+  isSuspended?: boolean;
+  suspendedAt?: string;
   createdAt: string;
 }
+
+const EXCLUDED_PAGES = ['home', 'dashboard', 'firebase'];
 
 export default function DashboardPage() {
   const { isAdmin } = usePermissions('dashboard');
@@ -69,7 +77,8 @@ export default function DashboardPage() {
   });
   const [permUserId, setPermUserId] = useState<string | null>(null);
   const [permUser, setPermUser] = useState<UserRecord | null>(null);
-  const [tempPermissions, setTempPermissions] = useState<Record<string, PermissionLevel>>({});
+  const [tempPermissions, setTempPermissions] = useState<PermissionsMap>({});
+  const [expandedPage, setExpandedPage] = useState<string | null>(null);
 
   useEffect(() => {
     fetchUsers();
@@ -104,7 +113,6 @@ export default function DashboardPage() {
         setAddForm({ email: '', name: '', password: '', role: 'user' });
       }
     } catch {
-      // Error handled silently
     } finally {
       setSaving(false);
     }
@@ -118,7 +126,20 @@ export default function DashboardPage() {
         setDeletingId(null);
       }
     } catch {
-      // Error handled silently
+    }
+  };
+
+  const toggleSuspend = async (user: UserRecord) => {
+    try {
+      const res = await fetch(`/api/dashboard/users/${user.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ isSuspended: !user.isSuspended }),
+      });
+      if (res.ok) {
+        await fetchUsers();
+      }
+    } catch {
     }
   };
 
@@ -126,6 +147,54 @@ export default function DashboardPage() {
     setPermUserId(user.id);
     setPermUser(user);
     setTempPermissions({ ...user.permissions });
+    setExpandedPage(null);
+  };
+
+  const getPermLevel = (pid: string): PermissionLevel => {
+    const perm = tempPermissions[pid];
+    if (!perm) return 'none';
+    if (typeof perm === 'string') return perm as PermissionLevel;
+    return (perm as PagePermission).level || 'none';
+  };
+
+  const getActionState = (pid: string, action: ActionKey): boolean => {
+    const perm = tempPermissions[pid];
+    if (!perm) return false;
+    if (typeof perm === 'string') return perm === 'edit';
+    return (perm as PagePermission).actions?.[action] === true;
+  };
+
+  const setPermLevel = (pid: string, level: PermissionLevel) => {
+    setTempPermissions((prev) => {
+      const existing = prev[pid];
+      if (typeof existing === 'string' || !existing) {
+        if (level === 'edit') {
+          const page = APP_PAGES.find(p => p.id === pid);
+          const actions: Record<string, boolean> = {};
+          page?.availableActions.forEach(a => { actions[a] = true; });
+          return { ...prev, [pid]: { level: 'edit', actions } };
+        }
+        return { ...prev, [pid]: level };
+      } else {
+        return { ...prev, [pid]: { ...existing, level } };
+      }
+    });
+  };
+
+  const toggleAction = (pid: string, action: ActionKey) => {
+    setTempPermissions((prev) => {
+      const existing = prev[pid];
+      let perm: PagePermission;
+      if (typeof existing === 'string' || !existing) {
+        perm = { level: 'edit', actions: {} };
+      } else {
+        perm = { ...existing, actions: { ...existing.actions } };
+      }
+      perm.level = 'edit';
+      if (!perm.actions) perm.actions = {};
+      perm.actions[action] = !perm.actions[action];
+      return { ...prev, [pid]: perm };
+    });
   };
 
   const savePermissions = async () => {
@@ -143,7 +212,6 @@ export default function DashboardPage() {
         setPermUser(null);
       }
     } catch {
-      // Error handled silently
     } finally {
       setSaving(false);
     }
@@ -162,6 +230,8 @@ export default function DashboardPage() {
     }
   };
 
+  const permissionPages = APP_PAGES.filter(p => !EXCLUDED_PAGES.includes(p.id));
+
   if (!isAdmin) {
     return (
       <div dir="rtl" className="flex flex-col items-center justify-center py-20">
@@ -174,7 +244,6 @@ export default function DashboardPage() {
 
   return (
     <div dir="rtl" className="space-y-6">
-      {/* Header */}
       <motion.div
         initial={{ opacity: 0, y: -10 }}
         animate={{ opacity: 1, y: 0 }}
@@ -198,7 +267,6 @@ export default function DashboardPage() {
         </Button>
       </motion.div>
 
-      {/* Users Table */}
       {loading ? (
         <div className="space-y-3">
           {[1, 2, 3].map((i) => (
@@ -226,6 +294,7 @@ export default function DashboardPage() {
                   <TableHead className="text-slate-400 text-sm font-medium">الاسم</TableHead>
                   <TableHead className="text-slate-400 text-sm font-medium hidden sm:table-cell">البريد</TableHead>
                   <TableHead className="text-slate-400 text-sm font-medium">الدور</TableHead>
+                  <TableHead className="text-slate-400 text-sm font-medium">الحالة</TableHead>
                   <TableHead className="text-slate-400 text-sm font-medium hidden md:table-cell">تاريخ الإنشاء</TableHead>
                   <TableHead className="text-slate-400 text-sm font-medium">إجراءات</TableHead>
                 </TableRow>
@@ -243,6 +312,13 @@ export default function DashboardPage() {
                       {user.email}
                     </TableCell>
                     <TableCell>{getRoleLabel(user.role)}</TableCell>
+                    <TableCell>
+                      {user.isSuspended ? (
+                        <Badge className="bg-amber-500/15 text-amber-400 border-amber-500/20">موقوف</Badge>
+                      ) : (
+                        <Badge className="bg-emerald-500/15 text-emerald-400 border-emerald-500/20">نشط</Badge>
+                      )}
+                    </TableCell>
                     <TableCell className="text-slate-400 text-sm hidden md:table-cell" dir="ltr">
                       {new Date(user.createdAt).toLocaleDateString('ar-EG')}
                     </TableCell>
@@ -258,15 +334,30 @@ export default function DashboardPage() {
                           <Pencil className="size-4" />
                         </Button>
                         {user.role !== 'admin' && (
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => setDeletingId(user.id)}
-                            className="text-slate-400 hover:text-red-400 hover:bg-red-500/10"
-                            title="حذف المستخدم"
-                          >
-                            <Trash2 className="size-4" />
-                          </Button>
+                          <>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => toggleSuspend(user)}
+                              className={`${
+                                user.isSuspended
+                                  ? 'text-amber-400 hover:text-emerald-400 hover:bg-emerald-500/10'
+                                  : 'text-slate-400 hover:text-amber-400 hover:bg-amber-500/10'
+                              }`}
+                              title={user.isSuspended ? 'تفعيل الحساب' : 'تعليق الحساب'}
+                            >
+                              {user.isSuspended ? <CheckCircle2 className="size-4" /> : <Ban className="size-4" />}
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => setDeletingId(user.id)}
+                              className="text-slate-400 hover:text-red-400 hover:bg-red-500/10"
+                              title="حذف المستخدم"
+                            >
+                              <Trash2 className="size-4" />
+                            </Button>
+                          </>
                         )}
                       </div>
                     </TableCell>
@@ -338,18 +429,8 @@ export default function DashboardPage() {
             </div>
           </div>
           <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setIsAddOpen(false)}
-              className="border-slate-600 text-slate-300"
-            >
-              إلغاء
-            </Button>
-            <Button
-              onClick={handleAddUser}
-              disabled={saving || !addForm.email || !addForm.password}
-              className="bg-emerald-600 hover:bg-emerald-700 text-white"
-            >
+            <Button variant="outline" onClick={() => setIsAddOpen(false)} className="border-slate-600 text-slate-300">إلغاء</Button>
+            <Button onClick={handleAddUser} disabled={saving || !addForm.email || !addForm.password} className="bg-emerald-600 hover:bg-emerald-700 text-white">
               {saving ? 'جاري الإنشاء...' : 'إنشاء'}
             </Button>
           </DialogFooter>
@@ -360,68 +441,84 @@ export default function DashboardPage() {
       <Dialog open={!!permUserId} onOpenChange={() => setPermUserId(null)}>
         <DialogContent className="backdrop-blur-xl bg-slate-900 border-slate-700 max-w-lg">
           <DialogHeader>
-            <DialogTitle className="text-white">
-              صلاحيات: {permUser?.name || permUser?.email}
-            </DialogTitle>
-            <DialogDescription className="text-slate-400">
-              تعديل صلاحيات الوصول لكل صفحة
-            </DialogDescription>
+            <DialogTitle className="text-white">صلاحيات: {permUser?.name || permUser?.email}</DialogTitle>
+            <DialogDescription className="text-slate-400">تعديل صلاحيات الوصول لكل صفحة</DialogDescription>
           </DialogHeader>
-          <ScrollArea className="max-h-96">
-            <div className="space-y-4 pr-4">
-              {APP_PAGES.map((page) => (
-                <div
-                  key={page.id}
-                  className="flex items-center justify-between p-3 rounded-lg bg-slate-800/50 border border-slate-700/50"
-                >
-                  <span className="text-white text-sm font-medium">{page.nameAr}</span>
-                  <RadioGroup
-                    value={tempPermissions[page.id] || 'none'}
-                    onValueChange={(v) =>
-                      setTempPermissions((prev) => ({
-                        ...prev,
-                        [page.id]: v as PermissionLevel,
-                      }))
-                    }
-                    className="flex gap-3"
-                    dir="rtl"
-                  >
-                    <div className="flex items-center gap-1.5">
-                      <RadioGroupItem value="none" id={`none-${page.id}`} className="border-slate-600" />
-                      <Label htmlFor={`none-${page.id}`} className="text-slate-400 text-xs cursor-pointer">
-                        مخفي
-                      </Label>
+          <ScrollArea className="max-h-[60vh]">
+            <div className="space-y-3 pr-4 pb-2">
+              {permissionPages.map((page) => {
+                const level = getPermLevel(page.id);
+                const isExpanded = expandedPage === page.id;
+                const hasActions = page.availableActions.length > 0;
+                return (
+                  <div key={page.id} className="rounded-lg bg-slate-800/50 border border-slate-700/50 overflow-hidden">
+                    <div className="flex items-center justify-between p-3">
+                      <span className="text-white text-sm font-medium">{page.title}</span>
+                      <div className="flex items-center gap-2">
+                        <RadioGroup
+                          value={level}
+                          onValueChange={(v) => setPermLevel(page.id, v as PermissionLevel)}
+                          className="flex gap-2"
+                          dir="rtl"
+                        >
+                          <div className="flex items-center gap-1.5">
+                            <RadioGroupItem value="none" id={`none-${page.id}`} className="border-slate-600" />
+                            <Label htmlFor={`none-${page.id}`} className="text-slate-400 text-xs cursor-pointer whitespace-nowrap">مخفي</Label>
+                          </div>
+                          <div className="flex items-center gap-1.5">
+                            <RadioGroupItem value="read" id={`read-${page.id}`} className="border-slate-600" />
+                            <Label htmlFor={`read-${page.id}`} className="text-slate-400 text-xs cursor-pointer whitespace-nowrap">قراءة</Label>
+                          </div>
+                          <div className="flex items-center gap-1.5">
+                            <RadioGroupItem value="edit" id={`edit-${page.id}`} className="border-slate-600" />
+                            <Label htmlFor={`edit-${page.id}`} className="text-slate-400 text-xs cursor-pointer whitespace-nowrap">تعديل</Label>
+                          </div>
+                        </RadioGroup>
+                        {hasActions && level === 'edit' && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="size-6 text-slate-400 hover:text-white"
+                            onClick={() => setExpandedPage(isExpanded ? null : page.id)}
+                          >
+                            {isExpanded ? <ChevronUp className="size-3" /> : <ChevronDown className="size-3" />}
+                          </Button>
+                        )}
+                      </div>
                     </div>
-                    <div className="flex items-center gap-1.5">
-                      <RadioGroupItem value="read" id={`read-${page.id}`} className="border-slate-600" />
-                      <Label htmlFor={`read-${page.id}`} className="text-slate-400 text-xs cursor-pointer">
-                        قراءة
-                      </Label>
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                      <RadioGroupItem value="edit" id={`edit-${page.id}`} className="border-slate-600" />
-                      <Label htmlFor={`edit-${page.id}`} className="text-slate-400 text-xs cursor-pointer">
-                        تعديل
-                      </Label>
-                    </div>
-                  </RadioGroup>
-                </div>
-              ))}
+                    {hasActions && level === 'edit' && isExpanded && (
+                      <motion.div
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: 'auto' }}
+                        exit={{ opacity: 0, height: 0 }}
+                        className="border-t border-slate-700/50 p-3 bg-slate-800/30"
+                      >
+                        <p className="text-slate-500 text-xs mb-2">تحديد الإجراءات المتاحة:</p>
+                        <div className="flex flex-wrap gap-3">
+                          {page.availableActions.map((action) => (
+                            <div key={action} className="flex items-center gap-1.5">
+                              <Checkbox
+                                id={`action-${page.id}-${action}`}
+                                checked={getActionState(page.id, action)}
+                                onCheckedChange={() => toggleAction(page.id, action)}
+                                className="border-slate-600 data-[state=checked]:bg-emerald-600 data-[state=checked]:border-emerald-600"
+                              />
+                              <Label htmlFor={`action-${page.id}-${action}`} className="text-slate-300 text-xs cursor-pointer">
+                                {getActionLabel(action)}
+                              </Label>
+                            </div>
+                          ))}
+                        </div>
+                      </motion.div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           </ScrollArea>
           <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setPermUserId(null)}
-              className="border-slate-600 text-slate-300"
-            >
-              إلغاء
-            </Button>
-            <Button
-              onClick={savePermissions}
-              disabled={saving}
-              className="bg-emerald-600 hover:bg-emerald-700 text-white"
-            >
+            <Button variant="outline" onClick={() => setPermUserId(null)} className="border-slate-600 text-slate-300">إلغاء</Button>
+            <Button onClick={savePermissions} disabled={saving} className="bg-emerald-600 hover:bg-emerald-700 text-white">
               {saving ? 'جاري الحفظ...' : 'حفظ الصلاحيات'}
             </Button>
           </DialogFooter>
@@ -433,26 +530,11 @@ export default function DashboardPage() {
         <DialogContent className="backdrop-blur-xl bg-slate-900 border-slate-700">
           <DialogHeader>
             <DialogTitle className="text-white">تأكيد الحذف</DialogTitle>
-            <DialogDescription className="text-slate-400">
-              هل أنت متأكد من حذف هذا المستخدم؟ لا يمكن التراجع عن هذا الإجراء.
-            </DialogDescription>
+            <DialogDescription className="text-slate-400">هل أنت متأكد من حذف هذا المستخدم؟ لا يمكن التراجع عن هذا الإجراء.</DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setDeletingId(null)}
-              className="border-slate-600 text-slate-300"
-            >
-              إلغاء
-            </Button>
-            <Button
-              variant="destructive"
-              onClick={() => {
-                if (deletingId) handleDelete(deletingId);
-              }}
-            >
-              حذف
-            </Button>
+            <Button variant="outline" onClick={() => setDeletingId(null)} className="border-slate-600 text-slate-300">إلغاء</Button>
+            <Button variant="destructive" onClick={() => { if (deletingId) handleDelete(deletingId); }}>حذف</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

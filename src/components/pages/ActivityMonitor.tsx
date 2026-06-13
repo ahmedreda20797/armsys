@@ -232,7 +232,7 @@ export default function ActivityMonitor() {
           </p>
         </div>
         <Button
-          onClick={refreshAll}
+          onClick={refreshAll => {}}
           variant="outline"
           size="sm"
           className="border-slate-600 text-slate-300 hover:bg-slate-700"
@@ -298,7 +298,7 @@ export default function ActivityMonitor() {
                   <p className="text-slate-400">لا توجد أنشطة حتى الآن</p>
                 </div>
               ) : (
-                <ScrollArea className="max-h-[500px]">
+                <ScrollArea className="max-h-125">
                   <div className="divide-y divide-slate-700/50">
                     {displayedLogs.map((log) => (
                       <motion.div

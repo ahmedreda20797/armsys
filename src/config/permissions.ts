@@ -44,7 +44,7 @@ export const APP_PAGES: PageConfig[] = [
     title: 'البصمة',
     icon: 'Fingerprint',
     permissionKey: 'biometric',
-    availableActions: ['create', 'update', 'delete'],
+    availableActions: ['create', 'update', 'delete', 'upload'],
   },
   {
     id: 'attendance',
@@ -131,7 +131,7 @@ export const ADMIN_PERMISSIONS: PermissionsMap = (() => {
 export const HR_PERMISSIONS: PermissionsMap = {
   home: 'read',
   employees: makeEditWithActions(['create', 'update', 'delete', 'export']),
-  biometric: makeEditWithActions(['create', 'update', 'delete']),
+  biometric: makeEditWithActions(['create', 'update', 'delete', 'upload']),
   attendance: makeEditWithActions(['create', 'update', 'delete', 'export']),
   requests: makeEditWithActions(['create', 'update', 'delete', 'approve']),
   rules: 'read',
