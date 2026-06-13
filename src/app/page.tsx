@@ -56,33 +56,36 @@ if (typeof window !== 'undefined') {
 function PageRouter() {
   const currentPage = useAppStore((s) => s.currentPage);
 
+  // key={currentPage} ensures React fully unmounts/remounts
+  // when switching pages, so useEffect(() => { fetchData() }, [])
+  // runs fresh each time — fixes data disappearing on navigation
   switch (currentPage) {
     case 'home':
-      return <HomePage />;
+      return <HomePage key="home" />;
     case 'employees':
-      return <EmployeesPage />;
+      return <EmployeesPage key="employees" />;
     case 'biometric':
-      return <BiometricPage />;
+      return <BiometricPage key="biometric" />;
     case 'attendance':
-      return <AttendancePage />;
+      return <AttendancePage key="attendance" />;
     case 'requests':
-      return <RequestsPage />;
+      return <RequestsPage key="requests" />;
     case 'rules':
-      return <RulesPage />;
+      return <RulesPage key="rules" />;
     case 'quality':
-      return <QualityPage />;
+      return <QualityPage key="quality" />;
     case 'hrDeductions':
-      return <HrDeductionsPage />;
+      return <HrDeductionsPage key="hrDeductions" />;
     case 'travel':
-      return <TravelPage />;
+      return <TravelPage key="travel" />;
     case 'reports':
-      return <ReportsPage />;
+      return <ReportsPage key="reports" />;
     case 'dashboard':
-      return <DashboardPage />;
+      return <DashboardPage key="dashboard" />;
     case 'firebase':
-      return <FirebaseSettingsPage />;
+      return <FirebaseSettingsPage key="firebase" />;
     default:
-      return <HomePage />;
+      return <HomePage key="home" />;
   }
 }
 
@@ -93,7 +96,7 @@ function AppContent() {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-900">
         <div className="flex flex-col items-center gap-4">
-          <div className="animate-spin rounded-full h-12 w-12 border-3 border-emerald-500 border-t-transparent" />
+          <div className="animate-spin rounded-full h-12 w-12 border-3 border-indigo-500 border-t-transparent" />
           <p className="text-slate-400 text-sm">جاري التحميل...</p>
         </div>
       </div>

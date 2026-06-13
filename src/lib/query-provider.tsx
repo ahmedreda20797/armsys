@@ -17,8 +17,8 @@ function makeQueryClient() {
         gcTime: 5 * 60 * 1000,
         // Retry failed requests once (not 3x default — faster UX)
         retry: 1,
-        // Don't refetch on window focus by default (reduces unnecessary traffic)
-        refetchOnWindowFocus: false,
+        // Refetch on window focus for live updates across users
+        refetchOnWindowFocus: true,
         // Don't refetch on reconnect (server cache handles this)
         refetchOnReconnect: true,
       },

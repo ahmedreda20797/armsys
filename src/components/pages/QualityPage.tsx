@@ -28,7 +28,7 @@ import {
   Award,
   Plus,
   Search,
-  X,
+ X,
   Link as LinkIcon,
   Trash2,
   ChevronDown,
@@ -36,8 +36,11 @@ import {
   ShieldAlert,
   ShieldCheck,
   AlertTriangle,
-  CalendarDays,
-  Users,
+ CalendarDays,
+ Users,
+  Send,
+  CheckCircle2,
+ Copy,
 } from 'lucide-react';
 import type { QualityDeduction, Employee } from '@/types';
 import { logCreate, logDelete } from '@/lib/activity-logger';
@@ -112,6 +115,9 @@ export default function QualityPage() {
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [expandedRow, setExpandedRow] = useState<string | null>(null);
   const [expandedEmp, setExpandedEmp] = useState<string | null>(null);
+  const [sendingDedId, setSendingDedId] = useState<string | null>(null);
+  const [sentDedIds, setSentDedIds] = useState<Set<string>>(new Set());
+  const [sendingAllForEmp, setSendingAllForEmp] = useState<string | null>(null);
   const [addForm, setAddForm] = useState({
     employeeId: '',
     date: '',
@@ -200,6 +206,56 @@ export default function QualityPage() {
       // Error handled silently
     } finally {
       setSaving(false);
+    }
+  };
+
+  const sendDeductionNotification = async (deduction: QualityWithEmployee, empName: string) => {
+    const id = deduction.id;
+    setSendingDedId(id);
+    try {
+      const text = ` خصم جودة جديد\nالموظف: ${empName}\nالتاريخ: ${deduction.date}\nالنوع: ${deduction.type === 'safety' ? 'سلامة' : deduction.type === 'compliance' ? 'التزام' : 'جودة'}\nالوصف: ${deduction.description || 'بدون وصف'}\nعدد أيام الخصم: ${deduction.deductionDays}${deduction.deductionAmount > 0 ? `\nالمبلغ: ${deduction.deductionAmount} جنيه` : ''}`;
+      const res = await fetch('/api/firebase/notifications', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: `خصم جودة - ${empName}`,
+          body: text,
+          type: 'system',
+        }),
+      });
+      if (res.ok) {
+        setSentDedIds((prev) => new Set(prev).add(id));
+      }
+    } catch {
+      // silent
+    } finally {
+      setSendingDedId(null);
+    }
+  };
+
+  const sendAllDeductionsForEmployee = async (empId: string, empName: string, deductions: QualityWithEmployee[]) => {
+    setSendingAllForEmp(empId);
+    try {
+      const totalDays = deductions.reduce((s, d) => s + d.deductionDays, 0);
+      const totalAmount = deductions.reduce((s, d) => s + d.deductionAmount, 0);
+      const items = deductions.map((d) => `• ${d.date} - ${d.type === 'safety' ? 'سلامة' : d.type === 'compliance' ? 'التزام' : 'جودة'} - ${d.deductionDays} يوم${d.deductionAmount > 0 ? ` - ${d.deductionAmount} ج` : ''}\n  ${d.description || ''}`).join('\n');
+      const text = `ملخص خصومات الجودة\nالموظف: ${empName}\nإجمالي الخصومات: ${deductions.length}\nإجمالي الأيام: ${totalDays}\n${totalAmount > 0 ? `إجمالي المبلغ: ${totalAmount} جنيه\n` : ''}\n─────────────\n${items}`;
+      const res = await fetch('/api/firebase/notifications', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: `ملخص خصومات الجودة - ${empName}`,
+          body: text,
+          type: 'system',
+        }),
+      });
+      if (res.ok) {
+        deductions.forEach((d) => setSentDedIds((prev) => new Set(prev).add(d.id)));
+      }
+    } catch {
+      // silent
+    } finally {
+      setSendingAllForEmp(null);
     }
   };
 
@@ -437,6 +493,23 @@ export default function QualityPage() {
                   <div className={`flex-shrink-0 text-slate-500 transition-transform duration-200 ${isEmpExpanded ? 'rotate-180' : ''}`}>
                     <ChevronDown className="size-4" />
                   </div>
+
+                  {/* Send All button */}
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      sendAllDeductionsForEmployee(empId, emp.name, emp.deductions);
+                    }}
+                    disabled={sendingAllForEmp === empId}
+                    className="flex-shrink-0 text-slate-600 hover:text-cyan-400 transition-colors disabled:opacity-50 p-1 rounded-md hover:bg-cyan-500/10"
+                    title="إرسال كل الخصومات للموظف"
+                  >
+                    {sendingAllForEmp === empId ? (
+                      <span className="size-4 animate-spin border-2 border-cyan-400 border-t-transparent rounded-full inline-block" />
+                    ) : (
+                      <Send className="size-4" />
+                    )}
+                  </button>
                 </div>
 
                 {/* ═══ Employee Deductions (expandable) ═══ */}
@@ -510,6 +583,25 @@ export default function QualityPage() {
                                     <Trash2 className="size-3" />
                                   </button>
                                 )}
+
+                                {/* Send to Employee */}
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    sendDeductionNotification(d, emp.name);
+                                  }}
+                                  disabled={sendingDedId === d.id}
+                                  className="flex-shrink-0 text-slate-600 hover:text-cyan-400 transition-colors disabled:opacity-50"
+                                  title="إرسال للموظف"
+                                >
+                                  {sentDedIds.has(d.id) ? (
+                                    <CheckCircle2 className="size-3 text-emerald-400" />
+                                  ) : sendingDedId === d.id ? (
+                                    <span className="size-3 animate-spin border-2 border-cyan-400 border-t-transparent rounded-full inline-block" />
+                                  ) : (
+                                    <Send className="size-3" />
+                                  )}
+                                </button>
                               </div>
 
                               {/* Expanded Description */}

@@ -112,7 +112,7 @@ export async function POST(request: NextRequest) {
     await syncRulesToCanonical();
     invalidateCache('deductionRules');
 
-    const [employee, deductionRules, biometricRecords, attendanceRecords, allRequests, qualityDeductions, waivedDeductions] = await Promise.all([
+    const [employee, deductionRules, biometricRecords, attendanceRecords, allRequests, qualityDeductions, waivedDeductions, hrDeductions] = await Promise.all([
       getById('employees', employeeId),
       getAll('deductionRules'),
       findWhereContains('biometrics', 'date', datePattern),
@@ -120,6 +120,7 @@ export async function POST(request: NextRequest) {
       findWhereContains('requests', 'date', datePattern),
       findWhere('qualityDeductions', { month }),
       findWhere('waivedDeductions', { month }),
+      findWhere('hrDeductions', { month, status: 'approved' }),
     ]);
 
     if (!employee) {
@@ -148,6 +149,7 @@ export async function POST(request: NextRequest) {
 
     const empRequests = allRequests.filter((r: any) => r.employeeId === employeeId);
     const empQuality = qualityDeductions.filter((q: any) => q.employeeId === employeeId);
+    const empHrDeductions = hrDeductions.filter((h: any) => h.employeeId === employeeId);
 
     const waivedMap = new Map<string, string[]>(); // date -> deductionType[]
     for (const w of waivedDeductions) {
@@ -515,6 +517,17 @@ export async function POST(request: NextRequest) {
       createdAt: q.createdAt,
     }));
 
+    const formattedHrDeductions = empHrDeductions.map((h: any) => ({
+      id: h.id,
+      date: h.deductionDate || h.createdAt || '',
+      type: h.type,
+      reason: h.reason || '',
+      amount: h.amount,
+      unit: h.unit,
+      month: h.month,
+      createdAt: h.createdAt,
+    }));
+
     return NextResponse.json({
       employee: {
         id: employee.id,
@@ -551,6 +564,7 @@ export async function POST(request: NextRequest) {
       dailyBreakdown,
       requests: formattedRequests,
       qualityDeductions: formattedQuality,
+      hrDeductions: formattedHrDeductions,
     });
   } catch (error) {
     console.error('Employee detail error:', error);
