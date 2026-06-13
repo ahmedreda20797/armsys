@@ -131,7 +131,7 @@ export function Sidebar({ currentPage, onNavigate, isOpen, onToggle, isCollapsed
                         className={cn(
                           'w-full flex items-center justify-center py-2.5 rounded-lg transition-all duration-200 relative',
                           isActive
-                            ? 'bg-emerald-600/90 text-white shadow-lg shadow-emerald-900/40'
+                            ? 'bg-indigo-600/90 text-white shadow-lg shadow-indigo-900/40'
                             : 'text-slate-400 hover:bg-slate-800 hover:text-white hover:shadow-lg hover:shadow-black/10'
                         )}
                       >
@@ -141,7 +141,7 @@ export function Sidebar({ currentPage, onNavigate, isOpen, onToggle, isCollapsed
                         {/* Active indicator bar */}
                         {isActive && (
                           <motion.div
-                            className="absolute right-0 top-1/2 -translate-y-1/2 w-1 h-6 rounded-l-full bg-indigo-600/90"
+                            className="absolute right-0 top-1/2 -translate-y-1/2 w-1 h-6 rounded-l-full bg-red-400"
                             layoutId="collapsedIndicator"
                             transition={{ type: 'spring', stiffness: 350, damping: 30 }}
                           />
@@ -256,7 +256,7 @@ export function Sidebar({ currentPage, onNavigate, isOpen, onToggle, isCollapsed
                   <span className="truncate">{page.title}</span>
                   {isActive && (
                     <motion.div
-                      className="mr-auto w-1.5 h-1.5 rounded-full bg-red-600/90"
+                      className="mr-auto w-1.5 h-1.5 rounded-full bg-red-400"
                       layoutId="activeIndicator"
                       transition={{ type: 'spring', stiffness: 350, damping: 30 }}
                     />
