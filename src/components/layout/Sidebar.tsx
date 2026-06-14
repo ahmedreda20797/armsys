@@ -131,7 +131,7 @@ export function Sidebar({ currentPage, onNavigate, isOpen, onToggle, isCollapsed
                         className={cn(
                           'w-full flex items-center justify-center py-2.5 rounded-lg transition-all duration-200 relative',
                           isActive
-                            ? 'bg-indigo-600/90 text-white shadow-lg shadow-indigo-900/40'
+                            ? 'bg-linear-to-r from-violet-600 to-indigo-600 text-white shadow-lg shadow-violet-500/20'
                             : 'text-slate-400 hover:bg-slate-800 hover:text-white hover:shadow-lg hover:shadow-black/10'
                         )}
                       >
@@ -241,7 +241,7 @@ export function Sidebar({ currentPage, onNavigate, isOpen, onToggle, isCollapsed
                   className={cn(
                     'w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200',
                     isActive
-                      ? 'bg-indigo-600/90 text-white shadow-md shadow-indigo-900/30'
+                      ? 'bg-linear-to-r from-violet-600 to-indigo-600 text-white shadow-md shadow-violet-500/20'
                       : 'text-slate-300 hover:bg-slate-800 hover:text-white hover:shadow-lg hover:shadow-black/5'
                   )}
                 >
