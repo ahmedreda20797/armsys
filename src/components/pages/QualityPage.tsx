@@ -344,7 +344,7 @@ export default function QualityPage() {
           <Button
             onClick={() => setIsAddOpen(true)}
             size="sm"
-            className="bg-blue-600 hover:bg-blue-700 text-white h-9 px-4"
+            className="bg-linear-to-r from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white h-9 px-5 shadow-lg shadow-violet-500/20 transition-all"
           >
             <Plus className="size-4 ml-1" />
             إضافة خصم
@@ -793,7 +793,7 @@ export default function QualityPage() {
             <Button
               onClick={handleAdd}
               disabled={saving || !addForm.employeeId || !addForm.date}
-              className="bg-blue-600 hover:bg-blue-700 text-white"
+              className="bg-linear-to-r from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white h-9 px-5 shadow-lg shadow-violet-500/20 transition-all"
             >
               {saving ? 'جاري الحفظ...' : 'حفظ'}
             </Button>
