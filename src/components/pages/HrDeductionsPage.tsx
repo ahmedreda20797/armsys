@@ -280,7 +280,7 @@ export default function HrDeductionsPage() {
       >
         <div>
           <h1 className="text-2xl font-bold text-white flex items-center gap-2">
-            <Banknote className="size-6 text-emerald-400" />
+            <Banknote className="size-6 text-violet-400" />
             خصومات الموارد البشرية
           </h1>
           <p className="text-slate-400 mt-1 text-sm">
@@ -291,7 +291,7 @@ export default function HrDeductionsPage() {
           {canCreate && (
             <Button
               onClick={() => { setIsAddOpen(true); setAddForm({ ...EMPTY_FORM, deductionDate: getTodayDate() }); }}
-              className="bg-emerald-600 hover:bg-emerald-700 text-white"
+              className="from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white"
             >
               <Plus className="size-4" />
               إضافة خصم
@@ -321,7 +321,7 @@ export default function HrDeductionsPage() {
             onClick={() => setStatusFilter(tab.key)}
             className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-all duration-200 ${
               statusFilter === tab.key
-                ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-900/30'
+                ? 'from-violet-600 to-indigo-600 text-white shadow-lg shadow-violet-900/30'
                 : 'bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-white border border-slate-700/50'
             }`}
           >
@@ -638,7 +638,7 @@ export default function HrDeductionsPage() {
             <Button
               onClick={handleAdd}
               disabled={saving || !addForm.employeeId || !addForm.amount || !addForm.month || !addForm.reason}
-              className="bg-emerald-600 hover:bg-emerald-700 text-white"
+              className="from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white"
             >
               {saving ? 'جاري الحفظ...' : 'إضافة'}
             </Button>
@@ -750,7 +750,7 @@ export default function HrDeductionsPage() {
             <Button
               onClick={handleEdit}
               disabled={saving || !editForm.amount || !editForm.reason}
-              className="bg-emerald-600 hover:bg-emerald-700 text-white"
+              className="from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white"
             >
               {saving ? 'جاري الحفظ...' : 'حفظ التعديلات'}
             </Button>

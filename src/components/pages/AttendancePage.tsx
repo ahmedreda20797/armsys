@@ -312,7 +312,7 @@ export default function AttendancePage() {
                 });
                 setIsAddOpen(true);
               }}
-              className="bg-blue-600 hover:bg-blue-700 text-white"
+              className="from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white"
             >
               <Plus className="size-4" />
               تسجيل حضور
@@ -578,7 +578,7 @@ export default function AttendancePage() {
             <Button
               onClick={handleAdd}
               disabled={saving || !addForm.employeeId || !addForm.date}
-              className="bg-emerald-600 hover:bg-emerald-700 text-white"
+              className="from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white"
             >
               {saving ? 'جاري الحفظ...' : 'حفظ'}
             </Button>

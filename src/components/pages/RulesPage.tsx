@@ -301,7 +301,7 @@ export default function RulesPage() {
                   setEditingRule(null);
                   setIsAddOpen(true);
                 }}
-                className="bg-blue-600 hover:bg-blue-700 text-white"
+                className="from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white"
               >
                 <Plus className="size-4" />
                 إضافة قاعدة

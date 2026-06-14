@@ -244,7 +244,7 @@ export default function LoginPage() {
                   <Button
                     type="submit"
                     disabled={localLoading || loading}
-                    className="w-full h-11 bg-linear-to-l from-blue-600 to-blue-700 hover:from-blue-500 hover:to-blue-600 text-white font-semibold text-base rounded-xl transition-all duration-300 shadow-lg shadow-indigo-500/25 hover:shadow-indigo-500/40 disabled:opacity-60"
+                    className="w-full h-11 bg-linear-to-l from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white font-semibold text-base rounded-xl transition-all duration-300 shadow-lg shadow-indigo-500/25 hover:shadow-indigo-500/40 disabled:opacity-60"
                   >
                     {localLoading || loading ? (
                       <>

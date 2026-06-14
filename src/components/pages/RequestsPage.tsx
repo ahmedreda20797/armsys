@@ -186,7 +186,7 @@ export default function RequestsPage() {
       >
         <div>
           <h1 className="text-2xl font-bold text-white flex items-center gap-2">
-            <FileText className="size-6 text-emerald-400" />
+            <FileText className="size-6 text-violet-400" />
             إدارة الطلبات
           </h1>
           <p className="text-slate-400 mt-1 text-sm">
@@ -197,7 +197,7 @@ export default function RequestsPage() {
           {canCreate && (
             <Button
               onClick={() => setIsAddOpen(true)}
-              className="bg-emerald-600 hover:bg-emerald-700 text-white"
+              className="from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white"
             >
               <Plus className="size-4" />
               تقديم طلب
@@ -420,7 +420,7 @@ export default function RequestsPage() {
             <Button
               onClick={handleAdd}
               disabled={saving || !addForm.employeeId || !addForm.date || !addForm.reason}
-              className="bg-blue-600 hover:bg-blue-700 text-white"
+              className="from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white"
             >
               {saving ? 'جاري التقديم...' : 'تقديم'}
             </Button>

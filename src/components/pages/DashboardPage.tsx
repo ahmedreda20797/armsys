@@ -276,7 +276,7 @@ export default function DashboardPage() {
         </div>
         <Button
           onClick={() => setIsAddOpen(true)}
-          className="bg-blue-600 hover:bg-blue-700 text-white"
+          className="from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white"
         >
           <UserPlus className="size-4" />
           إنشاء مستخدم
@@ -468,7 +468,7 @@ export default function DashboardPage() {
             <Button
               onClick={handleAddUser}
               disabled={saving || !addForm.email || !addForm.password}
-              className="bg-blue-600 hover:bg-blue-700 text-white"
+              className="from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white"
             >
               {saving ? 'جاري الإنشاء...' : 'إنشاء'}
             </Button>

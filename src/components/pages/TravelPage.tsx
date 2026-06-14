@@ -1343,7 +1343,7 @@ export default function TravelPage() {
         </div>
         {canCreate && (
           <div className="flex gap-2">
-            <Button onClick={() => { setForm(emptyForm); setEditingTrip(null); setIsAddOpen(true); }} className="bg-emerald-600 hover:bg-emerald-700 text-white">
+            <Button onClick={() => { setForm(emptyForm); setEditingTrip(null); setIsAddOpen(true); }} className="from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white">
               <Plus className="size-4" /> إضافة رحلة
             </Button>
             <Button onClick={() => setIsUploadOpen(true)} variant="outline" className="border-amber-500/30 text-amber-400 hover:bg-amber-500/10">
