@@ -292,7 +292,7 @@ export default function AttendancePage() {
       >
         <div>
           <h1 className="text-2xl font-bold text-white flex items-center gap-2">
-            <Clock className="size-6 text-emerald-400" />
+            <Clock className="size-6 text-blue-400" />
             سجل الحضور والانصراف
           </h1>
           <p className="text-slate-400 mt-1 text-sm">
@@ -312,7 +312,7 @@ export default function AttendancePage() {
                 });
                 setIsAddOpen(true);
               }}
-              className="bg-emerald-600 hover:bg-emerald-700 text-white"
+              className="bg-blue-600 hover:bg-blue-700 text-white"
             >
               <Plus className="size-4" />
               تسجيل حضور

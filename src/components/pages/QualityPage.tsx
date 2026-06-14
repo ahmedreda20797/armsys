@@ -88,7 +88,7 @@ function parseDateToMonth(dateStr: string): string {
 function getTypeBadge(type: string) {
   switch (type) {
     case 'safety':
-      return { label: 'سلامة', color: 'bg-red-500/15 text-red-400 border-red-500/30', icon: ShieldAlert };
+      return { label: 'أخرى', color: 'bg-red-500/15 text-red-400 border-red-500/30', icon: ShieldAlert };
     case 'compliance':
       return { label: 'التزام', color: 'bg-blue-500/15 text-blue-400 border-blue-500/30', icon: ShieldCheck };
     default:
@@ -330,8 +330,8 @@ export default function QualityPage() {
         className="flex flex-col sm:flex-row sm:items-center justify-between gap-3"
       >
         <div className="flex items-center gap-3">
-          <div className="flex items-center justify-center size-10 rounded-xl bg-emerald-500/15 border border-emerald-500/30">
-            <Award className="size-5 text-emerald-400" />
+          <div className="flex items-center justify-center size-10 rounded-xl bg-blue-500/15 border border-blue-500/30">
+            <Award className="size-5 text-blue-400" />
           </div>
           <div>
             <h1 className="text-xl font-bold text-white">خصومات الجودة</h1>
@@ -344,7 +344,7 @@ export default function QualityPage() {
           <Button
             onClick={() => setIsAddOpen(true)}
             size="sm"
-            className="bg-emerald-600 hover:bg-emerald-700 text-white h-9 px-4"
+            className="bg-blue-600 hover:bg-blue-700 text-white h-9 px-4"
           >
             <Plus className="size-4 ml-1" />
             إضافة خصم
@@ -595,7 +595,7 @@ export default function QualityPage() {
                                   title="إرسال للموظف"
                                 >
                                   {sentDedIds.has(d.id) ? (
-                                    <CheckCircle2 className="size-3 text-emerald-400" />
+                                    <CheckCircle2 className="size-3 text-blue-400" />
                                   ) : sendingDedId === d.id ? (
                                     <span className="size-3 animate-spin border-2 border-cyan-400 border-t-transparent rounded-full inline-block" />
                                   ) : (
@@ -793,7 +793,7 @@ export default function QualityPage() {
             <Button
               onClick={handleAdd}
               disabled={saving || !addForm.employeeId || !addForm.date}
-              className="bg-emerald-600 hover:bg-emerald-700 text-white"
+              className="bg-blue-600 hover:bg-blue-700 text-white"
             >
               {saving ? 'جاري الحفظ...' : 'حفظ'}
             </Button>

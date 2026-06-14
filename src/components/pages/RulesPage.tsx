@@ -258,7 +258,7 @@ export default function RulesPage() {
           <Button
             onClick={handleSave}
             disabled={saving || !form.key || !form.label || !form.amount}
-            className="bg-emerald-600 hover:bg-emerald-700 text-white"
+            className="bg-blue-600 hover:bg-blue-700 text-white"
           >
             {saving ? 'جاري الحفظ...' : 'حفظ'}
           </Button>
@@ -301,7 +301,7 @@ export default function RulesPage() {
                   setEditingRule(null);
                   setIsAddOpen(true);
                 }}
-                className="bg-emerald-600 hover:bg-emerald-700 text-white"
+                className="bg-blue-600 hover:bg-blue-700 text-white"
               >
                 <Plus className="size-4" />
                 إضافة قاعدة
@@ -376,7 +376,7 @@ export default function RulesPage() {
                             variant="ghost"
                             size="icon"
                             onClick={() => openEdit(rule)}
-                            className="text-slate-400 hover:text-emerald-400 hover:bg-emerald-500/10"
+                            className="text-slate-400 hover:text-blue-400 hover:bg-blue-500/10"
                           >
                             <Pencil className="size-4" />
                           </Button>

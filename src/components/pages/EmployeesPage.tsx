@@ -313,7 +313,7 @@ export default function EmployeesPage() {
           <Button
             onClick={handleSave}
             disabled={isSaving || !form.name}
-            className="bg-emerald-600 hover:bg-emerald-700 text-white"
+            className="bg-blue-600 hover:bg-blue-700 text-white"
           >
             {isSaving ? (
               <><Loader2 className="size-4 animate-spin" /> جاري الحفظ...</>
@@ -448,13 +448,13 @@ export default function EmployeesPage() {
                       key={emp.id}
                       ref={isHighlighted ? highlightRowRef : undefined}
                       className={`border-slate-700/50 hover:bg-slate-700/30 relative transition-all duration-500 ${
-                        isHighlighted ? 'ring-2 ring-emerald-500 bg-emerald-500/5' : ''
+                        isHighlighted ? 'ring-2 ring-blue-500 bg-blue-500/5' : ''
                       }`}
                       onTouchStart={(e) => handleTouchStart(e, emp.id)}
                       onTouchMove={(e) => handleTouchMove(e, emp.id)}
                       onTouchEnd={handleTouchEnd}
                     >
-                      <TableCell className="text-emerald-400 font-mono text-sm" dir="ltr">
+                      <TableCell className="text-blue-400 font-mono text-sm" dir="ltr">
                         {emp.code || '—'}
                       </TableCell>
                       <TableCell className="text-white font-medium">{emp.name}</TableCell>
@@ -474,7 +474,7 @@ export default function EmployeesPage() {
                                 variant="ghost"
                                 size="icon"
                                 onClick={() => openEdit(emp)}
-                                className="text-slate-400 hover:text-emerald-400 hover:bg-emerald-500/10"
+                                className="text-slate-400 hover:text-blue-400 hover:bg-blue-500/10"
                               >
                                 <Pencil className="size-4" />
                               </Button>

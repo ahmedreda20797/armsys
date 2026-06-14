@@ -267,7 +267,7 @@ export default function DashboardPage() {
       >
         <div>
           <h1 className="text-2xl font-bold text-white flex items-center gap-2">
-            <Settings className="size-6 text-emerald-400" />
+            <Settings className="size-6 text-blue-400" />
             لوحة التحكم
           </h1>
           <p className="text-slate-400 mt-1 text-sm">
@@ -276,7 +276,7 @@ export default function DashboardPage() {
         </div>
         <Button
           onClick={() => setIsAddOpen(true)}
-          className="bg-emerald-600 hover:bg-emerald-700 text-white"
+          className="bg-blue-600 hover:bg-blue-700 text-white"
         >
           <UserPlus className="size-4" />
           إنشاء مستخدم
@@ -335,7 +335,7 @@ export default function DashboardPage() {
                           موقوف
                         </Badge>
                       ) : (
-                        <Badge className="bg-emerald-500/15 text-emerald-400 border-emerald-500/20">
+                        <Badge className="bg-blue-500/15 text-blue-400 border-blue-500/20">
                           نشط
                         </Badge>
                       )}
@@ -349,7 +349,7 @@ export default function DashboardPage() {
                           variant="ghost"
                           size="icon"
                           onClick={() => openPermissions(user)}
-                          className="text-slate-400 hover:text-emerald-400 hover:bg-emerald-500/10"
+                          className="text-slate-400 hover:text-blue-400 hover:bg-blue-500/10"
                           title="تعديل الصلاحيات"
                         >
                           <Pencil className="size-4" />
@@ -362,7 +362,7 @@ export default function DashboardPage() {
                               onClick={() => toggleSuspend(user)}
                               className={`${
                                 user.isSuspended
-                                  ? 'text-amber-400 hover:text-emerald-400 hover:bg-emerald-500/10'
+                                  ? 'text-amber-400 hover:text-blue-400 hover:bg-blue-500/10'
                                   : 'text-slate-400 hover:text-amber-400 hover:bg-amber-500/10'
                               }`}
                               title={user.isSuspended ? 'تفعيل الحساب' : 'تعليق الحساب'}
@@ -468,7 +468,7 @@ export default function DashboardPage() {
             <Button
               onClick={handleAddUser}
               disabled={saving || !addForm.email || !addForm.password}
-              className="bg-emerald-600 hover:bg-emerald-700 text-white"
+              className="bg-blue-600 hover:bg-blue-700 text-white"
             >
               {saving ? 'جاري الإنشاء...' : 'إنشاء'}
             </Button>
@@ -557,7 +557,7 @@ export default function DashboardPage() {
                                 id={`action-${page.id}-${action}`}
                                 checked={getActionState(page.id, action)}
                                 onCheckedChange={() => toggleAction(page.id, action)}
-                                className="border-slate-600 data-[state=checked]:bg-emerald-600 data-[state=checked]:border-emerald-600"
+                                className="border-slate-600 data-[state=checked]:bg-blue-600 data-[state=checked]:border-blue-600"
                               />
                               <Label
                                 htmlFor={`action-${page.id}-${action}`}
@@ -586,7 +586,7 @@ export default function DashboardPage() {
             <Button
               onClick={savePermissions}
               disabled={saving}
-              className="bg-emerald-600 hover:bg-emerald-700 text-white"
+              className="bg-blue-600 hover:bg-blue-700 text-white"
             >
               {saving ? 'جاري الحفظ...' : 'حفظ الصلاحيات'}
             </Button>

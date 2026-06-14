@@ -1422,7 +1422,7 @@ export default function TravelPage() {
 
       {/* Content */}
       {loading ? (
-        <div className="space-y-4">{[1, 2, 3].map((i) => <Skeleton key={i} className="h-32 rounded-xl bg-slate-800" />)}</div>
+        <div className="space-y-4">{[1, 2, 3, 4].map((i) => <Skeleton key={i} className="h-32 rounded-xl bg-slate-800" />)}</div>
       ) : tabCounts.all === 0 ? (
         <Card className="border-slate-700/50 bg-slate-800/50">
           <CardContent className="flex flex-col items-center justify-center py-16">

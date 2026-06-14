@@ -203,7 +203,7 @@ export default function LoginPage() {
                       <Input
                         id="email"
                         type="email"
-                        placeholder="admin@erp.com"
+                        placeholder="user@arm.com"
                         value={email}
                         onChange={(e) => setEmail(e.target.value)}
                         className="bg-white/5 border-white/10 text-white placeholder:text-slate-500 pr-10 focus:border-indigo-500/50 focus:ring-indigo-500/20"
@@ -263,7 +263,7 @@ export default function LoginPage() {
 
                 {/* Footer */}
                 <p className="mt-6 text-center text-slate-500 text-xs">
-                  نظام إدارة الموارد البشرية © {new Date().getFullYear()}
+                  نظام إدارة الجودة © {new Date().getFullYear()}
                 </p>
               </motion.div>
             </div>

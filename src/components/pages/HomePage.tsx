@@ -478,9 +478,9 @@ export default function HomePage() {
         className="relative overflow-hidden rounded-3xl border border-white/8 bg-linear-to-br from-slate-800/80 via-slate-800/60 to-slate-900/80 backdrop-blur-xl shadow-2xl shadow-black/30"
       >
         {/* Decorative background orbs */}
-        <div className="absolute -top-20 -left-20 w-56 h-56 rounded-full bg-emerald-500/[0.07] blur-3xl pointer-events-none" />
-        <div className="absolute -bottom-16 -right-16 w-48 h-48 rounded-full bg-violet-500/6 blur-3xl pointer-events-none" />
-        <div className="absolute top-1/2 left-1/3 w-32 h-32 rounded-full bg-cyan-500/4 blur-3xl pointer-events-none" />
+        <div className="absolute -top-20 -left-20 w-56 h-56 rounded-full bg-blue-500/[0.07] blur-3xl pointer-events-none" />
+        <div className="absolute -bottom-16 -right-16 w-48 h-48 rounded-full bg-blue-500/6 blur-3xl pointer-events-none" />
+        <div className="absolute top-1/2 left-1/3 w-32 h-32 rounded-full bg-blue-500/4 blur-3xl pointer-events-none" />
 
         <div className="relative flex items-center justify-between flex-wrap gap-4 p-6 md:p-8">
           <div className="flex items-center gap-4">
@@ -489,18 +489,18 @@ export default function HomePage() {
               animate={{ rotate: [0, 5, -5, 0] }}
               transition={{ duration: 4, repeat: Infinity, ease: 'easeInOut' }}
             >
-              <Gauge className="size-7 text-emerald-400" />
+              <Gauge className="size-7 text-blue-400" />
             </motion.div>
             <div>
-              <h1 className="text-2xl md:text-3xl font-bold text-white tracking-tight">لوحة القيادة الرئيسية</h1>
-              <p className="text-slate-400 text-sm mt-1">نظرة شاملة على كل أقسام النظام في مكان واحد</p>
+              <h1 className="text-2xl md:text-3xl font-bold text-white tracking-tight">لوحة التتبع الرئيسية</h1>
+              <p className="text-slate-400 text-sm mt-1">نظرة شاملة على كل أقسام النظام</p>
             </div>
           </div>
           <div className="flex items-center gap-3">
             <div className="flex flex-col items-end px-4 py-2.5 rounded-2xl bg-white/4 border border-white/6 backdrop-blur-sm">
               <span className="text-slate-400 text-[10px] font-medium">{todayDate}</span>
               <span className="text-slate-100 text-base font-mono tabular-nums flex items-center gap-1.5 mt-0.5">
-                <Clock className="size-3.5 text-emerald-400" />{clock}
+                <Clock className="size-3.5 text-blue-400" />{clock}
               </span>
             </div>
             <motion.div whileHover={{ scale: 1.06 }} whileTap={{ scale: 0.94 }}>

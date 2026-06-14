@@ -420,7 +420,7 @@ export default function RequestsPage() {
             <Button
               onClick={handleAdd}
               disabled={saving || !addForm.employeeId || !addForm.date || !addForm.reason}
-              className="bg-emerald-600 hover:bg-emerald-700 text-white"
+              className="bg-blue-600 hover:bg-blue-700 text-white"
             >
               {saving ? 'جاري التقديم...' : 'تقديم'}
             </Button>
