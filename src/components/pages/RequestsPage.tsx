@@ -197,7 +197,7 @@ export default function RequestsPage() {
           {canCreate && (
             <Button
               onClick={() => setIsAddOpen(true)}
-              className="from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white"
+              className="bg-linear-to-r from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white h-9 px-5 shadow-lg shadow-violet-500/20 transition-all"
             >
               <Plus className="size-4" />
               تقديم طلب
@@ -420,7 +420,7 @@ export default function RequestsPage() {
             <Button
               onClick={handleAdd}
               disabled={saving || !addForm.employeeId || !addForm.date || !addForm.reason}
-              className="from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white"
+              className="bg-linear-to-r from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white h-9 px-5 shadow-lg shadow-violet-500/20 transition-all"
             >
               {saving ? 'جاري التقديم...' : 'تقديم'}
             </Button>

@@ -276,7 +276,7 @@ export default function DashboardPage() {
         </div>
         <Button
           onClick={() => setIsAddOpen(true)}
-          className="from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white"
+          className="bg-linear-to-r from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white h-9 px-5 shadow-lg shadow-violet-500/20 transition-all"
         >
           <UserPlus className="size-4" />
           إنشاء مستخدم
@@ -468,7 +468,7 @@ export default function DashboardPage() {
             <Button
               onClick={handleAddUser}
               disabled={saving || !addForm.email || !addForm.password}
-              className="from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white"
+              className="bg-linear-to-r from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white h-9 px-5 shadow-lg shadow-violet-500/20 transition-all"
             >
               {saving ? 'جاري الإنشاء...' : 'إنشاء'}
             </Button>

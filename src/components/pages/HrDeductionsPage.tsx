@@ -291,7 +291,7 @@ export default function HrDeductionsPage() {
           {canCreate && (
             <Button
               onClick={() => { setIsAddOpen(true); setAddForm({ ...EMPTY_FORM, deductionDate: getTodayDate() }); }}
-              className="from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white"
+              className="bg-linear-to-r from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white h-9 px-5 shadow-lg shadow-violet-500/20 transition-all"
             >
               <Plus className="size-4" />
               إضافة خصم
@@ -638,7 +638,7 @@ export default function HrDeductionsPage() {
             <Button
               onClick={handleAdd}
               disabled={saving || !addForm.employeeId || !addForm.amount || !addForm.month || !addForm.reason}
-              className="from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white"
+              className="bg-linear-to-r from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white h-9 px-5 shadow-lg shadow-violet-500/20 transition-all"
             >
               {saving ? 'جاري الحفظ...' : 'إضافة'}
             </Button>
@@ -750,7 +750,7 @@ export default function HrDeductionsPage() {
             <Button
               onClick={handleEdit}
               disabled={saving || !editForm.amount || !editForm.reason}
-              className="from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white"
+              className="bg-linear-to-r from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white h-9 px-5 shadow-lg shadow-violet-500/20 transition-all"
             >
               {saving ? 'جاري الحفظ...' : 'حفظ التعديلات'}
             </Button>

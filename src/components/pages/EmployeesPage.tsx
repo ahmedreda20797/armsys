@@ -313,7 +313,7 @@ export default function EmployeesPage() {
           <Button
             onClick={handleSave}
             disabled={isSaving || !form.name}
-            className="bg-blue-600 hover:bg-blue-700 text-white"
+            className="bg-linear-to-r from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white h-9 px-5 shadow-lg shadow-violet-500/20 transition-all"
           >
             {isSaving ? (
               <><Loader2 className="size-4 animate-spin" /> جاري الحفظ...</>
@@ -375,7 +375,7 @@ export default function EmployeesPage() {
                 setEditingEmployee(null);
                 setIsAddOpen(true);
               }}
-              className="from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white"
+              className="bg-linear-to-r from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white h-9 px-5 shadow-lg shadow-violet-500/20 transition-all"
             >
               <Plus className="size-4" />
               إضافة موظف
