@@ -12,6 +12,7 @@ import React, {
 import { useAuth } from '@/contexts/AuthContext';
 import type { AppNotification } from '@/types';
 import { playNotificationSound } from '@/lib/sounds';
+import { authFetch } from '@/lib/api-fetch';
 import { toast } from 'sonner';
 
 // ══════════════════════════════════════════════════════════════
@@ -139,7 +140,7 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
   // ── Fetch initial notifications ──
   const refresh = useCallback(async () => {
     try {
-      const res = await fetch('/api/notifications?limit=50&status=unread');
+      const res = await authFetch('/api/notifications?limit=50&status=unread');
       if (res.ok) {
         const json = await res.json();
         const data: AppNotification[] = json.data || [];
