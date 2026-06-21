@@ -58,7 +58,10 @@ export interface JWTPayload {
   userId: string;
   email: string;
   role: string;
-  // Token type to prevent token confusion attacks
+}
+
+// Decoded token payload includes the type field set during signing
+export interface DecodedToken extends JWTPayload {
   type: 'access' | 'refresh';
 }
 
@@ -68,7 +71,7 @@ export interface JWTPayload {
 export async function signToken(payload: JWTPayload, type: 'access' | 'refresh'): Promise<string> {
   const expiry = type === 'access' ? ACCESS_TOKEN_EXPIRY : REFRESH_TOKEN_EXPIRY;
 
-  return new SignJWT({ ...payload, type })
+  return new SignJWT({ ...payload, type: type })
     .setProtectedHeader({ alg: 'HS256' })
     .setIssuedAt()
     .setIssuer('arm-erp')
@@ -80,7 +83,7 @@ export async function signToken(payload: JWTPayload, type: 'access' | 'refresh')
  * Verify and decode a JWT token.
  * Returns the payload if valid, null otherwise.
  */
-export async function verifyToken(token: string): Promise<JWTPayload | null> {
+export async function verifyToken(token: string): Promise<DecodedToken | null> {
   try {
     const { payload } = await jwtVerify(token, JWT_SECRET, {
       issuer: 'arm-erp',
@@ -118,11 +121,11 @@ export function extractBearerToken(request: Request): string | null {
  * Authenticate a request by verifying the Bearer token.
  * Returns the JWT payload if valid, or null.
  */
-export async function authenticateRequest(request: Request): Promise<JWTPayload | null> {
+export async function authenticateRequest(request: Request): Promise<DecodedToken | null> {
   const token = extractBearerToken(request);
   if (!token) return null;
 
-  const payload = verifyToken(token);
+  const payload = await verifyToken(token);
   // Must be an access token
   if (!payload || payload.type !== 'access') return null;
 
@@ -131,7 +134,7 @@ export async function authenticateRequest(request: Request): Promise<JWTPayload 
 
 // Note: authenticateRequest must be awaited because verifyToken returns a Promise
 // This is handled by wrapping in async
-export async function authenticateRequestAsync(request: Request): Promise<JWTPayload | null> {
+export async function authenticateRequestAsync(request: Request): Promise<DecodedToken | null> {
   const token = extractBearerToken(request);
   if (!token) return null;
 
