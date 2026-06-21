@@ -259,7 +259,7 @@ export default function ControlPanelPage() {
       if (logActionFilter !== 'all') params.set('action', logActionFilter);
       if (logModuleFilter !== 'all') params.set('module', logModuleFilter);
       if (logSearch) params.set('keyword', logSearch);
-      const res = await fetch(`/api/activity-logs?${params}`);
+      const res = await authFetch(`/api/activity-logs?${params}`);
       if (res.ok) setLogs(await res.json());
     } catch { setLogs([]); }
     finally { setLogsLoading(false); }
@@ -417,7 +417,7 @@ export default function ControlPanelPage() {
     if (!selectedUser) return;
     setSaving(true);
     try {
-      const res = await fetch(`/api/dashboard/users/${selectedUser.id}`, {
+      const res = await authFetch(`/api/dashboard/users/${selectedUser.id}`, {
         method: 'PUT', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(editForm),
       });
@@ -428,14 +428,14 @@ export default function ControlPanelPage() {
   const handleDelete = async () => {
     if (!selectedUser) return;
     try {
-      const res = await fetch(`/api/dashboard/users/${selectedUser.id}`, { method: 'DELETE' });
+      const res = await authFetch(`/api/dashboard/users/${selectedUser.id}`, { method: 'DELETE' });
       if (res.ok) { await fetchUsers(); setIsDeleteOpen(false); setSelectedUser(null); }
     } catch {}
   };
 
   const handleToggleSuspend = async (u: UserRecord) => {
     try {
-      const res = await fetch(`/api/dashboard/users/${u.id}`, {
+      const res = await authFetch(`/api/dashboard/users/${u.id}`, {
         method: 'PUT', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ isSuspended: !u.isSuspended }),
       });
@@ -447,7 +447,7 @@ export default function ControlPanelPage() {
     if (!resetPwdTarget || !newPassword) return;
     setSaving(true);
     try {
-      const res = await fetch(`/api/dashboard/users/${resetPwdTarget.id}`, {
+      const res = await authFetch(`/api/dashboard/users/${resetPwdTarget.id}`, {
         method: 'PUT', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ password: newPassword }),
       });
@@ -471,7 +471,7 @@ export default function ControlPanelPage() {
     if (!permUserId) return;
     setSaving(true);
     try {
-      const res = await fetch(`/api/dashboard/users/${permUserId}/permissions`, {
+      const res = await authFetch(`/api/dashboard/users/${permUserId}/permissions`, {
         method: 'PUT', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ permissions: tempPermissions }),
       });

@@ -253,7 +253,7 @@ export default function AttendancePage() {
 
     setSaving(true);
     try {
-      const res = await fetch(`/api/attendance/${checkoutRecord.id}`, {
+      const res = await authFetch(`/api/attendance/${checkoutRecord.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -279,7 +279,7 @@ export default function AttendancePage() {
 
     setSaving(true);
     try {
-      const res = await fetch(`/api/attendance/${editingRecord.id}`, {
+      const res = await authFetch(`/api/attendance/${editingRecord.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -317,7 +317,7 @@ export default function AttendancePage() {
 
   const handleDelete = async (id: string) => {
     try {
-      const res = await fetch(`/api/attendance/${id}`, { method: 'DELETE' });
+      const res = await authFetch(`/api/attendance/${id}`, { method: 'DELETE' });
       if (res.ok) {
         const rec = records.find((r) => r.id === id);
         if (rec) logDelete('attendance', 'سجل حضور', `${rec.employee?.name || ''} - ${rec.date}`);

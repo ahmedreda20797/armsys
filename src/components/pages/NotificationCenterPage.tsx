@@ -231,7 +231,7 @@ export default function NotificationCenterPage() {
 
     try {
       const params = new URLSearchParams({ limit: String(PAGE_SIZE), offset: String(offset) });
-      const res = await fetch(`/api/notifications?${params}`);
+      const res = await authFetch(`/api/notifications?${params}`);
       if (res.ok) {
         const data = await res.json();
         const items: AppNotification[] = Array.isArray(data.data) ? data.data : Array.isArray(data) ? data : [];
@@ -366,7 +366,7 @@ export default function NotificationCenterPage() {
   const handleMarkRead = async (id: string) => {
     setActionLoading(id);
     try {
-      const res = await fetch(`/api/notifications/${id}`, {
+      const res = await authFetch(`/api/notifications/${id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: 'read' }),
@@ -386,7 +386,7 @@ export default function NotificationCenterPage() {
   const handleMarkUnread = async (id: string) => {
     setActionLoading(id);
     try {
-      const res = await fetch(`/api/notifications/${id}`, {
+      const res = await authFetch(`/api/notifications/${id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: 'unread' }),
@@ -406,7 +406,7 @@ export default function NotificationCenterPage() {
   const handleResolve = async (id: string) => {
     setActionLoading(id);
     try {
-      const res = await fetch(`/api/notifications/${id}`, {
+      const res = await authFetch(`/api/notifications/${id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: 'resolved' }),
@@ -426,7 +426,7 @@ export default function NotificationCenterPage() {
   const handleArchive = async (id: string) => {
     setActionLoading(id);
     try {
-      const res = await fetch(`/api/notifications/${id}`, {
+      const res = await authFetch(`/api/notifications/${id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: 'archived' }),
@@ -445,7 +445,7 @@ export default function NotificationCenterPage() {
 
   const handleDelete = async (id: string) => {
     try {
-      const res = await fetch(`/api/notifications/${id}`, { method: 'DELETE' });
+      const res = await authFetch(`/api/notifications/${id}`, { method: 'DELETE' });
       if (res.ok) {
         setNotifications(prev => prev.filter(n => n.id !== id));
         setSelectedIds(prev => { const next = new Set(prev); next.delete(id); return next; });
@@ -464,7 +464,7 @@ export default function NotificationCenterPage() {
     setActionLoading('bulk');
     try {
       await Promise.all(ids.map(id =>
-        fetch(`/api/notifications/${id}`, {
+        authFetch(`/api/notifications/${id}`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ status: 'read' }),
@@ -486,7 +486,7 @@ export default function NotificationCenterPage() {
     setActionLoading('bulk');
     try {
       await Promise.all(ids.map(id =>
-        fetch(`/api/notifications/${id}`, {
+        authFetch(`/api/notifications/${id}`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ status: 'resolved' }),
@@ -508,7 +508,7 @@ export default function NotificationCenterPage() {
     setActionLoading('bulk');
     try {
       await Promise.all(ids.map(id =>
-        fetch(`/api/notifications/${id}`, { method: 'DELETE' })
+        authFetch(`/api/notifications/${id}`, { method: 'DELETE' })
       ));
       setNotifications(prev => prev.filter(n => !ids.includes(n.id)));
       toast.success(`تم حذف ${ids.length} إشعار`);

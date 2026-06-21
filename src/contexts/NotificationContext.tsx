@@ -270,7 +270,7 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
   // ── Mark read (server + local) ──
   const markRead = useCallback(async (id: string) => {
     try {
-      await fetch(`/api/notifications/${id}`, {
+      await authFetch(`/api/notifications/${id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: 'read' }),
@@ -301,7 +301,7 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
   // ── Delete notification (server + local) ──
   const deleteNotification = useCallback(async (id: string) => {
     try {
-      await fetch(`/api/notifications/${id}`, { method: 'DELETE' });
+      await authFetch(`/api/notifications/${id}`, { method: 'DELETE' });
     } catch {
       // Silently fail
     }

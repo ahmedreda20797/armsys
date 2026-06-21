@@ -204,7 +204,7 @@ export default function RequestsPage() {
     if (!editForm.employeeId || !editForm.date || !editForm.reason) return;
     setSaving(true);
     try {
-      const res = await fetch(`/api/requests/${editForm.id}`, {
+      const res = await authFetch(`/api/requests/${editForm.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -228,7 +228,7 @@ export default function RequestsPage() {
   const handleDelete = async (id: string) => {
     try {
       const req = requests.find((r: any) => r.id === id);
-      const res = await fetch(`/api/requests/${id}`, { method: 'DELETE' });
+      const res = await authFetch(`/api/requests/${id}`, { method: 'DELETE' });
       if (res.ok) {
         if (req) logDelete('requests', 'طلب', `${req.employeeName || ''} - ${getRequestTypeLabel(req.type)}`);
         setRequests((prev) => prev.filter((r) => r.id !== id));
@@ -242,7 +242,7 @@ export default function RequestsPage() {
   const handleReview = async (id: string, status: 'approved' | 'rejected') => {
     setReviewing(true);
     try {
-      const res = await fetch(`/api/requests/${id}`, {
+      const res = await authFetch(`/api/requests/${id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status, reviewedBy: user?.id }),

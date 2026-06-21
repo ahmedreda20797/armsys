@@ -238,7 +238,7 @@ export default function ActivityMonitor() {
     try {
       const params = new URLSearchParams();
       if (filterUser !== 'all') params.set('userId', filterUser);
-      const res = await fetch(`/api/activity-logs?${params.toString()}`);
+      const res = await authFetch(`/api/activity-logs?${params.toString()}`);
       if (res.ok) {
         const data = await res.json();
         setLogs(data);

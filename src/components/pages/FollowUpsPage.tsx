@@ -443,7 +443,7 @@ export default function FollowUpsPage() {
       };
 
       if (editingItem) {
-        const res = await fetch(`/api/follow-ups/${editingItem.id}`, {
+        const res = await authFetch(`/api/follow-ups/${editingItem.id}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload),
@@ -481,7 +481,7 @@ export default function FollowUpsPage() {
   const handleDelete = async (id: string) => {
     try {
       const item = followUps.find(f => f.id === id);
-      const res = await fetch(`/api/follow-ups/${id}`, { method: 'DELETE' });
+      const res = await authFetch(`/api/follow-ups/${id}`, { method: 'DELETE' });
       if (res.ok) {
         const empName = item?.employeeName || employees.find((e: any) => e.id === item?.employeeId)?.name || '';
         logDelete('followUps', 'متابعة يومية', `${empName} - ${item?.subject || ''}`);

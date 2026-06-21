@@ -124,7 +124,7 @@ export default function DashboardPage() {
 
   const handleDelete = async (id: string) => {
     try {
-      const res = await fetch(`/api/dashboard/users/${id}`, { method: 'DELETE' });
+      const res = await authFetch(`/api/dashboard/users/${id}`, { method: 'DELETE' });
       if (res.ok) {
         setUsers((prev) => prev.filter((u) => u.id !== id));
         setDeletingId(null);
@@ -136,7 +136,7 @@ export default function DashboardPage() {
 
   const toggleSuspend = async (user: UserRecord) => {
     try {
-      const res = await fetch(`/api/dashboard/users/${user.id}`, {
+      const res = await authFetch(`/api/dashboard/users/${user.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ isSuspended: !user.isSuspended }),
@@ -213,7 +213,7 @@ export default function DashboardPage() {
     if (!permUserId) return;
     setSaving(true);
     try {
-      const res = await fetch(`/api/dashboard/users/${permUserId}/permissions`, {
+      const res = await authFetch(`/api/dashboard/users/${permUserId}/permissions`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ permissions: tempPermissions }),

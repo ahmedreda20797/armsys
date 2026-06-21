@@ -168,7 +168,7 @@ export default function HrDeductionsPage() {
     if (!editForm.id) return;
     setSaving(true);
     try {
-      const res = await fetch(`/api/hr-deductions/${editForm.id}`, {
+      const res = await authFetch(`/api/hr-deductions/${editForm.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -195,7 +195,7 @@ export default function HrDeductionsPage() {
   const handleReview = async (id: string, status: 'approved' | 'rejected') => {
     setReviewing(true);
     try {
-      const res = await fetch(`/api/hr-deductions/${id}`, {
+      const res = await authFetch(`/api/hr-deductions/${id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status, approvedBy: user?.id }),
@@ -212,7 +212,7 @@ export default function HrDeductionsPage() {
 
   const handleDelete = async (id: string) => {
     try {
-      const res = await fetch(`/api/hr-deductions/${id}`, { method: 'DELETE' });
+      const res = await authFetch(`/api/hr-deductions/${id}`, { method: 'DELETE' });
       if (res.ok) {
         await fetchData();
       }

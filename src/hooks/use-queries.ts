@@ -40,7 +40,6 @@ export const queryKeys = {
   
   // Notifications
   notifications: ['notifications'] as const,
-  notification: (id: string) => ['notifications', id] as const,
 
   // Follow-Ups
   followUps: ['followUps'] as const,

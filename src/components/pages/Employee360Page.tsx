@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { usePermissions } from '@/hooks/usePermissions';
 import { useAppStore } from '@/lib/store';
+import { authFetch } from '@/lib/api-fetch';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -412,7 +413,7 @@ export default function Employee360Page({ employeeId: propEmployeeId, onClose }:
     setError(null);
 
     try {
-      const res = await fetch(`/api/employee-360/${employeeId}`);
+      const res = await authFetch(`/api/employee-360/${employeeId}`);
 
       if (!mountedRef.current) return;
 

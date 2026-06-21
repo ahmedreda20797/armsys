@@ -231,7 +231,7 @@ export default function QualityPage() {
     try {
       if (editingDeduction) {
         // Edit mode
-        const res = await fetch(`/api/quality/${editingDeduction.id}`, {
+        const res = await authFetch(`/api/quality/${editingDeduction.id}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -344,7 +344,7 @@ export default function QualityPage() {
   const handleDelete = async (id: string) => {
     try {
       const ded = deductions.find((d: any) => d.id === id);
-      const res = await fetch(`/api/quality/${id}`, { method: 'DELETE' });
+      const res = await authFetch(`/api/quality/${id}`, { method: 'DELETE' });
       if (res.ok) {
         if (ded) logDelete('quality', 'خصم جودة', `${ded.employee?.name || ''} - ${ded.description || ''}`);
         setDeductions((prev) => prev.filter((d) => d.id !== id));

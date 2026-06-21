@@ -342,7 +342,7 @@ export default function CAPAPage() {
         createdByName: user?.name || 'النظام',
       };
       if (editingItem) {
-        const res = await fetch(`/api/capa-cases/${editingItem.id}`, {
+        const res = await authFetch(`/api/capa-cases/${editingItem.id}`, {
           method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
         });
         if (res.ok) { logUpdate('capa', 'حالة كابا', form.title); toast.success('تم تحديث الحالة بنجاح'); fetchData(); setIsFormOpen(false); }
@@ -360,7 +360,7 @@ export default function CAPAPage() {
 
   const handleDelete = async (id: string) => {
     try {
-      const res = await fetch(`/api/capa-cases/${id}`, { method: 'DELETE' });
+      const res = await authFetch(`/api/capa-cases/${id}`, { method: 'DELETE' });
       if (res.ok) { logDelete('capa', 'حالة كابا', ''); toast.success('تم حذف الحالة'); setCases((p) => p.filter((c) => c.id !== id)); }
     } catch { toast.error('فشل في الحذف'); }
     setDeletingId(null);

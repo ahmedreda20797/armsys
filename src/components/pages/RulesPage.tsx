@@ -109,7 +109,7 @@ export default function RulesPage() {
     setSaving(true);
     try {
       if (editingRule) {
-        const res = await fetch(`/api/deduction-rules/${editingRule.id}`, {
+        const res = await authFetch(`/api/deduction-rules/${editingRule.id}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -152,7 +152,7 @@ export default function RulesPage() {
   const handleDelete = async (id: string) => {
     try {
       const rule = rules.find((r: any) => r.id === id);
-      const res = await fetch(`/api/deduction-rules/${id}`, { method: 'DELETE' });
+      const res = await authFetch(`/api/deduction-rules/${id}`, { method: 'DELETE' });
       if (res.ok) {
         if (rule) logDelete('rules', 'قاعدة خصم', rule.label);
         setRules((prev) => prev.filter((r) => r.id !== id));
