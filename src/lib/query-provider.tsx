@@ -60,12 +60,23 @@ export function QueryProvider({ children }: { children: React.ReactNode }) {
 // ═══════════════════════════════════════════════════
 
 export async function apiFetch<T>(url: string, options?: RequestInit): Promise<T> {
+  const headers = new Headers(options?.headers);
+
+  // Add Authorization Bearer token if not already present
+  if (!headers.has('Authorization') && typeof window !== 'undefined') {
+    try {
+      const token = localStorage.getItem('erp_access_token');
+      if (token) {
+        headers.set('Authorization', `Bearer ${token}`);
+      }
+    } catch {
+      // ignore
+    }
+  }
+
   const res = await fetch(url, {
     ...options,
-    headers: {
-      'Content-Type': 'application/json',
-      ...options?.headers,
-    },
+    headers,
   });
 
   if (!res.ok) {
