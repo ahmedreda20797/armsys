@@ -361,6 +361,23 @@ export default function AttendancePage() {
     return matchesSearch && matchesMonth;
   });
 
+  // Sort: newest date first, then latest checkIn time — "الأقرب أولاً"
+  const sorted = [...filtered].sort((a, b) => {
+    // Parse DD/MM/YYYY for comparison
+    const parseDate = (d: string) => {
+      const parts = d.split('/');
+      if (parts.length === 3) return new Date(+parts[2], +parts[1] - 1, +parts[0]).getTime();
+      // Fallback: try ISO format
+      return new Date(d).getTime();
+    };
+    const dateDiff = parseDate(b.date) - parseDate(a.date);
+    if (dateDiff !== 0) return dateDiff;
+    // Same date: latest checkIn first
+    const timeA = a.checkIn || '00:00';
+    const timeB = b.checkIn || '00:00';
+    return timeB.localeCompare(timeA);
+  });
+
   // Generate month options
   const now = new Date();
   const months: string[] = [];
@@ -514,7 +531,7 @@ export default function AttendancePage() {
             <Skeleton key={i} className="h-14 rounded-lg bg-slate-800" />
           ))}
         </div>
-      ) : filtered.length === 0 ? (
+      ) : sorted.length === 0 ? (
         <Card className="border-slate-700/50 bg-slate-800/50">
           <CardContent className="flex flex-col items-center justify-center py-16">
             <Clock className="size-12 text-slate-600 mb-4" />
@@ -546,7 +563,7 @@ export default function AttendancePage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filtered.map((rec) => (
+                {sorted.map((rec) => (
                   <TableRow
                     key={rec.id}
                     className="border-slate-700/50 hover:bg-slate-700/30"
@@ -880,20 +897,50 @@ export default function AttendancePage() {
         </DialogContent>
       </Dialog>
 
-      {/* Delete Dialog */}
+      {/* Delete Dialog — with record details and warning */}
       <Dialog open={!!deletingId} onOpenChange={() => setDeletingId(null)}>
-        <DialogContent className="backdrop-blur-xl bg-slate-900 border-slate-700">
+        <DialogContent className="backdrop-blur-xl bg-slate-900 border-slate-700 max-w-sm">
           <DialogHeader>
-            <DialogTitle className="text-white">تأكيد الحذف</DialogTitle>
+            <DialogTitle className="text-white flex items-center gap-2">
+              <div className="flex items-center justify-center size-9 rounded-lg bg-red-500/15 border border-red-500/25">
+                <Trash2 className="size-4 text-red-400" />
+              </div>
+              تأكيد حذف سجل الحضور
+            </DialogTitle>
             <DialogDescription className="text-slate-400">
-              هل أنت متأكد من حذف سجل الحضور هذا؟ لا يمكن التراجع عن هذا الإجراء.
+              هل أنت متأكد من حذف هذا السجل؟ لا يمكن التراجع عن هذا الإجراء.
             </DialogDescription>
           </DialogHeader>
-          <DialogFooter>
+          {/* Record details preview */}
+          {deletingId && (() => {
+            const rec = records.find((r) => r.id === deletingId);
+            if (!rec) return null;
+            return (
+              <div className="rounded-lg bg-slate-800 border border-slate-700 p-3 space-y-2">
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-slate-400">الموظف</span>
+                  <span className="text-white font-medium">{rec.employee?.name || 'غير معروف'}</span>
+                </div>
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-slate-400">التاريخ</span>
+                  <span className="text-white" dir="ltr">{rec.date}</span>
+                </div>
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-slate-400">الحضور</span>
+                  <span className="text-white" dir="ltr">{rec.checkIn || '—'}</span>
+                </div>
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-slate-400">الانصراف</span>
+                  <span className="text-white" dir="ltr">{rec.checkOut || '—'}</span>
+                </div>
+              </div>
+            );
+          })()}
+          <DialogFooter className="gap-2 sm:gap-2">
             <Button
               variant="outline"
               onClick={() => setDeletingId(null)}
-              className="border-slate-600 text-slate-300"
+              className="flex-1 border-slate-600 text-slate-300 hover:bg-slate-800 hover:text-white"
             >
               إلغاء
             </Button>
@@ -902,8 +949,10 @@ export default function AttendancePage() {
               onClick={() => {
                 if (deletingId) handleDelete(deletingId);
               }}
+              className="flex-1 bg-red-600 hover:bg-red-700 text-white"
             >
-              حذف
+              <Trash2 className="size-4 ml-1" />
+              حذف السجل
             </Button>
           </DialogFooter>
         </DialogContent>
