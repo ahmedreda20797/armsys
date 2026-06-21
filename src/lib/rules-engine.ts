@@ -550,6 +550,40 @@ export async function createSmartNotification(
     }
   }
 
+  // Auto-resolve targetPage from sourceModule/category if not explicitly provided
+  const TARGET_PAGE_MAP: Record<string, string> = {
+    attendance: 'attendance',
+    biometric: 'biometric',
+    requests: 'requests',
+    quality: 'quality',
+    hr: 'hrDeductions',
+    hrDeductions: 'hrDeductions',
+    risk: 'riskCenter',
+    riskCenter: 'riskCenter',
+    followUp: 'followUps',
+    followUps: 'followUps',
+    employee: 'employees',
+    employees: 'employees',
+    travel: 'travel',
+    system: 'notifications',
+    automation: 'rulesEngine',
+    rulesEngine: 'rulesEngine',
+    complaint: 'complaints',
+    complaints: 'complaints',
+    capa: 'capa',
+  };
+
+  const resolvedTargetPage = data.targetPage
+    || TARGET_PAGE_MAP[data.sourceModule || '']
+    || TARGET_PAGE_MAP[data.category || '']
+    || null;
+
+  // Auto-resolve actionUrl for employee-related notifications
+  let resolvedActionUrl = data.actionUrl || null;
+  if (!resolvedActionUrl && data.category === 'employee' && data.employeeId) {
+    resolvedActionUrl = `employee360:${data.employeeId}`;
+  }
+
   // Create the notification
   const notification = await createRecord<AppNotification>('notifications', {
     title: title || 'إشعار',
@@ -559,13 +593,15 @@ export async function createSmartNotification(
     category: data.category || 'system',
     sourceModule: data.sourceModule || '',
     sourceRecordId: data.sourceRecordId || null,
+    targetPage: resolvedTargetPage,
+    sourceType: data.sourceType || 'automation',
     employeeId: data.employeeId || null,
     employeeName: data.employeeName || null,
     assignedTo: data.assignedTo || null,
     assignedToName: data.assignedToName || null,
     ruleId: data.ruleId || null,
     ruleName: data.ruleName || null,
-    actionUrl: data.actionUrl || null,
+    actionUrl: resolvedActionUrl,
   });
 
   return notification;

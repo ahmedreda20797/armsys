@@ -229,19 +229,16 @@ export function Header({ title, onMenuToggle, onToggleSidebarCollapse, sidebarCo
     return () => document.removeEventListener('mousedown', handler);
   }, [showNotifPanel]);
 
-  // ── Handle notification click — mark read + navigate + remove from bell + close ──
+  // ── Handle notification click — mark read + navigate + close panel ──
   const handleNotifClick = (notif: AppNotification, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
 
-    // Mark as read
+    // Mark as read (server + local)
     if (notif.status === 'unread') {
       markRead(notif.id);
     } else {
       markReadLocal(notif.id);
     }
-
-    // Remove from bell dropdown list
-    removeLocal(notif.id);
 
     // Navigate to related record — ALWAYS navigates (never returns null)
     const page = resolveNotificationPage(notif);
@@ -254,8 +251,12 @@ export function Header({ title, onMenuToggle, onToggleSidebarCollapse, sidebarCo
         navigateTo('employees');
       }
     } else {
+      // Pass sourceRecordId as highlightId so the target page can scroll to it
       navigateTo(page, notif.sourceRecordId || undefined);
     }
+
+    // Remove from bell dropdown AFTER navigation (so it doesn't flash)
+    removeLocal(notif.id);
 
     // Close panel after navigation
     setShowNotifPanel(false);
@@ -635,7 +636,7 @@ export function Header({ title, onMenuToggle, onToggleSidebarCollapse, sidebarCo
           </div>
 
           {/* ── User Avatar ── */}
-          <div className="flex items-center justify-center w-9 h-9 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 text-xs font-bold text-white ring-2 ring-slate-200 dark:ring-slate-700 cursor-pointer hover:ring-indigo-400 transition-all">
+          <div className="flex items-center justify-center w-9 h-9 rounded-full bg-gradient-to-br from-indigo-500 to-teal-600 text-xs font-bold text-white ring-2 ring-slate-200 dark:ring-slate-700 cursor-pointer hover:ring-indigo-400 transition-all">
             {userInitials}
           </div>
         </div>

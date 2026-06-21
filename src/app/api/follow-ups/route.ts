@@ -144,35 +144,49 @@ export async function POST(request: NextRequest) {
       relatedDeductionId: relatedDeductionId || null,
     });
 
-    // ═══ Create notifications ═══
+    // ═══ Create notifications (using AppNotification schema) ═══
     try {
       const respRecord = employees.find((e: any) => e.id === responsiblePerson);
       const respName = respRecord?.name || 'مسؤول';
 
       await createRecord('notifications', {
-        type: 'followUp_assigned',
         title: 'متابعة جديدة مُسندة إليك',
-        message: `تم تعيين متابعة جديدة للموظف "${empName}" - الموضوع: ${subject || 'بدون موضوع'}. تاريخ المتابعة القادمة: ${nextFollowUpDate || 'غير محدد'}.`,
-        targetUserId: responsiblePerson,
-        createdById: userId,
-        entityId: (followUp as any).id,
-        entityType: 'followUp',
-        isRead: false,
+        description: `تم تعيين متابعة جديدة للموظف "${empName}" - الموضوع: ${subject || 'بدون موضوع'}. تاريخ المتابعة القادمة: ${nextFollowUpDate || 'غير محدد'}.`,
         priority: priorityLevel === 'critical' ? 'critical' : priorityLevel === 'high' ? 'high' : 'medium',
+        status: 'unread',
+        category: 'followUp',
+        sourceModule: 'followUps',
+        sourceRecordId: (followUp as any).id,
+        targetPage: 'followUps',
+        employeeId: employeeId,
+        employeeName: empName,
+        assignedTo: responsiblePerson,
+        assignedToName: respName,
+        ruleId: null,
+        ruleName: null,
+        actionUrl: null,
+        sourceType: 'manual',
       });
 
       // Critical case notification to admin
       if (priorityLevel === 'critical') {
         await createRecord('notifications', {
-          type: 'critical_case',
           title: 'حالة حرجة - متابعة جديدة',
-          message: `تم إنشاء حالة حرجة للموظف "${empName}" - الموضوع: ${subject}. الأولوية: حرجة.`,
-          targetUserId: 'admin',
-          createdById: userId,
-          entityId: (followUp as any).id,
-          entityType: 'followUp',
-          isRead: false,
+          description: `تم إنشاء حالة حرجة للموظف "${empName}" - الموضوع: ${subject}. الأولوية: حرجة.`,
           priority: 'critical',
+          status: 'unread',
+          category: 'risk',
+          sourceModule: 'followUps',
+          sourceRecordId: (followUp as any).id,
+          targetPage: 'followUps',
+          employeeId: employeeId,
+          employeeName: empName,
+          assignedTo: null,
+          assignedToName: null,
+          ruleId: null,
+          ruleName: null,
+          actionUrl: null,
+          sourceType: 'manual',
         });
       }
 
@@ -186,15 +200,22 @@ export async function POST(request: NextRequest) {
       );
       if (recentCases.length >= 2) { // 2 existing + 1 new = 3
         await createRecord('notifications', {
-          type: 'risk_alert',
           title: 'تنبيه مخاطر - 3 حالات للموظف',
-          message: `الموظف "${empName}" لديه ${recentCases.length + 1} حالات متابعة خلال آخر 30 يوم. يرجى المراجعة.`,
-          targetUserId: 'admin',
-          createdById: userId,
-          entityId: employeeId,
-          entityType: 'employee',
-          isRead: false,
+          description: `الموظف "${empName}" لديه ${recentCases.length + 1} حالات متابعة خلال آخر 30 يوم. يرجى المراجعة.`,
           priority: 'high',
+          status: 'unread',
+          category: 'risk',
+          sourceModule: 'riskCenter',
+          sourceRecordId: employeeId,
+          targetPage: 'riskCenter',
+          employeeId: employeeId,
+          employeeName: empName,
+          assignedTo: null,
+          assignedToName: null,
+          ruleId: null,
+          ruleName: null,
+          actionUrl: null,
+          sourceType: 'manual',
         });
       }
     } catch (notifError) {

@@ -116,6 +116,22 @@ function showToastForNotification(notif: AppNotification) {
 }
 
 // ══════════════════════════════════════════════════════════════
+//  Helper: trigger sound + toast + desktop notification for a new alert
+// ══════════════════════════════════════════════════════════════
+function triggerNewAlertEffects(notif: AppNotification, desktopGranted: boolean) {
+  // 1. Toast for ALL new notifications
+  showToastForNotification(notif);
+
+  // 2. Sound for ALL priorities (different sounds per priority)
+  playNotificationSound(getSoundForPriority(notif.priority));
+
+  // 3. Desktop notification for critical + high
+  if (desktopGranted && (notif.priority === 'critical' || notif.priority === 'high')) {
+    sendDesktopNotification(notif.title, notif.description || '', notif.priority);
+  }
+}
+
+// ══════════════════════════════════════════════════════════════
 //  Provider
 // ══════════════════════════════════════════════════════════════
 export function NotificationProvider({ children }: { children: ReactNode }) {
@@ -127,6 +143,7 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
   const seenIdsRef = useRef<Set<string>>(new Set());
   const listenerRef = useRef<(() => void) | null>(null);
   const desktopPermissionRef = useRef(false);
+  const lastFetchCountRef = useRef<number>(0);
 
   // ── Request desktop notification permission once ──
   useEffect(() => {
@@ -137,24 +154,52 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
     }
   }, [user]);
 
-  // ── Fetch initial notifications ──
+  // ── Fetch notifications and detect new ones (used for both initial + polling) ──
   const refresh = useCallback(async () => {
     try {
-      const res = await authFetch('/api/notifications?limit=50&status=unread');
+      // Fetch unread + recent (last 24h) to keep bell populated even after reading
+      const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+      const res = await authFetch(`/api/notifications?limit=50&status=unread&dateFrom=${encodeURIComponent(yesterday)}`);
       if (res.ok) {
         const json = await res.json();
         const data: AppNotification[] = json.data || [];
+
         setNotifications((prev) => {
-          // Merge: keep existing, add new ones
           const existingIds = new Set(prev.map((n) => n.id));
+
+          // Detect genuinely new notifications (not seen before)
+          const newNotifs = data.filter((d) => !existingIds.has(d.id) && !seenIdsRef.current.has(d.id));
+
+          // Merge: new data first, then existing
           const merged = [...data.filter((d) => !existingIds.has(d.id)), ...prev];
           merged.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-          // Track seen IDs for dedup
           merged.forEach((n) => seenIdsRef.current.add(n.id));
-          return merged.slice(0, 100);
+          const result = merged.slice(0, 100);
+
+          // If this is a polling round (not initial load) and we found new notifications
+          if (newNotifs.length > 0 && lastFetchCountRef.current > 0) {
+            // Process new notifications: sound + toast + desktop
+            newNotifs.forEach((notif) => {
+              // Only alert for very recent notifications (< 2 min old) to avoid alerting on old data
+              const age = Date.now() - new Date(notif.createdAt).getTime();
+              if (age < 120000) {
+                triggerNewAlertEffects(notif, desktopPermissionRef.current);
+              }
+            });
+
+            // Set latest for pulse animation
+            setLatestNotification(newNotifs[0]);
+            setTimeout(() => setLatestNotification(null), 3000);
+          }
+
+          lastFetchCountRef.current = result.length;
+          return result;
         });
+      } else {
+        console.warn('[NotificationProvider] refresh() got non-ok response:', res.status);
       }
-    } catch {
+    } catch (err) {
+      console.error('[NotificationProvider] refresh() error:', err);
       setError(true);
     } finally {
       setLoading(false);
@@ -225,17 +270,8 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
             setLatestNotification(notif);
             setTimeout(() => setLatestNotification(null), 3000);
 
-            // Show toast
-            showToastForNotification(notif);
-
-            // Play sound for critical/high
-            if (notif.priority === 'critical' || notif.priority === 'high') {
-              playNotificationSound(getSoundForPriority(notif.priority));
-              // Desktop notification for critical
-              if (notif.priority === 'critical') {
-                sendDesktopNotification(notif.title, notif.description || '', notif.priority);
-              }
-            }
+            // Show toast, play sound, desktop notification for ALL priorities
+            triggerNewAlertEffects(notif, desktopPermissionRef.current);
           },
           (error) => {
             // Listener error — silently ignore (might be permissions)
@@ -252,10 +288,10 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
 
     setupListener();
 
-    // Also set up a polling fallback every 30 seconds
+    // Polling fallback every 15 seconds (reduced from 30 for faster alert delivery)
     const pollInterval = setInterval(() => {
       if (!cancelled) refresh();
-    }, 30000);
+    }, 15000);
 
     return () => {
       cancelled = true;
