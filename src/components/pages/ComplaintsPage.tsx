@@ -48,10 +48,12 @@ import {
   Users,
   FileText,
   AlertTriangle,
+  ShieldAlert,
 } from 'lucide-react';
 import { EmployeeSearchInput } from '@/components/shared/EmployeeSearchInput';
 import { logCreate, logUpdate, logDelete } from '@/lib/activity-logger';
 import { authFetch } from '@/lib/api-fetch';
+import { useAppStore } from '@/lib/store';
 
 // ═══════════════════════════════════════════════════════════════
 //  TYPES
@@ -626,6 +628,33 @@ export default function ComplaintsPage() {
                           )}
                         </div>
                       )}
+
+                      {/* ═══ CAPA Integration (Tier 2) ═══ */}
+                      {(complaint as any).relatedCapaIds && (complaint as any).relatedCapaIds.length > 0 && (
+                        <div className="rounded-lg bg-cyan-500/5 border border-cyan-500/15 p-2">
+                          <div className="flex items-center gap-1.5 text-cyan-400 text-[11px] font-medium mb-1">
+                            <ShieldAlert className="size-3" />
+                            حالات CAPA مرتبطة ({(complaint as any).relatedCapaIds.length})
+                          </div>
+                        </div>
+                      )}
+                      <div className="flex gap-2 mt-1">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="flex-1 text-[11px] border-cyan-500/30 text-cyan-400 hover:bg-cyan-500/10 h-7"
+                          onClick={() => {
+                            useAppStore.getState().navigateTo('capa', undefined, {
+                              employeeId: complaint.employeeId || '',
+                              source: 'complaint',
+                              sourceId: complaint.id,
+                            });
+                          }}
+                        >
+                          <ShieldAlert className="size-3 ml-1" />
+                          إنشاء CAPA من الشكوى
+                        </Button>
+                      </div>
                     </CardContent>
                   </Card>
                 </motion.div>

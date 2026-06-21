@@ -123,7 +123,19 @@ export async function GET(
       ['open', 'under_investigation', 'pending_resolution'].includes(c.status)
     );
 
-    // ═══ Risk Score Calculation ═══
+    // ═══ CAPA stats ═══
+    const openCapa = empCapa.filter((c: any) =>
+      ['open', 'investigation', 'root_cause_analysis', 'corrective_action', 'preventive_action', 'verification', 'reopened'].includes(c.status)
+    );
+    const closedCapa = empCapa.filter((c: any) => c.status === 'closed');
+    const overdueCapa = empCapa.filter((c: any) => c.overdueDays > 0 && c.status !== 'closed' && c.status !== 'rejected');
+    const criticalCapa = empCapa.filter((c: any) => c.priority === 'critical' && c.status !== 'closed' && c.status !== 'rejected');
+    const reopenedCapa = empCapa.filter((c: any) => c.status === 'reopened');
+    const capaEffectiveness = closedCapa.length > 0
+      ? closedCapa.filter((c: any) => c.verificationResult === 'effective').length
+      : 0;
+
+    // ═══ Risk Score Calculation (includes CAPA factors) ═══
     let riskScore = 0;
 
     if (totalAbsent > 4) riskScore += Math.min((totalAbsent - 4) * 3, 20);
@@ -133,6 +145,11 @@ export async function GET(
     riskScore += Math.min(openFollowUps.length * 3, 15);
     riskScore += Math.min(criticalFollowUps.length * 10, 30);
     riskScore += Math.min(openComplaints.length * 5, 20);
+    // CAPA risk factors (Task 6)
+    riskScore += Math.min(openCapa.length * 3, 15);
+    riskScore += Math.min(overdueCapa.length * 5, 20);
+    riskScore += Math.min(criticalCapa.length * 10, 30);
+    riskScore += Math.min(reopenedCapa.length * 7, 20);
 
     riskScore = Math.min(riskScore, 100);
 
@@ -228,6 +245,37 @@ export async function GET(
       });
     }
 
+    // ═══ CAPA timeline events (Task 2) ═══
+    for (const capa of empCapa) {
+      // Creation event
+      timeline.push({
+        type: 'capa',
+        date: capa.createdAt?.split('T')[0] || '',
+        title: `CAPA: ${capa.capaId || capa.title}`,
+        description: `تم إنشاء حالة ${capa.title} - الأولوية: ${capa.priority}`,
+        status: 'created',
+        priority: capa.priority,
+        timestamp: capa.createdAt,
+        capaId: capa.id,
+      });
+
+      // Add timeline events from CAPA case
+      if (Array.isArray(capa.timeline)) {
+        for (const evt of capa.timeline) {
+          timeline.push({
+            type: 'capa',
+            date: evt.timestamp?.split('T')[0] || '',
+            title: `CAPA ${capa.capaId || ''}: ${evt.action}`,
+            description: evt.description,
+            status: evt.action?.toLowerCase() || 'updated',
+            user: evt.performedByName || evt.performedBy || '',
+            timestamp: evt.timestamp,
+            capaId: capa.id,
+          });
+        }
+      }
+    }
+
     // Sort by date descending
     timeline.sort((a, b) => new Date(b.date || 0).getTime() - new Date(a.date || 0).getTime());
 
@@ -239,6 +287,9 @@ export async function GET(
     if (openFollowUps.length > 3) recommendations.push('عدد كبير من المتابعات المفتوحة - يجب تسريع الإغلاق');
     if (criticalFollowUps.length > 0) recommendations.push('يوجد حالات حرجة تحتاج تدخل فوري');
     if (openComplaints.length > 0) recommendations.push('شكاوى عملاء مفتوحة - يجب المعالجة بسرعة');
+    if (openCapa.length > 0) recommendations.push(`يوجد ${openCapa.length} حالات CAPA مفتوحة - يجب المتابعة`);
+    if (overdueCapa.length > 0) recommendations.push(`يوجد ${overdueCapa.length} حالات CAPA متأخرة - يجب التسريع`);
+    if (reopenedCapa.length > 0) recommendations.push(`يوجد ${reopenedCapa.length} حالات CAPA معاد فتحها - يجب مراجعة فعالية الحلول`);
     if (healthScore < 40) recommendations.push('مستوى الأداء منخفض جداً - يحتاج خطة تحسين شاملة');
 
     return NextResponse.json({
@@ -294,11 +345,30 @@ export async function GET(
         },
         capa: {
           total: empCapa.length,
+          open: openCapa.length,
+          closed: closedCapa.length,
+          overdue: overdueCapa.length,
+          critical: criticalCapa.length,
+          reopened: reopenedCapa.length,
+          effectiveness: capaEffectiveness,
         },
       },
       risk: {
         score: riskScore,
         level: riskLevel,
+        breakdown: {
+          attendance: totalAbsent > 4 ? Math.min((totalAbsent - 4) * 3, 20) : 0,
+          late: totalLate > 5 ? Math.min((totalLate - 5) * 1, 10) : 0,
+          quality: Math.min(qualityDeductionDays * 5, 25),
+          hrDeductions: Math.min(hrDeductionDays * 5, 15),
+          openFollowUps: Math.min(openFollowUps.length * 3, 15),
+          criticalFollowUps: Math.min(criticalFollowUps.length * 10, 30),
+          openComplaints: Math.min(openComplaints.length * 5, 20),
+          openCapa: Math.min(openCapa.length * 3, 15),
+          overdueCapa: Math.min(overdueCapa.length * 5, 20),
+          criticalCapa: Math.min(criticalCapa.length * 10, 30),
+          reopenedCapa: Math.min(reopenedCapa.length * 7, 20),
+        },
       },
       healthScore,
       timeline,

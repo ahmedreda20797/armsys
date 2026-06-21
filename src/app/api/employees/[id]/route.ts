@@ -45,6 +45,24 @@ export async function DELETE(
     await deleteWhere('qualityDeductions', { employeeId: id });
     await deleteWhere('biometrics', { employeeId: id });
     await deleteWhere('travelDeals', { employeeId: id });
+    await deleteWhere('followUps', { employeeId: id });
+    await deleteWhere('hrDeductions', { employeeId: id });
+    await deleteWhere('complaints', { employeeId: id });
+
+    // Handle CAPA records — remove employee from relatedEmployeeIds (don't delete CAPA cases)
+    const { getAll, updateRecord } = await import('@/lib/db');
+    const allCapa = await getAll('capaCases');
+    for (const capa of allCapa) {
+      const relatedIds: string[] = Array.isArray(capa.relatedEmployeeIds) ? capa.relatedEmployeeIds : [];
+      if (relatedIds.includes(id)) {
+        const updatedIds = relatedIds.filter((eid: string) => eid !== id);
+        await updateRecord('capaCases', capa.id, {
+          relatedEmployeeIds: updatedIds,
+          employeeId: capa.employeeId === id ? null : capa.employeeId,
+          employeeName: capa.employeeId === id ? 'موظف محذوف' : capa.employeeName,
+        });
+      }
+    }
 
     await deleteRecord('employees', id);
 

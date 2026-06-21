@@ -39,6 +39,10 @@ import {
   Briefcase,
   Hash,
   Timer,
+  ShieldAlert,
+  ExternalLink,
+  Plus,
+  RotateCcw,
 } from 'lucide-react';
 
 // ══════════════════════════════════════════════════════════════
@@ -65,15 +69,16 @@ interface Employee360Data {
     followUps: { total: number; open: number; critical: number };
     travel: { total: number; active: number; completed: number };
     complaints: { total: number; open: number };
-    capa: { total: number };
+    capa: { total: number; open: number; closed: number; overdue: number; critical: number; reopened: number; effectiveness: number };
   };
-  risk: { score: number; level: 'low' | 'medium' | 'high' | 'critical' };
+  risk: { score: number; level: 'low' | 'medium' | 'high' | 'critical'; breakdown?: Record<string, number> };
   healthScore: number;
   timeline: any[];
   recommendations: string[];
+  capaDetails?: any[];
 }
 
-type TabId = 'overview' | 'attendance' | 'requests' | 'quality' | 'hr' | 'followups' | 'risk' | 'performance' | 'documents';
+type TabId = 'overview' | 'attendance' | 'requests' | 'quality' | 'hr' | 'followups' | 'risk' | 'performance' | 'documents' | 'capa';
 
 // ══════════════════════════════════════════════════════════════
 //  Cinematic Animation Variants
@@ -235,6 +240,7 @@ const tabs: { id: TabId; label: string; icon: React.ReactNode }[] = [
   { id: 'quality', label: 'الجودة', icon: <Award className="size-4" /> },
   { id: 'hr', label: 'HR', icon: <Banknote className="size-4" /> },
   { id: 'followups', label: 'المتابعة', icon: <ClipboardCheck className="size-4" /> },
+  { id: 'capa', label: 'CAPA', icon: <ShieldAlert className="size-4" /> },
   { id: 'risk', label: 'المخاطر', icon: <AlertTriangle className="size-4" /> },
   { id: 'performance', label: 'الأداء', icon: <BarChart3 className="size-4" /> },
   { id: 'documents', label: 'المستندات', icon: <ShieldCheck className="size-4" /> },
@@ -531,6 +537,7 @@ export default function Employee360Page({ employeeId: propEmployeeId, onClose }:
       case 'quality': return timeline.filter((t) => t.type === 'quality');
       case 'hr': return timeline.filter((t) => t.type === 'hrDeduction');
       case 'followups': return timeline.filter((t) => t.type === 'followUp');
+      case 'capa': return timeline.filter((t) => t.type === 'capa');
       case 'documents': return [];
       default: return timeline;
     }
@@ -547,6 +554,7 @@ export default function Employee360Page({ employeeId: propEmployeeId, onClose }:
           { label: 'غياب', value: stats.attendance.totalAbsent, suffix: 'يوم', icon: <XCircleIcon className="size-5 text-red-400" />, bg: 'bg-red-500/10', border: 'border-red-500/20' },
           { label: 'خصم جودة', value: stats.quality.deductionDays, suffix: 'يوم', icon: <Award className="size-5 text-orange-400" />, bg: 'bg-orange-500/10', border: 'border-orange-500/20' },
           { label: 'متابعات مفتوحة', value: stats.followUps.open, suffix: '', icon: <ClipboardCheck className="size-5 text-purple-400" />, bg: 'bg-purple-500/10', border: 'border-purple-500/20' },
+          { label: 'CAPA مفتوحة', value: stats.capa.open, suffix: '', icon: <ShieldAlert className="size-5 text-cyan-400" />, bg: 'bg-cyan-500/10', border: 'border-cyan-500/20' },
         ].map((stat, i) => (
           <motion.div key={i} variants={gridItem}>
             <GlassCard className="flex items-center gap-3">
@@ -619,6 +627,7 @@ export default function Employee360Page({ employeeId: propEmployeeId, onClose }:
                   item.type === 'followUp' ? 'bg-purple-400' :
                   item.type === 'request' ? 'bg-blue-400' :
                   item.type === 'complaint' ? 'bg-red-400' :
+                  item.type === 'capa' ? 'bg-cyan-400' :
                   'bg-slate-400'
                 }`} />
                 <div className="flex-1 min-w-0">
@@ -664,6 +673,14 @@ export default function Employee360Page({ employeeId: propEmployeeId, onClose }:
                   <p>المتابعات المفتوحة: {stats.followUps.open > 0 ? `+${Math.min(stats.followUps.open * 3, 15)} نقطة` : '0 نقطة'}</p>
                   <p>الحالات الحرجة: {stats.followUps.critical > 0 ? `+${Math.min(stats.followUps.critical * 10, 30)} نقطة` : '0 نقطة'}</p>
                   <p>الشكاوى: {stats.complaints.open > 0 ? `+${Math.min(stats.complaints.open * 5, 20)} نقطة` : '0 نقطة'}</p>
+                  {risk.breakdown && (
+                    <>
+                      <p className="text-cyan-400/70 mt-2">CAPA مفتوحة: {risk.breakdown.openCapa > 0 ? `+${risk.breakdown.openCapa} نقطة` : '0 نقطة'}</p>
+                      <p className="text-cyan-400/70">CAPA متأخرة: {risk.breakdown.overdueCapa > 0 ? `+${risk.breakdown.overdueCapa} نقطة` : '0 نقطة'}</p>
+                      <p className="text-cyan-400/70">CAPA حرجة: {risk.breakdown.criticalCapa > 0 ? `+${risk.breakdown.criticalCapa} نقطة` : '0 نقطة'}</p>
+                      <p className="text-cyan-400/70">CAPA معاد فتحها: {risk.breakdown.reopenedCapa > 0 ? `+${risk.breakdown.reopenedCapa} نقطة` : '0 نقطة'}</p>
+                    </>
+                  )}
                 </div>
               </div>
             </div>
@@ -800,6 +817,7 @@ export default function Employee360Page({ employeeId: propEmployeeId, onClose }:
                 item.type === 'complaint' ? 'bg-red-500/10 border-red-500/20' :
                 item.type === 'hrDeduction' ? 'bg-pink-500/10 border-pink-500/20' :
                 item.type === 'travel' ? 'bg-cyan-500/10 border-cyan-500/20' :
+                item.type === 'capa' ? 'bg-cyan-500/10 border-cyan-500/20' :
                 'bg-slate-500/10 border-slate-500/20'
               }`}>
                 {item.type === 'attendance' && <Clock className={`size-4 ${item.status === 'present' ? 'text-emerald-400' : item.status === 'late' ? 'text-yellow-400' : 'text-red-400'}`} />}
@@ -809,6 +827,7 @@ export default function Employee360Page({ employeeId: propEmployeeId, onClose }:
                 {item.type === 'complaint' && <MessageSquareWarning className="size-4 text-red-400" />}
                 {item.type === 'hrDeduction' && <Banknote className="size-4 text-pink-400" />}
                 {item.type === 'travel' && <Plane className="size-4 text-cyan-400" />}
+                {item.type === 'capa' && <ShieldAlert className="size-4 text-cyan-400" />}
               </div>
               <div className="flex-1 min-w-0">
                 <p className="text-white text-sm font-medium">{item.title}</p>
@@ -843,9 +862,133 @@ export default function Employee360Page({ employeeId: propEmployeeId, onClose }:
     );
   };
 
+  const renderCapaTab = () => (
+    <motion.div variants={containerVariants} initial="hidden" animate="visible" className="space-y-5">
+      {/* CAPA Stats Grid */}
+      <motion.div variants={staggerGrid} initial="hidden" animate="visible" className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+        {[
+          { label: 'مفتوحة', value: stats.capa.open, icon: <AlertTriangle className="size-4 text-yellow-400" />, bg: 'bg-yellow-500/10', border: 'border-yellow-500/20' },
+          { label: 'مغلقة', value: stats.capa.closed, icon: <CheckCircle className="size-4 text-emerald-400" />, bg: 'bg-emerald-500/10', border: 'border-emerald-500/20' },
+          { label: 'متأخرة', value: stats.capa.overdue, icon: <Clock className="size-4 text-red-400" />, bg: 'bg-red-500/10', border: 'border-red-500/20' },
+          { label: 'حرجة', value: stats.capa.critical, icon: <AlertCircle className="size-4 text-orange-400" />, bg: 'bg-orange-500/10', border: 'border-orange-500/20' },
+          { label: 'معاد فتحها', value: stats.capa.reopened, icon: <RotateCcw className="size-4 text-purple-400" />, bg: 'bg-purple-500/10', border: 'border-purple-500/20' },
+          { label: 'فعّالة', value: stats.capa.effectiveness, icon: <ShieldCheck className="size-4 text-cyan-400" />, bg: 'bg-cyan-500/10', border: 'border-cyan-500/20' },
+        ].map((stat, i) => (
+          <motion.div key={i} variants={gridItem}>
+            <GlassCard className="flex items-center gap-3">
+              <div className={`w-9 h-9 rounded-lg ${stat.bg} border ${stat.border} flex items-center justify-center`}>
+                {stat.icon}
+              </div>
+              <div>
+                <p className="text-slate-400 text-xs">{stat.label}</p>
+                <p className="text-white font-bold text-sm">{stat.value}</p>
+              </div>
+            </GlassCard>
+          </motion.div>
+        ))}
+      </motion.div>
+
+      {/* CAPA Effectiveness */}
+      {stats.capa.closed > 0 && (
+        <motion.div variants={slideUpFade}>
+          <GlassCard className="p-5">
+            <h3 className="text-white font-semibold mb-3 flex items-center gap-2">
+              <div className="w-7 h-7 rounded-lg bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center">
+                <TrendingUp className="size-4 text-cyan-400" />
+              </div>
+              فعالية CAPA
+            </h3>
+            <div className="h-3 rounded-full bg-slate-700/50 overflow-hidden">
+              <motion.div
+                className="h-full rounded-full bg-cyan-500"
+                initial={{ width: 0 }}
+                animate={{ width: `${stats.capa.closed > 0 ? (stats.capa.effectiveness / stats.capa.closed) * 100 : 0}%` }}
+                transition={{ delay: 0.4, duration: 1, ease: [0.22, 1, 0.36, 1] }}
+              />
+            </div>
+            <p className="text-slate-400 text-xs mt-2">
+              {stats.capa.effectiveness} من {stats.capa.closed} حالة مغلقة فعّالة ({stats.capa.closed > 0 ? Math.round((stats.capa.effectiveness / stats.capa.closed) * 100) : 0}%)
+            </p>
+          </GlassCard>
+        </motion.div>
+      )}
+
+      {/* CAPA Timeline Events */}
+      <motion.div variants={slideUpFade}>
+        <GlassCard className="p-5">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-white font-semibold flex items-center gap-2">
+              <div className="w-7 h-7 rounded-lg bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center">
+                <Activity className="size-4 text-cyan-400" />
+              </div>
+              سجل CAPA
+            </h3>
+            <Button
+              size="sm"
+              className="bg-gradient-to-l from-cyan-600 to-blue-600 hover:from-cyan-700 hover:to-blue-700 text-white text-xs shadow-lg shadow-cyan-500/20"
+              onClick={() => useAppStore.getState().navigateTo('capa', undefined, { employeeId: employee.id })}
+            >
+              <ExternalLink className="size-3.5 ml-1" />
+              فتح صفحة CAPA
+            </Button>
+          </div>
+          <div className="space-y-3">
+            {getFilteredTimeline('capa').length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-10">
+                <ShieldAlert className="size-8 text-slate-600 mb-2" />
+                <p className="text-slate-400 text-sm">لا توجد حالات CAPA مسجلة</p>
+              </div>
+            ) : (
+              getFilteredTimeline('capa').slice(0, 20).map((item, i) => (
+                <motion.div
+                  key={i}
+                  initial={{ opacity: 0, x: -10 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ delay: 0.3 + i * 0.04, type: 'spring', stiffness: 200 }}
+                  className="flex items-start gap-3 p-3 rounded-xl bg-slate-800/40 border border-slate-700/20 hover:bg-slate-800/60 hover:border-cyan-500/20 transition-all duration-200"
+                >
+                  <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 border ${
+                    item.status === 'created' ? 'bg-cyan-500/10 border-cyan-500/20' :
+                    item.status === 'closed' || item.status === 'verified' ? 'bg-emerald-500/10 border-emerald-500/20' :
+                    item.status === 'reopened' ? 'bg-purple-500/10 border-purple-500/20' :
+                    'bg-slate-500/10 border-slate-500/20'
+                  }`}>
+                    <ShieldAlert className={`size-4 ${
+                      item.status === 'created' ? 'text-cyan-400' :
+                      item.status === 'closed' || item.status === 'verified' ? 'text-emerald-400' :
+                      item.status === 'reopened' ? 'text-purple-400' :
+                      'text-slate-400'
+                    }`} />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-white text-sm font-medium">{item.title}</p>
+                    {item.description && <p className="text-slate-400 text-xs mt-0.5 truncate">{item.description}</p>}
+                    {item.user && <p className="text-slate-500 text-xs mt-0.5">{item.user}</p>}
+                  </div>
+                  <div className="flex flex-col items-end gap-1 flex-shrink-0">
+                    <span className="text-slate-500 text-xs" dir="ltr">{item.date}</span>
+                    {item.priority && (
+                      <Badge variant="outline" className={`text-[10px] px-1.5 py-0 rounded-md ${
+                        item.priority === 'critical' ? 'border-red-500/30 text-red-400 bg-red-500/5' :
+                        item.priority === 'high' ? 'border-orange-500/30 text-orange-400 bg-orange-500/5' :
+                        item.priority === 'medium' ? 'border-yellow-500/30 text-yellow-400 bg-yellow-500/5' :
+                        'border-slate-500/30 text-slate-400'
+                      }`}>{item.priority}</Badge>
+                    )}
+                  </div>
+                </motion.div>
+              ))
+            )}
+          </div>
+        </GlassCard>
+      </motion.div>
+    </motion.div>
+  );
+
   const renderTabContent = () => {
     switch (activeTab) {
       case 'overview': return renderOverviewTab();
+      case 'capa': return renderCapaTab();
       case 'risk': return renderRiskTab();
       case 'performance': return renderPerformanceTab();
       case 'attendance':
@@ -1013,6 +1156,7 @@ export default function Employee360Page({ employeeId: propEmployeeId, onClose }:
           { label: 'خصم HR', value: stats.hrDeductions.deductionDays, icon: <Banknote className="size-3.5 text-pink-400" />, bg: 'bg-pink-500/10', border: 'border-pink-500/15', suffix: 'يوم' },
           { label: 'المتابعات', value: stats.followUps.open, icon: <ClipboardCheck className="size-3.5 text-purple-400" />, bg: 'bg-purple-500/10', border: 'border-purple-500/15' },
           { label: 'الشكاوى', value: stats.complaints.open, icon: <MessageSquareWarning className="size-3.5 text-red-400" />, bg: 'bg-red-500/10', border: 'border-red-500/15' },
+          { label: 'CAPA مفتوحة', value: stats.capa.open, icon: <ShieldAlert className="size-3.5 text-cyan-400" />, bg: 'bg-cyan-500/10', border: 'border-cyan-500/15' },
         ].map((stat, i) => (
           <motion.div key={i} variants={gridItem}>
             <div className={`rounded-xl ${stat.bg} border ${stat.border} p-3 text-center transition-all hover:scale-105 cursor-default`}>

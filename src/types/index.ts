@@ -80,6 +80,7 @@ export interface QualityDeduction {
   deductionAmount: number;
   evidence: string | null;
   month: string;
+  relatedCapaId: string | null;
   createdAt: string;
 }
 
@@ -150,10 +151,10 @@ export interface FollowUp {
   createdById: string;
   createdByName: string;
   relatedDeductionId: string | null;
+  relatedCapaId: string | null;
   createdAt: string;
   updatedAt: string;
 }
-
 export interface CAPACase {
   id: string;
   capaId: string;                    // Auto-generated: CAPA-2026-001
@@ -253,6 +254,7 @@ export interface CustomerComplaint {
   createdAt: string;
   updatedAt: string;
   resolvedAt: string | null;
+  relatedCapaIds: string[];
 }
 
 export interface KnowledgeArticle {

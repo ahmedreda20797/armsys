@@ -28,6 +28,7 @@ import {
   ArrowUpCircle, ArrowDownCircle, ShieldAlert, Ban, Bell,
   ChevronDown, ChevronUp, Filter, Eye, FileText,
   TrendingUp, AlertOctagon, LayoutList, Table2, Paperclip,
+  ExternalLink,
 } from 'lucide-react';
 import type { FollowUp, Employee } from '@/types';
 
@@ -35,6 +36,7 @@ interface SystemUser { id: string; name: string; email?: string; role?: string; 
 import { logCreate, logUpdate, logDelete } from '@/lib/activity-logger';
 import { toast } from 'sonner';
 import { authFetch } from '@/lib/api-fetch';
+import { useAppStore } from '@/lib/store';
 
 // ═══════════════════════════════════════════════════
 //  Animation Variants
@@ -1186,7 +1188,7 @@ export default function FollowUpsPage() {
                   <div>
                     <p className="text-slate-500 text-[11px] mb-1.5">المرفقات</p>
                     <div className="flex flex-wrap gap-2">
-                      {viewingItem.attachments.map((url, i) => (
+                      {viewingItem.attachments.map((url: any, i: any) => (
                         <a key={i} href={url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-slate-800/60 border border-slate-700/30 text-cyan-400 text-[11px] hover:bg-cyan-500/10 transition-colors">
                           <Paperclip className="size-3" />
                           مرفق {i + 1}
@@ -1195,6 +1197,40 @@ export default function FollowUpsPage() {
                     </div>
                   </div>
                 )}
+
+                {/* ═══ CAPA Integration (Tier 2) ═══ */}
+                {(viewingItem as any).relatedCapaId && (
+                  <div className="rounded-lg bg-cyan-500/5 border border-cyan-500/15 px-3 py-2">
+                    <p className="text-cyan-400 text-[11px] font-medium mb-1">حالة CAPA مرتبطة</p>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="text-xs border-cyan-500/30 text-cyan-400 hover:bg-cyan-500/10"
+                      onClick={() => useAppStore.getState().navigateTo('capa')}
+                    >
+                      <ExternalLink className="size-3 ml-1" />
+                      عرض حالة CAPA
+                    </Button>
+                  </div>
+                )}
+                <div className="flex gap-2 pt-1">
+                  {!editingItem && (
+                    <Button
+                      size="sm"
+                      className="flex-1 bg-gradient-to-l from-cyan-600 to-blue-600 hover:from-cyan-700 hover:to-blue-700 text-white text-xs shadow-lg shadow-cyan-500/20"
+                      onClick={() => {
+                        useAppStore.getState().navigateTo('capa', undefined, {
+                          employeeId: viewingItem.employeeId,
+                          source: 'followUp',
+                          sourceId: viewingItem.id,
+                        });
+                      }}
+                    >
+                      <Plus className="size-3.5 ml-1" />
+                      إنشاء CAPA من المتابعة
+                    </Button>
+                  )}
+                </div>
               </div>
             </>
           )}
