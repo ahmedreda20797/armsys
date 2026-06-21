@@ -15,6 +15,7 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from '@/components/ui/accordion';
+import { authFetch } from '@/lib/api-fetch';
 import {
   Database,
   Cloud,
@@ -167,7 +168,7 @@ export default function FirebaseSettingsPage() {
   const checkConnectionStatus = useCallback(async () => {
     setConnectionStatus('checking');
     try {
-      const res = await fetch('/api/firebase/config');
+      const res = await authFetch('/api/firebase/config');
       if (res.ok) {
         const data = await res.json();
         if (data && data.projectId) {
@@ -220,7 +221,7 @@ export default function FirebaseSettingsPage() {
     setTesting(true);
     setTestResult(null);
     try {
-      const res = await fetch('/api/firebase/test', {
+      const res = await authFetch('/api/firebase/test', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(config),
@@ -256,7 +257,7 @@ export default function FirebaseSettingsPage() {
       localStorage.setItem('firebase_config', JSON.stringify(config));
 
       // Save to server
-      const res = await fetch('/api/firebase/config', {
+      const res = await authFetch('/api/firebase/config', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(config),
@@ -278,7 +279,7 @@ export default function FirebaseSettingsPage() {
     setSyncing(true);
     setSyncResult(null);
     try {
-      const res = await fetch('/api/firebase/sync', {
+      const res = await authFetch('/api/firebase/sync', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(config),

@@ -27,6 +27,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import type { AppNotification } from '@/types';
+import { authFetch } from '@/lib/api-fetch';
 
 // ═══════════════════════════════════════════════════
 //  CONSTANTS & MAPS
@@ -270,7 +271,7 @@ export default function NotificationCenterPage() {
   // ── Fetch stats ──
   const fetchStats = async () => {
     try {
-      const res = await fetch('/api/notification-stats');
+      const res = await authFetch('/api/notification-stats');
       if (res.ok) {
         const data = await res.json();
         setStats(data);

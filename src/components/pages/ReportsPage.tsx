@@ -23,6 +23,7 @@ import {
   TableHead,
   TableCell,
 } from '@/components/ui/table';
+import { authFetch } from '@/lib/api-fetch';
 import {
   BarChart3,
   Download,
@@ -256,7 +257,7 @@ export default function ReportsPage() {
     setExpandedEmpId(null);
     setDetailData(null);
     try {
-      const res = await fetch('/api/reports/generate', {
+      const res = await authFetch('/api/reports/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ month }),
@@ -283,7 +284,7 @@ export default function ReportsPage() {
   const handleExport = async () => {
     if (!month || report.length === 0) return;
     try {
-      const res = await fetch('/api/reports/export', {
+      const res = await authFetch('/api/reports/export', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ month, data: report, meta, summary }),
@@ -319,7 +320,7 @@ export default function ReportsPage() {
     setDetailError(null);
     setDetailData(null);
     try {
-      const res = await fetch('/api/reports/employee-detail', {
+      const res = await authFetch('/api/reports/employee-detail', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ employeeId, month }),
@@ -342,14 +343,14 @@ export default function ReportsPage() {
   const handleWaiveDeduction = useCallback(async (employeeId: string, date: string, deductionType: string, deductionAmount: number) => {
     setWaivingDate(date);
     try {
-      const res = await fetch('/api/reports/waive-deduction', {
+      const res = await authFetch('/api/reports/waive-deduction', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ employeeId, date, month, deductionType, deductionAmount, reason: 'إلغاء يدوي بواسطة المدير' }),
       });
       if (res.ok) {
         // Re-fetch detail data to reflect changes
-        const detailRes = await fetch('/api/reports/employee-detail', {
+        const detailRes = await authFetch('/api/reports/employee-detail', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ employeeId, month }),
@@ -368,13 +369,13 @@ export default function ReportsPage() {
   const handleRestoreDeduction = useCallback(async (employeeId: string, date: string) => {
     setWaivingDate(date);
     try {
-      const res = await fetch('/api/reports/waive-deduction', {
+      const res = await authFetch('/api/reports/waive-deduction', {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ employeeId, date, month }),
       });
       if (res.ok) {
-        const detailRes = await fetch('/api/reports/employee-detail', {
+        const detailRes = await authFetch('/api/reports/employee-detail', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ employeeId, month }),

@@ -73,6 +73,7 @@ import {
 import type { TravelDeal, Employee } from '@/types';
 import { logCreate, logUpdate, logDelete } from '@/lib/activity-logger';
 import { EmployeeSearchInput } from '@/components/shared/EmployeeSearchInput';
+import { authFetch } from '@/lib/api-fetch';
 
 // ═══════════════════════════════════════════════════════════════
 //  TYPES
@@ -738,7 +739,7 @@ const UploadDialog = memo(function UploadDialog({
     try {
       const formData = new FormData();
       formData.append('file', uploadFile);
-      const res = await fetch('/api/travel/upload', { method: 'POST', body: formData });
+      const res = await authFetch('/api/travel/upload', { method: 'POST', body: formData });
       const data = await res.json();
       if (res.ok) {
         setUploadResult(data);

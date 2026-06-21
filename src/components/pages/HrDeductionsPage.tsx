@@ -47,6 +47,7 @@ import {
 import { EmployeeSearchInput } from '@/components/shared/EmployeeSearchInput';
 import type { HrDeduction, Employee } from '@/types';
 import { useAuth } from '@/contexts/AuthContext';
+import { authFetch } from '@/lib/api-fetch';
 
 const DEDUCTION_TYPES = [
   { value: 'خصم تأخير', label: 'خصم تأخير' },
@@ -115,8 +116,8 @@ export default function HrDeductionsPage() {
   const fetchData = async () => {
     try {
       const [dedRes, empRes] = await Promise.all([
-        fetch('/api/hr-deductions'),
-        fetch('/api/employees'),
+        authFetch('/api/hr-deductions'),
+        authFetch('/api/employees'),
       ]);
       if (dedRes.ok) {
         const dedData = await dedRes.json();
@@ -138,7 +139,7 @@ export default function HrDeductionsPage() {
     if (!addForm.employeeId || !addForm.type || !addForm.amount || !addForm.unit || !addForm.month) return;
     setSaving(true);
     try {
-      const res = await fetch('/api/hr-deductions', {
+      const res = await authFetch('/api/hr-deductions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

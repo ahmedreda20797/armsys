@@ -96,6 +96,7 @@ import {
   WifiOff,
 } from 'lucide-react';
 import { APP_PAGES, getPermissionsForRole, getActionLabel, type PermissionsMap, type PagePermission, type PermissionLevel, type ActionKey } from '@/config/permissions';
+import { authFetch } from '@/lib/api-fetch';
 
 // ══════════════════════════════════════════════════════════════
 //  Types
@@ -146,7 +147,7 @@ interface SessionUser {
   durationLabel: string;
 }
 
-const EXCLUDED_PAGES = ['home' , 'firebase'];
+const EXCLUDED_PAGES = ['home', 'firebase'];
 
 const ROLE_OPTIONS = [
   { value: 'admin', label: 'مدير النظام', color: 'bg-red-500/15 text-red-400 border-red-500/20' },
@@ -242,7 +243,7 @@ export default function ControlPanelPage() {
   // ═══ Data Fetching ═══
   const fetchUsers = useCallback(async () => {
     try {
-      const res = await fetch('/api/dashboard/users');
+      const res = await authFetch('/api/dashboard/users');
       if (res.ok) {
         const data = await res.json();
         // Filter out null entries and ensure all users have a role
@@ -266,7 +267,7 @@ export default function ControlPanelPage() {
 
   const fetchSessions = useCallback(async () => {
     try {
-      const res = await fetch('/api/activity-logs/online?minutes=5');
+      const res = await authFetch('/api/activity-logs/online?minutes=5');
       if (res.ok) setSessions(await res.json());
     } catch { setSessions([]); }
     finally { setSessionsLoading(false); }
@@ -404,7 +405,7 @@ export default function ControlPanelPage() {
     if (!addForm.email || !addForm.password) return;
     setSaving(true);
     try {
-      const res = await fetch('/api/dashboard/users', {
+      const res = await authFetch('/api/dashboard/users', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(addForm),
       });
@@ -458,7 +459,7 @@ export default function ControlPanelPage() {
     if (!selectedUser || !cloneForm.email || !cloneForm.password) return;
     setSaving(true);
     try {
-      const res = await fetch('/api/dashboard/users', {
+      const res = await authFetch('/api/dashboard/users', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ...cloneForm, permissions: JSON.stringify(selectedUser.permissions) }),
       });

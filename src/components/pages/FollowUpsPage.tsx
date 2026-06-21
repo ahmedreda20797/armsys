@@ -34,6 +34,7 @@ import type { FollowUp, Employee } from '@/types';
 interface SystemUser { id: string; name: string; email?: string; role?: string; }
 import { logCreate, logUpdate, logDelete } from '@/lib/activity-logger';
 import { toast } from 'sonner';
+import { authFetch } from '@/lib/api-fetch';
 
 // ═══════════════════════════════════════════════════
 //  Animation Variants
@@ -278,9 +279,9 @@ export default function FollowUpsPage() {
   const fetchData = async () => {
     try {
       const [fuRes, empRes, usrRes] = await Promise.allSettled([
-        fetch('/api/follow-ups'),
-        fetch('/api/employees'),
-        fetch('/api/dashboard/users'),
+        authFetch('/api/follow-ups'),
+        authFetch('/api/employees'),
+        authFetch('/api/dashboard/users'),
       ]);
       if (fuRes.status === 'fulfilled' && fuRes.value.ok) {
         const fuData = await fuRes.value.json();
@@ -456,7 +457,7 @@ export default function FollowUpsPage() {
           setEditingItem(null);
         }
       } else {
-        const res = await fetch('/api/follow-ups', {
+        const res = await authFetch('/api/follow-ups', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload),

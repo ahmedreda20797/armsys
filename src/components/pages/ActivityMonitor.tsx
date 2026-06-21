@@ -24,6 +24,7 @@ import {
   TableHead,
   TableCell,
 } from '@/components/ui/table';
+import { authFetch } from '@/lib/api-fetch';
 import {
   Activity,
   Users,
@@ -258,7 +259,7 @@ export default function ActivityMonitor() {
 
   const fetchOnlineUsers = useCallback(async () => {
     try {
-      const res = await fetch('/api/activity-logs/online');
+      const res = await authFetch('/api/activity-logs/online');
       if (res.ok) {
         const data = await res.json();
         setOnlineUsers(data);

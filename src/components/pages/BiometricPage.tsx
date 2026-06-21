@@ -47,6 +47,7 @@ import {
 } from 'lucide-react';
 import type { BiometricRecord, Employee } from '@/types';
 import { logCreate } from '@/lib/activity-logger';
+import { authFetch } from '@/lib/api-fetch';
 
 interface BiometricWithEmployee extends BiometricRecord {
   employeeName: string;
@@ -96,8 +97,8 @@ export default function BiometricPage() {
   const fetchData = async () => {
     try {
       const [bioRes, empRes] = await Promise.all([
-        fetch('/api/biometric'),
-        fetch('/api/employees'),
+        authFetch('/api/biometric'),
+        authFetch('/api/employees'),
       ]);
       if (bioRes.ok) {
         const bioData = await bioRes.json();
@@ -122,7 +123,7 @@ export default function BiometricPage() {
     try {
       const formData = new FormData();
       formData.append('file', file);
-      const res = await fetch('/api/biometric/upload', {
+      const res = await authFetch('/api/biometric/upload', {
         method: 'POST',
         body: formData,
       });
@@ -143,7 +144,7 @@ export default function BiometricPage() {
     if (!clearMonth) return;
     setClearing(true);
     try {
-      const res = await fetch('/api/biometric/clear', {
+      const res = await authFetch('/api/biometric/clear', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ month: clearMonth }),

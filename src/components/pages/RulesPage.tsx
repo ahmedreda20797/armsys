@@ -39,6 +39,7 @@ import {
 } from 'lucide-react';
 import type { DeductionRule } from '@/types';
 import { logCreate, logUpdate, logDelete } from '@/lib/activity-logger';
+import { authFetch } from '@/lib/api-fetch';
 
 interface RuleFormData {
   key: string;
@@ -92,7 +93,7 @@ export default function RulesPage() {
 
   const fetchRules = async () => {
     try {
-      const res = await fetch('/api/deduction-rules');
+      const res = await authFetch('/api/deduction-rules');
       if (res.ok) {
         const data = await res.json();
         setRules(Array.isArray(data.data) ? data.data : Array.isArray(data) ? data : []);
@@ -123,7 +124,7 @@ export default function RulesPage() {
           await fetchRules();
         }
       } else {
-        const res = await fetch('/api/deduction-rules', {
+        const res = await authFetch('/api/deduction-rules', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({

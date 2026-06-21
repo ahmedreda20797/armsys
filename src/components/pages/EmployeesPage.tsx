@@ -40,6 +40,7 @@ import {
 } from 'lucide-react';
 import type { Employee } from '@/types';
 import { logCreate, logUpdate, logDelete } from '@/lib/activity-logger';
+import { authFetch } from '@/lib/api-fetch';
 
 interface EmployeeFormData {
   code: string;
@@ -114,7 +115,7 @@ export default function EmployeesPage() {
     try {
       const formData = new FormData();
       formData.append('file', file);
-      const res = await fetch('/api/employees/upload', {
+      const res = await authFetch('/api/employees/upload', {
         method: 'POST',
         body: formData,
       });

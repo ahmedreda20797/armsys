@@ -47,6 +47,7 @@ import {
 import { EmployeeSearchInput } from '@/components/shared/EmployeeSearchInput';
 import type { QualityDeduction, Employee } from '@/types';
 import { logCreate, logUpdate, logDelete } from '@/lib/activity-logger';
+import { authFetch } from '@/lib/api-fetch';
 
 interface QualityWithEmployee extends QualityDeduction {
   employee?: {
@@ -194,8 +195,8 @@ export default function QualityPage() {
   const fetchData = async () => {
     try {
       const [qRes, empRes] = await Promise.all([
-        fetch('/api/quality'),
-        fetch('/api/employees'),
+        authFetch('/api/quality'),
+        authFetch('/api/employees'),
       ]);
       if (qRes.ok) {
         const qData = await qRes.json();
@@ -263,7 +264,7 @@ export default function QualityPage() {
         }
       } else {
         // Create mode
-        const res = await fetch('/api/quality', {
+        const res = await authFetch('/api/quality', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({

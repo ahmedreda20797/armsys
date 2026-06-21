@@ -49,6 +49,7 @@ import {
 } from 'lucide-react';
 import { APP_PAGES, getActionLabel, type PermissionsMap, type PagePermission, type PermissionLevel, type ActionKey } from '@/config/permissions';
 import ActivityMonitor from './ActivityMonitor';
+import { authFetch } from '@/lib/api-fetch';
 
 interface UserRecord {
   id: string;
@@ -88,7 +89,7 @@ export default function DashboardPage() {
 
   const fetchUsers = async () => {
     try {
-      const res = await fetch('/api/dashboard/users');
+      const res = await authFetch('/api/dashboard/users');
       if (res.ok) {
         const data = await res.json();
         setUsers(data);
@@ -104,7 +105,7 @@ export default function DashboardPage() {
     if (!addForm.email || !addForm.password) return;
     setSaving(true);
     try {
-      const res = await fetch('/api/dashboard/users', {
+      const res = await authFetch('/api/dashboard/users', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(addForm),

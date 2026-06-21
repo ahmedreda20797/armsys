@@ -34,6 +34,7 @@ import {
 import { toast } from 'sonner';
 import { logCreate, logUpdate, logDelete } from '@/lib/activity-logger';
 import type { CAPACase, CAPATimelineEvent, Employee } from '@/types';
+import { authFetch } from '@/lib/api-fetch';
 
 // ══════════════════════════════════════════════════════════════════
 //  CONSTANTS
@@ -232,9 +233,9 @@ export default function CAPAPage() {
   const fetchData = async () => {
     try {
       const [capaRes, empRes, usrRes] = await Promise.allSettled([
-        fetch('/api/capa-cases'),
-        fetch('/api/employees'),
-        fetch('/api/dashboard/users'),
+        authFetch('/api/capa-cases'),
+        authFetch('/api/employees'),
+        authFetch('/api/dashboard/users'),
       ]);
       if (capaRes.status === 'fulfilled' && capaRes.value.ok) {
         const d = await capaRes.value.json();
@@ -347,7 +348,7 @@ export default function CAPAPage() {
         if (res.ok) { logUpdate('capa', 'حالة كابا', form.title); toast.success('تم تحديث الحالة بنجاح'); fetchData(); setIsFormOpen(false); }
         else toast.error('فشل في التحديث');
       } else {
-        const res = await fetch('/api/capa-cases', {
+        const res = await authFetch('/api/capa-cases', {
           method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
         });
         if (res.ok) { logCreate('capa', 'حالة كابا', form.title); toast.success('تم إنشاء الحالة بنجاح'); fetchData(); setIsFormOpen(false); }
@@ -386,7 +387,7 @@ export default function CAPAPage() {
             <ShieldCheck className="size-5 text-violet-400" />
           </div>
           <div>
-            <h1 className="text-xl font-bold text-white">نظام CAPA — الإجراءات التصحيحية والوقائية</h1>
+            <h1 className="text-xl font-bold text-white">نظام كابا — الإجراءات التصحيحية والوقائية</h1>
             <p className="text-slate-500 text-xs mt-0.5">محرك تحسين الجودة وحل المشكلات</p>
           </div>
         </div>

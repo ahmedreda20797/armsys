@@ -51,6 +51,7 @@ import {
 } from 'lucide-react';
 import { EmployeeSearchInput } from '@/components/shared/EmployeeSearchInput';
 import { logCreate, logUpdate, logDelete } from '@/lib/activity-logger';
+import { authFetch } from '@/lib/api-fetch';
 
 // ═══════════════════════════════════════════════════════════════
 //  TYPES
@@ -98,7 +99,7 @@ const COMPLAINT_TYPES = [
   { value: 'pricing_error', label: 'خطأ في التسعير' },
   { value: 'communication', label: 'تواصل' },
   { value: 'delay', label: 'تأخير' },
-  { value: 'product_issue', label: 'مشكلة في الرحلة' },
+  { value: 'product_issue', label: 'مشكلة في المنتج' },
   { value: 'other', label: 'أخرى' },
 ];
 
@@ -209,7 +210,7 @@ export default function ComplaintsPage() {
 
   // Fetch system users
   useEffect(() => {
-    fetch('/api/dashboard/users')
+    authFetch('/api/dashboard/users')
       .then(r => r.ok ? r.json() : [])
       .then(data => setSystemUsers(Array.isArray(data) ? data : []))
       .catch(() => {});

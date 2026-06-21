@@ -48,6 +48,7 @@ import { EmployeeSearchInput } from '@/components/shared/EmployeeSearchInput';
 import type { Employee } from '@/types';
 import { logCreate, logUpdate, logDelete } from '@/lib/activity-logger';
 import { toast } from 'sonner';
+import { authFetch } from '@/lib/api-fetch';
 
 interface AttendanceRecord {
   id: string;
@@ -134,8 +135,8 @@ export default function AttendancePage() {
   const fetchData = useCallback(async () => {
     try {
       const [attRes, empRes] = await Promise.all([
-        fetch('/api/attendance'),
-        fetch('/api/employees'),
+        authFetch('/api/attendance'),
+        authFetch('/api/employees'),
       ]);
       if (attRes.ok) {
         const attData = await attRes.json();
@@ -165,7 +166,7 @@ export default function AttendancePage() {
       const formData = new FormData();
       formData.append('file', file);
 
-      const res = await fetch('/api/attendance/upload', {
+      const res = await authFetch('/api/attendance/upload', {
         method: 'POST',
         body: formData,
       });
@@ -214,7 +215,7 @@ export default function AttendancePage() {
 
     setSaving(true);
     try {
-      const res = await fetch('/api/attendance', {
+      const res = await authFetch('/api/attendance', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

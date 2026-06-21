@@ -55,6 +55,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { getRequestTypeLabel, getRequestTypeColor } from '@/lib/date-utils';
 import { logCreate, logApprove, logDelete } from '@/lib/activity-logger';
 import { toast } from 'sonner';
+import { authFetch } from '@/lib/api-fetch';
 
 interface RequestWithEmployee extends RequestRecord {
   employeeName: string;
@@ -111,8 +112,8 @@ export default function RequestsPage() {
   const fetchData = async () => {
     try {
       const [reqRes, empRes] = await Promise.all([
-        fetch('/api/requests'),
-        fetch('/api/employees'),
+        authFetch('/api/requests'),
+        authFetch('/api/employees'),
       ]);
       if (reqRes.ok) {
         const reqData = await reqRes.json();
@@ -130,7 +131,7 @@ export default function RequestsPage() {
     }
   };
 
-   // ═══ Excel Upload Handler ═══
+  // ═══ Excel Upload Handler ═══
   const handleUploadExcel = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -142,7 +143,7 @@ export default function RequestsPage() {
       const formData = new FormData();
       formData.append('file', file);
 
-      const res = await fetch('/api/requests', {
+      const res = await authFetch('/api/requests/upload', {
         method: 'POST',
         body: formData,
       });
@@ -153,9 +154,6 @@ export default function RequestsPage() {
         setUploadResult({ created: data.created, skipped: data.skipped, errors: data.errors || [] });
         logCreate('requests', 'رفع شيت اكسيل', `تم رفع ${data.created} طلب من ملف ${file.name}`);
         toast.success(`تم رفع ${data.created} طلب بنجاح${data.skipped > 0 ? ` — ${data.skipped} تم تخطيها` : ''}`);
-        // Reset filters so new data is visible
-        setSearch('');
-        setMonthFilter('all');
         await fetchData();
       } else {
         toast.error(data.error || 'فشل رفع الملف');
@@ -183,7 +181,7 @@ export default function RequestsPage() {
     if (!addForm.employeeId || !addForm.date || !addForm.reason) return;
     setSaving(true);
     try {
-      const res = await fetch('/api/requests', {
+      const res = await authFetch('/api/requests', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(addForm),

@@ -19,6 +19,7 @@ import {
   UserCheck, Award, Zap, BarChart3, Target,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { authFetch } from '@/lib/api-fetch';
 
 // ═══════════════════════════════════════════════════
 //  TYPES
@@ -125,7 +126,7 @@ export default function RiskCenterPage() {
 
   const fetchRiskData = async () => {
     try {
-      const res = await fetch('/api/risk-center');
+      const res = await authFetch('/api/risk-center');
       if (res.ok) {
         const data = await res.json();
         setEmployees(data.employees || []);
