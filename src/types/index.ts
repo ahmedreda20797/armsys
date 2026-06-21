@@ -338,7 +338,7 @@ export interface RuleConditionGroup {
 
 export interface RuleAction {
   id: string;
-  type: 'create_notification' | 'create_follow_up' | 'update_risk_score' | 'assign_user' | 'create_hr_warning' | 'create_quality_review' | 'escalate_case' | 'update_employee_status' | 'add_timeline_event';
+  type: 'create_notification' | 'create_follow_up' | 'update_risk_score' | 'assign_user' | 'create_hr_warning' | 'create_quality_review' | 'escalate_case' | 'update_employee_status' | 'add_timeline_event' | 'create_capa';
   config: Record<string, any>;
 }
 

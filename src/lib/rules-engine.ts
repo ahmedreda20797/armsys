@@ -5,7 +5,7 @@ import {
   updateRecord,
   countWhere,
   findWhere,
-  withEmployee,
+  getEmployeeMap,
   TTL,
 } from '@/lib/db';
 import type {
@@ -311,6 +311,126 @@ export async function executeRuleActions(
             ruleName: context.ruleName,
           });
           actionsTaken.push(`escalate:${config.escalatedTo || 'unknown'}`);
+          break;
+        }
+
+        case 'create_capa': {
+          // Auto-create a CAPA case from rule trigger
+          const SLA_DAYS_MAP: Record<string, number> = {
+            critical: 1, high: 3, medium: 7, low: 14,
+          };
+          const capaPriority = config.priority || 'medium';
+          const slaDays = SLA_DAYS_MAP[capaPriority] || 7;
+
+          // Resolve employee name if not provided
+          let capaEmployeeName = config.employeeName || context.employeeName || '';
+          let capaDepartment = config.department || '';
+          if (config.employeeId && !capaEmployeeName) {
+            const employees = await getAll('employees', TTL.MEDIUM);
+            const emp = employees.find((e: any) => e.id === config.employeeId);
+            if (emp) {
+              capaEmployeeName = emp.name;
+              if (!capaDepartment) capaDepartment = emp.department || '';
+            }
+          }
+
+          const capaTitle = config.title || `كابا تلقائي: ${context.ruleName}`;
+          const capaDescription = config.description || `تم إنشاء حالة كابا تلقائياً بواسطة القاعدة "${context.ruleName}"`;
+
+          const empMap = await getEmployeeMap();
+          const assignedToName = (config.assignedTo || config.employeeId)
+            ? empMap.get(config.assignedTo || config.employeeId)?.name || null
+            : null;
+
+          const initialTimeline = [
+            {
+              id: `tl-${Date.now()}`,
+              action: 'case_created',
+              description: `تم إنشاء حالة كابا تلقائياً بواسطة القاعدة "${context.ruleName}"`,
+              performedBy: 'system',
+              performedByName: 'محرك القواعد',
+              timestamp: new Date().toISOString(),
+            },
+          ];
+
+          // Auto-generate CAPA ID
+          const allCases = await getAll('capaCases', TTL.MEDIUM);
+          const year = new Date().getFullYear();
+          const existingThisYear = allCases.filter((c: any) => c.capaId?.includes(`CAPA-${year}`));
+          const nextNum = existingThisYear.length + 1;
+          const capaId = `CAPA-${year}-${String(nextNum).padStart(3, '0')}`;
+
+          const capaCase = await createRecord('capaCases', {
+            capaId,
+            title: capaTitle,
+            department: capaDepartment,
+            employeeId: config.employeeId || context.employeeId || null,
+            employeeName: capaEmployeeName || null,
+            relatedFollowUpId: config.relatedFollowUpId || null,
+            relatedRiskId: config.relatedRiskId || null,
+            relatedComplaintId: config.relatedComplaintId || null,
+            createdBy: 'system',
+            createdByName: 'محرك القواعد',
+            issueCategory: config.issueCategory || 'other',
+            problemDescription: capaDescription,
+            impactLevel: capaPriority,
+            impactDescription: '',
+            rootCauseCategory: config.rootCauseCategory || '',
+            rootCauseDescription: '',
+            rootCauseVerification: '',
+            correctiveAction: '',
+            correctiveAssignedTo: config.correctiveAssignedTo || config.assignedTo || '',
+            correctiveAssignedToName: assignedToName,
+            correctiveDueDate: '',
+            correctiveStatus: 'not_started',
+            correctiveEvidence: '',
+            preventiveAction: '',
+            preventiveAssignedTo: '',
+            preventiveAssignedToName: null,
+            preventiveDueDate: '',
+            preventiveStatus: 'not_started',
+            preventiveVerificationMethod: '',
+            verificationDate: '',
+            verifiedBy: '',
+            verifiedByName: null,
+            verificationResult: '',
+            verificationNotes: '',
+            status: 'open',
+            priority: capaPriority,
+            assignedTo: config.assignedTo || '',
+            assignedToName,
+            closureDate: '',
+            closedBy: '',
+            closedByName: null,
+            finalComments: '',
+            relatedEmployeeIds: config.relatedEmployeeIds || [],
+            source: 'automation',
+            timeline: initialTimeline,
+            attachments: [],
+            lessonsLearned: '',
+            slaDays,
+            overdueDays: 0,
+            closedAt: null,
+          });
+
+          // Generate notification for CAPA creation
+          await createSmartNotification({
+            title: `تم إنشاء حالة كابا: ${capaTitle}`,
+            description: capaDescription,
+            priority: capaPriority,
+            category: 'capa',
+            sourceModule: 'capa',
+            sourceRecordId: capaCase.id,
+            employeeId: config.employeeId || context.employeeId || null,
+            employeeName: capaEmployeeName || context.employeeName || null,
+            assignedTo: config.assignedTo || null,
+            assignedToName: assignedToName || null,
+            ruleId: context.ruleId,
+            ruleName: context.ruleName,
+            actionUrl: `capa:${capaCase.id}`,
+          });
+
+          actionsTaken.push(`capa:${capaCase.id}`);
           break;
         }
 

@@ -28,11 +28,21 @@ interface EmployeeRisk {
     complaintPoints: number;
     repeatedIssues: number;
     repeatedPoints: number;
+    // CAPA integration factors
+    openCapas: number;
+    openCapaPoints: number;
+    overdueCapas: number;
+    overdueCapaPoints: number;
+    criticalCapas: number;
+    criticalCapaPoints: number;
+    reopenedCapas: number;
+    reopenedCapaPoints: number;
   };
   openCases: number;
   lastActivity: string;
   trend: 'increasing' | 'stable' | 'improving';
   recommendations: string[];
+  capaIds: string[];
 }
 
 export async function GET(request: NextRequest) {
@@ -54,6 +64,7 @@ export async function GET(request: NextRequest) {
         'hrDeductions',
         'followUps',
         'complaints',
+        'capaCases',
       ]),
       getEmployeeMap(),
     ]);
@@ -64,6 +75,7 @@ export async function GET(request: NextRequest) {
     const hrDeductions = batch.get('hrDeductions') || [];
     const followUps = batch.get('followUps') || [];
     const complaints = batch.get('complaints') || [];
+    const capaCases = batch.get('capaCases') || [];
 
     // ── 30-day window ──
     const now = new Date();
@@ -130,6 +142,59 @@ export async function GET(request: NextRequest) {
       if ((c.createdAt || '') > stat.lastDate) stat.lastDate = c.createdAt || '';
     }
 
+    // ── Pre-compute CAPA stats per employee ──
+    const CLOSED_STATUSES = ['closed', 'rejected'];
+    const empCapa = new Map<string, { open: number; overdue: number; critical: number; reopened: number; capaIds: string[]; lastDate: string }>();
+
+    for (const c of capaCases) {
+      // Collect CAPAs linked directly via employeeId or via relatedEmployeeIds
+      const linkedIds: string[] = [];
+      if (c.employeeId) linkedIds.push(c.employeeId);
+      if (c.relatedEmployeeIds && Array.isArray(c.relatedEmployeeIds)) {
+        linkedIds.push(...c.relatedEmployeeIds);
+      }
+
+      const isClosed = CLOSED_STATUSES.includes(c.status);
+
+      for (const eid of linkedIds) {
+        if (!empCapa.has(eid)) {
+          empCapa.set(eid, { open: 0, overdue: 0, critical: 0, reopened: 0, capaIds: [], lastDate: '' });
+        }
+        const stat = empCapa.get(eid)!;
+
+        if (!isClosed) {
+          stat.open += 1;
+
+          // Check overdue: SLA exceeded
+          const slaDays = c.slaDays || 7;
+          const createdMs = new Date(c.createdAt).getTime();
+          const dueMs = createdMs + slaDays * 86400000;
+          if (Date.now() > dueMs) {
+            stat.overdue += 1;
+          }
+
+          // Critical priority CAPAs
+          if (c.priority === 'critical') {
+            stat.critical += 1;
+          }
+
+          // Reopened CAPAs
+          if (c.status === 'reopened') {
+            stat.reopened += 1;
+          }
+        }
+
+        // Track CAPA IDs for this employee (for "View CAPA" button)
+        if (!stat.capaIds.includes(c.id)) {
+          stat.capaIds.push(c.id);
+        }
+
+        if ((c.updatedAt || c.createdAt || '') > stat.lastDate) {
+          stat.lastDate = c.updatedAt || c.createdAt || '';
+        }
+      }
+    }
+
     // ── Build risk for each employee ──
     const risks: EmployeeRisk[] = [];
 
@@ -139,9 +204,10 @@ export async function GET(request: NextRequest) {
       const hCount = empHr.get(emp.id) || 0;
       const fu = empFollowUps.get(emp.id) || { open: 0, high: 0, critical: 0, repeated: 0, lastDate: '' };
       const comp = empComplaints.get(emp.id) || { open: 0, lastDate: '' };
+      const capa = empCapa.get(emp.id) || { open: 0, overdue: 0, critical: 0, reopened: 0, capaIds: [], lastDate: '' };
 
       // Skip employees with zero risk
-      if (att.delays === 0 && att.absences === 0 && qCount === 0 && hCount === 0 && fu.open === 0 && comp.open === 0) continue;
+      if (att.delays === 0 && att.absences === 0 && qCount === 0 && hCount === 0 && fu.open === 0 && comp.open === 0 && capa.open === 0) continue;
 
       const delayPoints = att.delays * 1;
       const absencePoints = att.absences * 3;
@@ -153,7 +219,13 @@ export async function GET(request: NextRequest) {
       const complaintPoints = comp.open * 8;
       const repeatedPoints = fu.repeated * 5;
 
-      const totalScore = delayPoints + absencePoints + qualityPoints + hrPoints + openFollowUpPoints + highPriorityPoints + criticalPoints + complaintPoints + repeatedPoints;
+      // CAPA risk factors
+      const openCapaPoints = capa.open * 5;      // Open CAPA = +5
+      const overdueCapaPoints = capa.overdue * 10; // Overdue CAPA = +10
+      const criticalCapaPoints = capa.critical * 8; // Critical CAPA = +8
+      const reopenedCapaPoints = capa.reopened * 15; // Reopened CAPA = +15
+
+      const totalScore = delayPoints + absencePoints + qualityPoints + hrPoints + openFollowUpPoints + highPriorityPoints + criticalPoints + complaintPoints + repeatedPoints + openCapaPoints + overdueCapaPoints + criticalCapaPoints + reopenedCapaPoints;
 
       // ── Risk Level ──
       let riskLevel: 'low' | 'medium' | 'high' | 'critical' = 'low';
@@ -168,9 +240,12 @@ export async function GET(request: NextRequest) {
       const recentFollowUps = followUps.filter(
         (f: any) => f.employeeId === emp.id && f.date >= sevenDaysAgoStr && (f.status === 'open' || f.status === 'under_follow_up')
       ).length;
+      const recentCapas = capaCases.filter(
+        (c: any) => (c.employeeId === emp.id || (c.relatedEmployeeIds || []).includes(emp.id)) && !CLOSED_STATUSES.includes(c.status) && (c.updatedAt || c.createdAt || '') >= sevenDaysAgoStr
+      ).length;
       let trend: 'increasing' | 'stable' | 'improving' = 'stable';
-      if (recentAttendance >= 3 || recentFollowUps >= 2) trend = 'increasing';
-      else if (recentAttendance === 0 && recentFollowUps === 0 && totalScore > 10) trend = 'improving';
+      if (recentAttendance >= 3 || recentFollowUps >= 2 || recentCapas >= 2) trend = 'increasing';
+      else if (recentAttendance === 0 && recentFollowUps === 0 && recentCapas === 0 && totalScore > 10) trend = 'improving';
 
       // ── Recommendations ──
       const recommendations: string[] = [];
@@ -182,9 +257,12 @@ export async function GET(request: NextRequest) {
       if (comp.open > 0) recommendations.push('مراجعة شكاوى العملاء');
       if (totalScore >= 36) recommendations.push('تصعيد لمدير الموارد البشرية فوراً');
       if (fu.repeated > 0) recommendations.push('تحليل السبب الجذري للمشكلة المتكررة');
+      if (capa.overdue > 0) recommendations.push('إعطاز حالات كابا — اتخاذ إجراء فوري');
+      if (capa.reopened > 0) recommendations.push('حالات كابا معاد فتحها — مراجعة فعالية الإجراءات التصحيحية');
+      if (capa.open >= 3) recommendations.push('عدد كبير من حالات كابا المفتوحة — تحليل نمطي مطلوب');
 
       // ── Last Activity ──
-      const dates = [att.lastDate, fu.lastDate, comp.lastDate].filter(Boolean);
+      const dates = [att.lastDate, fu.lastDate, comp.lastDate, capa.lastDate].filter(Boolean);
       const lastActivity = dates.length > 0 ? dates.sort().reverse()[0] : '';
 
       risks.push({
@@ -213,11 +291,21 @@ export async function GET(request: NextRequest) {
           complaintPoints,
           repeatedIssues: fu.repeated,
           repeatedPoints,
+          // CAPA breakdown
+          openCapas: capa.open,
+          openCapaPoints,
+          overdueCapas: capa.overdue,
+          overdueCapaPoints,
+          criticalCapas: capa.critical,
+          criticalCapaPoints,
+          reopenedCapas: capa.reopened,
+          reopenedCapaPoints,
         },
-        openCases: fu.open + comp.open,
+        openCases: fu.open + comp.open + capa.open,
         lastActivity,
         trend,
         recommendations,
+        capaIds: capa.capaIds,
       });
     }
 
@@ -239,15 +327,17 @@ export async function GET(request: NextRequest) {
     const immediateActionCount = risks.filter(r => r.riskScore >= 21).length;
 
     // ── Department analysis ──
-    const deptAnalysis: Record<string, { count: number; avgScore: number; totalScore: number; openCases: number; qualityViolations: number; attendanceIssues: number }> = {};
+    const deptAnalysis: Record<string, { count: number; avgScore: number; totalScore: number; openCases: number; qualityViolations: number; attendanceIssues: number; openCapas: number; overdueCapas: number }> = {};
     for (const r of risks) {
       const dept = r.department || 'بدون قسم';
-      if (!deptAnalysis[dept]) deptAnalysis[dept] = { count: 0, avgScore: 0, totalScore: 0, openCases: 0, qualityViolations: 0, attendanceIssues: 0 };
+      if (!deptAnalysis[dept]) deptAnalysis[dept] = { count: 0, avgScore: 0, totalScore: 0, openCases: 0, qualityViolations: 0, attendanceIssues: 0, openCapas: 0, overdueCapas: 0 };
       deptAnalysis[dept].count += 1;
       deptAnalysis[dept].totalScore += r.riskScore;
       deptAnalysis[dept].openCases += r.openCases;
       deptAnalysis[dept].qualityViolations += r.breakdown.qualityViolations;
       deptAnalysis[dept].attendanceIssues += r.breakdown.delayCount + r.breakdown.absenceCount;
+      deptAnalysis[dept].openCapas += r.breakdown.openCapas;
+      deptAnalysis[dept].overdueCapas += r.breakdown.overdueCapas;
     }
     for (const dept of Object.values(deptAnalysis)) {
       dept.avgScore = dept.count > 0 ? Math.round(dept.totalScore / dept.count) : 0;

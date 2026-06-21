@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAll, createRecord, sortByDateField, getEmployeeMap, invalidateCache } from '@/lib/db';
 import { requireAuth } from '@/lib/verify-permission';
+import { createSmartNotification } from '@/lib/rules-engine';
 import type { CAPACase } from '@/types';
 
 const SLA_DAYS: Record<string, number> = {
@@ -53,13 +54,16 @@ export async function GET(request: NextRequest) {
     // Sort by createdAt descending
     records.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
-    // Calculate overdue
+    // Calculate overdue and SLA info
     const now = Date.now();
     const enriched = records.map((r) => {
       const dueDate = r.correctiveDueDate || r.createdAt;
-      const dueMs = new Date(dueDate).getTime() + (r.slaDays || SLA_DAYS[r.priority] || 7) * 86400000;
+      const slaDays = r.slaDays || SLA_DAYS[r.priority] || 7;
+      const dueMs = new Date(dueDate).getTime() + slaDays * 86400000;
       const overdueDays = r.status === 'closed' ? 0 : Math.max(0, Math.floor((now - dueMs) / 86400000));
-      return { ...r, overdueDays };
+      const daysRemaining = r.status === 'closed' ? 0 : Math.max(0, Math.ceil((dueMs - now) / 86400000));
+      const isOverdue = r.status !== 'closed' && r.status !== 'rejected' && now > dueMs;
+      return { ...r, overdueDays, daysRemaining, isOverdue, slaDays };
     });
 
     // Pagination
@@ -187,6 +191,46 @@ export async function POST(request: NextRequest) {
     });
 
     invalidateCache('capaCases');
+
+    // ── Task 3: CAPA Created Notification ──
+    try {
+      await createSmartNotification({
+        title: `تم إنشاء حالة كابا: ${capaCase.title}`,
+        description: `تم إنشاء حالة كابا جديدة (${capaCase.capaId}) بأولوية ${capaCase.priority} في قسم ${capaCase.department || 'غير محدد'}. المهلة: ${slaDays} يوم.`,
+        priority: capaCase.priority === 'critical' ? 'critical' : capaCase.priority === 'high' ? 'high' : 'medium',
+        category: 'capa',
+        sourceModule: 'capa',
+        sourceRecordId: capaCase.id,
+        employeeId: capaCase.employeeId || null,
+        employeeName: capaCase.employeeName || null,
+        assignedTo: capaCase.assignedTo || null,
+        assignedToName: capaCase.assignedToName || null,
+        actionUrl: `capa:${capaCase.id}`,
+      });
+    } catch (notifErr) {
+      console.error('[POST /api/capa-cases] Notification error (non-blocking):', notifErr);
+    }
+
+    // ── Task 3: CAPA Assigned Notification (if assigned during creation) ──
+    if (capaCase.assignedTo) {
+      try {
+        await createSmartNotification({
+          title: `تم تعيينك لحالة كابا: ${capaCase.title}`,
+          description: `تم تعيينك لحالة كابا (${capaCase.capaId}) بأولوية ${capaCase.priority}. يرجى البدء بالمعالجة خلال المهلة المحددة (${slaDays} يوم).`,
+          priority: 'medium',
+          category: 'capa',
+          sourceModule: 'capa',
+          sourceRecordId: capaCase.id,
+          employeeId: capaCase.assignedTo,
+          employeeName: capaCase.assignedToName || null,
+          assignedTo: capaCase.assignedTo,
+          assignedToName: capaCase.assignedToName || null,
+          actionUrl: `capa:${capaCase.id}`,
+        });
+      } catch (notifErr) {
+        console.error('[POST /api/capa-cases] Assignment notification error (non-blocking):', notifErr);
+      }
+    }
 
     return NextResponse.json(capaCase, { status: 201 });
   } catch (error) {

@@ -422,7 +422,7 @@ export function useCAPACases(params: CAPAPageParams = {}) {
       if (page > 1) sp.set('page', String(page));
       if (pageSize !== 50) sp.set('pageSize', String(pageSize));
       const qs = sp.toString();
-      return apiFetch<any>(`/api/capa${qs ? `?${qs}` : ''}`);
+      return apiFetch<any>(`/api/capa-cases${qs ? `?${qs}` : ''}`);
     },
     staleTime: 10_000,
   });
@@ -432,7 +432,7 @@ export function useCreateCAPACase() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (data: Record<string, any>) =>
-      apiFetch('/api/capa', { method: 'POST', body: JSON.stringify(data) }),
+      apiFetch('/api/capa-cases', { method: 'POST', body: JSON.stringify(data) }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: queryKeys.capaCases });
     },
@@ -443,7 +443,7 @@ export function useUpdateCAPACase() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({ id, data }: { id: string; data: Record<string, any> }) =>
-      apiFetch(`/api/capa/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+      apiFetch(`/api/capa-cases/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
     onSettled: () => {
       qc.invalidateQueries({ queryKey: ['capaCases'] });
     },
@@ -454,7 +454,7 @@ export function useDeleteCAPACase() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (id: string) =>
-      apiFetch(`/api/capa/${id}`, { method: 'DELETE' }),
+      apiFetch(`/api/capa-cases/${id}`, { method: 'DELETE' }),
     onSettled: () => {
       qc.invalidateQueries({ queryKey: ['capaCases'] });
     },

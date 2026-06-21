@@ -16,7 +16,7 @@ import {
   AlertTriangle, ShieldCheck, ShieldAlert, AlertCircle, ShieldX,
   Clock, Users, TrendingUp, TrendingDown, Minus, ChevronLeft,
   ChevronRight, X, Search, Activity, Eye, FileWarning,
-  UserCheck, Award, Zap, BarChart3, Target,
+  UserCheck, Award, Zap, BarChart3, Target, FilePlus, FileText,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { authFetch } from '@/lib/api-fetch';
@@ -42,11 +42,17 @@ interface EmployeeRisk {
     criticalFollowUps: number; criticalPoints: number;
     complaints: number; complaintPoints: number;
     repeatedIssues: number; repeatedPoints: number;
+    // CAPA integration factors
+    openCapas: number; openCapaPoints: number;
+    overdueCapas: number; overdueCapaPoints: number;
+    criticalCapas: number; criticalCapaPoints: number;
+    reopenedCapas: number; reopenedCapaPoints: number;
   };
   openCases: number;
   lastActivity: string;
   trend: 'increasing' | 'stable' | 'improving';
   recommendations: string[];
+  capaIds: string[];
 }
 
 interface SummaryStats {
@@ -531,6 +537,11 @@ export default function RiskCenterPage() {
                         { label: 'متابعة حرجة', count: selectedEmployee.breakdown.criticalFollowUps, points: selectedEmployee.breakdown.criticalPoints, icon: ShieldX, color: 'text-red-500' },
                         { label: 'شكاوى عملاء', count: selectedEmployee.breakdown.complaints, points: selectedEmployee.breakdown.complaintPoints, icon: FileWarning, color: 'text-rose-400' },
                         { label: 'مشكلة متكررة', count: selectedEmployee.breakdown.repeatedIssues, points: selectedEmployee.breakdown.repeatedPoints, icon: FileWarning, color: 'text-yellow-400' },
+                        // CAPA breakdown items
+                        { label: 'حالات كابا مفتوحة', count: selectedEmployee.breakdown.openCapas, points: selectedEmployee.breakdown.openCapaPoints, icon: FileText, color: 'text-teal-400' },
+                        { label: 'حالات كابا متأخرة', count: selectedEmployee.breakdown.overdueCapas, points: selectedEmployee.breakdown.overdueCapaPoints, icon: AlertCircle, color: 'text-red-400' },
+                        { label: 'حالات كابا حرجة', count: selectedEmployee.breakdown.criticalCapas, points: selectedEmployee.breakdown.criticalCapaPoints, icon: ShieldX, color: 'text-red-500' },
+                        { label: 'حالات كابا معاد فتحها', count: selectedEmployee.breakdown.reopenedCapas, points: selectedEmployee.breakdown.reopenedCapaPoints, icon: ShieldAlert, color: 'text-orange-500' },
                       ].map(item => item.count > 0 && (
                         <div key={item.label} className="flex items-center justify-between py-1.5 px-2 rounded-lg bg-slate-800/50">
                           <div className="flex items-center gap-2">
@@ -573,6 +584,44 @@ export default function RiskCenterPage() {
                           </div>
                         ))}
                       </div>
+                    </CardContent>
+                  </Card>
+                )}
+
+                {/* CAPA Actions */}
+                {selectedEmployee.capaIds && selectedEmployee.capaIds.length > 0 && (
+                  <Card className="border-teal-500/25 bg-teal-500/5">
+                    <CardHeader className="pb-2 pt-3 px-4">
+                      <CardTitle className="text-white text-sm flex items-center gap-2">
+                        <FileText className="size-4 text-teal-400" />
+                        إجراءات كابا
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="px-4 pb-3 flex gap-2">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="flex-1 text-xs bg-teal-500/10 border-teal-500/30 text-teal-300 hover:bg-teal-500/20 hover:text-teal-200"
+                        onClick={() => {
+                          // Navigate to CAPA page filtered by this employee
+                          window.location.href = `/capa?employeeId=${selectedEmployee.employeeId}`;
+                        }}
+                      >
+                        <Eye className="size-3.5 ml-1" />
+                        عرض حالات كابا ({selectedEmployee.capaIds.length})
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="flex-1 text-xs bg-teal-500/10 border-teal-500/30 text-teal-300 hover:bg-teal-500/20 hover:text-teal-200"
+                        onClick={() => {
+                          // Navigate to CAPA creation with employee pre-filled
+                          window.location.href = `/capa?create=true&employeeId=${selectedEmployee.employeeId}`;
+                        }}
+                      >
+                        <FilePlus className="size-3.5 ml-1" />
+                        إنشاء كابا جديد
+                      </Button>
                     </CardContent>
                   </Card>
                 )}

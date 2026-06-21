@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { updateRecord, deleteRecord, getById, getEmployeeMap, invalidateCache } from '@/lib/db';
+import { createSmartNotification } from '@/lib/rules-engine';
 import type { CAPACase } from '@/types';
 
 // ══════════════════════════════════════════════════════════════
@@ -106,6 +107,78 @@ export async function PUT(
 
     const updated = await updateRecord('capaCases', id, updateData);
     invalidateCache('capaCases');
+
+    // ══════════════════════════════════════════════════════════
+    //  Task 3: CAPA Lifecycle Notifications on status changes
+    // ══════════════════════════════════════════════════════════
+    // Use existing record as fallback for notification fields
+    const rec = updated || existing;
+    const newStatus = body.status;
+    const oldStatus = existing.status;
+    if (newStatus && newStatus !== oldStatus) {
+      try {
+        const caseTitle = rec.title || '';
+        const capaIdRef = rec.capaId || '';
+        const empId = rec.employeeId || null;
+        const empName = rec.employeeName || null;
+        const assignedId = rec.assignedTo || null;
+        const assignedName = rec.assignedToName || null;
+
+        const STATUS_NOTIFICATIONS: Record<string, { title: string; desc: string; priority: string }> = {
+          reopened: {
+            title: `تم إعادة فتح حالة كابا: ${caseTitle}`,
+            desc: `تم إعادة فتح حالة كابا (${capaIdRef}) التي كانت مغلقة. يرجى مراجعة الأسباب واتخاذ الإجراءات اللازمة.`,
+            priority: 'high',
+          },
+          verified: {
+            title: `تم التحقق من حالة كابا: ${caseTitle}`,
+            desc: `تم التحقق من حالة كابا (${capaIdRef}) بنجاح. النتيجة: ${body.verificationResult || 'قيد المراجعة'}.`,
+            priority: 'medium',
+          },
+          closed: {
+            title: `تم إغلاق حالة كابا: ${caseTitle}`,
+            desc: `تم إغلاق حالة كابا (${capaIdRef}) بنجاح. الدروس المستفادة تم توثيقها.`,
+            priority: 'low',
+          },
+        };
+
+        const notifConfig = STATUS_NOTIFICATIONS[newStatus];
+        if (notifConfig) {
+          await createSmartNotification({
+            title: notifConfig.title,
+            description: notifConfig.desc,
+            priority: notifConfig.priority as any,
+            category: 'capa',
+            sourceModule: 'capa',
+            sourceRecordId: id,
+            employeeId: empId,
+            employeeName: empName,
+            assignedTo: assignedId,
+            assignedToName: assignedName,
+            actionUrl: `capa:${id}`,
+          });
+        }
+
+        // Notification for assignee changes
+        if (updateData.assignedTo && updateData.assignedTo !== existing.assignedTo) {
+          await createSmartNotification({
+            title: `تم تعيينك لحالة كابا: ${caseTitle}`,
+            description: `تم تعيينك لحالة كابا (${capaIdRef}) بأولوية ${rec.priority || existing.priority}. يرجى البدء بالمعالجة.`,
+            priority: 'medium',
+            category: 'capa',
+            sourceModule: 'capa',
+            sourceRecordId: id,
+            employeeId: updateData.assignedTo,
+            employeeName: updateData.assignedToName || null,
+            assignedTo: updateData.assignedTo,
+            assignedToName: updateData.assignedToName || null,
+            actionUrl: `capa:${id}`,
+          });
+        }
+      } catch (notifErr) {
+        console.error('[PUT /api/capa-cases/:id] Notification error (non-blocking):', notifErr);
+      }
+    }
 
     return NextResponse.json(updated);
   } catch (error) {
