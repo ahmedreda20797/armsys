@@ -1,22 +1,33 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAll, countWhere, TTL } from '@/lib/db';
-import { requireAuth } from '@/lib/verify-permission';
+import { verifyPermission } from '@/lib/verify-permission';
 
 // ══════════════════════════════════════════════════════════════
 //  GET /api/notification-stats — Aggregated notification stats
+//  SECURITY: Admin/Manager/Quality/HR only. Regular users get personal stats.
 // ══════════════════════════════════════════════════════════════
 export async function GET(request: NextRequest) {
   try {
-    const auth = await requireAuth(request);
-    if (!auth) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    const permCheck = await verifyPermission(request, 'notifications', 'view');
+    if (!permCheck.allowed) {
+      return NextResponse.json({ error: permCheck.error }, { status: 403 });
     }
 
+    const user = permCheck.user!;
+
     // Load notifications and rule execution logs in parallel
-    const [notifications, ruleLogs] = await Promise.all([
+    const [allNotifications, ruleLogs] = await Promise.all([
       getAll<any>('notifications', TTL.DEFAULT),
       getAll<any>('ruleExecutionLogs', TTL.DEFAULT),
     ]);
+
+    // Non-admin users only see their own notification stats
+    const isAdmin = user.role === 'admin';
+    const notifications = isAdmin
+      ? allNotifications
+      : allNotifications.filter(
+          (n) => n.employeeId === user.id || n.assignedTo === user.id
+        );
 
     const now = new Date();
     const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
@@ -60,10 +71,12 @@ export async function GET(request: NextRequest) {
       (n) => n.ruleId && n.createdAt && n.createdAt >= todayStart
     ).length;
 
-    // Rules triggered today (successful executions today)
-    const rulesTriggeredToday = ruleLogs.filter(
-      (l) => l.result === 'success' && l.createdAt && l.createdAt >= todayStart
-    ).length;
+    // Rules triggered today (successful executions today) — only for admin
+    const rulesTriggeredToday = isAdmin
+      ? ruleLogs.filter(
+          (l) => l.result === 'success' && l.createdAt && l.createdAt >= todayStart
+        ).length
+      : 0;
 
     return NextResponse.json({
       total,

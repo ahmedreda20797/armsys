@@ -45,6 +45,13 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Validate employee exists and is active
+    const { validateEmployeeId } = await import('@/lib/validate-employee');
+    const empValidation = await validateEmployeeId(employeeId, true);
+    if (!empValidation.valid) {
+      return NextResponse.json({ error: empValidation.error }, { status: 400 });
+    }
+
     const record = await createRecord('hrDeductions', {
       employeeId,
       type,

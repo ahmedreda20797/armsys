@@ -78,6 +78,15 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Validate employee exists if provided (optional field)
+    if (employeeId) {
+      const { validateEmployeeId } = await import('@/lib/validate-employee');
+      const empValidation = await validateEmployeeId(employeeId, false);
+      if (!empValidation.valid) {
+        return NextResponse.json({ error: empValidation.error }, { status: 400 });
+      }
+    }
+
     const { createRecord } = await import('@/lib/db');
     const complaint = await createRecord('complaints', {
       customerName,

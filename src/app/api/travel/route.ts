@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAll, getAllBatch, withEmployee } from '@/lib/db';
-import { verifyPermission } from '@/lib/verify-permission';
+import { verifyPermission, requireAuth } from '@/lib/verify-permission';
 
 /** Parse DD/MM/YYYY to a comparable number YYYYMMDD for sorting */
 function parseDateToSortable(dateStr: string): number {
@@ -45,6 +45,11 @@ function getTripCategory(depDate: string, retDate: string | null): 'upcoming' | 
 
 export async function GET(request: NextRequest) {
   try {
+    const auth = await requireAuth(request);
+    if (!auth) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const { searchParams } = new URL(request.url);
 
     // ── Server-side filtering parameters ──
@@ -232,6 +237,13 @@ export async function POST(request: NextRequest) {
 
     if (!employeeId || !destination || !departureDate) {
       return NextResponse.json({ error: 'Employee ID, destination, and departure date are required' }, { status: 400 });
+    }
+
+    // Validate employee exists and is active
+    const { validateEmployeeId } = await import('@/lib/validate-employee');
+    const empValidation = await validateEmployeeId(employeeId, true);
+    if (!empValidation.valid) {
+      return NextResponse.json({ error: empValidation.error }, { status: 400 });
     }
 
     // Support legacy flight fields → map to internationalFlight

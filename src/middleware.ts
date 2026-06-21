@@ -8,6 +8,7 @@ import { NextRequest, NextResponse } from 'next/server';
 const PUBLIC_PATHS = [
   '/api/auth/login',
   '/api/auth/refresh',
+  // '/api/auth/seed-admin' — REMOVED: now requires auth + env gate
   '/api/health',
 ];
 
@@ -31,6 +32,26 @@ export function middleware(request: NextRequest) {
       { error: 'This endpoint has been removed' },
       { status: 404 }
     );
+  }
+
+  // ═══════════════════════════════════════════════════
+  //  1.5. Seed-admin: require auth + production block
+  // ═══════════════════════════════════════════════════
+  if (pathname.startsWith('/api/auth/seed-admin')) {
+    // In production, block entirely with security log
+    if (process.env.NODE_ENV === 'production') {
+      console.error(
+        `[SECURITY] Blocked admin-seed access in production. ` +
+        `Path: ${pathname}, Method: ${request.method}, ` +
+        `Time: ${new Date().toISOString()}`
+      );
+      return NextResponse.json(
+        { error: 'This endpoint is disabled in production' },
+        { status: 403 }
+      );
+    }
+    // In non-production, allow through (the route handler itself has additional env gate)
+    return response;
   }
 
   // ═══════════════════════════════════════════════════

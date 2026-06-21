@@ -94,6 +94,15 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'title is required' }, { status: 400 });
     }
 
+    // Validate employee exists if provided (optional field)
+    if (body.employeeId) {
+      const { validateEmployeeId } = await import('@/lib/validate-employee');
+      const empValidation = await validateEmployeeId(body.employeeId, false);
+      if (!empValidation.valid) {
+        return NextResponse.json({ error: empValidation.error }, { status: 400 });
+      }
+    }
+
     // Auto-generate CAPA ID
     const allCases = await getAll<CAPACase>('capaCases');
     const year = new Date().getFullYear();

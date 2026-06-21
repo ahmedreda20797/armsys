@@ -57,6 +57,13 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'employeeId and date are required' }, { status: 400 });
     }
 
+    // Validate employee exists and is active
+    const { validateEmployeeId } = await import('@/lib/validate-employee');
+    const empValidation = await validateEmployeeId(employeeId, true);
+    if (!empValidation.valid) {
+      return NextResponse.json({ error: empValidation.error }, { status: 400 });
+    }
+
     const record = await createRecord('attendance', {
       employeeId, date,
       checkIn: checkIn || null,

@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAll, createRecord, TTL } from '@/lib/db';
-import { requireAuth } from '@/lib/verify-permission';
+import { verifyPermission, requireAuth } from '@/lib/verify-permission';
 import type { AppNotification } from '@/types';
 
 // ══════════════════════════════════════════════════════════════
 //  GET /api/notifications — Fetch with server-side filtering
+//  SECURITY: Users can only see their own notifications unless admin/quality/hr/manager
 // ══════════════════════════════════════════════════════════════
 export async function GET(request: NextRequest) {
   try {
@@ -28,6 +29,16 @@ export async function GET(request: NextRequest) {
     const offset = parseInt(searchParams.get('offset') || '0', 10);
 
     let records = await getAll<AppNotification>('notifications', TTL.DEFAULT);
+
+    // ─── OWNERSHIP FILTER: Non-admin users only see their own notifications ───
+    const isAdmin = auth.role === 'admin';
+    const isManagerOrAbove = auth.role === 'admin' || auth.role === 'manager' || auth.role === 'quality' || auth.role === 'hr';
+
+    if (!isAdmin) {
+      records = records.filter(
+        (r) => r.employeeId === auth.userId || r.assignedTo === auth.userId
+      );
+    }
 
     // Server-side filters
     if (priority) records = records.filter((r) => r.priority === priority);
@@ -72,12 +83,14 @@ export async function GET(request: NextRequest) {
 
 // ══════════════════════════════════════════════════════════════
 //  POST /api/notifications — Create manual notification
+//  SECURITY: Requires 'create' permission on 'notifications'
 // ══════════════════════════════════════════════════════════════
 export async function POST(request: NextRequest) {
   try {
-    const auth = await requireAuth(request);
-    if (!auth) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    // RBAC check: require 'create' permission
+    const permCheck = await verifyPermission(request, 'notifications', 'create');
+    if (!permCheck.allowed) {
+      return NextResponse.json({ error: permCheck.error }, { status: 403 });
     }
 
     const body = await request.json();
@@ -102,6 +115,15 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Validate employee exists if provided (optional field)
+    if (employeeId) {
+      const { validateEmployeeId } = await import('@/lib/validate-employee');
+      const empValidation = await validateEmployeeId(employeeId, false);
+      if (!empValidation.valid) {
+        return NextResponse.json({ error: empValidation.error }, { status: 400 });
+      }
+    }
+
     const validPriorities = ['low', 'medium', 'high', 'critical'];
     const validCategories = [
       'attendance', 'biometric', 'requests', 'quality', 'hr', 'risk',
@@ -120,6 +142,7 @@ export async function POST(request: NextRequest) {
       employeeName: body.employeeName || null,
       assignedTo: assignedTo || null,
       assignedToName: body.assignedToName || null,
+      createdBy: permCheck.user?.id || null,
       ruleId: null,
       ruleName: null,
       actionUrl: body.actionUrl || null,

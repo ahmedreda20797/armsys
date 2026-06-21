@@ -105,6 +105,16 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Validate employee exists and is active
+    const { validateEmployeeId } = await import('@/lib/validate-employee');
+    const empValidation = await validateEmployeeId(employeeId, true);
+    if (!empValidation.valid) {
+      return NextResponse.json(
+        { error: empValidation.error },
+        { status: 400 }
+      );
+    }
+
     // Auto-calculate score
     const score = SCORE_MAP[priorityLevel] || 3;
 
