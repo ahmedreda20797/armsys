@@ -28,7 +28,9 @@ const ESCALATION_THRESHOLD = 2; // Escalate when 2 days past due
  */
 export async function GET(request: NextRequest) {
   try {
-    const auth = await requireAuth(request);
+    // Allow internal scheduler calls (bypass auth for x-internal-scheduler header)
+    const isInternalScheduler = request.headers.get('x-internal-scheduler') === 'true';
+    const auth = isInternalScheduler || await requireAuth(request);
     if (!auth) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }

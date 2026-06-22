@@ -29,12 +29,13 @@ import {
   UserCheck, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, FileText,
   Target, Zap, TrendingUp, ArrowRight, BookOpen, Brain,
   ClipboardList, FolderOpen, AlertOctagon, CircleDot, Flame,
-  Wrench, Shield, RefreshCw, History, Lightbulb, ArrowDownUp,
+  Wrench, Shield, RefreshCw, History, Lightbulb, ArrowDownUp, Download,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { logCreate, logUpdate, logDelete } from '@/lib/activity-logger';
 import type { CAPACase, CAPATimelineEvent, Employee } from '@/types';
 import { authFetch } from '@/lib/api-fetch';
+import { useAppStore } from '@/lib/store';
 
 // ══════════════════════════════════════════════════════════════════
 //  CONSTANTS
@@ -224,6 +225,12 @@ export default function CAPAPage() {
   const [form, setForm] = useState(emptyForm);
   const [formStep, setFormStep] = useState(0);
 
+  // Report & Export state
+  const [showReport, setShowReport] = useState(false);
+  const [reportData, setReportData] = useState<any>(null);
+  const [reportLoading, setReportLoading] = useState(false);
+  const [exporting, setExporting] = useState(false);
+
   // ═══ Fetch ═══
   useEffect(() => {
     if (!canView) { setLoading(false); return; }
@@ -366,7 +373,57 @@ export default function CAPAPage() {
     setDeletingId(null);
   };
 
-  // ═══ Permission Guard ═══
+  // ═══ Export Handler ═══
+  const handleExport = async (format: 'xlsx' | 'csv') => {
+    setExporting(true);
+    try {
+      const filters: Record<string, string> = {};
+      if (statusFilter !== 'all') filters.status = statusFilter;
+      if (priorityFilter !== 'all') filters.priority = priorityFilter;
+      if (departmentFilter !== 'all') filters.department = departmentFilter;
+      if (search) filters.search = search;
+
+      const res = await authFetch('/api/reports/capa-export', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ format, filters }),
+      });
+      if (!res.ok) { toast.error('فشل في التصدير'); return; }
+
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `capa_report_${new Date().toISOString().slice(0, 10)}.${format}`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      toast.success(`تم التصدير بنجاح (${format.toUpperCase()})`);
+    } catch { toast.error('حدث خطأ أثناء التصدير'); }
+    finally { setExporting(false); }
+  };
+
+  // ═══ Report Handler ═══
+  const openReport = async () => {
+    setShowReport(true);
+    setReportLoading(true);
+    try {
+      const params = new URLSearchParams();
+      if (statusFilter !== 'all') params.set('status', statusFilter);
+      if (priorityFilter !== 'all') params.set('priority', priorityFilter);
+      if (departmentFilter !== 'all') params.set('department', departmentFilter);
+      const qs = params.toString();
+      const res = await authFetch(`/api/reports/capa${qs ? `?${qs}` : ''}`);
+      if (res.ok) {
+        const data = await res.json();
+        setReportData(data);
+      } else {
+        toast.error('فشل في تحميل التقرير');
+      }
+    } catch { toast.error('حدث خطأ أثناء تحميل التقرير'); }
+    finally { setReportLoading(false); }
+  };
   if (!canView) {
     return (
       <div dir="rtl" className="flex flex-col items-center justify-center py-20">
@@ -396,6 +453,15 @@ export default function CAPAPage() {
             <Plus className="size-4 ml-1" /> إنشاء حالة كابا
           </Button>
         )}
+        <div className="flex gap-1.5">
+          <Button onClick={openReport} size="sm" variant="outline" className="border-slate-700/70 text-slate-300 hover:bg-slate-800 hover:text-white h-9 px-3">
+            <BarChart3 className="size-4 ml-1" /> التقرير
+          </Button>
+          <Button onClick={() => handleExport('xlsx')} disabled={exporting} size="sm" variant="outline" className="border-slate-700/70 text-slate-300 hover:bg-slate-800 hover:text-white h-9 px-3">
+            {exporting ? <Loader2 className="size-4 animate-spin ml-1" /> : <Download className="size-4 ml-1" />}
+            {exporting ? 'جارٍ التصدير...' : 'تصدير'}
+          </Button>
+        </div>
       </motion.div>
 
       {/* ═══ Stats Cards ═══ */}
@@ -641,6 +707,161 @@ export default function CAPAPage() {
             <Button variant="outline" onClick={() => setDeletingId(null)} className="border-slate-600 text-slate-300">إلغاء</Button>
             <Button variant="destructive" onClick={() => { if (deletingId) handleDelete(deletingId); }}>حذف</Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ═══ Report Dialog ═══ */}
+      <Dialog open={showReport} onOpenChange={(o) => { if (!o) { setShowReport(false); setReportData(null); } }}>
+        <DialogContent className="backdrop-blur-xl bg-slate-900 border-slate-700 max-w-3xl max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="text-white flex items-center gap-2"><BarChart3 className="size-5 text-violet-400" />تقرير حالات كابا</DialogTitle>
+            <DialogDescription className="text-slate-400">إحصائيات وتحليلات شاملة لحالات CAPA</DialogDescription>
+          </DialogHeader>
+
+          {reportLoading ? (
+            <div className="flex items-center justify-center py-12"><Loader2 className="size-8 text-violet-400 animate-spin" /></div>
+          ) : reportData ? (
+            <div className="space-y-5">
+              {/* Summary KPIs */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                {[
+                  { label: 'إجمالي الحالات', value: reportData.summary?.total ?? 0, color: 'text-violet-400', border: 'border-violet-500/30' },
+                  { label: 'مفتوحة', value: reportData.summary?.open ?? 0, color: 'text-blue-400', border: 'border-blue-500/30' },
+                  { label: 'مغلقة', value: reportData.summary?.closed ?? 0, color: 'text-green-400', border: 'border-green-500/30' },
+                  { label: 'متأخرة', value: reportData.summary?.overdue ?? 0, color: 'text-red-400', border: 'border-red-500/30' },
+                  { label: 'حرجة', value: reportData.summary?.critical ?? 0, color: 'text-orange-400', border: 'border-orange-500/30' },
+                  { label: 'معاد فتحها', value: reportData.summary?.reopened ?? 0, color: 'text-rose-400', border: 'border-rose-500/30' },
+                  { label: 'نسبة الفعالية', value: `${reportData.summary?.effectivenessPct ?? 0}%`, color: 'text-emerald-400', border: 'border-emerald-500/30' },
+                  { label: 'قيد التنفيذ', value: (reportData.summary?.total ?? 0) - (reportData.summary?.open ?? 0) - (reportData.summary?.closed ?? 0), color: 'text-amber-400', border: 'border-amber-500/30' },
+                ].map((kpi) => (
+                  <div key={kpi.label} className={`rounded-lg border ${kpi.border} bg-slate-800/40 px-3 py-2.5`}>
+                    <p className="text-slate-500 text-[10px]">{kpi.label}</p>
+                    <p className={`${kpi.color} font-bold text-xl leading-tight`}>{kpi.value}</p>
+                  </div>
+                ))}
+              </div>
+
+              <Separator className="bg-slate-700/50" />
+
+              {/* By Department */}
+              {reportData.byDepartment && Object.keys(reportData.byDepartment).length > 0 && (
+                <div className="space-y-2">
+                  <h3 className="text-slate-300 text-sm font-semibold flex items-center gap-1.5"><Users className="size-4 text-violet-400" />حسب القسم</h3>
+                  <div className="space-y-1.5">
+                    {Object.entries(reportData.byDepartment).sort((a: any, b: any) => (b[1] as any).total - (a[1] as any).total).map(([dept, metrics]: [string, any]) => (
+                      <div key={dept} className="flex items-center gap-3 text-xs px-3 py-2 rounded-lg bg-slate-800/30 border border-slate-700/30">
+                        <span className="text-slate-300 w-28 truncate">{dept}</span>
+                        <div className="flex-1 flex gap-3">
+                          <span className="text-slate-500">إجمالي: <span className="text-white">{metrics.total}</span></span>
+                          <span className="text-slate-500">مفتوح: <span className="text-blue-400">{metrics.open}</span></span>
+                          <span className="text-slate-500">مغلق: <span className="text-green-400">{metrics.closed}</span></span>
+                          <span className="text-slate-500">متأخر: <span className="text-red-400">{metrics.overdue}</span></span>
+                          <span className="text-slate-500">فعالية: <span className="text-emerald-400">{metrics.effectivenessPct}%</span></span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* By Status */}
+              {reportData.byStatus && Object.keys(reportData.byStatus).length > 0 && (
+                <div className="space-y-2">
+                  <h3 className="text-slate-300 text-sm font-semibold flex items-center gap-1.5"><CircleDot className="size-4 text-violet-400" />حسب الحالة</h3>
+                  <div className="flex flex-wrap gap-2">
+                    {Object.entries(reportData.byStatus).sort((a: any, b: any) => b[1] - a[1]).map(([status, count]: [string, any]) => {
+                      const cfg = getStatusConfig(status);
+                      return (
+                        <div key={status} className={`px-3 py-1.5 rounded-lg border ${cfg.color} text-xs font-medium`}>
+                          {cfg.label}: {count}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* By Priority */}
+              {reportData.byPriority && Object.keys(reportData.byPriority).length > 0 && (
+                <div className="space-y-2">
+                  <h3 className="text-slate-300 text-sm font-semibold flex items-center gap-1.5"><AlertTriangle className="size-4 text-violet-400" />حسب الأولوية</h3>
+                  <div className="flex flex-wrap gap-2">
+                    {Object.entries(reportData.byPriority).sort((a: any, b: any) => b[1] - a[1]).map(([priority, count]: [string, any]) => {
+                      const cfg = getPriorityConfig(priority);
+                      return (
+                        <div key={priority} className={`px-3 py-1.5 rounded-lg border ${cfg.color} text-xs font-medium`}>
+                          {cfg.label}: {count}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Monthly Trends */}
+              {reportData.monthlyTrends && reportData.monthlyTrends.length > 0 && (
+                <div className="space-y-2">
+                  <h3 className="text-slate-300 text-sm font-semibold flex items-center gap-1.5"><TrendingUp className="size-4 text-violet-400" />الاتجاه الشهري (آخر 12 شهر)</h3>
+                  <div className="space-y-1 max-h-48 overflow-y-auto">
+                    {reportData.monthlyTrends.filter((m: any) => m.total > 0).map((m: any) => (
+                      <div key={m.month} className="flex items-center gap-3 text-xs px-3 py-1.5 rounded-lg bg-slate-800/30">
+                        <span className="text-slate-400 w-20" dir="ltr">{m.month}</span>
+                        <div className="flex-1 flex gap-4">
+                          <span className="text-slate-500">جديد: <span className="text-white">{m.total}</span></span>
+                          <span className="text-slate-500">مغلق: <span className="text-green-400">{m.closed}</span></span>
+                          <span className="text-slate-500">متأخر: <span className="text-red-400">{m.overdue}</span></span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* By Category */}
+              {reportData.byCategory && Object.keys(reportData.byCategory).length > 0 && (
+                <div className="space-y-2">
+                  <h3 className="text-slate-300 text-sm font-semibold flex items-center gap-1.5"><FileText className="size-4 text-violet-400" />حسب التصنيف</h3>
+                  <div className="flex flex-wrap gap-2">
+                    {Object.entries(reportData.byCategory).sort((a: any, b: any) => b[1] - a[1]).map(([cat, count]: [string, any]) => (
+                      <div key={cat} className="px-3 py-1.5 rounded-lg border border-slate-700/40 bg-slate-800/40 text-xs">
+                        <span className="text-slate-400">{CATEGORY_LABELS[cat] || cat}:</span> <span className="text-white font-medium">{count}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* By Source */}
+              {reportData.bySource && Object.keys(reportData.bySource).length > 0 && (
+                <div className="space-y-2">
+                  <h3 className="text-slate-300 text-sm font-semibold flex items-center gap-1.5"><Zap className="size-4 text-violet-400" />حسب المصدر</h3>
+                  <div className="flex flex-wrap gap-2">
+                    {Object.entries(reportData.bySource).sort((a: any, b: any) => b[1] - a[1]).map(([source, count]: [string, any]) => (
+                      <div key={source} className="px-3 py-1.5 rounded-lg border border-slate-700/40 bg-slate-800/40 text-xs">
+                        <span className="text-slate-400">{SOURCE_LABELS[source] || source}:</span> <span className="text-white font-medium">{count}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Export Buttons */}
+              <Separator className="bg-slate-700/50" />
+              <div className="flex gap-2 justify-end">
+                <Button size="sm" variant="outline" className="border-slate-600 text-slate-300" onClick={() => handleExport('csv')}>
+                  <Download className="size-3.5 ml-1" /> تصدير CSV
+                </Button>
+                <Button size="sm" variant="outline" className="border-slate-600 text-slate-300" onClick={() => handleExport('xlsx')}>
+                  <Download className="size-3.5 ml-1" /> تصدير Excel
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <div className="flex flex-col items-center justify-center py-12">
+              <AlertTriangle className="size-8 text-slate-600 mb-2" />
+              <p className="text-slate-500 text-sm">لا تتوفر بيانات التقرير</p>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </div>
@@ -895,6 +1116,51 @@ function CAPADetailView({ capa, employees, onClose }: { capa: CAPACase; employee
       </div>
 
       <Separator className="!bg-slate-700/50" />
+
+      {/* Source References — Reverse Links */}
+      {(capa.relatedFollowUpId || capa.relatedQualityDeductionId || capa.relatedComplaintId || capa.relatedHrDeductionId) && (
+        <div className="rounded-lg border border-violet-500/20 bg-violet-500/5 p-3 space-y-2">
+          <h4 className="text-violet-400 text-xs font-semibold flex items-center gap-1.5"><ArrowRight className="size-3.5" />السجل المصدر</h4>
+          <div className="grid grid-cols-1 gap-1.5 text-[11px]">
+            {capa.relatedFollowUpId && (
+              <button
+                type="button"
+                onClick={() => { onClose(); useAppStore.getState().navigateTo('followUps'); }}
+                className="text-left text-violet-300 hover:text-violet-200 underline underline-offset-2 transition-colors"
+              >
+                ← متابعة مرتبطة (فتح صفحة المتابعات)
+              </button>
+            )}
+            {capa.relatedQualityDeductionId && (
+              <button
+                type="button"
+                onClick={() => { onClose(); useAppStore.getState().navigateTo('quality'); }}
+                className="text-left text-violet-300 hover:text-violet-200 underline underline-offset-2 transition-colors"
+              >
+                ← خصم جودة مرتبط (فتح صفحة الجودة)
+              </button>
+            )}
+            {capa.relatedComplaintId && (
+              <button
+                type="button"
+                onClick={() => { onClose(); useAppStore.getState().navigateTo('complaints'); }}
+                className="text-left text-violet-300 hover:text-violet-200 underline underline-offset-2 transition-colors"
+              >
+                ← شكوى عميل مرتبطة (فتح صفحة الشكاوى)
+              </button>
+            )}
+            {capa.relatedHrDeductionId && (
+              <button
+                type="button"
+                onClick={() => { onClose(); useAppStore.getState().navigateTo('hrDeductions'); }}
+                className="text-left text-violet-300 hover:text-violet-200 underline underline-offset-2 transition-colors"
+              >
+                ← مخالفة HR مرتبطة (فتح صفحة خصومات HR)
+              </button>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Info Grid */}
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-[11px]">

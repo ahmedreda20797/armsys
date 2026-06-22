@@ -146,6 +146,8 @@ export async function POST(request: NextRequest) {
       relatedFollowUpId: body.relatedFollowUpId || null,
       relatedRiskId: body.relatedRiskId || null,
       relatedComplaintId: body.relatedComplaintId || null,
+      relatedQualityDeductionId: body.relatedQualityDeductionId || null,
+      relatedHrDeductionId: body.relatedHrDeductionId || null,
       createdBy: body.createdBy || 'system',
       createdByName: body.createdByName || 'النظام',
       issueCategory: body.issueCategory || 'other',

@@ -49,7 +49,8 @@ export async function PUT(
     const updateData: Record<string, any> = {};
     const allowedFields = [
       'title', 'department', 'employeeId', 'relatedFollowUpId', 'relatedRiskId',
-      'relatedComplaintId', 'issueCategory', 'problemDescription', 'impactLevel',
+      'relatedComplaintId', 'relatedQualityDeductionId', 'relatedHrDeductionId',
+      'issueCategory', 'problemDescription', 'impactLevel',
       'impactDescription', 'rootCauseCategory', 'rootCauseDescription',
       'rootCauseVerification', 'correctiveAction', 'correctiveAssignedTo',
       'correctiveDueDate', 'correctiveStatus', 'correctiveEvidence',
@@ -109,10 +110,37 @@ export async function PUT(
     invalidateCache('capaCases');
 
     // ══════════════════════════════════════════════════════════
+    //  Task C4: CAPA Effectiveness Workflow
+    //  When verificationResult = not_effective, generate high-priority
+    //  notification and recommend reopening the CAPA case.
+    // ══════════════════════════════════════════════════════════
+    const rec = updated || existing;
+    if (
+      body.verificationResult === 'not_effective' &&
+      existing.verificationResult !== 'not_effective'
+    ) {
+      try {
+        await createSmartNotification({
+          title: `فعالية غير كافية — حالة كابا: ${rec.title}`,
+          description: `نتيجة التحقق من حالة كابا (${rec.capaId || ''}) هي "غير فعّال". يُنصح بإعادة فتح الحالة ومراجعة السبب الجذري والإجراءات التصحيحية. يرجى النقر لمراجعة الحالة.`,
+          priority: 'high',
+          category: 'capa',
+          sourceModule: 'capa',
+          sourceRecordId: id,
+          employeeId: rec.employeeId || null,
+          employeeName: rec.employeeName || null,
+          assignedTo: rec.assignedTo || null,
+          assignedToName: rec.assignedToName || null,
+          actionUrl: `capa:${id}`,
+        });
+      } catch (effErr) {
+        console.error('[PUT /api/capa-cases/:id] Effectiveness notification error (non-blocking):', effErr);
+      }
+    }
+
+    // ══════════════════════════════════════════════════════════
     //  Task 3: CAPA Lifecycle Notifications on status changes
     // ══════════════════════════════════════════════════════════
-    // Use existing record as fallback for notification fields
-    const rec = updated || existing;
     const newStatus = body.status;
     const oldStatus = existing.status;
     if (newStatus && newStatus !== oldStatus) {
@@ -125,10 +153,35 @@ export async function PUT(
         const assignedName = rec.assignedToName || null;
 
         const STATUS_NOTIFICATIONS: Record<string, { title: string; desc: string; priority: string }> = {
+          investigation: {
+            title: `بدء التحقيق — حالة كابا: ${caseTitle}`,
+            desc: `تم بدء مرحلة التحقيق لحالة كابا (${capaIdRef}). يرجى جمع الأدلة والشهادات ذات الصلة.`,
+            priority: 'medium',
+          },
+          root_cause_analysis: {
+            title: `بدء تحليل السبب الجذري — حالة كابا: ${caseTitle}`,
+            desc: `تم الانتقال إلى مرحلة تحليل السبب الجذري لحالة كابا (${capaIdRef}). استخدم أدوات تحليل السبب الجذري المناسبة.`,
+            priority: 'medium',
+          },
+          corrective_action: {
+            title: `بدء الإجراء التصحيحي — حالة كابا: ${caseTitle}`,
+            desc: `تم بدء مرحلة الإجراء التصحيحي لحالة كابا (${capaIdRef}). يرجى تنفيذ الإجراءات المخططة وتوثيقها.`,
+            priority: 'high',
+          },
+          preventive_action: {
+            title: `بدء الإجراء الوقائي — حالة كابا: ${caseTitle}`,
+            desc: `تم الانتقال إلى مرحلة الإجراء الوقائي لحالة كابا (${capaIdRef}). يرجى تحديد الإجراءات الوقائية لمنع تكرار المشكلة.`,
+            priority: 'high',
+          },
           reopened: {
             title: `تم إعادة فتح حالة كابا: ${caseTitle}`,
             desc: `تم إعادة فتح حالة كابا (${capaIdRef}) التي كانت مغلقة. يرجى مراجعة الأسباب واتخاذ الإجراءات اللازمة.`,
             priority: 'high',
+          },
+          verification: {
+            title: `بدء مرحلة التحقق — حالة كابا: ${caseTitle}`,
+            desc: `تم الانتقال إلى مرحلة التحقق من فعالية الإجراءات لحالة كابا (${capaIdRef}). يرجى التحقق من تنفيذ الإجراءات وفعاليتها.`,
+            priority: 'medium',
           },
           verified: {
             title: `تم التحقق من حالة كابا: ${caseTitle}`,

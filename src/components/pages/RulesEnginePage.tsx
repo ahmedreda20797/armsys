@@ -74,6 +74,7 @@ const ACTION_LABELS: Record<string, string> = {
   escalate_case: 'تصعيد حالة',
   update_employee_status: 'تحديث حالة موظف',
   add_timeline_event: 'إضافة حدث للجدول الزمني',
+  create_capa: 'إنشاء CAPA',
 };
 
 const COMMON_FIELDS = [

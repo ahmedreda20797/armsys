@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { isFirebaseConfigured, getFirebaseAdmin } from '@/lib/firebase-server';
 import { getDatabase } from 'firebase-admin/database';
 import { createId } from '@paralleldrive/cuid2';
-import { requireAuth } from '@/lib/verify-permission';
+import { verifyPermission } from '@/lib/verify-permission';
 
 interface Notification {
   id: string;
@@ -15,12 +15,22 @@ interface Notification {
 
 // ──────────────────────────────────────────────
 // GET — fetch notifications from Firebase RTDB
+// SECURITY: Admin/Manager only — system-level broadcast notifications
 // ──────────────────────────────────────────────
 export async function GET(request: NextRequest) {
   try {
-    const auth = await requireAuth(request);
-    if (!auth) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    // RBAC check: only admin and manager can access system-level RTDB notifications
+    const permCheck = await verifyPermission(request, 'notifications', 'view');
+    if (!permCheck.allowed) {
+      return NextResponse.json({ error: permCheck.error }, { status: 403 });
+    }
+
+    const isSystemAccess = permCheck.user!.role === 'admin' || permCheck.user!.role === 'manager';
+    if (!isSystemAccess) {
+      return NextResponse.json(
+        { error: 'System-level notifications require admin or manager access' },
+        { status: 403 }
+      );
     }
 
     // If Firebase not configured, return empty array gracefully
@@ -63,12 +73,22 @@ export async function GET(request: NextRequest) {
 
 // ──────────────────────────────────────────────
 // POST — create a new notification in Firebase RTDB
+// SECURITY: Admin/Manager only — broadcast notifications
 // ──────────────────────────────────────────────
 export async function POST(request: NextRequest) {
   try {
-    const auth = await requireAuth(request);
-    if (!auth) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    // RBAC check: only admin and manager can create system broadcast notifications
+    const permCheck = await verifyPermission(request, 'notifications', 'create');
+    if (!permCheck.allowed) {
+      return NextResponse.json({ error: permCheck.error }, { status: 403 });
+    }
+
+    const isSystemAccess = permCheck.user!.role === 'admin' || permCheck.user!.role === 'manager';
+    if (!isSystemAccess) {
+      return NextResponse.json(
+        { error: 'System-level notifications require admin or manager access' },
+        { status: 403 }
+      );
     }
 
     // If Firebase not configured, return error

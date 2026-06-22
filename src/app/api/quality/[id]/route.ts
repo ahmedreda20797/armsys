@@ -15,7 +15,7 @@ export async function PUT(
 
     const { id } = await params;
     const body = await request.json();
-    const { date, type, description, deductionDays, deductionAmount, evidence, month } = body;
+    const { date, type, description, deductionDays, deductionAmount, evidence, month, relatedCapaId } = body;
 
     const qualityDeduction = await updateRecord('qualityDeductions', id, {
       ...(date !== undefined && { date }),
@@ -25,6 +25,7 @@ export async function PUT(
       ...(deductionAmount !== undefined && { deductionAmount: Number(deductionAmount) }),
       ...(evidence !== undefined && { evidence }),
       ...(month !== undefined && { month }),
+      ...(relatedCapaId !== undefined && { relatedCapaId }),
     });
 
     return NextResponse.json(qualityDeduction);

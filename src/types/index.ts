@@ -97,6 +97,7 @@ export interface HrDeduction {
   approvedAt: string | null;
   month: string;
   deductionDate: string | null;
+  relatedCapaId: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -165,6 +166,8 @@ export interface CAPACase {
   relatedFollowUpId: string | null;
   relatedRiskId: string | null;
   relatedComplaintId: string | null;
+  relatedQualityDeductionId: string | null;
+  relatedHrDeductionId: string | null;
   createdBy: string;
   createdByName?: string;
   // Problem Description

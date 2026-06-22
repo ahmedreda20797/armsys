@@ -69,6 +69,7 @@ export async function POST(request: NextRequest) {
       resolution,
       responsiblePerson,
       compensationProvided,
+      relatedCapaIds,
     } = body;
 
     if (!customerName || !complaintType || !description) {
@@ -101,6 +102,7 @@ export async function POST(request: NextRequest) {
       responsiblePerson: responsiblePerson || '',
       compensationProvided: compensationProvided || null,
       resolvedAt: null,
+      relatedCapaIds: relatedCapaIds || [],
     });
 
     return NextResponse.json(complaint, { status: 201 });

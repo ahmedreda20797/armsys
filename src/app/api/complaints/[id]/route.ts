@@ -26,6 +26,7 @@ export async function PUT(
       responsiblePerson,
       compensationProvided,
       resolvedAt,
+      relatedCapaIds,
     } = body;
 
     const { updateRecord } = await import('@/lib/db');
@@ -42,6 +43,7 @@ export async function PUT(
       ...(responsiblePerson !== undefined && { responsiblePerson }),
       ...(compensationProvided !== undefined && { compensationProvided }),
       ...(resolvedAt !== undefined && { resolvedAt }),
+      ...(relatedCapaIds !== undefined && { relatedCapaIds }),
     });
 
     return NextResponse.json(complaint);

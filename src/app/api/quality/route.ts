@@ -37,7 +37,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { employeeId, date, type, description, deductionDays, deductionAmount, evidence, month } = body;
+    const { employeeId, date, type, description, deductionDays, deductionAmount, evidence, month, relatedCapaId } = body;
 
     if (!employeeId || !date || !type || !month) {
       return NextResponse.json({ error: 'Employee ID, date, type, and month are required' }, { status: 400 });
@@ -59,6 +59,7 @@ export async function POST(request: NextRequest) {
       deductionAmount: deductionAmount || 0,
       evidence: evidence || null,
       month,
+      relatedCapaId: relatedCapaId || null,
     });
 
     return NextResponse.json(qualityDeduction, { status: 201 });

@@ -43,9 +43,12 @@ import {
   Search,
   Pencil,
   Trash2,
+  ShieldAlert,
+  Loader2,
 } from 'lucide-react';
 import { EmployeeSearchInput } from '@/components/shared/EmployeeSearchInput';
 import type { HrDeduction, Employee } from '@/types';
+import { useAppStore } from '@/lib/store';
 import { useAuth } from '@/contexts/AuthContext';
 import { authFetch } from '@/lib/api-fetch';
 
@@ -108,6 +111,7 @@ export default function HrDeductionsPage() {
   const [reviewing, setReviewing] = useState(false);
   const [addForm, setAddForm] = useState({ ...EMPTY_FORM });
   const [editForm, setEditForm] = useState({ ...EMPTY_FORM, id: '' });
+  const [capaCreating, setCapaCreating] = useState<string | null>(null);
 
   useEffect(() => {
     fetchData();
@@ -218,6 +222,24 @@ export default function HrDeductionsPage() {
       }
     } catch {
       // Error handled silently
+    }
+  };
+
+  const handleCreateCapa = async (ded: HrDeductionWithEmployee) => {
+    setCapaCreating(ded.id);
+    try {
+      const res = await authFetch(`/api/hr-deductions/${ded.id}/create-capa`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      });
+      if (res.ok) {
+        await fetchData();
+      }
+    } catch {
+      // Error handled silently
+    } finally {
+      setCapaCreating(null);
     }
   };
 
@@ -485,32 +507,54 @@ export default function HrDeductionsPage() {
                         </TableCell>
                         <TableCell className="text-slate-400 text-sm max-w-xs truncate">{ded.reason}</TableCell>
                         <TableCell>{getStatusBadge(ded.status)}</TableCell>
-                        {(canUpdate || canDelete) && (
-                          <TableCell>
-                            <div className="flex items-center gap-1">
-                              {canUpdate && (
-                                <Button
-                                  size="sm"
-                                  variant="ghost"
-                                  onClick={() => openEditDialog(ded)}
-                                  className="text-slate-400 hover:text-violet-400 hover:bg-violet-500/10"
-                                >
-                                  <Pencil className="size-3.5" />
-                                </Button>
-                              )}
-                              {canDelete && (
-                                <Button
-                                  size="sm"
-                                  variant="ghost"
-                                  onClick={() => handleDelete(ded.id)}
-                                  className="text-slate-400 hover:text-red-400 hover:bg-red-500/10"
-                                >
-                                  <Trash2 className="size-3.5" />
-                                </Button>
-                              )}
-                            </div>
-                          </TableCell>
-                        )}
+                        <TableCell>
+                          <div className="flex items-center gap-1">
+                            {/* ═══ CAPA Integration ═══ */}
+                            {(ded as any).relatedCapaId && (
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => useAppStore.getState().navigateTo('capa', undefined, { highlightId: (ded as any).relatedCapaId })}
+                                className="text-cyan-400 hover:text-cyan-300 hover:bg-cyan-500/10"
+                                title="عرض حالة CAPA"
+                              >
+                                <ShieldAlert className="size-3.5" />
+                              </Button>
+                            )}
+                            {canUpdate && !(ded as any).relatedCapaId && ded.status === 'approved' && (
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => handleCreateCapa(ded)}
+                                disabled={capaCreating === ded.id}
+                                className="text-cyan-400/60 hover:text-cyan-300 hover:bg-cyan-500/10"
+                                title="إنشاء CAPA من هذه المخالفة"
+                              >
+                                {capaCreating === ded.id ? <Loader2 className="size-3.5 animate-spin" /> : <ShieldAlert className="size-3.5" />}
+                              </Button>
+                            )}
+                            {canUpdate && (
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => openEditDialog(ded)}
+                                className="text-slate-400 hover:text-violet-400 hover:bg-violet-500/10"
+                              >
+                                <Pencil className="size-3.5" />
+                              </Button>
+                            )}
+                            {canDelete && (
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => handleDelete(ded.id)}
+                                className="text-slate-400 hover:text-red-400 hover:bg-red-500/10"
+                              >
+                                <Trash2 className="size-3.5" />
+                              </Button>
+                            )}
+                          </div>
+                        </TableCell>
                       </TableRow>
                     ))}
                   </TableBody>

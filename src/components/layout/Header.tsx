@@ -636,7 +636,7 @@ export function Header({ title, onMenuToggle, onToggleSidebarCollapse, sidebarCo
           </div>
 
           {/* ── User Avatar ── */}
-          <div className="flex items-center justify-center w-9 h-9 rounded-full bg-gradient-to-br from-indigo-500 to-teal-600 text-xs font-bold text-white ring-2 ring-slate-200 dark:ring-slate-700 cursor-pointer hover:ring-indigo-400 transition-all">
+          <div className="flex items-center justify-center w-9 h-9 rounded-full bg-gradient-to-br from-emerald-500 to-teal-600 text-xs font-bold text-white ring-2 ring-slate-200 dark:ring-slate-700 cursor-pointer hover:ring-emerald-400 transition-all">
             {userInitials}
           </div>
         </div>

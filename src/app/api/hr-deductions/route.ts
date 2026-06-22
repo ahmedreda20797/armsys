@@ -36,7 +36,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { employeeId, type, amount, unit, reason, month } = body;
+    const { employeeId, type, amount, unit, reason, month, relatedCapaId } = body;
 
     if (!employeeId || !type || amount === undefined || !unit || !month) {
       return NextResponse.json(
@@ -63,6 +63,7 @@ export async function POST(request: NextRequest) {
       status: 'pending',
       approvedBy: null,
       approvedAt: null,
+      relatedCapaId: relatedCapaId || null,
     });
 
     return NextResponse.json(record, { status: 201 });

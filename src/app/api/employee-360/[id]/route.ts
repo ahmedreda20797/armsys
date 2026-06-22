@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAll, getById, findWhere, findWhereContains } from '@/lib/db';
 import { verifyPermission } from '@/lib/verify-permission';
+import { CAPA_RISK_WEIGHTS, CAPA_RISK_CAPS } from '@/lib/risk-weights';
 
 // ══════════════════════════════════════════════════════════════
 //  Safe fetch helper — never throws, returns empty array on failure
@@ -145,11 +146,11 @@ export async function GET(
     riskScore += Math.min(openFollowUps.length * 3, 15);
     riskScore += Math.min(criticalFollowUps.length * 10, 30);
     riskScore += Math.min(openComplaints.length * 5, 20);
-    // CAPA risk factors (Task 6)
-    riskScore += Math.min(openCapa.length * 3, 15);
-    riskScore += Math.min(overdueCapa.length * 5, 20);
-    riskScore += Math.min(criticalCapa.length * 10, 30);
-    riskScore += Math.min(reopenedCapa.length * 7, 20);
+    // CAPA risk factors (harmonized with Risk Center via shared weights)
+    riskScore += Math.min(openCapa.length * CAPA_RISK_WEIGHTS.openCapa, CAPA_RISK_CAPS.openCapa);
+    riskScore += Math.min(overdueCapa.length * CAPA_RISK_WEIGHTS.overdueCapa, CAPA_RISK_CAPS.overdueCapa);
+    riskScore += Math.min(criticalCapa.length * CAPA_RISK_WEIGHTS.criticalCapa, CAPA_RISK_CAPS.criticalCapa);
+    riskScore += Math.min(reopenedCapa.length * CAPA_RISK_WEIGHTS.reopenedCapa, CAPA_RISK_CAPS.reopenedCapa);
 
     riskScore = Math.min(riskScore, 100);
 

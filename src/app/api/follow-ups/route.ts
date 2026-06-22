@@ -96,6 +96,7 @@ export async function POST(request: NextRequest) {
       status,
       attachments,
       relatedDeductionId,
+      relatedCapaId,
     } = body;
 
     if (!employeeId || !date || !followUpType || !subject) {
@@ -152,6 +153,7 @@ export async function POST(request: NextRequest) {
       createdById: userId,
       createdByName: userName,
       relatedDeductionId: relatedDeductionId || null,
+      relatedCapaId: relatedCapaId || null,
     });
 
     // ═══ Create notifications (using AppNotification schema) ═══

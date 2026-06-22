@@ -20,6 +20,8 @@ export async function GET(request: NextRequest) {
     const priority = searchParams.get('priority');
     const triggerType = searchParams.get('triggerType');
     const search = searchParams.get('search');
+    const isTemplate = searchParams.get('isTemplate');
+    const templateCategory = searchParams.get('templateCategory');
     const limit = parseInt(searchParams.get('limit') || '100', 10);
     const offset = parseInt(searchParams.get('offset') || '0', 10);
 
@@ -30,6 +32,8 @@ export async function GET(request: NextRequest) {
     if (module) records = records.filter((r) => r.module === module);
     if (priority) records = records.filter((r) => r.priority === priority);
     if (triggerType) records = records.filter((r) => r.triggerType === triggerType);
+    if (isTemplate !== null) records = records.filter((r) => ((r as any).isTemplate === true) === (isTemplate === 'true'));
+    if (templateCategory) records = records.filter((r) => (r as any).templateCategory === templateCategory);
     if (search) {
       const lowerSearch = search.toLowerCase();
       records = records.filter(

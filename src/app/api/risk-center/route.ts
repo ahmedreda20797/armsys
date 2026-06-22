@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAll, getAllBatch, getEmployeeMap } from '@/lib/db';
 import { requireAuth } from '@/lib/verify-permission';
+import { CAPA_RISK_WEIGHTS, CAPA_RISK_CAPS } from '@/lib/risk-weights';
 
 interface EmployeeRisk {
   employeeId: string;
@@ -219,11 +220,11 @@ export async function GET(request: NextRequest) {
       const complaintPoints = comp.open * 8;
       const repeatedPoints = fu.repeated * 5;
 
-      // CAPA risk factors
-      const openCapaPoints = capa.open * 5;      // Open CAPA = +5
-      const overdueCapaPoints = capa.overdue * 10; // Overdue CAPA = +10
-      const criticalCapaPoints = capa.critical * 8; // Critical CAPA = +8
-      const reopenedCapaPoints = capa.reopened * 15; // Reopened CAPA = +15
+      // CAPA risk factors (harmonized with Employee 360 via shared weights)
+      const openCapaPoints = Math.min(capa.open * CAPA_RISK_WEIGHTS.openCapa, CAPA_RISK_CAPS.openCapa);
+      const overdueCapaPoints = Math.min(capa.overdue * CAPA_RISK_WEIGHTS.overdueCapa, CAPA_RISK_CAPS.overdueCapa);
+      const criticalCapaPoints = Math.min(capa.critical * CAPA_RISK_WEIGHTS.criticalCapa, CAPA_RISK_CAPS.criticalCapa);
+      const reopenedCapaPoints = Math.min(capa.reopened * CAPA_RISK_WEIGHTS.reopenedCapa, CAPA_RISK_CAPS.reopenedCapa);
 
       const totalScore = delayPoints + absencePoints + qualityPoints + hrPoints + openFollowUpPoints + highPriorityPoints + criticalPoints + complaintPoints + repeatedPoints + openCapaPoints + overdueCapaPoints + criticalCapaPoints + reopenedCapaPoints;
 
