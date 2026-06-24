@@ -9,9 +9,31 @@ import bcrypt from 'bcryptjs';
 //  Configuration
 // ═══════════════════════════════════════════════════
 
-const JWT_SECRET = new TextEncoder().encode(
-  process.env.JWT_SECRET || 'arm-erp-jwt-secret-change-in-production-2026'
-);
+// ─── STARTUP VALIDATION: Fail securely if JWT_SECRET is missing ───
+if (!process.env.JWT_SECRET) {
+  console.error(
+    '[CRITICAL SECURITY] JWT_SECRET environment variable is not set. ' +
+    'The application cannot start securely. ' +
+    'Set JWT_SECRET to a strong random value (min 32 characters) in your environment.'
+  );
+  throw new Error(
+    'JWT_SECRET environment variable is required. ' +
+    'Refusing to start with insecure configuration. ' +
+    'Set JWT_SECRET to a strong random string (min 32 chars).'
+  );
+}
+
+const _rawSecret = process.env.JWT_SECRET as string;
+if (_rawSecret.length < 32) {
+  console.error(
+    `[CRITICAL SECURITY] JWT_SECRET is too short (${_rawSecret.length} chars). Minimum 32 characters required.`
+  );
+  throw new Error(
+    `JWT_SECRET must be at least 32 characters long. Current length: ${_rawSecret.length}.`
+  );
+}
+
+const JWT_SECRET = new TextEncoder().encode(_rawSecret);
 
 const ACCESS_TOKEN_EXPIRY = '15m';    // Short-lived access token
 const REFRESH_TOKEN_EXPIRY = '7d';   // Long-lived refresh token
@@ -145,49 +167,79 @@ export async function authenticateRequestAsync(request: Request): Promise<Decode
 }
 
 // ═══════════════════════════════════════════════════
-//  Refresh Token Store (in-memory, production: Redis)
+//  Refresh Token Store — persisted in Firebase RTDB
+//  Path: arm_erp/sessions/{tokenHash}
 // ═══════════════════════════════════════════════════
 
-const refreshTokens = new Map<string, { userId: string; expiresAt: number }>();
+import { getAdminDb } from './firebase-server';
+
+function getSessionRef(tokenHash: string) {
+  return getAdminDb().ref(`arm_erp/sessions/${tokenHash}`);
+}
+
+/** Create a short hash of the refresh token for use as RTDB key */
+function hashToken(token: string): string {
+  let h = 0;
+  for (let i = 0; i < token.length; i++) {
+    h = ((h << 5) - h + token.charCodeAt(i)) | 0;
+  }
+  return 'ses_' + Math.abs(h).toString(36);
+}
 
 /**
  * Store a refresh token for later validation.
  */
-export function storeRefreshToken(token: string, userId: string): void {
+export async function storeRefreshToken(token: string, userId: string): Promise<void> {
   const expiresIn = 7 * 24 * 60 * 60 * 1000; // 7 days in ms
-  refreshTokens.set(token, {
+  const tokenHash = hashToken(token);
+  await getSessionRef(tokenHash).set({
     userId,
+    tokenPrefix: token.slice(0, 20),
     expiresAt: Date.now() + expiresIn,
+    createdAt: new Date().toISOString(),
   });
 }
 
 /**
  * Validate a refresh token exists and hasn't expired.
  */
-export function validateRefreshToken(token: string): string | null {
-  const entry = refreshTokens.get(token);
-  if (!entry) return null;
-  if (Date.now() > entry.expiresAt) {
-    refreshTokens.delete(token);
+export async function validateRefreshToken(token: string): Promise<string | null> {
+  const tokenHash = hashToken(token);
+  const snapshot = await getSessionRef(tokenHash).get();
+
+  if (!snapshot.exists()) return null;
+
+  const entry = snapshot.val();
+  if (!entry || Date.now() > (entry.expiresAt || 0)) {
+    // Expired — clean up
+    await getSessionRef(tokenHash).remove();
     return null;
   }
+
   return entry.userId;
 }
 
 /**
  * Invalidate a refresh token (on logout).
  */
-export function revokeRefreshToken(token: string): boolean {
-  return refreshTokens.delete(token);
+export async function revokeRefreshToken(token: string): Promise<boolean> {
+  const tokenHash = hashToken(token);
+  await getSessionRef(tokenHash).remove();
+  return true;
 }
 
 /**
  * Revoke ALL refresh tokens for a user (e.g., on password change).
  */
-export function revokeAllUserRefreshTokens(userId: string): void {
-  for (const [token, entry] of refreshTokens) {
-    if (entry.userId === userId) {
-      refreshTokens.delete(token);
+export async function revokeAllUserRefreshTokens(userId: string): Promise<void> {
+  const snapshot = await getAdminDb().ref('arm_erp/sessions').orderByChild('userId').equalTo(userId).get();
+  if (snapshot.exists()) {
+    const updates: Record<string, null> = {};
+    snapshot.forEach((child: any) => {
+      updates[child.key] = null;
+    });
+    if (Object.keys(updates).length > 0) {
+      await getAdminDb().ref('arm_erp/sessions').update(updates);
     }
   }
 }

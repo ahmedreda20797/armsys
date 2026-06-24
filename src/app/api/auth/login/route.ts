@@ -91,8 +91,8 @@ export async function POST(request: NextRequest) {
       role: user.role,
     }, 'refresh');
 
-    // Store refresh token
-    storeRefreshToken(refreshToken, user.id);
+    // Store refresh token in RTDB (persistent across restarts)
+    await storeRefreshToken(refreshToken, user.id);
 
     // ─── Return tokens + minimal user data ──────────
     return NextResponse.json({

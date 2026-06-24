@@ -95,40 +95,51 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const refreshIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const refreshTimerRef = useRef<NodeJS.Timeout | null>(null);
 
-  // ─── Token Refresh Logic ──────────────────────────
+  // ─── Token Refresh Logic (with mutex) ────────────
+  let _refreshPromise: Promise<string | null> | null = null;
+
   const refreshAccessToken = useCallback(async (): Promise<string | null> => {
-    const refreshToken = localStorage.getItem(REFRESH_TOKEN_KEY);
-    if (!refreshToken) return null;
+    // Deduplicate concurrent refresh calls
+    if (_refreshPromise) return _refreshPromise;
 
-    try {
-      const res = await fetch('/api/auth/refresh', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ refreshToken }),
-      });
+    _refreshPromise = (async () => {
+      try {
+        const refreshToken = localStorage.getItem(REFRESH_TOKEN_KEY);
+        if (!refreshToken) return null;
 
-      if (!res.ok) {
-        // Refresh token is invalid or expired — force logout
-        localStorage.removeItem(ACCESS_TOKEN_KEY);
-        localStorage.removeItem(REFRESH_TOKEN_KEY);
-        localStorage.removeItem(USER_DATA_KEY);
-        setUser(null);
-        setAccessToken(null);
+        const res = await fetch('/api/auth/refresh', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ refreshToken }),
+        });
+
+        if (!res.ok) {
+          // Refresh token is invalid or expired — force logout
+          localStorage.removeItem(ACCESS_TOKEN_KEY);
+          localStorage.removeItem(REFRESH_TOKEN_KEY);
+          localStorage.removeItem(USER_DATA_KEY);
+          setUser(null);
+          setAccessToken(null);
+          return null;
+        }
+
+        const data = await res.json();
+        const newAccessToken = data.accessToken;
+        const newRefreshToken = data.refreshToken;
+
+        localStorage.setItem(ACCESS_TOKEN_KEY, newAccessToken);
+        localStorage.setItem(REFRESH_TOKEN_KEY, newRefreshToken);
+        setAccessToken(newAccessToken);
+
+        return newAccessToken;
+      } catch {
         return null;
+      } finally {
+        _refreshPromise = null;
       }
+    })();
 
-      const data = await res.json();
-      const newAccessToken = data.accessToken;
-      const newRefreshToken = data.refreshToken;
-
-      localStorage.setItem(ACCESS_TOKEN_KEY, newAccessToken);
-      localStorage.setItem(REFRESH_TOKEN_KEY, newRefreshToken);
-      setAccessToken(newAccessToken);
-
-      return newAccessToken;
-    } catch {
-      return null;
-    }
+    return _refreshPromise;
   }, []);
 
   // ─── Fetch current user data from server ─────────
@@ -284,6 +295,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     };
   }, [accessToken, refreshAccessToken]);
+
+  // ─── Sync token from apiFetch auto-refresh ──────
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const data = (e as CustomEvent).detail;
+      if (data?.accessToken) {
+        setAccessToken(data.accessToken);
+      }
+    };
+    window.addEventListener('erp:token-refreshed', handler);
+    return () => window.removeEventListener('erp:token-refreshed', handler);
+  }, []);
 
   const clearError = useCallback(() => {
     setError(null);

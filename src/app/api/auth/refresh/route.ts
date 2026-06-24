@@ -16,8 +16,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid refresh token' }, { status: 401 });
     }
 
-    // Verify the refresh token exists in our store
-    const userId = validateRefreshToken(incomingRefreshToken);
+    // Verify the refresh token exists in RTDB
+    const userId = await validateRefreshToken(incomingRefreshToken);
     if (!userId) {
       return NextResponse.json({ error: 'Refresh token expired or revoked' }, { status: 401 });
     }
@@ -32,7 +32,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Revoke the old refresh token (single-use rotation)
-    revokeRefreshToken(incomingRefreshToken);
+    await revokeRefreshToken(incomingRefreshToken);
 
     // Generate new tokens
     const newAccessToken = await signToken({
@@ -47,7 +47,7 @@ export async function POST(request: NextRequest) {
       role: user.role,
     }, 'refresh');
 
-    storeRefreshToken(newRefreshToken, user.id);
+    await storeRefreshToken(newRefreshToken, user.id);
 
     return NextResponse.json({
       accessToken: newAccessToken,

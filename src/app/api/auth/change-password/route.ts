@@ -44,7 +44,7 @@ export async function POST(request: NextRequest) {
     await updateRecord('users', user.id, { password: hashedNewPassword });
 
     // Revoke all refresh tokens (force re-login everywhere)
-    revokeAllUserRefreshTokens(user.id);
+    await revokeAllUserRefreshTokens(user.id);
 
     return NextResponse.json({ message: 'تم تغيير كلمة المرور بنجاح. يرجى تسجيل الدخول مرة أخرى.' });
   } catch (error) {

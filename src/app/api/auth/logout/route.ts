@@ -13,13 +13,13 @@ export async function POST(request: NextRequest) {
 
     if (revokeAll) {
       // Revoke ALL sessions (used on password change)
-      revokeAllUserRefreshTokens(payload.userId);
+      await revokeAllUserRefreshTokens(payload.userId);
       return NextResponse.json({ message: 'All sessions revoked' });
     }
 
     // Revoke specific refresh token
     if (refreshToken) {
-      revokeRefreshToken(refreshToken);
+      await revokeRefreshToken(refreshToken);
     }
 
     return NextResponse.json({ message: 'Logged out successfully' });
