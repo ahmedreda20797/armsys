@@ -2,7 +2,7 @@
   "crons": [
     {
       "path": "/api/cron/capa-sla-check",
-      "schedule": "0 */4 * * *"
+      "schedule": "0 0 * * *"
     }
   ]
 }
