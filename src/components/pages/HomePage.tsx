@@ -5,11 +5,11 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { usePermissions } from '@/hooks/usePermissions';
 import { useAppStore } from '@/lib/store';
 import { useHomeStats, useUpdateRequest, useInvalidateQueries, queryKeys } from '@/hooks/use-queries';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
-import { ScrollArea } from '@/components/ui/scroll-area';
+import { DashboardCard, DashboardGrid } from '@/components/dashboard/DashboardCard';
 import { toast } from 'sonner';
 import { getDaysRemaining, isUrgent, getRequestTypeLabel, getRequestTypeColor } from '@/lib/date-utils';
 import {
@@ -212,28 +212,20 @@ function GradientDivider() {
   );
 }
 
+/* SectionCard — backward-compatible wrapper around DashboardCard */
 function SectionCard({ title, icon, iconBg, iconColor, borderClr, children, extra, scrollHeight }: {
   title: string; icon: React.ReactNode; iconBg: string; iconColor: string; borderClr: string;
   children: React.ReactNode; extra?: React.ReactNode; scrollHeight?: string;
 }) {
-  const contentEl = scrollHeight ? (
-    <ScrollArea className={`${scrollHeight} w-full overflow-hidden`}>
-      <div className="pl-3 pb-2 pr-1">{children}</div>
-    </ScrollArea>
-  ) : children;
   return (
-    <Card className={`${borderClr} bg-slate-800/40 backdrop-blur-md flex flex-col py-0 gap-0 overflow-hidden rounded-2xl border shadow-lg shadow-black/10`}>
-      <CardHeader className="pb-3 pt-5 px-6 shrink-0">
-        <div className="flex items-center justify-between">
-          <CardTitle className={`flex items-center gap-3 ${iconColor} text-[15px] font-semibold`}>
-            <div className={`p-2 rounded-xl ${iconBg} shadow-sm transition-transform hover:scale-110`}>{icon}</div>
-            {title}
-          </CardTitle>
-          {extra}
-        </div>
-      </CardHeader>
-      <CardContent className="pt-0 pb-5 px-6 flex-1 min-h-0 overflow-hidden">{contentEl}</CardContent>
-    </Card>
+    <DashboardCard
+      title={title} icon={icon} iconBg={iconBg} iconColor={iconColor} borderClr={borderClr}
+      scrollable={!!scrollHeight}
+      maxHeight={scrollHeight || undefined}
+      actions={extra}
+    >
+      {children}
+    </DashboardCard>
   );
 }
 
@@ -600,12 +592,9 @@ export default function HomePage() {
            ══════════════════════════════════════════════════════════ */}
         {activeTab === 'overview' && (
           <motion.div key="overview" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} transition={{ duration: 0.3 }} className="space-y-6">
-
-            <GradientDivider />
-
+            
             {/* Row 1: Requests + Attendance + Quick Links */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-
+           <DashboardGrid columns={3}>
               {/* Pending Requests */}
               {canViewPage('requests') && (
                 <motion.div variants={scaleIn} initial="hidden" animate="visible">
@@ -712,12 +701,12 @@ export default function HomePage() {
                   </div>
                 </SectionCard>
               </motion.div>
-            </div>
+            </DashboardGrid>
 
             <GradientDivider />
 
             {/* Row 2: Request Types + Departments */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <DashboardGrid>
 
               {/* Request Type Analytics */}
               {canViewPage('requests') && stats.requestTypeSummary.length > 0 && (
@@ -792,7 +781,7 @@ export default function HomePage() {
                   </SectionCard>
                 </motion.div>
               )}
-            </div>
+            </DashboardGrid>
 
             {/* Today's Follow-ups Alert */}
             {canViewPage('followUps') && stats.todaysFollowUps.length > 0 && (
@@ -891,7 +880,7 @@ export default function HomePage() {
             </div>
 
             {/* Top Offenders + Deduction Rules */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <DashboardGrid>
 
               {/* Top 5 Offenders */}
               {canViewPage('attendance') && stats.topOffenders.length > 0 && (
@@ -916,8 +905,8 @@ export default function HomePage() {
                             {offender.deductionAmount > 0 && <span className="px-2 py-1 rounded-lg text-[10px] bg-red-500/10 text-red-400 font-semibold whitespace-nowrap">{offender.deductionAmount.toFixed(0)} ج.م</span>}
                           </div>
                         </motion.div>
-                      ))}
-                    </div>
+                       ))}
+                      </div>
                   </SectionCard>
                 </motion.div>
               )}
@@ -942,7 +931,7 @@ export default function HomePage() {
                   </SectionCard>
                 </motion.div>
               )}
-            </div>
+            </DashboardGrid>
           </motion.div>
         )}
 
@@ -1035,7 +1024,7 @@ export default function HomePage() {
               <KPICard title="تأخيرات الشهر" value={perf.totalDelays} subtitle={`${perf.totalDelayMinutes} دقيقة`} icon={<Flame className="size-5 text-amber-400" />} gradient="from-amber-500/20 to-orange-600/10" glow="shadow-amber-500/15" />
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <DashboardGrid>
 
               {/* Quality Breakdown */}
               {canViewPage('quality') && (
@@ -1099,7 +1088,7 @@ export default function HomePage() {
                   </div>
                 </SectionCard>
               )}
-            </div>
+            </DashboardGrid>
           </motion.div>
         )}
       </AnimatePresence>
