@@ -165,17 +165,29 @@ export function DashboardCard({
   const resolvedMaxH = maxHeight || (scrollable ? SIZE_MAX_HEIGHTS[size] : undefined);
   const resolvedMinH = minHeight || SIZE_MIN_HEIGHTS[size];
 
+  // Detect Tailwind classes vs plain CSS values (e.g. "max-h-[440px]" vs "440px")
+  const maxHIsTw = !!resolvedMaxH && /^\w+-\w+/.test(resolvedMaxH);
+  const minHIsTw = !!resolvedMinH && /^\w+-\w+/.test(resolvedMinH);
+
   const isCollapsed = collapsed && !loading;
+
+  // Build height classes for Tailwind, plain values for inline style
+  const heightClasses = [
+    !isCollapsed && maxHIsTw ? resolvedMaxH : '',
+    !isCollapsed && minHIsTw ? resolvedMinH : '',
+  ].filter(Boolean).join(' ');
+
+  const heightStyle: React.CSSProperties = {
+    ...((!isCollapsed && resolvedMaxH && !maxHIsTw) ? { maxHeight: resolvedMaxH } : {}),
+    ...((!isCollapsed && resolvedMinH && !minHIsTw) ? { minHeight: resolvedMinH } : {}),
+  };
 
   return (
     <div
       role="region"
       aria-label={ariaLabel || title}
-      className={`${borderClr} bg-slate-800/40 backdrop-blur-md flex flex-col overflow-hidden rounded-2xl border shadow-lg shadow-black/10 transition-all duration-200 ${colSpan2 ? 'lg:col-span-2' : ''} ${isCollapsed ? '' : 'min-h-0'}`}
-      style={{
-        maxHeight: isCollapsed ? undefined : resolvedMaxH ? `${resolvedMaxH}` : undefined,
-        minHeight: isCollapsed ? undefined : resolvedMinH ? `${resolvedMinH}` : undefined,
-      }}
+      className={`${borderClr} bg-slate-800/40 backdrop-blur-md flex flex-col overflow-hidden rounded-2xl border shadow-lg shadow-black/10 transition-all duration-200 ${colSpan2 ? 'lg:col-span-2' : ''} ${isCollapsed ? '' : 'min-h-0'} ${heightClasses}`}
+      style={heightStyle}
     >
       {/* ═══ HEADER — Always visible ═══ */}
       <div className="shrink-0 pb-3 pt-5 px-6 flex items-center justify-between gap-2">
