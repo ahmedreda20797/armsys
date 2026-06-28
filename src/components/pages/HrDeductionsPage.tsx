@@ -51,6 +51,7 @@ import type { HrDeduction, Employee } from '@/types';
 import { useAppStore } from '@/lib/store';
 import { useAuth } from '@/contexts/AuthContext';
 import { authFetch } from '@/lib/api-fetch';
+import { CAPALinkBadge } from '@/components/shared/CAPALinkBadge';
 
 const DEDUCTION_TYPES = [
   { value: 'خصم تأخير', label: 'خصم تأخير' },
@@ -509,28 +510,31 @@ export default function HrDeductionsPage() {
                         <TableCell>{getStatusBadge(ded.status)}</TableCell>
                         <TableCell>
                           <div className="flex items-center gap-1">
-                            {/* ═══ CAPA Integration ═══ */}
+                            {/* ═══ CAPA Integration (Bidirectional) ═══ */}
                             {(ded as any).relatedCapaId && (
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                onClick={() => useAppStore.getState().navigateTo('capa', undefined, { highlightId: (ded as any).relatedCapaId })}
-                                className="text-cyan-400 hover:text-cyan-300 hover:bg-cyan-500/10"
-                                title="عرض حالة CAPA"
-                              >
-                                <ShieldAlert className="size-3.5" />
-                              </Button>
+                              <div onClick={(e) => e.stopPropagation()}>
+                                <CAPALinkBadge capaId={(ded as any).relatedCapaId} compact />
+                              </div>
                             )}
                             {canUpdate && !(ded as any).relatedCapaId && ded.status === 'approved' && (
                               <Button
                                 size="sm"
                                 variant="ghost"
-                                onClick={() => handleCreateCapa(ded)}
-                                disabled={capaCreating === ded.id}
+                                onClick={() => {
+                                  useAppStore.getState().navigateTo('capa', undefined, {
+                                    title: `مخالفة HR — ${ded.type}`,
+                                    department: '',
+                                    priority: ded.amount >= 3 ? 'high' : 'medium',
+                                    employeeId: ded.employeeId,
+                                    problemDescription: ded.reason,
+                                    source: 'automation',
+                                    relatedHrDeductionId: ded.id,
+                                  });
+                                }}
                                 className="text-cyan-400/60 hover:text-cyan-300 hover:bg-cyan-500/10"
                                 title="إنشاء CAPA من هذه المخالفة"
                               >
-                                {capaCreating === ded.id ? <Loader2 className="size-3.5 animate-spin" /> : <ShieldAlert className="size-3.5" />}
+                                <ShieldAlert className="size-3.5" />
                               </Button>
                             )}
                             {canUpdate && (

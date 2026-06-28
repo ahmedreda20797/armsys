@@ -14,6 +14,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { EmployeeLink } from '@/components/shared/EmployeeLink';
 import { EmployeeSearchInput } from '@/components/shared/EmployeeSearchInput';
 import { UserSearchInput } from '@/components/shared/UserSearchInput';
+import { CAPALinkBadge } from '@/components/shared/CAPALinkBadge';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
   DialogFooter, DialogDescription,
@@ -1198,31 +1199,24 @@ export default function FollowUpsPage() {
                   </div>
                 )}
 
-                {/* ═══ CAPA Integration (Tier 2) ═══ */}
+                {/* ═══ CAPA Integration (Bidirectional) ═══ */}
                 {(viewingItem as any).relatedCapaId && (
-                  <div className="rounded-lg bg-cyan-500/5 border border-cyan-500/15 px-3 py-2">
-                    <p className="text-cyan-400 text-[11px] font-medium mb-1">حالة CAPA مرتبطة</p>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="text-xs border-cyan-500/30 text-cyan-400 hover:bg-cyan-500/10"
-                      onClick={() => useAppStore.getState().navigateTo('capa')}
-                    >
-                      <ExternalLink className="size-3 ml-1" />
-                      عرض حالة CAPA
-                    </Button>
-                  </div>
+                  <CAPALinkBadge capaId={(viewingItem as any).relatedCapaId} />
                 )}
                 <div className="flex gap-2 pt-1">
-                  {!editingItem && (
+                  {!editingItem && !(viewingItem as any).relatedCapaId && (
                     <Button
                       size="sm"
                       className="flex-1 bg-gradient-to-l from-cyan-600 to-blue-600 hover:from-cyan-700 hover:to-blue-700 text-white text-xs shadow-lg shadow-cyan-500/20"
                       onClick={() => {
                         useAppStore.getState().navigateTo('capa', undefined, {
+                          title: viewingItem.subject,
+                          department: viewingItem.department,
+                          priority: viewingItem.priorityLevel === 'critical' ? 'critical' : viewingItem.priorityLevel === 'high' ? 'high' : 'medium',
                           employeeId: viewingItem.employeeId,
-                          source: 'followUp',
-                          sourceId: viewingItem.id,
+                          problemDescription: viewingItem.detailedDescription,
+                          source: 'manual',
+                          relatedFollowUpId: viewingItem.id,
                         });
                       }}
                     >

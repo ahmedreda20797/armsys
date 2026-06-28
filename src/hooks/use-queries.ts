@@ -3,6 +3,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/query-provider';
 import { useCallback } from 'react';
+import type { CAPACase } from '@/types';
 
 // ═══════════════════════════════════════════════════
 //  Query Key Factory — Centralized, consistent keys
@@ -47,6 +48,7 @@ export const queryKeys = {
 
   // CAPA
   capaCases: ['capaCases'] as const,
+  capaCase: (id: string) => ['capaCases', id] as const,
 
   // Complaints
   complaints: ['complaints'] as const,
@@ -458,6 +460,15 @@ export function useDeleteCAPACase() {
     onSettled: () => {
       qc.invalidateQueries({ queryKey: ['capaCases'] });
     },
+  });
+}
+
+export function useCAPACase(id: string) {
+  return useQuery({
+    queryKey: queryKeys.capaCase(id),
+    queryFn: () => apiFetch<CAPACase>(`/api/capa-cases/${id}`),
+    enabled: !!id,
+    staleTime: 5_000,
   });
 }
 

@@ -54,6 +54,7 @@ import { EmployeeSearchInput } from '@/components/shared/EmployeeSearchInput';
 import { logCreate, logUpdate, logDelete } from '@/lib/activity-logger';
 import { authFetch } from '@/lib/api-fetch';
 import { useAppStore } from '@/lib/store';
+import { CAPALinkBadge } from '@/components/shared/CAPALinkBadge';
 
 // ═══════════════════════════════════════════════════════════════
 //  TYPES
@@ -629,13 +630,12 @@ export default function ComplaintsPage() {
                         </div>
                       )}
 
-                      {/* ═══ CAPA Integration (Tier 2) ═══ */}
+                      {/* ═══ CAPA Integration (Bidirectional) ═══ */}
                       {(complaint as any).relatedCapaIds && (complaint as any).relatedCapaIds.length > 0 && (
-                        <div className="rounded-lg bg-cyan-500/5 border border-cyan-500/15 p-2">
-                          <div className="flex items-center gap-1.5 text-cyan-400 text-[11px] font-medium mb-1">
-                            <ShieldAlert className="size-3" />
-                            حالات CAPA مرتبطة ({(complaint as any).relatedCapaIds.length})
-                          </div>
+                        <div className="space-y-2" onClick={(e) => e.stopPropagation()}>
+                          {(complaint as any).relatedCapaIds.map((capaId: string) => (
+                            <CAPALinkBadge key={capaId} capaId={capaId} />
+                          ))}
                         </div>
                       )}
                       <div className="flex gap-2 mt-1">
@@ -645,9 +645,13 @@ export default function ComplaintsPage() {
                           className="flex-1 text-[11px] border-cyan-500/30 text-cyan-400 hover:bg-cyan-500/10 h-7"
                           onClick={() => {
                             useAppStore.getState().navigateTo('capa', undefined, {
+                              title: `شكوى عميل — ${complaint.complaintType}`,
+                              department: '',
+                              priority: complaint.severity === 'critical' ? 'critical' : complaint.severity === 'high' ? 'high' : 'medium',
                               employeeId: complaint.employeeId || '',
+                              problemDescription: complaint.description,
                               source: 'complaint',
-                              sourceId: complaint.id,
+                              relatedComplaintId: complaint.id,
                             });
                           }}
                         >

@@ -49,6 +49,7 @@ import type { QualityDeduction, Employee } from '@/types';
 import { logCreate, logUpdate, logDelete } from '@/lib/activity-logger';
 import { authFetch } from '@/lib/api-fetch';
 import { useAppStore } from '@/lib/store';
+import { CAPALinkBadge } from '@/components/shared/CAPALinkBadge';
 
 interface QualityWithEmployee extends QualityDeduction {
   employee?: {
@@ -772,28 +773,34 @@ export default function QualityPage() {
                                           عرض الدليل
                                         </a>
                                       )}
-                                      {/* ═══ CAPA Integration (Tier 2) ═══ */}
+                                      {/* ═══ CAPA Integration (Bidirectional) ═══ */}
                                       {(d as any).relatedCapaId && (
-                                        <div className="mt-2 rounded-lg bg-cyan-500/5 border border-cyan-500/15 px-2.5 py-1.5">
-                                          <p className="text-cyan-400 text-[10px] font-medium">حالة CAPA مرتبطة</p>
+                                        <div className="mt-2" onClick={(e) => e.stopPropagation()}>
+                                          <CAPALinkBadge capaId={(d as any).relatedCapaId} compact />
                                         </div>
                                       )}
-                                      <Button
-                                        size="sm"
-                                        variant="outline"
-                                        className="mt-2 text-[11px] border-cyan-500/30 text-cyan-400 hover:bg-cyan-500/10 h-7"
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          useAppStore.getState().navigateTo('capa', undefined, {
-                                            employeeId: d.employeeId,
-                                            source: 'quality',
-                                            sourceId: d.id,
-                                          });
-                                        }}
-                                      >
-                                        <ShieldAlert className="size-3 ml-1" />
-                                        إنشاء CAPA
-                                      </Button>
+                                      {!(d as any).relatedCapaId && (
+                                        <Button
+                                          size="sm"
+                                          variant="outline"
+                                          className="mt-2 text-[11px] border-cyan-500/30 text-cyan-400 hover:bg-cyan-500/10 h-7"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            useAppStore.getState().navigateTo('capa', undefined, {
+                                              title: `خصم جودة — ${d.type}`,
+                                              department: '',
+                                              priority: d.deductionDays >= 3 ? 'high' : 'medium',
+                                              employeeId: d.employeeId,
+                                              problemDescription: d.description,
+                                              source: 'automation',
+                                              relatedQualityDeductionId: d.id,
+                                            });
+                                          }}
+                                        >
+                                          <ShieldAlert className="size-3 ml-1" />
+                                          إنشاء CAPA
+                                        </Button>
+                                      )}
                                     </div>
                                   </motion.div>
                                 )}
