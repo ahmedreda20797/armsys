@@ -592,9 +592,12 @@ export default function HomePage() {
            ══════════════════════════════════════════════════════════ */}
         {activeTab === 'overview' && (
           <motion.div key="overview" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} transition={{ duration: 0.3 }} className="space-y-6">
-            
+
+            <GradientDivider />
+
             {/* Row 1: Requests + Attendance + Quick Links */}
-           <DashboardGrid columns={3}>
+            <DashboardGrid columns={3}>
+
               {/* Pending Requests */}
               {canViewPage('requests') && (
                 <motion.div variants={scaleIn} initial="hidden" animate="visible">
@@ -604,8 +607,7 @@ export default function HomePage() {
                     {stats.pendingRequestsDetails.length > 0 ? (
                       <div className="space-y-2.5">
                         {stats.pendingRequestsDetails.map((req, idx) => (
-                          <motion.div key={req.id} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: idx * 0.04 }}
-                            className="p-4 rounded-xl border border-slate-700/20 bg-slate-700/10 hover:bg-slate-700/20 transition-all duration-200 hover:border-slate-600/20">
+                          <div key={req.id} className="p-4 rounded-xl border border-slate-700/20 bg-slate-700/10 hover:bg-slate-700/20 transition-all duration-200 hover:border-slate-600/20">
                             <div className="flex items-center justify-between gap-2">
                               <div className="min-w-0 flex-1">
                                 <div className="flex items-center gap-2 flex-wrap">
@@ -618,23 +620,19 @@ export default function HomePage() {
                             </div>
                             {canEditPage('requests') && (
                               <div className="flex items-center gap-2 mt-3 pt-3 border-t border-slate-700/15">
-                                <motion.div whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.96 }}>
-                                  <Button size="sm" className="bg-emerald-600/70 hover:bg-linear-to-r from-violet-600 to-indigo-600 text-white text-[10px] gap-1.5 px-3 h-8 rounded-xl"
-                                    disabled={actionLoading === req.id} onClick={(e) => { e.stopPropagation(); handleRequestAction(req.id, 'approved'); }}>
-                                    {actionLoading === req.id ? <motion.div className="size-3 border-2 border-white/30 border-t-white rounded-full" animate={{ rotate: 360 }} transition={{ duration: 0.8, repeat: Infinity, ease: 'linear' }} /> : <CheckCircle2 className="size-3.5" />}
-                                    موافقة
-                                  </Button>
-                                </motion.div>
-                                <motion.div whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.96 }}>
-                                  <Button size="sm" variant="outline" className="border-red-500/15 text-red-400 hover:bg-red-500/10 text-[10px] gap-1.5 px-3 h-8 rounded-xl"
-                                    disabled={actionLoading === req.id} onClick={(e) => { e.stopPropagation(); handleRequestAction(req.id, 'rejected'); }}>
-                                    {actionLoading === req.id ? <motion.div className="size-3 border-2 border-red-400/30 border-t-red-400 rounded-full" animate={{ rotate: 360 }} transition={{ duration: 0.8, repeat: Infinity, ease: 'linear' }} /> : <XCircle className="size-3.5" />}
-                                    رفض
-                                  </Button>
-                                </motion.div>
+                                <Button size="sm" className="bg-emerald-600/70 text-white text-[10px] gap-1.5 px-3 h-8 rounded-xl"
+                                  disabled={actionLoading === req.id}
+                                  onClick={(e) => { e.stopPropagation(); handleRequestAction(req.id, 'approved'); }}>
+                                  {actionLoading === req.id ? 'جاري...' : 'موافقة'}
+                                </Button>
+                                <Button size="sm" variant="outline" className="border-red-500/15 text-red-400 hover:bg-red-500/10 text-[10px] gap-1.5 px-3 h-8 rounded-xl"
+                                  disabled={actionLoading === req.id}
+                                  onClick={(e) => { e.stopPropagation(); handleRequestAction(req.id, 'rejected'); }}>
+                                  {actionLoading === req.id ? 'جاري...' : 'رفض'}
+                                </Button>
                               </div>
                             )}
-                          </motion.div>
+                          </div>
                         ))}
                       </div>
                     ) : <EmptyState icon={<CheckCircle2 className="size-10" />} message="لا توجد طلبات معلقة - كل شيء على ما يرام!" color="text-emerald-500/30" />}
@@ -777,8 +775,8 @@ export default function HomePage() {
                           {dept.employeeCount > 0 && <ProgressBar value={dept.presentToday} max={dept.employeeCount} colorClass="bg-gradient-to-l from-emerald-500 to-cyan-500" />}
                         </motion.div>
                       ))}
-                    </div>
-                  </SectionCard>
+                  </div>
+                </SectionCard>
                 </motion.div>
               )}
             </DashboardGrid>
@@ -905,8 +903,8 @@ export default function HomePage() {
                             {offender.deductionAmount > 0 && <span className="px-2 py-1 rounded-lg text-[10px] bg-red-500/10 text-red-400 font-semibold whitespace-nowrap">{offender.deductionAmount.toFixed(0)} ج.م</span>}
                           </div>
                         </motion.div>
-                       ))}
-                      </div>
+                      ))}
+                  </div>
                   </SectionCard>
                 </motion.div>
               )}
@@ -1084,7 +1082,7 @@ export default function HomePage() {
                           <MiniBar value={dept.totalDeductionAmount} max={Math.max(...perf.departments.map(d => d.totalDeductionAmount), 1)} color="bg-gradient-to-l from-red-500 to-rose-500" />
                         </motion.div>
                       ))}
-                    </div>
+                  </div>
                   </div>
                 </SectionCard>
               )}
