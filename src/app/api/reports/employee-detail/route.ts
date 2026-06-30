@@ -112,7 +112,19 @@ export async function POST(request: NextRequest) {
     const year = parseInt(yearStr, 10);
     const mon = parseInt(monStr, 10);
 
-    const workingDays = getWorkingDaysInMonth(year, mon);
+    let workingDays = getWorkingDaysInMonth(year, mon);
+
+    // For current month: only count days up to today (future days don't exist yet)
+    const now = new Date();
+    const isCurrentMonth = now.getFullYear() === year && (now.getMonth() + 1) === mon;
+    if (isCurrentMonth) {
+      const todayDay = now.getDate();
+      workingDays = workingDays.filter(d => {
+        const dayNum = parseInt(d.date.split('/')[0], 10);
+        return dayNum <= todayDay;
+      });
+    }
+
     const datePattern = `/${monStr.padStart(2, '0')}/${yearStr}`;
 
     // Auto-sync deduction rules to canonical amounts before fetching
@@ -225,8 +237,6 @@ export async function POST(request: NextRequest) {
     }[] = [];
 
     for (const day of workingDays) {
-      // Skip weekends (Friday=5, Saturday=6) — they are not working days
-      if (day.dayIndex === 5 || day.dayIndex === 6) continue;
       const bio = bioByDate.get(day.date);
       const att = attByDate.get(day.date);
       const req = reqByDate.get(day.date);
@@ -493,9 +503,8 @@ export async function POST(request: NextRequest) {
     const totalAttendanceDeductionDays = Math.round((lateDeductionDays + absenceDeductionDays) * 100) / 100;
     const totalDeductionDays = Math.round((totalAttendanceDeductionDays + totalQualityDays) * 100) / 100;
 
-    // Compliance: (present + late + exempt + bonus) / actualWorkingDays * 100
-    // Exclude weekends (Friday=5, Saturday=6) from denominator
-    const actualWorkDays = workingDays.filter(d => d.dayIndex !== 5 && d.dayIndex !== 6).length;
+    // Compliance: (present + late + exempt + bonus) / allDaysInMonth * 100
+    const actualWorkDays = workingDays.length;
     const effectiveAttendance = totalPresent + totalLate + totalExempt + bonusDays;
     const attendanceCompliance = actualWorkDays > 0
       ? Math.min(Math.round((effectiveAttendance / actualWorkDays) * 100), 100)

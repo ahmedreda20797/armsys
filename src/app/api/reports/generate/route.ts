@@ -75,9 +75,21 @@ export async function POST(request: NextRequest) {
     const year = parseInt(yearStr, 10);
     const mon = parseInt(monStr, 10);
 
-    const workingDays = getWorkingDaysInMonth(year, mon);
-    // Exclude weekends (Friday=5, Saturday=6) from working days count
-    const actualWorkDays = workingDays.filter(d => d.dayIndex !== 5 && d.dayIndex !== 6).length;
+    let workingDays = getWorkingDaysInMonth(year, mon);
+
+    // For current month: only count days up to today (future days don't exist yet)
+    const now = new Date();
+    const isCurrentMonth = now.getFullYear() === year && (now.getMonth() + 1) === mon;
+    if (isCurrentMonth) {
+      const todayDay = now.getDate();
+      workingDays = workingDays.filter(d => {
+        const dayNum = parseInt(d.date.split('/')[0], 10);
+        return dayNum <= todayDay;
+      });
+    }
+
+    // Count ALL days of the month (including weekends)
+    const actualWorkDays = workingDays.length;
     const monthWorkingDays = actualWorkDays;
     const datePattern = `/${monStr.padStart(2, '0')}/${yearStr}`;
 
@@ -215,9 +227,7 @@ export async function POST(request: NextRequest) {
       // ══════════════════════════════════════════════════════
       // Process EACH working day
       // ══════════════════════════════════════════════════════
-      for (const { date: dateStr, dayIndex } of workingDays) {
-        // Skip weekends (Friday=5, Saturday=6) — they are not working days
-        if (dayIndex === 5 || dayIndex === 6) continue;
+      for (const { date: dateStr } of workingDays) {
         const bio = empBio.get(dateStr);
         const att = empAtt.get(dateStr);
         const req = empReqs.get(dateStr);
@@ -416,9 +426,8 @@ export async function POST(request: NextRequest) {
       const totalDeductionDays = Math.round((totalAttendanceDeductionDays + totalQualityDays + totalHrDeductionDays) * 100) / 100;
 
       // ══════════════════════════════════════════════════════
-      // Compliance: (present + late + exempt + bonus) / actualWorkDays * 100
-      // Bonus = unused free days added to effective attendance
-      // Weekends (Fri/Sat) excluded from both numerator and denominator
+      // Compliance: (present + late + exempt + bonus) / allDaysInMonth * 100
+      // All days included (weekends shown but not penalized)
       // ══════════════════════════════════════════════════════
       const effectiveWorkingDays = Math.round((totalPresent + totalLate + totalExempt + autoExemptDays + bonusDays) * 100) / 100;
       const effectiveAttendance = totalPresent + totalLate + totalExempt + bonusDays;
