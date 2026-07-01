@@ -287,16 +287,16 @@ export default function NotificationCenterPage() {
     fetchStats();
   }, []);
 
-  // ── Silent background refresh every 15 seconds (no UI flash) ──
+  // ── Silent background refresh every 60 seconds (no UI flash) ──
   useEffect(() => {
     const interval = setInterval(() => {
       if (!canView || loading) return;
       setRefreshingBg(true);
       fetchNotifications(0, true);
       fetchStats();
-    }, 15000);
+    }, 60000);
     return () => clearInterval(interval);
-  }, [canView, loading]);
+  }, [canView]);
 
   // ── Client-side filtered list ──
   const filteredNotifications = useMemo(() => {

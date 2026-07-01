@@ -144,15 +144,18 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
   const listenerRef = useRef<(() => void) | null>(null);
   const desktopPermissionRef = useRef(false);
   const lastFetchCountRef = useRef<number>(0);
+  // Ref to avoid re-running effects when user object reference changes
+  const userRef = useRef(user);
+  userRef.current = user;
 
   // ── Request desktop notification permission once ──
   useEffect(() => {
-    if (user) {
+    if (userRef.current) {
       requestDesktopPermission().then((granted) => {
         desktopPermissionRef.current = granted;
       });
     }
-  }, [user]);
+  }, [!!user]); // Stable boolean — doesn't re-fire on user object recreation
 
   // ── Fetch notifications and detect new ones (used for both initial + polling) ──
   const refresh = useCallback(async () => {
@@ -206,15 +209,17 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  // ── Initial fetch on login ──
   useEffect(() => {
-    if (user) {
+    if (userRef.current) {
       refresh();
     }
-  }, [user, refresh]);
+  }, [!!user, refresh]); // !!user is stable boolean
 
-  // ── Real-time Firebase listener ──
+  // ── Real-time Firebase listener + polling fallback ──
+  // Uses !!user to avoid re-creating listener/polling on every user object change
   useEffect(() => {
-    if (!user) return;
+    if (!userRef.current) return;
 
     let cancelled = false;
 
@@ -288,10 +293,10 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
 
     setupListener();
 
-    // Polling fallback every 15 seconds (reduced from 30 for faster alert delivery)
+    // Polling fallback every 45 seconds (Firebase listener is primary)
     const pollInterval = setInterval(() => {
       if (!cancelled) refresh();
-    }, 15000);
+    }, 45000);
 
     return () => {
       cancelled = true;
@@ -301,7 +306,7 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
       }
       clearInterval(pollInterval);
     };
-  }, [user, refresh]);
+  }, [!!user, refresh]); // !!user prevents listener recreation churn
 
   // ── Mark read (server + local) ──
   const markRead = useCallback(async (id: string) => {

@@ -94,6 +94,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [requiresPasswordChange, setRequiresPasswordChange] = useState(false);
   const refreshIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const refreshTimerRef = useRef<NodeJS.Timeout | null>(null);
+  // Ref to read latest accessToken without causing re-renders or callback recreation
+  const accessTokenRef = useRef<string | null>(null);
+  accessTokenRef.current = accessToken;
 
   // ─── Token Refresh Logic (with mutex) ────────────
   let _refreshPromise: Promise<string | null> | null = null;
@@ -193,8 +196,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [refreshAccessToken]);
 
   // ─── Refresh user data (permissions, suspension) ─
+  // Uses refs to avoid dependency on accessToken (prevents infinite re-render loop)
   const refreshUser = useCallback(async () => {
-    const token = accessToken || localStorage.getItem(ACCESS_TOKEN_KEY);
+    const token = accessTokenRef.current || localStorage.getItem(ACCESS_TOKEN_KEY);
     if (!token) return;
 
     try {
@@ -229,7 +233,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch {
       // Silent fail — keep existing cached data
     }
-  }, [accessToken, refreshAccessToken]);
+  }, [refreshAccessToken]); // Stable deps only — accessToken read via ref
 
   // ─── Initialize: restore session from stored tokens ─
   useEffect(() => {
@@ -260,19 +264,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     initAuth();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Auto-refresh user data every 30 seconds (reduced from 10s)
+  // Auto-refresh user data every 60 seconds (only when user is logged in)
+  // Does NOT call refreshUser() immediately — initial load already fetched user data
   useEffect(() => {
     if (!user) return;
 
-    refreshUser();
-    refreshIntervalRef.current = setInterval(refreshUser, 30000);
+    refreshIntervalRef.current = setInterval(refreshUser, 60000);
 
     return () => {
       if (refreshIntervalRef.current) {
         clearInterval(refreshIntervalRef.current);
+        refreshIntervalRef.current = null;
       }
     };
-  }, [user, refreshUser]);
+  }, [!!user, refreshUser]); // !!user avoids object-reference churn
 
   // ─── Proactive token refresh before expiry ───────
   // Access tokens last 15m — refresh at 12m

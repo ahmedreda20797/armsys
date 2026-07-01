@@ -329,8 +329,8 @@ export function useNotifications(enabled = true) {
   return useQuery({
     queryKey: queryKeys.notifications,
     queryFn: () => apiFetch<any[]>('/api/firebase/notifications'),
-    staleTime: 30_000,
-    refetchInterval: enabled ? 30_000 : false, // Only poll when enabled
+    staleTime: 60_000,
+    // No polling — NotificationContext handles polling via Firebase listener + 45s fallback
     retry: 1,
   });
 }

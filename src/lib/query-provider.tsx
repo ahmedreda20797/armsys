@@ -12,7 +12,7 @@ function makeQueryClient() {
     defaultOptions: {
       queries: {
         // Data is considered fresh for 10 seconds (matches server cache TTL)
-        staleTime: 10_000,
+        staleTime: 30_000,
         // Keep data in cache for 5 minutes after becoming stale
         gcTime: 5 * 60 * 1000,
         // Retry failed requests once (not 3x default — faster UX)
