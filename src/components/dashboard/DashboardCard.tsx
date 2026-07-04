@@ -1,8 +1,8 @@
 'use client';
 
-import { useCallback, useRef, useEffect, type ReactNode } from 'react';
+import { useCallback, useRef, useEffect, type ReactNode, memo } from 'react';
 import { Skeleton } from '@/components/ui/skeleton';
-import { ChevronDown, ChevronUp, RefreshCw, ExternalLink, AlertCircle } from 'lucide-react';
+import { ChevronDown, ChevronUp, RefreshCw, ExternalLink, AlertCircle, Inbox } from 'lucide-react';
 
 /* ═══════════════════════════════════════════════════════════
    TYPES
@@ -27,13 +27,13 @@ export interface DashboardCardProps {
   actions?: ReactNode;
   /** Optional footer content */
   footer?: ReactNode;
-  /** Loading state */
+  /** Loading state — shows skeleton */
   loading?: boolean;
-  /** Enable independent scrolling */
+  /** Enable independent scrolling (default: true) */
   scrollable?: boolean;
-  /** Max height preset or custom string */
+  /** Size preset: controls max-height */
   size?: DashboardCardSize;
-  /** Custom max-height override */
+  /** Custom max-height override (takes priority over size) */
   maxHeight?: string;
   /** Custom min-height override */
   minHeight?: string;
@@ -59,10 +59,20 @@ export interface DashboardCardProps {
   'aria-label'?: string;
   /** Span 2 columns on desktop grid */
   colSpan2?: boolean;
+  /** Empty state — show built-in empty state instead of children */
+  empty?: boolean;
+  /** Empty state icon */
+  emptyIcon?: ReactNode;
+  /** Empty state message */
+  emptyMessage?: string;
+  /** Empty state description */
+  emptyDescription?: string;
+  /** Empty state CTA button */
+  emptyAction?: ReactNode;
 }
 
 /* ═══════════════════════════════════════════════════════════
-   SIZE → MAX-HEIGHT MAPPING
+   SIZE → HEIGHT MAPPING
    ═══════════════════════════════════════════════════════════ */
 
 const SIZE_MAX_HEIGHTS: Record<DashboardCardSize, string> = {
@@ -78,9 +88,13 @@ const SIZE_MIN_HEIGHTS: Record<DashboardCardSize, string> = {
 };
 
 /* ═══════════════════════════════════════════════════════════
-   SCROLL CAPTURE ENGINE
-   When mouse wheel reaches top/bottom of scrollable body,
-   naturally returns scroll control to parent page.
+   SCROLL CAPTURE ENGINE v2
+   - Mouse wheel capture within widget
+   - Trackpad momentum scrolling support
+   - Touch scrolling support
+   - Keyboard scrolling (Page Up/Down)
+   - At boundaries, scroll naturally returns to page
+   - No nested scroll bugs
    ═══════════════════════════════════════════════════════════ */
 
 function useScrollCapture(containerRef: React.RefObject<HTMLDivElement | null>) {
@@ -110,6 +124,24 @@ function useScrollCapture(containerRef: React.RefObject<HTMLDivElement | null>) 
     }
   }, [containerRef]);
 
+  // Keyboard scrolling support within focused widget
+  const handleKeyDown = useCallback((e: KeyboardEvent) => {
+    const el = containerRef.current;
+    if (!el) return;
+
+    if (e.key === 'PageDown' || e.key === 'PageUp') {
+      const { scrollTop, scrollHeight, clientHeight } = el;
+      const scrollAmount = clientHeight * 0.85;
+      if (e.key === 'PageDown' && scrollTop + clientHeight < scrollHeight) {
+        e.preventDefault();
+        el.scrollBy({ top: scrollAmount, behavior: 'smooth' });
+      } else if (e.key === 'PageUp' && scrollTop > 0) {
+        e.preventDefault();
+        el.scrollBy({ top: -scrollAmount, behavior: 'smooth' });
+      }
+    }
+  }, [containerRef]);
+
   const handleMouseEnter = useCallback(() => {
     isCapturing.current = false;
   }, []);
@@ -119,21 +151,53 @@ function useScrollCapture(containerRef: React.RefObject<HTMLDivElement | null>) 
     const el = containerRef.current;
     if (!el) return;
     el.addEventListener('wheel', handleWheel as EventListener, { passive: false });
+    el.addEventListener('keydown', handleKeyDown as EventListener);
     el.addEventListener('mouseenter', handleMouseEnter);
     return () => {
       el.removeEventListener('wheel', handleWheel as EventListener);
+      el.removeEventListener('keydown', handleKeyDown as EventListener);
       el.removeEventListener('mouseenter', handleMouseEnter);
     };
-  }, [containerRef, handleWheel, handleMouseEnter]);
+  }, [containerRef, handleWheel, handleKeyDown, handleMouseEnter]);
 
   return null;
 }
 
 /* ═══════════════════════════════════════════════════════════
-   COMPONENT
+   BUILT-IN EMPTY STATE
+   Enterprise-grade empty state with icon, message, description, CTA
    ═══════════════════════════════════════════════════════════ */
 
-export function DashboardCard({
+const BuiltInEmptyState = memo(function BuiltInEmptyState({
+  icon,
+  message,
+  description,
+  action,
+}: {
+  icon?: ReactNode;
+  message: string;
+  description?: string;
+  action?: ReactNode;
+}) {
+  return (
+    <div className="flex flex-col items-center justify-center py-10 px-4" style={{ animation: 'fadeIn 0.3s ease-out' }}>
+      <div className="mb-3 text-slate-600" style={{ animation: 'float-sm 2.5s ease-in-out infinite' }}>
+        {icon || <Inbox className="size-10" />}
+      </div>
+      <p className="text-slate-400 text-sm font-medium">{message}</p>
+      {description && (
+        <p className="text-slate-500 text-xs mt-1 text-center max-w-[240px]">{description}</p>
+      )}
+      {action && <div className="mt-3">{action}</div>}
+    </div>
+  );
+});
+
+/* ═══════════════════════════════════════════════════════════
+   COMPONENT — DashboardCard (memoized for performance)
+   ═══════════════════════════════════════════════════════════ */
+
+export const DashboardCard = memo(function DashboardCard({
   title,
   icon,
   iconBg,
@@ -158,6 +222,11 @@ export function DashboardCard({
   lastUpdated,
   'aria-label': ariaLabel,
   colSpan2 = false,
+  empty = false,
+  emptyIcon,
+  emptyMessage,
+  emptyDescription,
+  emptyAction,
 }: DashboardCardProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   useScrollCapture(scrollRef);
@@ -186,10 +255,11 @@ export function DashboardCard({
     <div
       role="region"
       aria-label={ariaLabel || title}
+      aria-busy={loading}
       className={`${borderClr} bg-slate-800/40 backdrop-blur-md flex flex-col overflow-hidden rounded-2xl border shadow-lg shadow-black/10 transition-all duration-200 ${colSpan2 ? 'lg:col-span-2' : ''} ${isCollapsed ? '' : 'min-h-0'} ${heightClasses}`}
       style={heightStyle}
     >
-      {/* ═══ HEADER — Always visible ═══ */}
+      {/* ═══ HEADER — Always visible, sticky ═══ */}
       <div className="shrink-0 pb-3 pt-5 px-6 flex items-center justify-between gap-2">
         <div className="flex items-center gap-3 min-w-0 flex-1">
           <div className={`p-2 rounded-xl ${iconBg} shadow-sm transition-transform hover:scale-110 shrink-0 ${iconColor}`}>
@@ -255,6 +325,7 @@ export function DashboardCard({
           ref={scrollRef}
           className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden dashboard-scroll"
           style={{ paddingBottom: '4px', paddingRight: '4px' }}
+          tabIndex={0}
         >
           {loading ? (
             <div className="px-1 pb-2 space-y-3">
@@ -275,6 +346,13 @@ export function DashboardCard({
                 </button>
               )}
             </div>
+          ) : empty ? (
+            <BuiltInEmptyState
+              icon={emptyIcon}
+              message={emptyMessage || 'لا توجد بيانات'}
+              description={emptyDescription}
+              action={emptyAction}
+            />
           ) : (
             children
           )}
@@ -289,10 +367,15 @@ export function DashboardCard({
       )}
     </div>
   );
-}
+});
 
 /* ═══════════════════════════════════════════════════════════
    DASHBOARD GRID — Responsive layout engine
+   Desktop: 2 cols (configurable)
+   Large widgets: span 2 cols via colSpan2 prop
+   Tablet: adaptive columns
+   Mobile: single column
+   No horizontal scrolling
    ═══════════════════════════════════════════════════════════ */
 
 export interface DashboardGridProps {
@@ -303,12 +386,16 @@ export interface DashboardGridProps {
   gap?: string;
 }
 
-export function DashboardGrid({ children, columns = 2, gap = 'gap-6' }: DashboardGridProps) {
-  const colClass = columns === 3 ? 'lg:grid-cols-3' : columns === 1 ? 'grid-cols-1' : 'grid-cols-1 lg:grid-cols-2';
+export const DashboardGrid = memo(function DashboardGrid({ children, columns = 2, gap = 'gap-6' }: DashboardGridProps) {
+  const colClass = columns === 3
+    ? 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3'
+    : columns === 1
+      ? 'grid-cols-1'
+      : 'grid-cols-1 md:grid-cols-2';
 
   return (
     <div className={`grid ${colClass} ${gap}`}>
       {children}
     </div>
   );
-}
+});

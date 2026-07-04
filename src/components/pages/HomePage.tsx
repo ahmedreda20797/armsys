@@ -9,7 +9,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
-import { DashboardCard, DashboardGrid } from '@/components/dashboard/DashboardCard';
+import { DashboardCard, DashboardGrid, type DashboardCardSize } from '@/components/dashboard/DashboardCard';
 import { toast } from 'sonner';
 import { getDaysRemaining, isUrgent, getRequestTypeLabel, getRequestTypeColor } from '@/lib/date-utils';
 import {
@@ -204,30 +204,43 @@ const EmptyState = memo(function EmptyState({ icon, message, color = 'text-slate
   );
 });
 
-function GradientDivider() {
+const GradientDivider = memo(function GradientDivider() {
   return (
     <div className="relative h-px w-full my-1">
       <div className="absolute inset-0 bg-gradient-to-l from-transparent via-slate-600/40 to-transparent" />
     </div>
   );
-}
+});
 
-/* SectionCard — backward-compatible wrapper around DashboardCard */
-function SectionCard({ title, icon, iconBg, iconColor, borderClr, children, extra, scrollHeight }: {
+/* SectionCard — backward-compatible wrapper around DashboardCard
+   Uses size presets for consistent height management instead of hardcoded scrollHeight.
+   scrollHeight is kept for backward compat — maps to maxHeight when provided.
+   size prop takes priority when both are present.
+*/
+const SectionCard = memo(function SectionCard({ title, icon, iconBg, iconColor, borderClr, children, extra, scrollHeight, size, badge, empty, emptyIcon, emptyMessage, onOpenFull, footer }: {
   title: string; icon: React.ReactNode; iconBg: string; iconColor: string; borderClr: string;
   children: React.ReactNode; extra?: React.ReactNode; scrollHeight?: string;
+  size?: DashboardCardSize; badge?: string | number; empty?: boolean; emptyIcon?: React.ReactNode;
+  emptyMessage?: string; onOpenFull?: () => void; footer?: React.ReactNode;
 }) {
   return (
     <DashboardCard
       title={title} icon={icon} iconBg={iconBg} iconColor={iconColor} borderClr={borderClr}
-      scrollable={!!scrollHeight}
+      scrollable={!!scrollHeight || !!size}
+      size={size || 'medium'}
       maxHeight={scrollHeight || undefined}
       actions={extra}
+      badge={badge}
+      empty={empty}
+      emptyIcon={emptyIcon}
+      emptyMessage={emptyMessage}
+      onOpenFull={onOpenFull}
+      footer={footer}
     >
       {children}
     </DashboardCard>
   );
-}
+});
 
 const NavBtn = memo(function NavBtn({ onClick, label, icon, color }: { onClick: () => void; label: string; icon?: React.ReactNode; color?: string }) {
   return (
@@ -242,7 +255,7 @@ const NavBtn = memo(function NavBtn({ onClick, label, icon, color }: { onClick: 
    KPI CARD — Premium Glass Style
    ═══════════════════════════════════════════════════════════ */
 
-function KPICard({ title, value, subtitle, icon, gradient, glow, trend, trendLabel }: {
+const KPICard = memo(function KPICard({ title, value, subtitle, icon, gradient, glow, trend, trendLabel }: {
   title: string; value: number | string; subtitle?: string;
   icon: React.ReactNode; gradient: string; glow: string;
   trend?: 'up' | 'down' | 'neutral'; trendLabel?: string;
@@ -297,7 +310,7 @@ function KPICard({ title, value, subtitle, icon, gradient, glow, trend, trendLab
       </Card>
     </motion.div>
   );
-}
+});
 
 /* ═══════════════════════════════════════════════════════════
    QUICK STAT CARD — Small glass tile
@@ -602,40 +615,49 @@ export default function HomePage() {
               {canViewPage('requests') && (
                 <motion.div variants={scaleIn} initial="hidden" animate="visible">
                   <SectionCard title="الطلبات المعلقة" icon={<FileText className="size-4" />} iconBg="bg-amber-500/10" iconColor="text-amber-400" borderClr="border-amber-500/10"
-                    extra={<NavBtn onClick={() => navigateTo('requests')} label="عرض الكل" icon={<ExternalLink className="size-3" />} color="text-amber-400" />}
-                    scrollHeight="max-h-[440px]">
-                    {stats.pendingRequestsDetails.length > 0 ? (
-                      <div className="space-y-2.5">
-                        {stats.pendingRequestsDetails.map((req, idx) => (
-                          <div key={req.id} className="p-4 rounded-xl border border-slate-700/20 bg-slate-700/10 hover:bg-slate-700/20 transition-all duration-200 hover:border-slate-600/20">
-                            <div className="flex items-center justify-between gap-2">
-                              <div className="min-w-0 flex-1">
-                                <div className="flex items-center gap-2 flex-wrap">
-                                  <span className="text-white text-sm font-semibold">{req.employeeName}</span>
-                                  <span className={`px-2 py-0.5 rounded-lg text-[10px] font-semibold shrink-0 whitespace-nowrap ${getRequestTypeColor(req.type)}`}>{getRequestTypeLabel(req.type)}</span>
-                                </div>
-                                <p className="text-slate-500 text-[10px] mt-1">{req.date}</p>
-                                <p className="text-slate-300 text-xs mt-2">{req.reason}</p>
-                              </div>
-                            </div>
-                            {canEditPage('requests') && (
-                              <div className="flex items-center gap-2 mt-3 pt-3 border-t border-slate-700/15">
-                                <Button size="sm" className="bg-emerald-600/70 text-white text-[10px] gap-1.5 px-3 h-8 rounded-xl"
-                                  disabled={actionLoading === req.id}
-                                  onClick={(e) => { e.stopPropagation(); handleRequestAction(req.id, 'approved'); }}>
-                                  {actionLoading === req.id ? 'جاري...' : 'موافقة'}
-                                </Button>
-                                <Button size="sm" variant="outline" className="border-red-500/15 text-red-400 hover:bg-red-500/10 text-[10px] gap-1.5 px-3 h-8 rounded-xl"
-                                  disabled={actionLoading === req.id}
-                                  onClick={(e) => { e.stopPropagation(); handleRequestAction(req.id, 'rejected'); }}>
-                                  {actionLoading === req.id ? 'جاري...' : 'رفض'}
-                                </Button>
-                              </div>
-                            )}
-                          </div>
-                        ))}
+                    size="medium"
+                    badge={stats.pendingRequestsDetails.length || undefined}
+                    onOpenFull={() => navigateTo('requests')}
+                    empty={stats.pendingRequestsDetails.length === 0}
+                    emptyIcon={<CheckCircle2 className="size-10" />}
+                    emptyMessage="لا توجد طلبات معلقة - كل شيء على ما يرام!"
+                    footer={stats.pendingRequestsDetails.length > 0 ? (
+                      <div className="flex items-center justify-between">
+                        <span className="text-slate-500 text-[10px]">{stats.pendingRequestsDetails.length} طلب معلق</span>
+                        <button onClick={() => navigateTo('requests')} className="text-amber-400 text-[10px] font-medium hover:text-amber-300 transition-colors flex items-center gap-1">عرض الكل <ExternalLink className="size-3" /></button>
                       </div>
-                    ) : <EmptyState icon={<CheckCircle2 className="size-10" />} message="لا توجد طلبات معلقة - كل شيء على ما يرام!" color="text-emerald-500/30" />}
+                    ) : undefined}
+                    >
+                    <div className="space-y-2.5">
+                      {stats.pendingRequestsDetails.map((req, idx) => (
+                        <div key={req.id} className="p-4 rounded-xl border border-slate-700/20 bg-slate-700/10 hover:bg-slate-700/20 transition-all duration-200 hover:border-slate-600/20">
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="text-white text-sm font-semibold">{req.employeeName}</span>
+                                <span className={`px-2 py-0.5 rounded-lg text-[10px] font-semibold shrink-0 whitespace-nowrap ${getRequestTypeColor(req.type)}`}>{getRequestTypeLabel(req.type)}</span>
+                              </div>
+                              <p className="text-slate-500 text-[10px] mt-1">{req.date}</p>
+                              <p className="text-slate-300 text-xs mt-2">{req.reason}</p>
+                            </div>
+                          </div>
+                          {canEditPage('requests') && (
+                            <div className="flex items-center gap-2 mt-3 pt-3 border-t border-slate-700/15">
+                              <Button size="sm" className="bg-emerald-600/70 text-white text-[10px] gap-1.5 px-3 h-8 rounded-xl"
+                                disabled={actionLoading === req.id}
+                                onClick={(e) => { e.stopPropagation(); handleRequestAction(req.id, 'approved'); }}>
+                                {actionLoading === req.id ? 'جاري...' : 'موافقة'}
+                              </Button>
+                              <Button size="sm" variant="outline" className="border-red-500/15 text-red-400 hover:bg-red-500/10 text-[10px] gap-1.5 px-3 h-8 rounded-xl"
+                                disabled={actionLoading === req.id}
+                                onClick={(e) => { e.stopPropagation(); handleRequestAction(req.id, 'rejected'); }}>
+                                {actionLoading === req.id ? 'جاري...' : 'رفض'}
+                              </Button>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
                   </SectionCard>
                 </motion.div>
               )}
@@ -1098,7 +1120,7 @@ export default function HomePage() {
    HELPER: Quick Link Card
    ═══════════════════════════════════════════════════════════ */
 
-function QuickLink({ icon, label, sub, color, onClick }: { icon: React.ReactNode; label: string; sub: string; color: string; onClick: () => void }) {
+const QuickLink = memo(function QuickLink({ icon, label, sub, color, onClick }: { icon: React.ReactNode; label: string; sub: string; color: string; onClick: () => void }) {
   return (
     <motion.button whileHover={{ scale: 1.04, y: -2 }} whileTap={{ scale: 0.96 }} onClick={onClick}
       className={`p-4 rounded-xl bg-gradient-to-br ${color} border border-slate-700/15 hover:border-slate-600/25 transition-all duration-200 text-right group`}>
@@ -1109,13 +1131,13 @@ function QuickLink({ icon, label, sub, color, onClick }: { icon: React.ReactNode
       <p className="text-slate-500 text-[10px] group-hover:text-slate-400 transition-colors">{sub}</p>
     </motion.button>
   );
-}
+});
 
 /* ═══════════════════════════════════════════════════════════
    HELPER: Status Row
    ═══════════════════════════════════════════════════════════ */
 
-function StatusRow({ icon, label, value, ok }: { icon: React.ReactNode; label: string; value: string; ok: boolean }) {
+const StatusRow = memo(function StatusRow({ icon, label, value, ok }: { icon: React.ReactNode; label: string; value: string; ok: boolean }) {
   return (
     <div className="flex items-center justify-between p-3 rounded-xl bg-slate-700/10 border border-slate-700/10">
       <div className="flex items-center gap-2.5">
@@ -1125,4 +1147,4 @@ function StatusRow({ icon, label, value, ok }: { icon: React.ReactNode; label: s
       <span className={`text-[11px] font-medium ${ok ? 'text-violet-400' : 'text-slate-500'}`}>{value}</span>
     </div>
   );
-}
+});
