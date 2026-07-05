@@ -428,7 +428,7 @@ html {
 
 .dashboard-scroll {
   scrollbar-width: thin;
-  scrollbar-color: oklch(0.5 0.04 160 / 0.3) transparent;
+  scrollbar-color: oklch(27.741% 0.14143 304.658 / 0.158) transparent;
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
   scroll-behavior: smooth;
@@ -445,7 +445,7 @@ html {
 }
 
 .dashboard-scroll::-webkit-scrollbar-thumb {
-  background: oklch(0.5 0.04 160 / 0.0);
+  background: oklch(40.882% 0.0696 286.152 / 0.0);
   border-radius: 100px;
   border: 2px solid transparent;
   background-clip: content-box;
@@ -455,14 +455,14 @@ html {
 /* Show scrollbar on hover (parent card or scroll area) */
 .dashboard-scroll:hover::-webkit-scrollbar-thumb,
 .dashboard-scroll:focus::-webkit-scrollbar-thumb {
-  background: oklch(0.5 0.06 160 / 0.4);
+  background: oklch(40.882% 0.0696 286.152 / 0.4);
   background-clip: content-box;
   border-color: transparent;
 }
 
 /* Active scrollbar (while scrolling) */
 .dashboard-scroll:active::-webkit-scrollbar-thumb {
-  background: oklch(0.55 0.08 160 / 0.55);
+  background: oklch(40.882% 0.0696 286.152 / 0.55);
   background-clip: content-box;
   border-color: transparent;
 }
@@ -475,11 +475,11 @@ html {
 @supports (scrollbar-color: auto) {
   .dashboard-scroll:hover,
   .dashboard-scroll:focus {
-    scrollbar-color: oklch(0.5 0.06 160 / 0.4) transparent;
+    scrollbar-color: oklch(40.882% 0.0696 286.152 / 0.4) transparent;
   }
 
   .dashboard-scroll:active {
-    scrollbar-color: oklch(0.55 0.08 160 / 0.55) transparent;
+    scrollbar-color: oklch(40.882% 0.0696 286.152 / 0.55) transparent;
   }
 }
 

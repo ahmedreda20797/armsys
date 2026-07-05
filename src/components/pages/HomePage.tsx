@@ -540,7 +540,7 @@ export default function HomePage() {
       {/* ══════════════════════════════════════════════════════════
          6 KPI CARDS — Premium Glass
          ══════════════════════════════════════════════════════════ */}
-      <motion.div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4" variants={stagger} initial="hidden" animate="visible">
+      <motion.div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2" variants={stagger} initial="hidden" animate="visible">
         <motion.div variants={fadeUp}>
           <KPICard title="إجمالي الموظفين" value={stats.totalEmployees} subtitle={`${stats.departmentList.length} قسم`}
             icon={<Users className="size-5 text-violet-400" />} gradient="from-violet-500/20 to-purple-600/10" glow="shadow-violet-500/15" />
@@ -574,7 +574,7 @@ export default function HomePage() {
       {/* ══════════════════════════════════════════════════════════
          QUICK STATISTICS — 3x2 Glass Tiles
          ══════════════════════════════════════════════════════════ */}
-      <motion.div className="grid grid-cols-2 sm:grid-cols-3 gap-4" variants={stagger} initial="hidden" animate="visible">
+      <motion.div className="grid grid-cols-2 sm:grid-cols-6 gap-2" variants={stagger} initial="hidden" animate="visible">
         <motion.div variants={fadeUp}>
           <QuickStatCard icon={<Users className="size-5" />} label="المستخدمين" value={stats.totalEmployees} color="text-violet-400" gradient="from-violet-500/10 to-purple-600/5" />
         </motion.div>
@@ -666,8 +666,8 @@ export default function HomePage() {
               {canViewPage('attendance') && (
                 <motion.div variants={scaleIn} initial="hidden" animate="visible">
                   <SectionCard title="الحضور اليوم" icon={<Clock className="size-4" />} iconBg="bg-cyan-500/10" iconColor="text-cyan-400" borderClr="border-cyan-500/10"
-                    extra={<NavBtn onClick={() => navigateTo('attendance')} label="التفاصيل" icon={<ExternalLink className="size-3" />} color="text-cyan-400" />}
-                    scrollHeight="max-h-[440px]">
+                    onOpenFull={() => navigateTo('attendance')}
+                    size="medium">
                     <div className="flex flex-wrap gap-2 mb-4">
                       <Pill icon={<UserCheck className="size-3.5" />} label="حاضر" value={stats.presentCount} color="text-violet-400" bg="bg-emerald-500/8 border-violet-500/30" />
                       <Pill icon={<AlertTriangle className="size-3.5" />} label="متأخر" value={stats.lateCount} color="text-amber-400" bg="bg-amber-500/8 border-amber-500/12" />
@@ -699,7 +699,7 @@ export default function HomePage() {
               {/* Quick Access + System Status */}
               <motion.div variants={scaleIn} initial="hidden" animate="visible">
                 <SectionCard title="الوصول السريع" icon={<Zap className="size-4" />} iconBg="bg-violet-500/10" iconColor="text-violet-400" borderClr="border-violet-500/10"
-                  scrollHeight="max-h-[440px]">
+                  size="medium">
                   <div className="grid grid-cols-2 gap-2.5">
                     {canViewPage('employees') && <QuickLink icon={<Users className="size-4" />} label="الموظفين" sub={`${stats.totalEmployees} موظف`} color="from-violet-500/10 to-purple-600/5" onClick={() => navigateTo('employees')} />}
                     {canViewPage('biometric') && <QuickLink icon={<Fingerprint className="size-4" />} label="البصمة" sub={`${stats.biometricRecordCount} سجل`} color="from-purple-500/10 to-fuchsia-600/5" onClick={() => navigateTo('biometric')} />}
@@ -733,7 +733,7 @@ export default function HomePage() {
                 <motion.div variants={scaleIn} initial="hidden" animate="visible">
                   <SectionCard title="تحليل الطلبات حسب النوع" icon={<BarChart3 className="size-4" />} iconBg="bg-violet-500/10" iconColor="text-violet-400" borderClr="border-violet-500/10"
                     extra={<NavBtn onClick={() => navigateTo('requests')} label="التفاصيل" icon={<ExternalLink className="size-3" />} color="text-violet-400" />}
-                    scrollHeight="max-h-[440px]">
+                    size="medium">
                     <div className="space-y-3">
                       {stats.requestTypeSummary.map((rt) => {
                         const total = rt.pending + rt.approved + rt.rejected;
@@ -773,7 +773,7 @@ export default function HomePage() {
                 <motion.div variants={scaleIn} initial="hidden" animate="visible">
                   <SectionCard title="أقسام الشركة" icon={<Users className="size-4" />} iconBg="bg-violet-500/10" iconColor="text-violet-400" borderClr="border-violet-500/10"
                     extra={<NavBtn onClick={() => navigateTo('employees')} label="عرض الموظفين" icon={<ExternalLink className="size-3" />} color="text-violet-400" />}
-                    scrollHeight="max-h-[440px]">
+                    size="medium">
                     <div className="space-y-2.5">
                       {stats.deptTodayStats.map((dept, idx) => (
                         <motion.div key={dept.name} initial={{ opacity: 0, x: -6 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: idx * 0.03 }}
@@ -812,7 +812,7 @@ export default function HomePage() {
               >
                 <SectionCard title="متابعات مجدولة اليوم" icon={<ClipboardList className="size-4" />} iconBg="bg-cyan-500/10" iconColor="text-cyan-400" borderClr="border-cyan-500/10"
                   extra={<NavBtn onClick={() => navigateTo('followUps')} label="عرض المتابعات" icon={<ExternalLink className="size-3" />} color="text-cyan-400" />}
-                  scrollHeight="max-h-[440px]">
+                  size="medium">
                   <div className="space-y-2">
                     {stats.todaysFollowUps.map((fu, idx) => {
                       const typeLabels: Record<string, string> = { quality: 'جودة', behavior: 'سلوك', attendance: 'حضور', productivity: 'إنتاجية', training: 'تدريب', customerHandling: 'التعامل مع العملاء' };
@@ -861,7 +861,7 @@ export default function HomePage() {
                 <motion.div variants={scaleIn} initial="hidden" animate="visible">
                   <SectionCard title={lastPerf.monthLabel || 'الشهر الماضي'} icon={<TrendingDown className="size-4" />} iconBg="bg-purple-500/10" iconColor="text-purple-400" borderClr="border-purple-500/10"
                     extra={<NavBtn onClick={() => navigateTo('reports')} label="تقرير مفصل" icon={<FileSpreadsheet className="size-3" />} color="text-purple-400" />}
-                    scrollHeight="max-h-[440px]">
+                    size="medium">
                     <div className="flex flex-wrap gap-2 mb-4">
                       <Pill icon={<Flame className="size-3.5" />} label="تأخيرات" value={lastPerf.totalDelays} color="text-amber-400" bg="bg-amber-500/8 border-amber-500/12" />
                       <Pill icon={<Clock className="size-3.5" />} label="إجمالي الدقائق" value={lastPerf.totalDelayMinutes} color="text-orange-400" bg="bg-orange-500/8 border-orange-500/12" />
@@ -882,7 +882,7 @@ export default function HomePage() {
                 <motion.div variants={scaleIn} initial="hidden" animate="visible">
                   <SectionCard title={perf.monthLabel || 'الشهر الحالي'} icon={<TrendingUp className="size-4" />} iconBg="bg-violet-500/10" iconColor="text-violet-400" borderClr="border-violet-500/10"
                     extra={<NavBtn onClick={() => navigateTo('reports')} label="تقرير مفصل" icon={<FileSpreadsheet className="size-3" />} color="text-violet-400" />}
-                    scrollHeight="max-h-[440px]">
+                    size="medium">
                     <div className="flex flex-wrap gap-2 mb-4">
                       <Pill icon={<Flame className="size-3.5" />} label="تأخيرات" value={perf.totalDelays} color="text-amber-400" bg="bg-amber-500/8 border-amber-500/12" />
                       <Pill icon={<Clock className="size-3.5" />} label="إجمالي الدقائق" value={perf.totalDelayMinutes} color="text-orange-400" bg="bg-orange-500/8 border-orange-500/12" />
@@ -907,7 +907,7 @@ export default function HomePage() {
                 <motion.div variants={scaleIn} initial="hidden" animate="visible">
                   <SectionCard title="أكثر 5 موظفين تأخيراً" icon={<AlertTriangle className="size-4" />} iconBg="bg-red-500/10" iconColor="text-red-400" borderClr="border-red-500/10"
                     extra={<NavBtn onClick={() => navigateTo('reports')} label="تقرير كامل" icon={<FileSpreadsheet className="size-3" />} color="text-red-400" />}
-                    scrollHeight="max-h-[440px]">
+                    size="medium">
                     <div className="space-y-2.5">
                       {stats.topOffenders.map((offender, idx) => (
                         <motion.div key={offender.employeeId} initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: idx * 0.06 }}
@@ -936,7 +936,7 @@ export default function HomePage() {
                 <motion.div variants={scaleIn} initial="hidden" animate="visible">
                   <SectionCard title="جدول قواعد الخصم" icon={<Scale className="size-4" />} iconBg="bg-rose-500/10" iconColor="text-rose-400" borderClr="border-rose-500/10"
                     extra={<NavBtn onClick={() => navigateTo('rules')} label="إدارة القواعد" icon={<ExternalLink className="size-3" />} color="text-rose-400" />}
-                    scrollHeight="max-h-[440px]">
+                    size="medium">
                     <div className="space-y-2">
                       {stats.rulesSummary.map((rule) => (
                         <div key={rule.key} className="flex items-center justify-between p-4 rounded-xl bg-slate-700/10 hover:bg-slate-700/20 transition-all duration-200 border border-transparent hover:border-slate-600/10">
@@ -975,7 +975,7 @@ export default function HomePage() {
             {canViewPage('travel') && (
               <SectionCard title="الرحلات النشطة والقادمة" icon={<Plane className="size-4" />} iconBg="bg-rose-500/10" iconColor="text-rose-400" borderClr="border-rose-500/10"
                 extra={<NavBtn onClick={() => navigateTo('travel')} label="إدارة الرحلات" icon={<ExternalLink className="size-3" />} color="text-rose-400" />}
-                scrollHeight="max-h-[540px]">
+                size="large">
                 {stats.upcomingTravel.length > 0 ? (
                   <div className="space-y-3">
                     {stats.upcomingTravel.map((trip, idx) => {
@@ -1050,7 +1050,7 @@ export default function HomePage() {
               {canViewPage('quality') && (
                 <SectionCard title="تفصيل حالات الجودة" icon={<Award className="size-4" />} iconBg="bg-orange-500/10" iconColor="text-orange-400" borderClr="border-orange-500/10"
                   extra={<NavBtn onClick={() => navigateTo('quality')} label="إدارة الجودة" icon={<ExternalLink className="size-3" />} color="text-orange-400" />}
-                  scrollHeight="max-h-[440px]">
+                  size="medium">
                   <div className="space-y-3">
                     {[
                       { type: 'quality_issue', label: 'مشاكل جودة', color: 'text-orange-400', bg: 'bg-orange-500', icon: <AlertTriangle className="size-4" /> },
@@ -1078,7 +1078,7 @@ export default function HomePage() {
               {canViewPage('attendance') && (
                 <SectionCard title="ملخص الخصومات الشهرية" icon={<DollarSign className="size-4" />} iconBg="bg-red-500/10" iconColor="text-red-400" borderClr="border-red-500/10"
                   extra={<NavBtn onClick={() => navigateTo('reports')} label="تصدير تقرير" icon={<Download className="size-3" />} color="text-red-400" />}
-                  scrollHeight="max-h-[440px]">
+                  size="medium">
                   <div className="space-y-4">
                     <div className="p-5 rounded-2xl bg-gradient-to-br from-violet-500/10 to-purple-600/5 border border-violet-500/10">
                       <div className="flex items-center justify-between mb-3">
