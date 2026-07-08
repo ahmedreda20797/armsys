@@ -15,37 +15,41 @@ import { DashboardGrid } from '@/components/dashboard/DashboardCard';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
   AoccMissionHeader,
-  AoccGlobalHealth,
-  AoccCriticalActionQueue,
-  AoccDepartmentStatus,
+  AoccOperationalOverview,
+  AoccActionQueue,
+  AoccDepartmentHealth,
   AoccEmployeeWatchlist,
-  AoccTimeline,
-  AoccSmartRecommendations,
+  AoccActivityFeed,
+  AoccIntelligenceCenter,
   AoccQuickActions,
   AoccSystemStatus,
   AoccExecutiveSummary,
 } from '@/components/aocc/AoccWidgets';
-import type {
-  ActionQueueItem,
-  TimelineEvent,
-  Recommendation,
-  QuickAction,
-  DepartmentStatItem,
-} from '@/components/aocc/AoccWidgets';
+import {
+  collectEvents,
+  generateActions,
+  correlateAllEmployees,
+  analyzeAllDepartments,
+  generateRecommendations,
+  buildActivityFeed,
+  generateExecutiveIntelligence,
+} from '@/lib/aocc/event-collector';
+import { countByPriority } from '@/lib/aocc/priority-engine';
+import type { RawDataBundle, ActivityFeedEntry } from '@/lib/aocc/types';
+import { apiFetch } from '@/lib/query-provider';
+import { useQuery } from '@tanstack/react-query';
 import {
   ShieldAlert,
-  Clock,
-  ClipboardCheck,
-  AlertCircle,
-  Plane,
   CheckCircle2,
   Fingerprint,
   Plus,
   FileText,
   Bell,
   Zap,
+  Clock,
+  ClipboardCheck,
+  AlertCircle,
 } from 'lucide-react';
-
 
 /* ═══════════════════════════════════════════════════════════════
    HELPERS — defensive unwrapping of API responses
@@ -59,27 +63,23 @@ function unwrapArray(d: any): any[] {
   return [];
 }
 
-function todayStr(): string {
-  return new Date().toISOString().split('T')[0];
-}
+/* ═══════════════════════════════════════════════════════════════
+   ACTIVITY LOGS HOOK (admin-gated)
+   Fetches today's activity logs for the realtime feed.
+   Non-admin users will get undefined → feed falls back to notifications.
+   ═══════════════════════════════════════════════════════════════ */
 
-function isToday(dateStr?: string | null): boolean {
-  if (!dateStr) return false;
-  return dateStr.startsWith(todayStr());
-}
+function useActivityLogs() {
+  const { canViewPage } = usePermissions();
+  const today = new Date().toISOString().split('T')[0];
 
-function daysUntil(dateStr?: string | null): number | null {
-  if (!dateStr) return null;
-  const target = new Date(dateStr).getTime();
-  if (isNaN(target)) return null;
-  const now = new Date(todayStr()).getTime();
-  return Math.floor((target - now) / (24 * 60 * 60 * 1000));
-}
-
-function calcHealthScore(present: number, late: number, absent: number, total: number): number {
-  if (total === 0) return 100;
-  const score = ((present + late * 0.5) / total) * 100;
-  return Math.round(Math.max(0, Math.min(100, score)));
+  return useQuery<any[]>({
+    queryKey: ['activity-logs', 'today', today],
+    queryFn: () => apiFetch<any[]>(`/api/activity-logs?limit=100&dateFrom=${today}`),
+    enabled: canViewPage('controlPanel'),
+    staleTime: 15_000,
+    refetchInterval: 30_000,
+  });
 }
 
 /* ═══════════════════════════════════════════════════════════════
@@ -89,11 +89,8 @@ function calcHealthScore(present: number, late: number, absent: number, total: n
 function AoccSkeleton() {
   return (
     <div className="space-y-6 p-4 md:p-6">
-      {/* Header skeleton */}
       <Skeleton className="h-20 w-full rounded-2xl bg-slate-800/60" />
-      {/* KPI grid skeleton */}
       <Skeleton className="h-48 w-full rounded-2xl bg-slate-800/40" />
-      {/* Two-column skeleton */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <Skeleton className="h-96 rounded-2xl bg-slate-800/40" />
         <Skeleton className="h-96 rounded-2xl bg-slate-800/40" />
@@ -109,7 +106,8 @@ function AoccSkeleton() {
 
 /* ═══════════════════════════════════════════════════════════════
    MAIN AOCC LAYOUT COMPONENT
-   Owns all data fetching → passes derived data down as props
+   Owns all data fetching → feeds through intelligence engine →
+   passes derived operational intelligence to widgets.
    ═══════════════════════════════════════════════════════════════ */
 
 export default function AoccLayout() {
@@ -125,6 +123,7 @@ export default function AoccLayout() {
   const riskCenterQuery = useRiskCenter();
   const notifStatsQuery = useNotificationStats();
   const onlineUsersQuery = useOnlineUsers(2);
+  const activityLogsQuery = useActivityLogs();
 
   // ── Refresh handler — invalidate all AOCC queries ──
   const handleRefresh = useCallback(() => {
@@ -145,14 +144,62 @@ export default function AoccLayout() {
   const riskEmployees = riskCenterQuery.data?.employees || [];
   const notifStats = notifStatsQuery.data;
   const onlineUsers = onlineUsersQuery.data;
+  const activityLogs = activityLogsQuery.data;
+  const departmentAnalysis = riskCenterQuery.data?.departmentAnalysis;
+  const riskSummary = riskCenterQuery.data?.summary;
 
   // ═══════════════════════════════════════════════════════════════
-  //  DERIVED DATA — memoized aggregations
+  //  INTELLIGENCE ENGINE — feed all data through the collector
   // ═══════════════════════════════════════════════════════════════
 
-  // ── Global Health KPIs ──
+  // ── Build the raw data bundle ──
+  const rawData: RawDataBundle = useMemo(() => ({
+    stats,
+    capaItems,
+    complaintItems,
+    followUpItems,
+    riskEmployees,
+    notifications,
+    activityLogs,
+    riskSummary,
+    departmentAnalysis,
+  }), [stats, capaItems, complaintItems, followUpItems, riskEmployees, notifications, activityLogs, riskSummary, departmentAnalysis]);
+
+  // ── PART 1: Collect normalized events ──
+  const events = useMemo(() => collectEvents(rawData), [rawData]);
+
+  // ── PART 2+3: Generate scored, sorted action queue ──
+  const actions = useMemo(() => generateActions(events), [events]);
+
+  // ── Priority counts for visual indicators ──
+  const priorityCounts = useMemo(() => countByPriority(actions), [actions]);
+
+  // ── PART 4: Cross-module employee correlations ──
+  const correlations = useMemo(() => correlateAllEmployees(rawData), [rawData]);
+
+  // ── PART 5: Department health analysis ──
+  const departments = useMemo(() => analyzeAllDepartments(rawData), [rawData]);
+
+  // ── PART 6: Smart recommendations ──
+  const recommendations = useMemo(
+    () => generateRecommendations(correlations, actions, rawData),
+    [correlations, actions, rawData]
+  );
+
+  // ── PART 7: Activity feed ──
+  const activityFeed = useMemo<ActivityFeedEntry[]>(
+    () => buildActivityFeed(notifications, activityLogs),
+    [notifications, activityLogs]
+  );
+
+  // ── PART 8: Executive intelligence ──
+  const executiveData = useMemo(
+    () => generateExecutiveIntelligence(actions, correlations, departments, rawData),
+    [actions, correlations, departments, rawData]
+  );
+
+  // ── Global Health KPIs (for operational overview) ──
   const globalHealthKPIs = useMemo(() => {
-    const todayQuality = (stats.qualitySummary?.totalCases || 0); // fallback — quality today not in home stats
     const criticalCAPA = capaItems.filter((c: any) => c.priority === 'critical').length;
     const criticalComplaints = complaintItems.filter((c: any) => c.severity === 'critical').length;
     const overdueFollowUps = followUpItems.filter((f: any) =>
@@ -171,259 +218,35 @@ export default function AoccLayout() {
       openFollowUpsCount: followUpItems.length,
       overdueFollowUpsCount: overdueFollowUps,
       pendingRequestsCount: stats.pendingRequests || 0,
-      riskCount: riskCenterQuery.data?.summary?.immediateActionCount || 0,
-      qualityViolationsToday: todayQuality,
+      riskCount: riskSummary?.immediateActionCount || 0,
+      qualityViolationsToday: stats.qualitySummary?.totalCases || 0,
       unreadNotifications: notifStats?.unread ?? unreadCount,
     };
-  }, [stats, capaItems, complaintItems, followUpItems, riskCenterQuery.data, notifStats, unreadCount]);
+  }, [stats, capaItems, complaintItems, followUpItems, riskSummary, notifStats, unreadCount]);
 
-  // ── Critical Action Queue (unified priority queue) ──
-  const actionQueueItems = useMemo<ActionQueueItem[]>(() => {
-    const items: ActionQueueItem[] = [];
-
-    // Overdue follow-ups
-    followUpItems.forEach((f: any) => {
-      const isOverdue = f.status === 'overdue' ||
-        (f.nextFollowUpDate && new Date(f.nextFollowUpDate) < new Date() && f.status !== 'resolved' && f.status !== 'closed');
-      if (isOverdue) {
-        items.push({
-          id: f.id,
-          title: f.subject || f.title || 'متابعة متأخرة',
-          type: 'follow-up',
-          priority: (f.priorityLevel === 'critical' || f.priorityLevel === 'high') ? f.priorityLevel : 'high',
-          dueDate: f.nextFollowUpDate || f.date,
-          employeeName: f.employeeName,
-          employeeId: f.employeeId,
-          status: f.status,
-          sourcePage: 'followUps',
-        });
+  // ── Quick Actions with urgent badges ──
+  const quickActions = useMemo(() => {
+    const actionCounts: Record<string, number> = {};
+    actions.forEach((a) => {
+      if (a.priority === 'critical' || a.priority === 'high') {
+        actionCounts[a.sourceModule] = (actionCounts[a.sourceModule] || 0) + 1;
       }
     });
-
-    // Critical/high CAPA
-    capaItems.forEach((c: any) => {
-      if (c.priority === 'critical' || c.priority === 'high') {
-        items.push({
-          id: c.id,
-          title: c.title || 'قضية كابا',
-          type: 'capa',
-          priority: c.priority,
-          dueDate: c.correctiveDueDate || c.createdAt,
-          employeeName: c.employeeName,
-          employeeId: c.employeeId,
-          status: c.status,
-          sourcePage: 'capa',
-        });
-      }
-    });
-
-    // Critical complaints
-    complaintItems.forEach((c: any) => {
-      if (c.severity === 'critical') {
-        items.push({
-          id: c.id,
-          title: c.customerName ? `شكوى: ${c.customerName}` : 'شكوى حرجة',
-          type: 'complaint',
-          priority: 'critical',
-          dueDate: c.createdAt,
-          employeeName: c.employeeName,
-          employeeId: c.employeeId,
-          status: c.status,
-          sourcePage: 'complaints',
-        });
-      }
-    });
-
-    // Urgent travel (≤2 days)
-    const upcomingTrips = stats.upcomingTravel || [];
-    upcomingTrips.forEach((t: any) => {
-      const days = daysUntil(t.departureDate);
-      if (days !== null && days >= 0 && days <= 2) {
-        items.push({
-          id: t.id,
-          title: `سفر: ${t.destination || 'وجهة غير محددة'}`,
-          type: 'travel',
-          priority: days <= 1 ? 'critical' : 'high',
-          dueDate: t.departureDate,
-          employeeName: t.employeeName,
-          status: t.status,
-          sourcePage: 'travel',
-        });
-      }
-    });
-
-    // Priority sort: critical → high → medium → low
-    const priorityOrder: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3 };
-    items.sort((a, b) => (priorityOrder[a.priority] ?? 4) - (priorityOrder[b.priority] ?? 4));
-
-    return items;
-  }, [followUpItems, capaItems, complaintItems, stats.upcomingTravel]);
-
-  // ── Department Status ──
-  const departmentStats = useMemo<DepartmentStatItem[]>(() => {
-    const deptToday = stats.deptTodayStats || [];
-    return deptToday.map((d: any) => ({
-      name: d.name || d.department || 'غير محدد',
-      present: d.present || 0,
-      late: d.late || 0,
-      absent: d.absent || 0,
-      total: d.total || (d.present || 0) + (d.late || 0) + (d.absent || 0),
-      healthScore: calcHealthScore(d.present || 0, d.late || 0, d.absent || 0, d.total || 1),
-    }));
-  }, [stats.deptTodayStats]);
-
-  // ── Watchlist employees (high/critical risk) ──
-  const watchlistEmployees = useMemo(() => {
-    return riskEmployees
-      .filter((e) => e.riskLevel === 'high' || e.riskLevel === 'critical')
-      .slice(0, 8)
-      .map((e) => ({
-        employeeId: e.employeeId,
-        employeeName: e.employeeName,
-        department: e.department,
-        position: e.position,
-        riskScore: e.riskScore,
-        riskLevel: e.riskLevel,
-        trend: e.trend,
-        openCases: e.openCases,
-        recommendations: e.recommendations || [],
-      }));
-  }, [riskEmployees]);
-
-  // ── Timeline events (today) ──
-  const timelineEvents = useMemo<TimelineEvent[]>(() => {
-    const events: TimelineEvent[] = [];
-
-    // Follow-ups due today
-    (stats.todaysFollowUps || []).forEach((f: any) => {
-      events.push({
-        id: `fu-${f.id}`,
-        title: f.subject || 'متابعة',
-        time: f.nextFollowUpDate ? new Date(f.nextFollowUpDate).toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' }) : '--:--',
-        type: 'follow-up',
-        status: f.status || 'مجدول',
-        icon: <Clock className="w-3.5 h-3.5" />,
-        colorClass: 'text-rose-400',
-        sourcePage: 'followUps',
-        sourceId: f.id,
-      });
-    });
-
-    // Travel departing today
-    (stats.upcomingTravel || []).forEach((t: any) => {
-      if (isToday(t.departureDate)) {
-        events.push({
-          id: `tr-${t.id}`,
-          title: `سفر: ${t.destination || ''}`,
-          time: new Date(t.departureDate).toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' }),
-          type: 'travel',
-          status: t.status || 'قادم',
-          icon: <Plane className="w-3.5 h-3.5" />,
-          colorClass: 'text-sky-400',
-          sourcePage: 'travel',
-          sourceId: t.id,
-        });
-      }
-    });
-
-    // CAPA due today
-    capaItems.forEach((c: any) => {
-      if (isToday(c.correctiveDueDate) || isToday(c.preventiveDueDate)) {
-        events.push({
-          id: `ca-${c.id}`,
-          title: c.title || 'كابا',
-          time: new Date(c.correctiveDueDate || c.preventiveDueDate).toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' }),
-          type: 'capa',
-          status: c.status || 'مفتوح',
-          icon: <ClipboardCheck className="w-3.5 h-3.5" />,
-          colorClass: 'text-purple-400',
-          sourcePage: 'capa',
-          sourceId: c.id,
-        });
-      }
-    });
-
-    // Sort by time
-    events.sort((a, b) => a.time.localeCompare(b.time));
-    return events;
-  }, [stats.todaysFollowUps, stats.upcomingTravel, capaItems]);
-
-  // ── Smart Recommendations ──
-  const recommendations = useMemo<Recommendation[]>(() => {
-    const recs: Recommendation[] = [];
-
-    // From risk center
-    riskEmployees.forEach((emp) => {
-      (emp.recommendations || []).slice(0, 2).forEach((rec, i) => {
-        recs.push({
-          id: `risk-${emp.employeeId}-${i}`,
-          title: `${emp.employeeName}: توصية مخاطر`,
-          description: rec,
-          category: 'risk',
-          severity: emp.riskLevel === 'critical' ? 'critical' : emp.riskLevel === 'high' ? 'high' : 'medium',
-          employeeId: emp.employeeId,
-          employeeName: emp.employeeName,
-          relatedPage: 'riskCenter',
-          relatedId: emp.employeeId,
-        });
-      });
-    });
-
-    // Overdue CAPA pattern
-    const overdueCAPA = capaItems.filter((c: any) => c.overdueDays > 0);
-    if (overdueCAPA.length > 0) {
-      recs.push({
-        id: 'capa-overdue-pattern',
-        title: `${overdueCAPA.length} قضايا كابا متأخرة`,
-        description: `يوجد ${overdueCAPA.length} قضايا كابا متجاوزة موعد الاستحقاق. يُنصح بمراجعتها وتسريع الإجراءات التصحيحية.`,
-        category: 'capa',
-        severity: overdueCAPA.length > 5 ? 'critical' : 'high',
-        relatedPage: 'capa',
-      });
-    }
-
-    // Complaint pattern (multiple complaints from same area)
-    if (complaintItems.length > 5) {
-      recs.push({
-        id: 'complaint-pattern',
-        title: 'نمط شكاوى متكرر',
-        description: `يوجد ${complaintItems.length} شكوى مفتوحة. قد يشير ذلك إلى مشكلة منهجية تتطلب مراجعة العمليات.`,
-        category: 'pattern',
-        severity: 'high',
-        relatedPage: 'complaints',
-      });
-    }
-
-    return recs.sort((a, b) => {
-      const order: Record<string, number> = { critical: 0, high: 1, medium: 2 };
-      return (order[a.severity] ?? 3) - (order[b.severity] ?? 3);
-    }).slice(0, 12);
-  }, [riskEmployees, capaItems, complaintItems]);
-
-  // ── Quick Actions ──
-  const quickActions = useMemo<QuickAction[]>(() => {
     return [
-      { id: 'approve-requests', label: 'اعتماد الطلبات', icon: <CheckCircle2 className="w-5 h-5" />, targetPage: 'requests', colorClass: 'text-sky-400' },
-      { id: 'review-capa', label: 'مراجعة كابا', icon: <ClipboardCheck className="w-5 h-5" />, targetPage: 'capa', colorClass: 'text-purple-400' },
+      { id: 'approve-requests', label: 'اعتماد الطلبات', icon: <CheckCircle2 className="w-5 h-5" />, targetPage: 'requests', colorClass: 'text-sky-400', urgentCount: actionCounts['requests'] },
+      { id: 'review-capa', label: 'مراجعة كابا', icon: <ClipboardCheck className="w-5 h-5" />, targetPage: 'capa', colorClass: 'text-purple-400', urgentCount: actionCounts['capa'] },
       { id: 'sync-biometric', label: 'مزامنة البصمة', icon: <Fingerprint className="w-5 h-5" />, targetPage: 'biometric', colorClass: 'text-violet-400' },
-      { id: 'create-followup', label: 'متابعة جديدة', icon: <Plus className="w-5 h-5" />, targetPage: 'followUps', colorClass: 'text-rose-400' },
-      { id: 'review-complaints', label: 'مراجعة الشكاوى', icon: <AlertCircle className="w-5 h-5" />, targetPage: 'complaints', colorClass: 'text-orange-400' },
+      { id: 'create-followup', label: 'متابعة جديدة', icon: <Plus className="w-5 h-5" />, targetPage: 'followUps', colorClass: 'text-rose-400', urgentCount: actionCounts['followUps'] },
+      { id: 'review-complaints', label: 'مراجعة الشكاوى', icon: <AlertCircle className="w-5 h-5" />, targetPage: 'complaints', colorClass: 'text-orange-400', urgentCount: actionCounts['complaints'] },
       { id: 'view-reports', label: 'التقارير', icon: <FileText className="w-5 h-5" />, targetPage: 'reports', colorClass: 'text-emerald-400' },
-      { id: 'notifications', label: 'الإشعارات', icon: <Bell className="w-5 h-5" />, targetPage: 'notifications', colorClass: 'text-amber-400' },
+      { id: 'notifications', label: 'الإشعارات', icon: <Bell className="w-5 h-5" />, targetPage: 'notifications', colorClass: 'text-amber-400', urgentCount: actionCounts['notifications'] },
       { id: 'rules-engine', label: 'الأتمتة', icon: <Zap className="w-5 h-5" />, targetPage: 'rulesEngine', colorClass: 'text-yellow-400' },
     ];
-  }, []);
+  }, [actions]);
 
   // ── System Status data ──
   const systemStatusData = useMemo(() => {
-    // Calculate notification breakdown from context notifications
     const unread = notifications.filter((n) => n.status === 'unread');
-    const breakdown = {
-      critical: unread.filter((n) => n.priority === 'critical').length,
-      high: unread.filter((n) => n.priority === 'high').length,
-      medium: unread.filter((n) => n.priority === 'medium').length,
-      low: unread.filter((n) => n.priority === 'low').length,
-    };
     return {
       biometricLastSync: stats.biometricLastSync,
       biometricRecordCount: stats.biometricRecordCount || 0,
@@ -435,34 +258,15 @@ export default function AoccLayout() {
         status: u.status,
         durationLabel: u.durationLabel,
       })) : null,
-      unreadBreakdown: breakdown,
+      unreadBreakdown: {
+        critical: unread.filter((n) => n.priority === 'critical').length,
+        high: unread.filter((n) => n.priority === 'high').length,
+        medium: unread.filter((n) => n.priority === 'medium').length,
+        low: unread.filter((n) => n.priority === 'low').length,
+      },
+      lastDataUpdate: homeStats.dataUpdatedAt ? new Date(homeStats.dataUpdatedAt).toISOString() : null,
     };
-  }, [stats, onlineUsers, notifications]);
-
-  // ── Executive Summary data ──
-  const executiveData = useMemo(() => {
-    const curr = stats.currentMonthPerformance || {};
-    const last = stats.lastMonthPerformance || {};
-
-    const calcChange = (current: number, previous: number): number => {
-      if (previous === 0) return current > 0 ? 100 : 0;
-      return Math.round(((current - previous) / previous) * 100);
-    };
-
-    return {
-      currentMonth: curr.monthLabel || 'هذا الشهر',
-      lastMonth: last.monthLabel || 'الشهر السابق',
-      delaysChange: calcChange(curr.totalDelays || 0, last.totalDelays || 0),
-      deductionsChange: calcChange(curr.totalDeductionAmount || 0, last.totalDeductionAmount || 0),
-      attendanceRateChange: calcChange(curr.totalPresent || 0, last.totalPresent || 0),
-      totalPresent: curr.totalPresent || stats.presentCount || 0,
-      totalAbsent: curr.totalAbsent || stats.absentCount || 0,
-      totalDeductions: curr.totalDeductionAmount || 0,
-      openCAPACount: capaItems.length,
-      openComplaintsCount: complaintItems.length,
-      pendingRequestsCount: stats.pendingRequests || 0,
-    };
-  }, [stats, capaItems, complaintItems]);
+  }, [stats, onlineUsers, notifications, homeStats.dataUpdatedAt]);
 
   /* ═══════════════════════════════════════════════════════════════
      EARLY RETURNS — only after all hooks have run
@@ -486,49 +290,51 @@ export default function AoccLayout() {
   }
 
   /* ═══════════════════════════════════════════════════════════════
-     RENDER — compose all 10 widgets
+     RENDER — compose all 10 intelligence widgets
      ═══════════════════════════════════════════════════════════════ */
 
   return (
     <div className="space-y-6 p-4 md:p-6" dir="rtl">
-      {/* ── Section 1: Mission Header ── */}
+      {/* ── Section 1: Mission Header (with operational pulse) ── */}
       <AoccMissionHeader
         unreadCount={unreadCount}
         lastSync={stats.biometricLastSync || new Date().toISOString()}
         onRefresh={handleRefresh}
+        criticalCount={priorityCounts.critical}
+        highCount={priorityCounts.high}
       />
 
-      {/* ── Section 2: Global Health (full width) ── */}
-      <AoccGlobalHealth kpis={globalHealthKPIs} />
+      {/* ── Section 2: Operational Overview (KPI tiles with priority visuals) ── */}
+      <AoccOperationalOverview kpis={globalHealthKPIs} priorityCounts={priorityCounts} />
 
-      {/* ── Section 3 + 4: Critical Queue + Department Status ── */}
+      {/* ── Section 3 + 4: Action Queue + Department Health ── */}
       <DashboardGrid columns={2} gap="gap-6">
-        <AoccCriticalActionQueue
-          items={actionQueueItems}
+        <AoccActionQueue
+          items={actions}
           loading={followUpsQuery.isLoading || capaQuery.isLoading || complaintsQuery.isLoading}
           error={followUpsQuery.isError || capaQuery.isError || complaintsQuery.isError}
           onRetry={handleRefresh}
         />
-        <AoccDepartmentStatus
-          departments={departmentStats}
-          loading={homeStats.isLoading}
+        <AoccDepartmentHealth
+          departments={departments}
+          loading={homeStats.isLoading || riskCenterQuery.isLoading}
           error={homeStats.isError}
         />
       </DashboardGrid>
 
-      {/* ── Section 5 + 6: Watchlist + Timeline ── */}
+      {/* ── Section 5 + 6: Smart Watchlist + Activity Feed ── */}
       <DashboardGrid columns={2} gap="gap-6">
         <AoccEmployeeWatchlist
-          employees={watchlistEmployees}
+          employees={correlations}
           loading={riskCenterQuery.isLoading}
           error={riskCenterQuery.isError}
         />
-        <AoccTimeline events={timelineEvents} loading={homeStats.isLoading} />
+        <AoccActivityFeed entries={activityFeed} loading={false} />
       </DashboardGrid>
 
-      {/* ── Section 7 + 8: Recommendations + Quick Actions ── */}
+      {/* ── Section 7 + 8: Intelligence Center + Quick Actions ── */}
       <DashboardGrid columns={2} gap="gap-6">
-        <AoccSmartRecommendations
+        <AoccIntelligenceCenter
           recommendations={recommendations}
           loading={riskCenterQuery.isLoading || capaQuery.isLoading}
         />
