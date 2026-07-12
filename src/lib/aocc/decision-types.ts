@@ -139,7 +139,7 @@ export interface NextBestAction {
   /** Target page for `navigate` actions. */
   targetPage?: string;
   /** Record id to highlight after navigation. */
-  targetRecordId?: string;
+  targetRecordId?: string | null;
   /** Whether the user needs elevated permission to run this action. */
   requiresPermission?: SourceModule;
   /** Icon key resolved by the shared icon map. */
