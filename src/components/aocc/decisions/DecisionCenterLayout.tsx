@@ -207,17 +207,15 @@ export const DecisionCenterLayout = memo(function DecisionCenterLayout({
       {/* ═══════════════════════════════════════════════════════════
           Section 2: Decision Inbox (full width — primary surface)
           ═══════════════════════════════════════════════════════════ */}
-      <div className="rounded-xl border border-slate-700/50 bg-slate-800/30 overflow-hidden">
-        <div className="h-[600px]">
-          <DecisionInbox
-            decisions={decisions}
-            loading={loading}
-            error={error}
-            onRetry={onRetry}
-            onNavigate={handleNavigate}
-            onAction={handleAction}
-          />
-        </div>
+      <div className="rounded-xl border border-slate-700/50 bg-slate-800/30 overflow-hidden h-[600px]">
+        <DecisionInbox
+          decisions={decisions}
+          loading={loading}
+          error={error}
+          onRetry={onRetry}
+          onNavigate={handleNavigate}
+          onAction={handleAction}
+        />
       </div>
 
       {/* ═══════════════════════════════════════════════════════════

@@ -294,38 +294,24 @@ export function Header({ title, onMenuToggle, onToggleSidebarCollapse, sidebarCo
   //  RENDER
   // ══════════════════════════════════════════════════════════════
   return (
-    <motion.header
-      className="glass-header sticky top-0 z-30 flex flex-col"
-      initial={{ opacity: 0, y: -20 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.3, ease: 'easeOut' }}
-    >
+    <header className="glass-header sticky top-0 z-30 flex flex-col">
       {/* Gradient line under header */}
       <div className="header-gradient-line" />
 
       <div className="flex items-center justify-between h-16 px-4 md:px-6">
         {/* ── Left: menu toggle + title ── */}
         <div className="flex items-center gap-3">
-          {isMobile ? (
-            <motion.button
-              onClick={onMenuToggle}
-              className="p-2 rounded-lg text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-              whileTap={{ scale: 0.9 }}
-              aria-label="Toggle menu"
-            >
-              <Menu className="h-5 w-5" />
-            </motion.button>
-          ) : (
-            <motion.button
-              onClick={onToggleSidebarCollapse}
-              className="p-2 rounded-lg text-slate-400 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-              whileTap={{ scale: 0.9 }}
-              whileHover={{ scale: 1.05 }}
-              aria-label="Toggle sidebar"
-            >
-              {sidebarCollapsed ? <PanelRightOpen className="h-5 w-5" /> : <PanelRightClose className="h-5 w-5" />}
-            </motion.button>
-          )}
+          {/* Mobile menu button — hidden on desktop via CSS (isMobile is SSR-safe false initially) */}
+          <motion.button
+            onClick={isMobile ? onMenuToggle : onToggleSidebarCollapse}
+            className="p-2 rounded-lg text-slate-400 hover:bg-slate-800 transition-colors"
+            whileTap={{ scale: 0.9 }}
+            whileHover={{ scale: 1.05 }}
+            aria-label="Toggle menu"
+          >
+            {!isMobile && (sidebarCollapsed ? <PanelRightOpen className="h-5 w-5" /> : <PanelRightClose className="h-5 w-5" />)}
+            {isMobile && <Menu className="h-5 w-5" />}
+          </motion.button>
           <h1 className="text-lg font-bold text-slate-800 dark:text-white truncate max-w-xs sm:max-w-md">
             {title}
           </h1>
@@ -641,6 +627,6 @@ export function Header({ title, onMenuToggle, onToggleSidebarCollapse, sidebarCo
           </div>
         </div>
       </div>
-    </motion.header>
+    </header>
   );
 }

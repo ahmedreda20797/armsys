@@ -2,6 +2,7 @@
 
 import React from 'react';
 import dynamic from 'next/dynamic';
+import { motion, AnimatePresence } from 'framer-motion';
 import { Skeleton } from '@/components/ui/skeleton';
 import { AuthProvider } from '@/contexts/AuthContext';
 import { useAuth } from '@/contexts/AuthContext';
@@ -59,12 +60,20 @@ const NotificationCenterPage = dynamic(() => import('@/components/pages/Notifica
 const RulesEnginePage = dynamic(() => import('@/components/pages/RulesEnginePage'), { loading: () => <PageSkeleton />, ssr: false });
 
 // Preload the most-visited pages in background after mount
-if (typeof window !== 'undefined') {
-  // Preload common pages after idle
-  requestIdleCallback?.(() => {
-    import('@/components/pages/EmployeesPage');
-    import('@/components/pages/AttendancePage');
-  });
+// Wrapped in useEffect inside a component — never runs on server
+function PreloadPages() {
+  React.useEffect(() => {
+    const id = (window.requestIdleCallback ?? window.setTimeout)(() => {
+      import('@/components/pages/EmployeesPage');
+      import('@/components/pages/AttendancePage');
+    });
+    return () => {
+      if (window.requestIdleCallback) {
+        window.cancelIdleCallback(id as number);
+      }
+    };
+  }, []);
+  return null;
 }
 
 // ═══════════════════════════════════════════════════
@@ -153,20 +162,29 @@ function PageRouter() {
 function AppContent() {
   const { user, loading } = useAuth();
 
-  if (loading) {
-    return <CosmicLoadingScreen />;
-  }
-
-  if (!user) {
-    return <LoginPage />;
-  }
-
   return (
-    <NotificationProvider>
-      <AppLayout>
-        <PageRouter />
-      </AppLayout>
-    </NotificationProvider>
+    <>
+      <PreloadPages />
+      <AnimatePresence mode="wait">
+        {loading ? (
+          <motion.div key="loading" initial={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.3 }}>
+            <CosmicLoadingScreen />
+          </motion.div>
+        ) : !user ? (
+          <motion.div key="login" initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.3 }}>
+            <LoginPage />
+          </motion.div>
+        ) : (
+          <motion.div key="app" initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.2 }}>
+            <NotificationProvider>
+              <AppLayout>
+                <PageRouter />
+              </AppLayout>
+            </NotificationProvider>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </>
   );
 }
 

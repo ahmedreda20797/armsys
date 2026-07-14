@@ -1,29 +1,26 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect } from 'react';
 
 const MOBILE_BREAKPOINT = 768;
 
-function getIsMobile(): boolean {
-  if (typeof window === 'undefined') return false;
-  return window.innerWidth < MOBILE_BREAKPOINT;
-}
-
-export function useIsMobile() {
-  const [isMobile, setIsMobile] = useState<boolean>(getIsMobile);
+export function useIsMobile(): boolean {
+  // Always start with false (SSR-safe) — client updates after hydration
+  const [isMobile, setIsMobile] = useState(false);
 
   useEffect(() => {
     const mql = window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT - 1}px)`);
-    const onChange = () => {
-      setIsMobile(window.innerWidth < MOBILE_BREAKPOINT);
-    };
+    // Set correct value after hydration
+    setIsMobile(mql.matches);
+    const onChange = (e: MediaQueryListEvent) => setIsMobile(e.matches);
     mql.addEventListener('change', onChange);
     return () => mql.removeEventListener('change', onChange);
   }, []);
 
-  return !!isMobile;
+  return isMobile;
 }
 
+// Kept for backward compat — same SSR-safe behaviour
 export function useIsMobileSync(): boolean {
-  return useMemo(getIsMobile, []);
+  return useIsMobile();
 }

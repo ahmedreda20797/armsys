@@ -357,130 +357,120 @@
 }
 
 /* ═══════════════════════════════════════════════════════════
-   SMOOTH SCROLL
+   LAYOUT STABILITY — Prevent CLS from scrollbar appearance
    ═══════════════════════════════════════════════════════════ */
 
 html {
+  /* Reserve scrollbar space to prevent layout shift when content overflows */
+  scrollbar-gutter: stable;
   scroll-behavior: smooth;
 }
 
 /* ═══════════════════════════════════════════════════════════
-   CUSTOM SCROLLBAR — Polished & Refined
+   ARM ERP DESIGN SYSTEM — Scroll CSS Variables
+   ═══════════════════════════════════════════════════════════ */
+
+:root {
+  --scroll-thumb: oklch(0.38 0.06 270 / 0.35);
+  --scroll-thumb-hover: oklch(0.48 0.08 270 / 0.55);
+  --scroll-thumb-active: oklch(0.55 0.10 270 / 0.70);
+  --scroll-track: transparent;
+  --scroll-width: 5px;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   GLOBAL SCROLLBAR — ARM ERP Design System
+   Thin, rounded, slate/indigo theme. Never green.
    ═══════════════════════════════════════════════════════════ */
 
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: var(--scroll-width);
+  height: var(--scroll-width);
 }
 
 ::-webkit-scrollbar-track {
-  background: transparent;
+  background: var(--scroll-track);
 }
 
 ::-webkit-scrollbar-thumb {
-  background: oklch(0.5 0.04 160 / 0.35);
+  background: var(--scroll-thumb);
   border-radius: 100px;
-  border: 2px solid transparent;
-  background-clip: content-box;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: background 0.2s ease;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: oklch(0.5 0.06 160 / 0.55);
-  background-clip: content-box;
-  border: 1.5px solid transparent;
-  border-radius: 100px;
+  background: var(--scroll-thumb-hover);
 }
 
 ::-webkit-scrollbar-thumb:active {
-  background: oklch(0.55 0.08 160 / 0.7);
-  background-clip: content-box;
-  border: 1px solid transparent;
-  border-radius: 100px;
+  background: var(--scroll-thumb-active);
 }
 
-/* Scrollbar corner */
 ::-webkit-scrollbar-corner {
   background: transparent;
 }
 
-/* Scrollbar in cards — more visible on hover */
-.ScrollArea, [data-radix-scroll-area-viewport] {
+/* Firefox */
+* {
   scrollbar-width: thin;
-  scrollbar-color: oklch(0.5 0.04 160 / 0.35) transparent;
+  scrollbar-color: var(--scroll-thumb) var(--scroll-track);
 }
 
-.ScrollArea:hover, [data-radix-scroll-area-viewport]:hover {
-  scrollbar-color: oklch(0.5 0.06 160 / 0.55) transparent;
-}
-
-/* Always show scrollbar hint inside cards */
+/* Radix scroll area */
 [data-radix-scroll-area-viewport] {
   overflow-y: auto !important;
   scrollbar-gutter: stable;
 }
 
 /* ═══════════════════════════════════════════════════════════
-   DASHBOARD SCROLL — Enterprise widget scrollbar
-   Thin, rounded, theme-matched. Hidden until needed.
-   Smooth hover transition. Momentum scrolling support.
+   SCROLL CONTAINER — Unified enterprise scroll system
    ═══════════════════════════════════════════════════════════ */
 
-.dashboard-scroll {
-  scrollbar-width: thin;
-  scrollbar-color: oklch(27.741% 0.14143 304.658 / 0.158) transparent;
+.arm-scroll {
+  overflow-y: auto;
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
   scroll-behavior: smooth;
-  /* Hide scrollbar until hover */
   scrollbar-gutter: stable;
+  /* Scroll shadows via mask */
+  --shadow-size: 20px;
 }
 
-.dashboard-scroll::-webkit-scrollbar {
-  width: 5px;
+/* Scroll shadow indicators — top & bottom */
+.arm-scroll-shadow {
+  position: relative;
 }
 
-.dashboard-scroll::-webkit-scrollbar-track {
-  background: transparent;
+.arm-scroll-shadow::before,
+.arm-scroll-shadow::after {
+  content: '';
+  position: sticky;
+  display: block;
+  height: var(--shadow-size, 20px);
+  pointer-events: none;
+  z-index: 2;
+  flex-shrink: 0;
 }
 
-.dashboard-scroll::-webkit-scrollbar-thumb {
-  background: oklch(40.882% 0.0696 286.152 / 0.0);
-  border-radius: 100px;
-  border: 2px solid transparent;
-  background-clip: content-box;
-  transition: background 0.3s cubic-bezier(0.4, 0, 0.2, 1), width 0.3s ease;
+.arm-scroll-shadow::before {
+  top: 0;
+  background: linear-gradient(to bottom, oklch(0.13 0.01 260 / 0.9), transparent);
+  margin-bottom: calc(-1 * var(--shadow-size, 20px));
 }
 
-/* Show scrollbar on hover (parent card or scroll area) */
-.dashboard-scroll:hover::-webkit-scrollbar-thumb,
-.dashboard-scroll:focus::-webkit-scrollbar-thumb {
-  background: oklch(40.882% 0.0696 286.152 / 0.4);
-  background-clip: content-box;
-  border-color: transparent;
+.arm-scroll-shadow::after {
+  bottom: 0;
+  background: linear-gradient(to top, oklch(0.13 0.01 260 / 0.9), transparent);
+  margin-top: calc(-1 * var(--shadow-size, 20px));
 }
 
-/* Active scrollbar (while scrolling) */
-.dashboard-scroll:active::-webkit-scrollbar-thumb {
-  background: oklch(40.882% 0.0696 286.152 / 0.55);
-  background-clip: content-box;
-  border-color: transparent;
-}
-
-.dashboard-scroll::-webkit-scrollbar-corner {
-  background: transparent;
-}
-
-/* Firefox: thin scrollbar with smooth hover transition */
-@supports (scrollbar-color: auto) {
-  .dashboard-scroll:hover,
-  .dashboard-scroll:focus {
-    scrollbar-color: oklch(40.882% 0.0696 286.152 / 0.4) transparent;
-  }
-
-  .dashboard-scroll:active {
-    scrollbar-color: oklch(40.882% 0.0696 286.152 / 0.55) transparent;
-  }
+/* dashboard-scroll alias kept for backward compat */
+.dashboard-scroll {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  scroll-behavior: smooth;
+  scrollbar-gutter: stable;
 }
 
 /* ═══════════════════════════════════════════════════════════

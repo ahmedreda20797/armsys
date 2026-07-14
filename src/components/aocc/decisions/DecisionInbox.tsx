@@ -24,7 +24,6 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import { useDecisionStore } from '@/lib/aocc/decision-store';
 import { getPriorityVisual } from '@/lib/aocc/priority-engine';
 import type { Decision, DecisionGroup, DecisionGroupKey, DecisionSortKey } from '@/lib/aocc/decision-types';
@@ -388,7 +387,7 @@ export const DecisionInbox = memo(function DecisionInbox({
       )}
 
       {/* ── Decision List ── */}
-      <ScrollArea className="flex-1">
+      <div className="flex-1 min-h-0 overflow-y-auto arm-scroll">
         <div className="p-3 space-y-4">
           {grouped.length === 0 ? (
             <EmptyDecisionsState />
@@ -426,7 +425,7 @@ export const DecisionInbox = memo(function DecisionInbox({
             ))
           )}
         </div>
-      </ScrollArea>
+      </div>
 
       {/* ── Detail dialog ── */}
       <DecisionDetailDialog

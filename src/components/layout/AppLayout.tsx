@@ -129,8 +129,10 @@ export function AppLayout({ children }: AppLayoutProps) {
     [currentPage]
   );
 
-  // Desktop margin adjusts based on collapsed state
-  const sidebarMargin = isMobile ? 0 : sidebarCollapsed ? 72 : 288;
+  // Sidebar margin: driven by CSS data attributes so the value is
+  // consistent between SSR (isMobile=false) and first client paint.
+  // On screens < lg the sidebar is an overlay — CSS sets margin to 0.
+  const sidebarMargin = sidebarCollapsed ? 72 : 288;
 
   return (
     <div className="min-h-screen bg-slate-950" dir="rtl">
@@ -144,40 +146,43 @@ export function AppLayout({ children }: AppLayoutProps) {
         onToggleCollapse={toggleSidebarCollapse}
       />
 
-      {/* Main content area - animated margin */}
-      <motion.div
-        className="transition-none"
-        animate={{ marginRight: sidebarMargin }}
-        transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] as const }}
+      {/* Main content area — CSS transition on margin, no motion (prevents CLS).
+          On mobile (<lg) the sidebar is an overlay so margin is 0 via CSS. */}
+      <div
+        className="lg:block"
+        style={{
+          marginRight: isMobile ? 0 : sidebarMargin,
+          transition: 'margin-right 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+        }}
       >
         <div className="main-content-bg min-h-screen">
-        <Header
-          title={currentPageConfig.title}
-          onMenuToggle={toggleSidebar}
-          onToggleSidebarCollapse={toggleSidebarCollapse}
-          sidebarCollapsed={sidebarCollapsed}
-        />
+          <Header
+            title={currentPageConfig.title}
+            onMenuToggle={toggleSidebar}
+            onToggleSidebarCollapse={toggleSidebarCollapse}
+            sidebarCollapsed={sidebarCollapsed}
+          />
 
-        <main className="p-4 md:p-6 min-h-[calc(100vh-4rem)]">
-          <AnimatePresence mode="wait">
-            <motion.div
-              key={currentPage}
-              variants={pageVariants}
-              initial="initial"
-              animate="animate"
-              exit="exit"
-              transition={{
-                duration: 0.3,
-                ease: [0.4, 0, 0.2, 1] as const,
-                filter: { duration: 0.25 },
-              }}
-            >
-              {children}
-            </motion.div>
-          </AnimatePresence>
-        </main>
+          <main className="p-4 md:p-6 min-h-[calc(100vh-4rem)]">
+            <AnimatePresence mode="wait">
+              <motion.div
+                key={currentPage}
+                variants={pageVariants}
+                initial="initial"
+                animate="animate"
+                exit="exit"
+                transition={{
+                  duration: 0.3,
+                  ease: [0.4, 0, 0.2, 1] as const,
+                  filter: { duration: 0.25 },
+                }}
+              >
+                {children}
+              </motion.div>
+            </AnimatePresence>
+          </main>
         </div>
-      </motion.div>
+      </div>
 
       {/* ══════════════════════════════════════════════════════════
           Employee 360 Overlay — Cinematic slide-in with 3D perspective
