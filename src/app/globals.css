@@ -436,32 +436,62 @@ html {
   --shadow-size: 20px;
 }
 
-/* Scroll shadow indicators — top & bottom */
+/* ── Scroll shadow indicators ──────────────────────────────────────────────
+   Shadows are driven by data attributes set by useScrollShadows().
+   They are NEVER visible unless the hook explicitly enables them.
+   This eliminates the always-on shadow bug.
+   ─────────────────────────────────────────────────────────────────────── */
+
 .arm-scroll-shadow {
   position: relative;
 }
 
-.arm-scroll-shadow::before,
+/* Top shadow — only when data-shadow-top="true" */
+.arm-scroll-shadow::before {
+  content: '';
+  position: sticky;
+  display: block;
+  top: 0;
+  height: 10px;
+  margin-bottom: -10px;
+  pointer-events: none;
+  z-index: 2;
+  flex-shrink: 0;
+  background: linear-gradient(
+    to bottom,
+    oklch(0.14 0.02 265 / 0.75),
+    transparent
+  );
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+/* Bottom shadow — only when data-shadow-bottom="true" */
 .arm-scroll-shadow::after {
   content: '';
   position: sticky;
   display: block;
-  height: var(--shadow-size, 20px);
+  bottom: 0;
+  height: 10px;
+  margin-top: -10px;
   pointer-events: none;
   z-index: 2;
   flex-shrink: 0;
+  background: linear-gradient(
+    to top,
+    oklch(0.14 0.02 265 / 0.75),
+    transparent
+  );
+  opacity: 0;
+  transition: opacity 0.2s ease;
 }
 
-.arm-scroll-shadow::before {
-  top: 0;
-  background: linear-gradient(to bottom, oklch(0.13 0.01 260 / 0.9), transparent);
-  margin-bottom: calc(-1 * var(--shadow-size, 20px));
+.arm-scroll-shadow[data-shadow-top="true"]::before {
+  opacity: 1;
 }
 
-.arm-scroll-shadow::after {
-  bottom: 0;
-  background: linear-gradient(to top, oklch(0.13 0.01 260 / 0.9), transparent);
-  margin-top: calc(-1 * var(--shadow-size, 20px));
+.arm-scroll-shadow[data-shadow-bottom="true"]::after {
+  opacity: 1;
 }
 
 /* dashboard-scroll alias kept for backward compat */

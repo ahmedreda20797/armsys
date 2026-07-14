@@ -2,23 +2,19 @@
 
 import React from 'react';
 import dynamic from 'next/dynamic';
-import { motion, AnimatePresence } from 'framer-motion';
+import { AnimatePresence } from 'framer-motion';
 import { Skeleton } from '@/components/ui/skeleton';
-import { AuthProvider } from '@/contexts/AuthContext';
-import { useAuth } from '@/contexts/AuthContext';
+import { AuthProvider, useAuth } from '@/contexts/AuthContext';
 import { NotificationProvider } from '@/contexts/NotificationContext';
 import { useAppStore } from '@/lib/store';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { usePermissions } from '@/hooks/usePermissions';
 import { APP_PAGES } from '@/config/permissions';
-import LoginPage, { CosmicLoadingScreen } from '@/components/pages/LoginPage';
+import { AppShell } from '@/components/shell/AppShell';
+import LoginPage from '@/components/pages/LoginPage';
 import { ShieldX } from 'lucide-react';
 
-// ═══════════════════════════════════════════════════
-//  Lazy-loaded pages — code splitting for faster initial load
-//  Only the active page's JS is downloaded & executed
-// ═══════════════════════════════════════════════════
-
+// ─── Page skeleton ────────────────────────────────────────────────────────────
 function PageSkeleton() {
   return (
     <div className="space-y-6">
@@ -37,50 +33,52 @@ function PageSkeleton() {
   );
 }
 
-const HomePage = dynamic(() => import('@/components/pages/HomePage'), { loading: () => <PageSkeleton />, ssr: false });
-const EmployeesPage = dynamic(() => import('@/components/pages/EmployeesPage'), { loading: () => <PageSkeleton />, ssr: false });
-const BiometricPage = dynamic(() => import('@/components/pages/BiometricPage'), { loading: () => <PageSkeleton />, ssr: false });
-const AttendancePage = dynamic(() => import('@/components/pages/AttendancePage'), { loading: () => <PageSkeleton />, ssr: false });
-const RequestsPage = dynamic(() => import('@/components/pages/RequestsPage'), { loading: () => <PageSkeleton />, ssr: false });
-const RulesPage = dynamic(() => import('@/components/pages/RulesPage'), { loading: () => <PageSkeleton />, ssr: false });
-const QualityPage = dynamic(() => import('@/components/pages/QualityPage'), { loading: () => <PageSkeleton />, ssr: false });
-const HrDeductionsPage = dynamic(() => import('@/components/pages/HrDeductionsPage'), { loading: () => <PageSkeleton />, ssr: false });
-const TravelPage = dynamic(() => import('@/components/pages/TravelPage'), { loading: () => <PageSkeleton />, ssr: false });
-const ReportsPage = dynamic(() => import('@/components/pages/ReportsPage'), { loading: () => <PageSkeleton />, ssr: false });
-const ControlPanelPage = dynamic(() => import('@/components/pages/ControlPanelPage'), { loading: () => <PageSkeleton />, ssr: false });
+// ─── Lazy pages ───────────────────────────────────────────────────────────────
+const HomePage             = dynamic(() => import('@/components/pages/HomePage'),             { loading: () => <PageSkeleton />, ssr: false });
+const EmployeesPage        = dynamic(() => import('@/components/pages/EmployeesPage'),        { loading: () => <PageSkeleton />, ssr: false });
+const BiometricPage        = dynamic(() => import('@/components/pages/BiometricPage'),        { loading: () => <PageSkeleton />, ssr: false });
+const AttendancePage       = dynamic(() => import('@/components/pages/AttendancePage'),       { loading: () => <PageSkeleton />, ssr: false });
+const RequestsPage         = dynamic(() => import('@/components/pages/RequestsPage'),         { loading: () => <PageSkeleton />, ssr: false });
+const RulesPage            = dynamic(() => import('@/components/pages/RulesPage'),            { loading: () => <PageSkeleton />, ssr: false });
+const QualityPage          = dynamic(() => import('@/components/pages/QualityPage'),          { loading: () => <PageSkeleton />, ssr: false });
+const HrDeductionsPage     = dynamic(() => import('@/components/pages/HrDeductionsPage'),     { loading: () => <PageSkeleton />, ssr: false });
+const TravelPage           = dynamic(() => import('@/components/pages/TravelPage'),           { loading: () => <PageSkeleton />, ssr: false });
+const ReportsPage          = dynamic(() => import('@/components/pages/ReportsPage'),          { loading: () => <PageSkeleton />, ssr: false });
+const ControlPanelPage     = dynamic(() => import('@/components/pages/ControlPanelPage'),     { loading: () => <PageSkeleton />, ssr: false });
 const FirebaseSettingsPage = dynamic(() => import('@/components/pages/FirebaseSettingsPage'), { loading: () => <PageSkeleton />, ssr: false });
-const FollowUpsPage = dynamic(() => import('@/components/pages/FollowUpsPage'), { loading: () => <PageSkeleton />, ssr: false });
-const CAPAPage = dynamic(() => import('@/components/pages/CAPAPage'), { loading: () => <PageSkeleton />, ssr: false });
-const ComplaintsPage = dynamic(() => import('@/components/pages/ComplaintsPage'), { loading: () => <PageSkeleton />, ssr: false });
-const KnowledgeBasePage = dynamic(() => import('@/components/pages/KnowledgeBasePage'), { loading: () => <PageSkeleton />, ssr: false });
-const RiskCenterPage = dynamic(() => import('@/components/pages/RiskCenterPage'), { loading: () => <PageSkeleton />, ssr: false });
+const FollowUpsPage        = dynamic(() => import('@/components/pages/FollowUpsPage'),        { loading: () => <PageSkeleton />, ssr: false });
+const CAPAPage             = dynamic(() => import('@/components/pages/CAPAPage'),             { loading: () => <PageSkeleton />, ssr: false });
+const ComplaintsPage       = dynamic(() => import('@/components/pages/ComplaintsPage'),       { loading: () => <PageSkeleton />, ssr: false });
+const KnowledgeBasePage    = dynamic(() => import('@/components/pages/KnowledgeBasePage'),    { loading: () => <PageSkeleton />, ssr: false });
+const RiskCenterPage       = dynamic(() => import('@/components/pages/RiskCenterPage'),       { loading: () => <PageSkeleton />, ssr: false });
 const OperationsCenterPage = dynamic(() => import('@/components/pages/OperationsCenterPage'), { loading: () => <PageSkeleton />, ssr: false });
-// Employee360 loaded as overlay, not a routed page
 const NotificationCenterPage = dynamic(() => import('@/components/pages/NotificationCenterPage'), { loading: () => <PageSkeleton />, ssr: false });
-const RulesEnginePage = dynamic(() => import('@/components/pages/RulesEnginePage'), { loading: () => <PageSkeleton />, ssr: false });
+const RulesEnginePage      = dynamic(() => import('@/components/pages/RulesEnginePage'),      { loading: () => <PageSkeleton />, ssr: false });
 
-// Preload the most-visited pages in background after mount
-// Wrapped in useEffect inside a component — never runs on server
+// ─── Background preload ───────────────────────────────────────────────────────
 function PreloadPages() {
   React.useEffect(() => {
-    const id = (window.requestIdleCallback ?? window.setTimeout)(() => {
-      import('@/components/pages/EmployeesPage');
-      import('@/components/pages/AttendancePage');
-    });
+    const hasIdle = 'requestIdleCallback' in window;
+    const id = hasIdle
+      ? window.requestIdleCallback(() => {
+          import('@/components/pages/EmployeesPage');
+          import('@/components/pages/AttendancePage');
+        })
+      : window.setTimeout(() => {
+          import('@/components/pages/EmployeesPage');
+          import('@/components/pages/AttendancePage');
+        }, 200);
     return () => {
-      if (window.requestIdleCallback) {
-        window.cancelIdleCallback(id as number);
-      }
+      if (hasIdle) window.cancelIdleCallback(id as number);
+      else clearTimeout(id as number);
     };
   }, []);
   return null;
 }
 
-// ═══════════════════════════════════════════════════
-//  Access Denied component — shown when user lacks permission
-// ═══════════════════════════════════════════════════
+// ─── Access denied ────────────────────────────────────────────────────────────
 function AccessDenied() {
-  const pageConfig = APP_PAGES.find(p => p.id === useAppStore.getState().currentPage);
+  const pageConfig = APP_PAGES.find((p) => p.id === useAppStore.getState().currentPage);
   return (
     <div dir="rtl" className="flex flex-col items-center justify-center py-24">
       <div className="w-20 h-20 rounded-2xl bg-red-500/10 border border-red-500/20 flex items-center justify-center mb-6">
@@ -95,103 +93,87 @@ function AccessDenied() {
   );
 }
 
-// ═══════════════════════════════════════════════════
-//  Page Router with Permission Enforcement
-// ═══════════════════════════════════════════════════
+// ─── Page router ──────────────────────────────────────────────────────────────
 function PageRouter() {
   const currentPage = useAppStore((s) => s.currentPage);
   const { canViewPage } = usePermissions();
 
-  // Check if user has permission to view this page
-  // 'home' is always accessible to logged-in users
   if (currentPage !== 'home' && !canViewPage(currentPage)) {
     return <AccessDenied key="access-denied" />;
   }
 
-  // key={currentPage} ensures React fully unmounts/remounts
-  // when switching pages, so useEffect(() => { fetchData() }, [])
-  // runs fresh each time — fixes data disappearing on navigation
   switch (currentPage) {
-    case 'home':
-      return <HomePage key="home" />;
-    case 'employees':
-      return <EmployeesPage key="employees" />;
-    case 'biometric':
-      return <BiometricPage key="biometric" />;
-    case 'attendance':
-      return <AttendancePage key="attendance" />;
-    case 'requests':
-      return <RequestsPage key="requests" />;
-    case 'rules':
-      return <RulesPage key="rules" />;
-    case 'quality':
-      return <QualityPage key="quality" />;
-    case 'hrDeductions':
-      return <HrDeductionsPage key="hrDeductions" />;
-    case 'travel':
-      return <TravelPage key="travel" />;
-    case 'reports':
-      return <ReportsPage key="reports" />;
-    case 'controlPanel':
-      return <ControlPanelPage key="controlPanel" />;
-    case 'firebase':
-      return <FirebaseSettingsPage key="firebase" />;
-    case 'followUps':
-      return <FollowUpsPage key="followUps" />;
-    case 'capa':
-      return <CAPAPage key="capa" />;
-    case 'complaints':
-      return <ComplaintsPage key="complaints" />;
-    case 'knowledgeBase':
-      return <KnowledgeBasePage key="knowledgeBase" />;
-    case 'riskCenter':
-      return <RiskCenterPage key="riskCenter" />;
-    case 'operationsCenter':
-      return <OperationsCenterPage key="operationsCenter" />;
-    case 'employee360':
-      return <HomePage key="home" />;
-    case 'notifications':
-      return <NotificationCenterPage key="notifications" />;
-    case 'rulesEngine':
-      return <RulesEnginePage key="rulesEngine" />;
-    default:
-      return <HomePage key="home" />;
+    case 'home':             return <HomePage             key="home" />;
+    case 'employees':        return <EmployeesPage        key="employees" />;
+    case 'biometric':        return <BiometricPage        key="biometric" />;
+    case 'attendance':       return <AttendancePage       key="attendance" />;
+    case 'requests':         return <RequestsPage         key="requests" />;
+    case 'rules':            return <RulesPage            key="rules" />;
+    case 'quality':          return <QualityPage          key="quality" />;
+    case 'hrDeductions':     return <HrDeductionsPage     key="hrDeductions" />;
+    case 'travel':           return <TravelPage           key="travel" />;
+    case 'reports':          return <ReportsPage          key="reports" />;
+    case 'controlPanel':     return <ControlPanelPage     key="controlPanel" />;
+    case 'firebase':         return <FirebaseSettingsPage key="firebase" />;
+    case 'followUps':        return <FollowUpsPage        key="followUps" />;
+    case 'capa':             return <CAPAPage             key="capa" />;
+    case 'complaints':       return <ComplaintsPage       key="complaints" />;
+    case 'knowledgeBase':    return <KnowledgeBasePage    key="knowledgeBase" />;
+    case 'riskCenter':       return <RiskCenterPage       key="riskCenter" />;
+    case 'operationsCenter': return <OperationsCenterPage key="operationsCenter" />;
+    case 'notifications':    return <NotificationCenterPage key="notifications" />;
+    case 'rulesEngine':      return <RulesEnginePage      key="rulesEngine" />;
+    default:                 return <HomePage             key="home" />;
   }
 }
 
+// ─── App content ──────────────────────────────────────────────────────────────
+// Rendered inside AppShell's z-10 layer.
+// AppShell handles the loading overlay (z-20) independently.
+// This component only manages the login ↔ ready transition.
 function AppContent() {
   const { user, loading } = useAuth();
+
+  // While loading, render nothing — AppShell's LoadingOverlay covers the screen.
+  // Once loading resolves, animate in either login or the app.
+  if (loading) return null;
 
   return (
     <>
       <PreloadPages />
-      <AnimatePresence mode="wait">
-        {loading ? (
-          <motion.div key="loading" initial={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.3 }}>
-            <CosmicLoadingScreen />
-          </motion.div>
-        ) : !user ? (
-          <motion.div key="login" initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.3 }}>
-            <LoginPage />
-          </motion.div>
-        ) : (
-          <motion.div key="app" initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.2 }}>
-            <NotificationProvider>
-              <AppLayout>
-                <PageRouter />
-              </AppLayout>
-            </NotificationProvider>
-          </motion.div>
-        )}
+
+      {/* Login overlay — fades in/out above the persistent background */}
+      <AnimatePresence>
+        {!user && <LoginPage key="login" />}
       </AnimatePresence>
+
+      {/* App — mounts after login, unmounts on logout */}
+      {user && (
+        <NotificationProvider>
+          <AppLayout>
+            <PageRouter />
+          </AppLayout>
+        </NotificationProvider>
+      )}
     </>
   );
 }
 
+// ─── Root ─────────────────────────────────────────────────────────────────────
 export default function Home() {
   return (
     <AuthProvider>
-      <AppContent />
+      {/*
+       * AppShell mounts once. It owns:
+       *   - PersistentBackground (z-0, React.memo, never re-renders)
+       *   - LoadingOverlay       (z-20, AnimatePresence, fades out after session check)
+       *
+       * AppContent (z-10) manages login ↔ ready with its own AnimatePresence.
+       * The two AnimatePresence instances are siblings, not nested.
+       */}
+      <AppShell>
+        <AppContent />
+      </AppShell>
     </AuthProvider>
   );
 }

@@ -2,6 +2,7 @@
 
 import React, { useRef, useEffect, useCallback, forwardRef } from 'react';
 import { cn } from '@/lib/utils';
+import { useScrollShadows } from '@/hooks/use-scroll-shadows';
 
 interface ScrollContainerProps extends React.HTMLAttributes<HTMLDivElement> {
   /** Fixed max-height for the scroll region */
@@ -15,10 +16,13 @@ interface ScrollContainerProps extends React.HTMLAttributes<HTMLDivElement> {
 // Global scroll position memory — keyed by scrollKey
 const scrollMemory = new Map<string, number>();
 
-export const ScrollContainer = forwardRef<HTMLDivElement, ScrollContainerProps>(
-  ({ maxHeight, shadows = true, scrollKey, className, children, style, ...props }, ref) => {
-    const innerRef = useRef<HTMLDivElement>(null);
-    const resolvedRef = (ref as React.RefObject<HTMLDivElement>) ?? innerRef;
+/**
+ * Inner component that holds the ref so useScrollShadows can observe it.
+ * Separated from the forwardRef wrapper to keep hook rules clean.
+ */
+const ScrollContainerInner = forwardRef<HTMLDivElement, ScrollContainerProps & { resolvedRef: React.RefObject<HTMLDivElement | null> }>(
+  ({ maxHeight, shadows = true, scrollKey, className, children, style, resolvedRef, ...props }, _ref) => {
+    const { hasTopShadow, hasBottomShadow } = useScrollShadows(resolvedRef);
 
     // Restore scroll position
     useEffect(() => {
@@ -26,39 +30,39 @@ export const ScrollContainer = forwardRef<HTMLDivElement, ScrollContainerProps>(
       const el = resolvedRef.current;
       if (!el) return;
       const saved = scrollMemory.get(scrollKey);
-      if (saved !== undefined) {
-        el.scrollTop = saved;
-      }
+      if (saved !== undefined) el.scrollTop = saved;
     }, [scrollKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
-    // Save scroll position on scroll
     const handleScroll = useCallback(() => {
       if (!scrollKey) return;
       const el = resolvedRef.current;
       if (el) scrollMemory.set(scrollKey, el.scrollTop);
     }, [scrollKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
-    const resolvedMaxHeight =
-      typeof maxHeight === 'number' ? `${maxHeight}px` : maxHeight;
+    const resolvedMaxHeight = typeof maxHeight === 'number' ? `${maxHeight}px` : maxHeight;
 
     return (
       <div
         ref={resolvedRef}
         onScroll={handleScroll}
-        className={cn(
-          'arm-scroll',
-          shadows && 'arm-scroll-shadow',
-          className
-        )}
-        style={{
-          maxHeight: resolvedMaxHeight,
-          ...style,
-        }}
+        className={cn('arm-scroll', shadows && 'arm-scroll-shadow', className)}
+        style={{ maxHeight: resolvedMaxHeight, ...style }}
+        data-shadow-top={shadows && hasTopShadow ? 'true' : 'false'}
+        data-shadow-bottom={shadows && hasBottomShadow ? 'true' : 'false'}
         {...props}
       >
         {children}
       </div>
     );
+  }
+);
+ScrollContainerInner.displayName = 'ScrollContainerInner';
+
+export const ScrollContainer = forwardRef<HTMLDivElement, ScrollContainerProps>(
+  (props, ref) => {
+    const innerRef = useRef<HTMLDivElement>(null);
+    const resolvedRef = (ref as React.RefObject<HTMLDivElement>) ?? innerRef;
+    return <ScrollContainerInner {...props} resolvedRef={resolvedRef} />;
   }
 );
 

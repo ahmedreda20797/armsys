@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useRef, useEffect, type ReactNode, memo } from 'react';
+import { useScrollShadows } from '@/hooks/use-scroll-shadows';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ChevronDown, ChevronUp, RefreshCw, ExternalLink, AlertCircle, Inbox } from 'lucide-react';
 
@@ -11,63 +12,34 @@ import { ChevronDown, ChevronUp, RefreshCw, ExternalLink, AlertCircle, Inbox } f
 export type DashboardCardSize = 'small' | 'medium' | 'large';
 
 export interface DashboardCardProps {
-  /** Widget title */
   title: string;
-  /** Header icon */
   icon: ReactNode;
-  /** Icon background class */
   iconBg: string;
-  /** Icon color class */
   iconColor: string;
-  /** Border color class */
   borderClr: string;
-  /** Card content — becomes scrollable body */
   children: ReactNode;
-  /** Optional header actions (badge, nav button, etc.) */
   actions?: ReactNode;
-  /** Optional footer content */
   footer?: ReactNode;
-  /** Loading state — shows skeleton */
   loading?: boolean;
-  /** Enable independent scrolling (default: true) */
   scrollable?: boolean;
-  /** Size preset: controls max-height */
   size?: DashboardCardSize;
-  /** Custom max-height override (takes priority over size) */
   maxHeight?: string;
-  /** Custom min-height override */
   minHeight?: string;
-  /** Badge text/count shown in header */
   badge?: string | number;
-  /** Show refresh button in header */
   onRefresh?: () => void;
-  /** Show "open full page" button */
   onOpenFull?: () => void;
-  /** Error state */
   error?: boolean;
-  /** Error message */
   errorMessage?: string;
-  /** Retry callback */
   onRetry?: () => void;
-  /** Collapse state (controlled) */
   collapsed?: boolean;
-  /** Collapse toggle callback */
   onCollapseToggle?: () => void;
-  /** Last updated timestamp text */
   lastUpdated?: string;
-  /** Accessible label */
   'aria-label'?: string;
-  /** Span 2 columns on desktop grid */
   colSpan2?: boolean;
-  /** Empty state — show built-in empty state instead of children */
   empty?: boolean;
-  /** Empty state icon */
   emptyIcon?: ReactNode;
-  /** Empty state message */
   emptyMessage?: string;
-  /** Empty state description */
   emptyDescription?: string;
-  /** Empty state CTA button */
   emptyAction?: ReactNode;
 }
 
@@ -88,13 +60,7 @@ const SIZE_MIN_HEIGHTS: Record<DashboardCardSize, string> = {
 };
 
 /* ═══════════════════════════════════════════════════════════
-   SCROLL CAPTURE ENGINE v2
-   - Mouse wheel capture within widget
-   - Trackpad momentum scrolling support
-   - Touch scrolling support
-   - Keyboard scrolling (Page Up/Down)
-   - At boundaries, scroll naturally returns to page
-   - No nested scroll bugs
+   SCROLL CAPTURE ENGINE
    ═══════════════════════════════════════════════════════════ */
 
 function useScrollCapture(containerRef: React.RefObject<HTMLDivElement | null>) {
@@ -103,50 +69,32 @@ function useScrollCapture(containerRef: React.RefObject<HTMLDivElement | null>) 
   const handleWheel = useCallback((e: globalThis.WheelEvent) => {
     const el = containerRef.current;
     if (!el) return;
-
     const { scrollTop, scrollHeight, clientHeight } = el;
     const atTop = scrollTop <= 0;
     const atBottom = scrollTop + clientHeight >= scrollHeight - 1;
-
-    // If at scroll boundary, let parent handle it
     if ((e.deltaY < 0 && atTop) || (e.deltaY > 0 && atBottom)) {
-      if (isCapturing.current) {
-        e.stopPropagation();
-        isCapturing.current = false;
-      }
+      if (isCapturing.current) { e.stopPropagation(); isCapturing.current = false; }
       return;
     }
-
-    // Content is scrollable and we have room — capture scroll
-    if (scrollHeight > clientHeight) {
-      e.stopPropagation();
-      isCapturing.current = true;
-    }
+    if (scrollHeight > clientHeight) { e.stopPropagation(); isCapturing.current = true; }
   }, [containerRef]);
 
-  // Keyboard scrolling support within focused widget
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
     const el = containerRef.current;
     if (!el) return;
-
     if (e.key === 'PageDown' || e.key === 'PageUp') {
       const { scrollTop, scrollHeight, clientHeight } = el;
       const scrollAmount = clientHeight * 0.85;
       if (e.key === 'PageDown' && scrollTop + clientHeight < scrollHeight) {
-        e.preventDefault();
-        el.scrollBy({ top: scrollAmount, behavior: 'smooth' });
+        e.preventDefault(); el.scrollBy({ top: scrollAmount, behavior: 'smooth' });
       } else if (e.key === 'PageUp' && scrollTop > 0) {
-        e.preventDefault();
-        el.scrollBy({ top: -scrollAmount, behavior: 'smooth' });
+        e.preventDefault(); el.scrollBy({ top: -scrollAmount, behavior: 'smooth' });
       }
     }
   }, [containerRef]);
 
-  const handleMouseEnter = useCallback(() => {
-    isCapturing.current = false;
-  }, []);
+  const handleMouseEnter = useCallback(() => { isCapturing.current = false; }, []);
 
-  // Attach native event listeners for reliable scroll capture
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
@@ -159,74 +107,65 @@ function useScrollCapture(containerRef: React.RefObject<HTMLDivElement | null>) 
       el.removeEventListener('mouseenter', handleMouseEnter);
     };
   }, [containerRef, handleWheel, handleKeyDown, handleMouseEnter]);
-
-  return null;
 }
 
 /* ═══════════════════════════════════════════════════════════
+   SCROLL BODY — wires shadow state to data attributes
+   Separated so useScrollShadows has a stable ref to observe.
+   ═══════════════════════════════════════════════════════════ */
+
+interface ScrollBodyProps {
+  scrollRef: React.RefObject<HTMLDivElement | null>;
+  scrollable: boolean;
+  children: ReactNode;
+}
+
+const ScrollBody = memo(function ScrollBody({ scrollRef, scrollable, children }: ScrollBodyProps) {
+  const { hasTopShadow, hasBottomShadow } = useScrollShadows(scrollRef);
+
+  return (
+    <div
+      ref={scrollRef}
+      className={`flex-1 min-h-0 overflow-x-hidden ${scrollable ? 'arm-scroll arm-scroll-shadow' : 'overflow-hidden'}`}
+      style={{ paddingBottom: '4px', paddingRight: '4px' }}
+      tabIndex={0}
+      data-shadow-top={scrollable && hasTopShadow ? 'true' : 'false'}
+      data-shadow-bottom={scrollable && hasBottomShadow ? 'true' : 'false'}
+    >
+      {children}
+    </div>
+  );
+});
+
+/* ═══════════════════════════════════════════════════════════
    BUILT-IN EMPTY STATE
-   Enterprise-grade empty state with icon, message, description, CTA
    ═══════════════════════════════════════════════════════════ */
 
 const BuiltInEmptyState = memo(function BuiltInEmptyState({
-  icon,
-  message,
-  description,
-  action,
-}: {
-  icon?: ReactNode;
-  message: string;
-  description?: string;
-  action?: ReactNode;
-}) {
+  icon, message, description, action,
+}: { icon?: ReactNode; message: string; description?: string; action?: ReactNode }) {
   return (
     <div className="flex flex-col items-center justify-center py-10 px-4" style={{ animation: 'fadeIn 0.3s ease-out' }}>
       <div className="mb-3 text-slate-600" style={{ animation: 'float-sm 2.5s ease-in-out infinite' }}>
         {icon || <Inbox className="size-10" />}
       </div>
       <p className="text-slate-400 text-sm font-medium">{message}</p>
-      {description && (
-        <p className="text-slate-500 text-xs mt-1 text-center max-w-[240px]">{description}</p>
-      )}
+      {description && <p className="text-slate-500 text-xs mt-1 text-center max-w-[240px]">{description}</p>}
       {action && <div className="mt-3">{action}</div>}
     </div>
   );
 });
 
 /* ═══════════════════════════════════════════════════════════
-   COMPONENT — DashboardCard (memoized for performance)
+   DASHBOARD CARD
    ═══════════════════════════════════════════════════════════ */
 
 export const DashboardCard = memo(function DashboardCard({
-  title,
-  icon,
-  iconBg,
-  iconColor,
-  borderClr,
-  children,
-  actions,
-  footer,
-  loading = false,
-  scrollable = true,
-  size = 'medium',
-  maxHeight,
-  minHeight,
-  badge,
-  onRefresh,
-  onOpenFull,
-  error = false,
-  errorMessage,
-  onRetry,
-  collapsed = false,
-  onCollapseToggle,
-  lastUpdated,
-  'aria-label': ariaLabel,
-  colSpan2 = false,
-  empty = false,
-  emptyIcon,
-  emptyMessage,
-  emptyDescription,
-  emptyAction,
+  title, icon, iconBg, iconColor, borderClr, children, actions, footer,
+  loading = false, scrollable = true, size = 'medium', maxHeight, minHeight,
+  badge, onRefresh, onOpenFull, error = false, errorMessage, onRetry,
+  collapsed = false, onCollapseToggle, lastUpdated, 'aria-label': ariaLabel,
+  colSpan2 = false, empty = false, emptyIcon, emptyMessage, emptyDescription, emptyAction,
 }: DashboardCardProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   useScrollCapture(scrollRef);
@@ -234,21 +173,18 @@ export const DashboardCard = memo(function DashboardCard({
   const resolvedMaxH = maxHeight || (scrollable ? SIZE_MAX_HEIGHTS[size] : undefined);
   const resolvedMinH = minHeight || SIZE_MIN_HEIGHTS[size];
 
-  // Detect Tailwind classes vs plain CSS values (e.g. "max-h-[440px]" vs "440px")
   const maxHIsTw = !!resolvedMaxH && /^\w+-\w+/.test(resolvedMaxH);
   const minHIsTw = !!resolvedMinH && /^\w+-\w+/.test(resolvedMinH);
-
   const isCollapsed = collapsed && !loading;
 
-  // Build height classes for Tailwind, plain values for inline style
   const heightClasses = [
     !isCollapsed && maxHIsTw ? resolvedMaxH : '',
     !isCollapsed && minHIsTw ? resolvedMinH : '',
   ].filter(Boolean).join(' ');
 
   const heightStyle: React.CSSProperties = {
-    ...((!isCollapsed && resolvedMaxH && !maxHIsTw) ? { maxHeight: resolvedMaxH } : {}),
-    ...((!isCollapsed && resolvedMinH && !minHIsTw) ? { minHeight: resolvedMinH } : {}),
+    ...(!isCollapsed && resolvedMaxH && !maxHIsTw ? { maxHeight: resolvedMaxH } : {}),
+    ...(!isCollapsed && resolvedMinH && !minHIsTw ? { minHeight: resolvedMinH } : {}),
   };
 
   return (
@@ -259,7 +195,7 @@ export const DashboardCard = memo(function DashboardCard({
       className={`${borderClr} bg-slate-800/40 backdrop-blur-md flex flex-col overflow-hidden rounded-2xl border shadow-lg shadow-black/10 transition-all duration-200 ${colSpan2 ? 'lg:col-span-2' : ''} ${isCollapsed ? '' : 'min-h-0'} ${heightClasses}`}
       style={heightStyle}
     >
-      {/* ═══ HEADER — Always visible, sticky ═══ */}
+      {/* ═══ HEADER ═══ */}
       <div className="shrink-0 pb-3 pt-5 px-6 flex items-center justify-between gap-2">
         <div className="flex items-center gap-3 min-w-0 flex-1">
           <div className={`p-2 rounded-xl ${iconBg} shadow-sm transition-transform hover:scale-110 shrink-0 ${iconColor}`}>
@@ -275,43 +211,20 @@ export const DashboardCard = memo(function DashboardCard({
           </div>
         </div>
         <div className="flex items-center gap-1 shrink-0">
-          {loading && (
-            <span className="flex items-center gap-1 text-[10px] text-slate-500">
-              <RefreshCw className="size-3 animate-spin" />
-            </span>
-          )}
-          {lastUpdated && !loading && (
-            <span className="text-[10px] text-slate-600 hidden sm:inline" dir="ltr">
-              {lastUpdated}
-            </span>
-          )}
+          {loading && <span className="flex items-center gap-1 text-[10px] text-slate-500"><RefreshCw className="size-3 animate-spin" /></span>}
+          {lastUpdated && !loading && <span className="text-[10px] text-slate-600 hidden sm:inline" dir="ltr">{lastUpdated}</span>}
           {onRefresh && !loading && (
-            <button
-              onClick={onRefresh}
-              className="p-1.5 rounded-lg text-slate-500 hover:text-slate-300 hover:bg-slate-700/30 transition-colors"
-              aria-label="تحديث"
-              title="تحديث"
-            >
+            <button onClick={onRefresh} className="p-1.5 rounded-lg text-slate-500 hover:text-slate-300 hover:bg-slate-700/30 transition-colors" aria-label="تحديث" title="تحديث">
               <RefreshCw className="size-3.5" />
             </button>
           )}
           {onOpenFull && (
-            <button
-              onClick={onOpenFull}
-              className="p-1.5 rounded-lg text-slate-500 hover:text-slate-300 hover:bg-slate-700/30 transition-colors"
-              aria-label="فتح الصفحة الكاملة"
-              title="فتح الصفحة الكاملة"
-            >
+            <button onClick={onOpenFull} className="p-1.5 rounded-lg text-slate-500 hover:text-slate-300 hover:bg-slate-700/30 transition-colors" aria-label="فتح الصفحة الكاملة" title="فتح الصفحة الكاملة">
               <ExternalLink className="size-3.5" />
             </button>
           )}
           {onCollapseToggle && (
-            <button
-              onClick={onCollapseToggle}
-              className="p-1.5 rounded-lg text-slate-500 hover:text-slate-300 hover:bg-slate-700/30 transition-colors"
-              aria-label={isCollapsed ? 'توسيع' : 'طي'}
-              aria-expanded={!isCollapsed}
-            >
+            <button onClick={onCollapseToggle} className="p-1.5 rounded-lg text-slate-500 hover:text-slate-300 hover:bg-slate-700/30 transition-colors" aria-label={isCollapsed ? 'توسيع' : 'طي'} aria-expanded={!isCollapsed}>
               {isCollapsed ? <ChevronDown className="size-3.5" /> : <ChevronUp className="size-3.5" />}
             </button>
           )}
@@ -319,14 +232,9 @@ export const DashboardCard = memo(function DashboardCard({
         </div>
       </div>
 
-      {/* ═══ BODY — Scrollable or static ═══ */}
-      {isCollapsed ? null : (
-        <div
-          ref={scrollRef}
-          className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden dashboard-scroll"
-          style={{ paddingBottom: '4px', paddingRight: '4px' }}
-          tabIndex={0}
-        >
+      {/* ═══ BODY ═══ */}
+      {!isCollapsed && (
+        <ScrollBody scrollRef={scrollRef} scrollable={scrollable}>
           {loading ? (
             <div className="px-1 pb-2 space-y-3">
               <Skeleton className="h-12 w-full rounded-xl bg-slate-700/30" />
@@ -338,28 +246,20 @@ export const DashboardCard = memo(function DashboardCard({
               <AlertCircle className="size-8 text-red-400/50 mb-3" />
               <p className="text-slate-400 text-sm mb-3 text-center">{errorMessage || 'حدث خطأ في تحميل البيانات'}</p>
               {onRetry && (
-                <button
-                  onClick={onRetry}
-                  className="px-4 py-2 rounded-xl text-xs font-medium bg-slate-700/30 text-slate-300 hover:bg-slate-700/50 hover:text-white border border-slate-600/20 transition-colors"
-                >
+                <button onClick={onRetry} className="px-4 py-2 rounded-xl text-xs font-medium bg-slate-700/30 text-slate-300 hover:bg-slate-700/50 hover:text-white border border-slate-600/20 transition-colors">
                   إعادة المحاولة
                 </button>
               )}
             </div>
           ) : empty ? (
-            <BuiltInEmptyState
-              icon={emptyIcon}
-              message={emptyMessage || 'لا توجد بيانات'}
-              description={emptyDescription}
-              action={emptyAction}
-            />
+            <BuiltInEmptyState icon={emptyIcon} message={emptyMessage || 'لا توجد بيانات'} description={emptyDescription} action={emptyAction} />
           ) : (
             children
           )}
-        </div>
+        </ScrollBody>
       )}
 
-      {/* ═══ FOOTER — Always visible when present ═══ */}
+      {/* ═══ FOOTER ═══ */}
       {!isCollapsed && footer && (
         <div className="shrink-0 pt-2 pb-4 px-6 border-t border-slate-700/15 mt-auto">
           {footer}
@@ -370,19 +270,12 @@ export const DashboardCard = memo(function DashboardCard({
 });
 
 /* ═══════════════════════════════════════════════════════════
-   DASHBOARD GRID — Responsive layout engine
-   Desktop: 2 cols (configurable)
-   Large widgets: span 2 cols via colSpan2 prop
-   Tablet: adaptive columns
-   Mobile: single column
-   No horizontal scrolling
+   DASHBOARD GRID
    ═══════════════════════════════════════════════════════════ */
 
 export interface DashboardGridProps {
   children: ReactNode;
-  /** Number of columns on desktop (default 2) */
   columns?: 1 | 2 | 3;
-  /** Gap between cards */
   gap?: string;
 }
 
@@ -392,10 +285,5 @@ export const DashboardGrid = memo(function DashboardGrid({ children, columns = 2
     : columns === 1
       ? 'grid-cols-1'
       : 'grid-cols-1 md:grid-cols-2';
-
-  return (
-    <div className={`grid ${colClass} ${gap}`}>
-      {children}
-    </div>
-  );
+  return <div className={`grid ${colClass} ${gap}`}>{children}</div>;
 });
