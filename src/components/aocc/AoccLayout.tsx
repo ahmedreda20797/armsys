@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useCallback } from 'react';
+import { useMemo, useCallback, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import {
   useHomeStats,
@@ -25,6 +25,8 @@ import {
   AoccSystemStatus,
   AoccExecutiveSummary,
 } from '@/components/aocc/AoccWidgets';
+import { DecisionCenterLayout } from '@/components/aocc/decisions/DecisionCenterLayout';
+import { useDecisions } from '@/hooks/use-decisions';
 import {
   collectEvents,
   generateActions,
@@ -49,6 +51,8 @@ import {
   Clock,
   ClipboardCheck,
   AlertCircle,
+  BrainCircuit,
+  Monitor,
 } from 'lucide-react';
 
 /* ═══════════════════════════════════════════════════════════════
@@ -244,6 +248,25 @@ export default function AoccLayout() {
     ];
   }, [actions]);
 
+  // ═══════════════════════════════════════════════════════════════
+  //  AOCC V3 — Decision Intelligence Layer
+  //  Reuses the already-computed pipeline (actions, correlations,
+  //  departments, rawData). No new API calls — pure client-side
+  //  derivation via the useDecisions composition hook.
+  // ═══════════════════════════════════════════════════════════════
+
+  // ── View tab: "operational" (existing 10 widgets) ↔ "decisions" (V3) ──
+  const [activeView, setActiveView] = useState<'operational' | 'decisions'>('operational');
+
+  // ── Decision Intelligence (memoized on pipeline outputs) ──
+  const {
+    decisions,
+    alerts: predictiveAlerts,
+    coaching: coachingOpps,
+    execPriorities,
+    counts: decisionCounts,
+  } = useDecisions({ actions, correlations, departments, data: rawData });
+
   // ── System Status data ──
   const systemStatusData = useMemo(() => {
     const unread = notifications.filter((n) => n.status === 'unread');
@@ -290,7 +313,10 @@ export default function AoccLayout() {
   }
 
   /* ═══════════════════════════════════════════════════════════════
-     RENDER — compose all 10 intelligence widgets
+     RENDER
+     - Shared: Mission Header + Operational Overview (always visible)
+     - Tab toggle: "العرض التشغيلي" (existing 10 widgets)
+                   ↔ "ذكاء القرارات" (V3 Decision Intelligence Layer)
      ═══════════════════════════════════════════════════════════════ */
 
   return (
@@ -307,48 +333,107 @@ export default function AoccLayout() {
       {/* ── Section 2: Operational Overview (KPI tiles with priority visuals) ── */}
       <AoccOperationalOverview kpis={globalHealthKPIs} priorityCounts={priorityCounts} />
 
-      {/* ── Section 3 + 4: Action Queue + Department Health ── */}
-      <DashboardGrid columns={2} gap="gap-6">
-        <AoccActionQueue
-          items={actions}
-          loading={followUpsQuery.isLoading || capaQuery.isLoading || complaintsQuery.isLoading}
-          error={followUpsQuery.isError || capaQuery.isError || complaintsQuery.isError}
-          onRetry={handleRefresh}
-        />
-        <AoccDepartmentHealth
-          departments={departments}
+      {/* ═══════════════════════════════════════════════════════════════
+          AOCC V3 — View Toggle
+          Switches between the existing operational widgets and the new
+          Decision Intelligence Layer. Existing widgets are untouched.
+          ═══════════════════════════════════════════════════════════════ */}
+      <div className="flex items-center gap-1 p-1 rounded-xl bg-slate-800/50 border border-slate-700/50 w-fit">
+        <button
+          onClick={() => setActiveView('operational')}
+          className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+            activeView === 'operational'
+              ? 'bg-slate-700 text-slate-100 shadow-sm'
+              : 'text-slate-400 hover:text-slate-300'
+          }`}
+        >
+          <Monitor className="w-4 h-4" />
+          العرض التشغيلي
+        </button>
+        <button
+          onClick={() => setActiveView('decisions')}
+          className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+            activeView === 'decisions'
+              ? 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 shadow-sm'
+              : 'text-slate-400 hover:text-slate-300'
+          }`}
+        >
+          <BrainCircuit className="w-4 h-4" />
+          ذكاء القرارات
+          {decisionCounts.total > 0 && (
+            <span className={`text-[10px] px-1.5 py-0 rounded-full ${
+              activeView === 'decisions'
+                ? 'bg-indigo-500/30 text-indigo-300'
+                : 'bg-slate-700 text-slate-400'
+            }`}>
+              {decisionCounts.total}
+            </span>
+          )}
+        </button>
+      </div>
+
+      {/* ═══════════════════════════════════════════════════════════════
+          CONDITIONAL RENDERING — two independent view surfaces
+          ═══════════════════════════════════════════════════════════════ */}
+      {activeView === 'decisions' ? (
+        /* ── V3 Decision Intelligence Layer ── */
+        <DecisionCenterLayout
+          decisions={decisions}
+          alerts={predictiveAlerts}
+          coaching={coachingOpps}
+          execPriorities={execPriorities}
+          counts={decisionCounts}
           loading={homeStats.isLoading || riskCenterQuery.isLoading}
           error={homeStats.isError}
+          onRetry={handleRefresh}
         />
-      </DashboardGrid>
+      ) : (
+        /* ── Existing Operational View (untouched) ── */
+        <>
+          {/* ── Section 3 + 4: Action Queue + Department Health ── */}
+          <DashboardGrid columns={2} gap="gap-6">
+            <AoccActionQueue
+              items={actions}
+              loading={followUpsQuery.isLoading || capaQuery.isLoading || complaintsQuery.isLoading}
+              error={followUpsQuery.isError || capaQuery.isError || complaintsQuery.isError}
+              onRetry={handleRefresh}
+            />
+            <AoccDepartmentHealth
+              departments={departments}
+              loading={homeStats.isLoading || riskCenterQuery.isLoading}
+              error={homeStats.isError}
+            />
+          </DashboardGrid>
 
-      {/* ── Section 5 + 6: Smart Watchlist + Activity Feed ── */}
-      <DashboardGrid columns={2} gap="gap-6">
-        <AoccEmployeeWatchlist
-          employees={correlations}
-          loading={riskCenterQuery.isLoading}
-          error={riskCenterQuery.isError}
-        />
-        <AoccActivityFeed entries={activityFeed} loading={false} />
-      </DashboardGrid>
+          {/* ── Section 5 + 6: Smart Watchlist + Activity Feed ── */}
+          <DashboardGrid columns={2} gap="gap-6">
+            <AoccEmployeeWatchlist
+              employees={correlations}
+              loading={riskCenterQuery.isLoading}
+              error={riskCenterQuery.isError}
+            />
+            <AoccActivityFeed entries={activityFeed} loading={false} />
+          </DashboardGrid>
 
-      {/* ── Section 7 + 8: Intelligence Center + Quick Actions ── */}
-      <DashboardGrid columns={2} gap="gap-6">
-        <AoccIntelligenceCenter
-          recommendations={recommendations}
-          loading={riskCenterQuery.isLoading || capaQuery.isLoading}
-        />
-        <AoccQuickActions actions={quickActions} />
-      </DashboardGrid>
+          {/* ── Section 7 + 8: Intelligence Center + Quick Actions ── */}
+          <DashboardGrid columns={2} gap="gap-6">
+            <AoccIntelligenceCenter
+              recommendations={recommendations}
+              loading={riskCenterQuery.isLoading || capaQuery.isLoading}
+            />
+            <AoccQuickActions actions={quickActions} />
+          </DashboardGrid>
 
-      {/* ── Section 9 + 10: System Status + Executive Summary ── */}
-      <DashboardGrid columns={2} gap="gap-6">
-        <AoccSystemStatus
-          data={systemStatusData}
-          loading={homeStats.isLoading || notifStatsQuery.isLoading}
-        />
-        <AoccExecutiveSummary data={executiveData} loading={homeStats.isLoading} />
-      </DashboardGrid>
+          {/* ── Section 9 + 10: System Status + Executive Summary ── */}
+          <DashboardGrid columns={2} gap="gap-6">
+            <AoccSystemStatus
+              data={systemStatusData}
+              loading={homeStats.isLoading || notifStatsQuery.isLoading}
+            />
+            <AoccExecutiveSummary data={executiveData} loading={homeStats.isLoading} />
+          </DashboardGrid>
+        </>
+      )}
     </div>
   );
 }
