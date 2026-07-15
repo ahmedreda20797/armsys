@@ -9,18 +9,83 @@ import { Label } from '@/components/ui/label';
 import { Lock, Mail, Eye, EyeOff } from 'lucide-react';
 import { toast } from 'sonner';
 
-// Deterministic year — client-only to avoid hydration mismatch
+// ── Deterministic year — rendered only on client to avoid mismatch ──
 function CopyrightYear() {
   const [year, setYear] = useState<number | null>(null);
   useEffect(() => setYear(new Date().getFullYear()), []);
   return <>{year ?? '2024'}</>;
 }
 
-/**
- * LoginPage — foreground only.
- * PersistentBackground is mounted once in AppShell above this.
- * No stars, no nebula, no background — shell provides all of that.
- */
+// ═══ Cosmic loading screen ═══
+// Foreground only — PersistentBackground is mounted once in App Shell (page.tsx)
+export function CosmicLoadingScreen() {
+  return (
+    <div className="min-h-screen w-full relative">
+      <div className="flex flex-col items-center justify-center min-h-screen gap-8 px-4">
+        {/* Logo with cosmic glow */}
+        <motion.div
+          className="relative"
+          animate={{ scale: [1, 1.06, 1], rotate: [0, 2, -2, 0] }}
+          transition={{ duration: 4, repeat: Infinity, ease: 'easeInOut' }}
+        >
+          <div className="absolute inset-0 -m-8">
+            <motion.div
+              className="absolute inset-0 rounded-full opacity-20"
+              style={{
+                background:
+                  'conic-gradient(from 0deg, transparent, rgba(139,92,246,0.5), transparent, rgba(99,102,241,0.5), transparent)',
+              }}
+              animate={{ rotate: 360 }}
+              transition={{ duration: 8, repeat: Infinity, ease: 'linear' }}
+            />
+          </div>
+          <div
+            className="absolute inset-0 -m-4 rounded-full blur-2xl"
+            style={{
+              background:
+                'radial-gradient(circle, rgba(139,92,246,0.3) 0%, rgba(99,102,241,0.1) 50%, transparent 70%)',
+            }}
+          />
+          <div className="relative w-40 h-40 flex items-center justify-center">
+            <img
+              src="/logo-letter-a.png"
+              alt="ARM"
+              className="w-36 h-36 object-contain drop-shadow-[0_0_60px_rgba(139,92,246,0.3)]"
+            />
+          </div>
+        </motion.div>
+
+        {/* Orbital loading dots — deterministic positions */}
+        <div className="relative w-16 h-16">
+          {[0, 1, 2].map((i) => (
+            <motion.div
+              key={i}
+              className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2"
+              animate={{
+                x: [0, Math.cos((i * 120 * Math.PI) / 180) * 20, 0],
+                y: [0, Math.sin((i * 120 * Math.PI) / 180) * 20, 0],
+                opacity: [0.3, 1, 0.3],
+              }}
+              transition={{
+                duration: 1.5,
+                repeat: Infinity,
+                delay: i * 0.5,
+                ease: 'easeInOut',
+              }}
+            >
+              <div className="w-2.5 h-2.5 rounded-full bg-gradient-to-r from-violet-400 to-indigo-400 shadow-[0_0_8px_rgba(139,92,246,0.5)]" />
+            </motion.div>
+          ))}
+        </div>
+
+        <p className="text-slate-400 text-sm font-medium">جاري التحميل...</p>
+      </div>
+    </div>
+  );
+}
+
+// ═══ Login Page ═══
+// Foreground only — PersistentBackground is mounted once in App Shell (page.tsx)
 export default function LoginPage() {
   const { login, error, loading, clearError } = useAuth();
   const [email, setEmail] = useState('');
@@ -38,144 +103,146 @@ export default function LoginPage() {
     setLocalLoading(true);
     const success = await login(email, password);
     setLocalLoading(false);
-    if (success) toast.success('تم تسجيل الدخول بنجاح!');
+    if (success) {
+      toast.success('تم تسجيل الدخول بنجاح!');
+    }
   };
 
   return (
-    <motion.div
-      className="fixed inset-0 z-20 flex items-center justify-center px-4"
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      transition={{ duration: 0.4 }}
-    >
-      <div dir="rtl" className="w-full max-w-md">
-        <motion.div
-          className="relative rounded-2xl p-8 md:p-10 shadow-2xl backdrop-blur-2xl bg-white/[0.03] border border-white/[0.06] shadow-black/40"
-          initial={{ scale: 0.92, opacity: 0, y: 20 }}
-          animate={{ scale: 1, opacity: 1, y: 0 }}
-          transition={{ duration: 0.5, delay: 0.1, ease: [0.4, 0, 0.2, 1] }}
-        >
-          {/* Inner glow */}
-          <div
-            className="absolute inset-0 rounded-2xl pointer-events-none"
-            style={{
-              background:
-                'radial-gradient(ellipse at top, rgba(139,92,246,0.08), transparent 50%), radial-gradient(ellipse at bottom, rgba(99,102,241,0.05), transparent 50%)',
-            }}
-          />
-          <div
-            className="absolute -inset-px rounded-2xl pointer-events-none"
-            style={{
-              background:
-                'linear-gradient(135deg, rgba(139,92,246,0.15), transparent 40%, transparent 60%, rgba(99,102,241,0.1))',
-            }}
-          />
+    <div className="min-h-screen w-full relative">
+      <motion.div
+        className="flex items-center justify-center min-h-screen px-4"
+        initial={{ opacity: 0, y: 30 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.6, ease: 'easeOut' }}
+      >
+        <div dir="rtl" className="w-full max-w-md">
+          <motion.div
+            className="relative rounded-2xl p-8 md:p-10 shadow-2xl backdrop-blur-2xl bg-white/[0.03] border border-white/[0.06] shadow-black/40"
+            initial={{ scale: 0.9, opacity: 0, y: 20 }}
+            animate={{ scale: 1, opacity: 1, y: 0 }}
+            transition={{ duration: 0.6, delay: 0.1, ease: [0.4, 0, 0.2, 1] }}
+          >
+            {/* Subtle inner glow */}
+            <div
+              className="absolute inset-0 rounded-2xl pointer-events-none"
+              style={{
+                background:
+                  'radial-gradient(ellipse at top, rgba(139,92,246,0.08), transparent 50%), radial-gradient(ellipse at bottom, rgba(99,102,241,0.05), transparent 50%)',
+              }}
+            />
+            <div
+              className="absolute -inset-px rounded-2xl pointer-events-none"
+              style={{
+                background:
+                  'linear-gradient(135deg, rgba(139,92,246,0.15), transparent 40%, transparent 60%, rgba(99,102,241,0.1))',
+              }}
+            />
 
-          {/* Brand */}
-          <div className="flex justify-center mb-6">
-            <motion.div
-              animate={{ y: [0, -4, 0] }}
-              transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }}
-            >
-              <img
-                src="/logo-full-clean.png"
-                alt="ARM Logo"
-                className="h-24 w-auto object-contain drop-shadow-[0_0_30px_rgba(139,92,246,0.25)]"
-              />
-            </motion.div>
-          </div>
-
-          <h1 className="text-2xl font-bold text-white text-center mb-2">تسجيل الدخول</h1>
-          <p className="text-slate-400 text-center text-sm mb-8">أدخل بياناتك للوصول إلى النظام</p>
-
-          <AnimatePresence>
-            {error && (
+            {/* Logo */}
+            <div className="flex justify-center mb-6">
               <motion.div
-                initial={{ opacity: 0, y: -10 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -10 }}
-                className="mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-sm text-center"
+                animate={{ y: [0, -4, 0] }}
+                transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }}
               >
-                {error}
+                <img
+                  src="/logo-full-clean.png"
+                  alt="ARM Logo"
+                  className="h-24 w-auto object-contain drop-shadow-[0_0_30px_rgba(139,92,246,0.25)]"
+                />
               </motion.div>
-            )}
-          </AnimatePresence>
-
-          <form onSubmit={handleLogin} className="space-y-5">
-            <div className="space-y-2">
-              <Label htmlFor="email" className="text-slate-300 text-sm">
-                البريد الإلكتروني
-              </Label>
-              <div className="relative">
-                <Mail className="absolute right-3 top-1/2 -translate-y-1/2 size-4 text-slate-400" />
-                <Input
-                  id="email"
-                  type="email"
-                  placeholder="user@arm.com"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  className="bg-white/[0.04] border-white/[0.08] text-white placeholder:text-slate-500 pr-10 focus:border-violet-500/50 focus:ring-violet-500/20"
-                  required
-                  dir="ltr"
-                  autoComplete="email"
-                />
-              </div>
             </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="password" className="text-slate-300 text-sm">
-                كلمة المرور
-              </Label>
-              <div className="relative">
-                <Lock className="absolute right-3 top-1/2 -translate-y-1/2 size-4 text-slate-400" />
-                <Input
-                  id="password"
-                  type={showPassword ? 'text' : 'password'}
-                  placeholder="••••••••"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="bg-white/[0.04] border-white/[0.08] text-white placeholder:text-slate-500 pr-10 pl-10 focus:border-violet-500/50 focus:ring-violet-500/20"
-                  required
-                  dir="ltr"
-                  autoComplete="current-password"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-300 transition-colors"
+            <h1 className="text-2xl font-bold text-white text-center mb-2">تسجيل الدخول</h1>
+            <p className="text-slate-400 text-center text-sm mb-8">أدخل بياناتك للوصول إلى النظام</p>
+
+            <AnimatePresence>
+              {error && (
+                <motion.div
+                  initial={{ opacity: 0, y: -10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -10 }}
+                  className="mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-sm text-center"
                 >
-                  {showPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
-                </button>
-              </div>
-            </div>
-
-            <Button
-              type="submit"
-              disabled={localLoading || loading}
-              className="w-full h-11 bg-linear-to-l from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white font-semibold text-base rounded-xl transition-all duration-300 shadow-lg shadow-violet-500/25 hover:shadow-violet-500/40 disabled:opacity-60"
-            >
-              {localLoading || loading ? (
-                <>
-                  <motion.div
-                    className="size-4 border-2 border-white/30 border-t-white rounded-full"
-                    animate={{ rotate: 360 }}
-                    transition={{ duration: 0.8, repeat: Infinity, ease: 'linear' }}
-                  />
-                  <span>جاري تسجيل الدخول...</span>
-                </>
-              ) : (
-                'تسجيل الدخول'
+                  {error}
+                </motion.div>
               )}
-            </Button>
-          </form>
+            </AnimatePresence>
 
-          {/* Footer */}
-          <p className="mt-6 text-center text-slate-500 text-xs">
-            نظام إدارة الجودة © <CopyrightYear />
-          </p>
-        </motion.div>
-      </div>
-    </motion.div>
+            <form onSubmit={handleLogin} className="space-y-5">
+              <div className="space-y-2">
+                <Label htmlFor="email" className="text-slate-300 text-sm">
+                  البريد الإلكتروني
+                </Label>
+                <div className="relative">
+                  <Mail className="absolute right-3 top-1/2 -translate-y-1/2 size-4 text-slate-400" />
+                  <Input
+                    id="email"
+                    type="email"
+                    placeholder="user@arm.com"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    className="bg-white/[0.04] border-white/[0.08] text-white placeholder:text-slate-500 pr-10 focus:border-violet-500/50 focus:ring-violet-500/20"
+                    required
+                    dir="ltr"
+                    autoComplete="email"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="password" className="text-slate-300 text-sm">
+                  كلمة المرور
+                </Label>
+                <div className="relative">
+                  <Lock className="absolute right-3 top-1/2 -translate-y-1/2 size-4 text-slate-400" />
+                  <Input
+                    id="password"
+                    type={showPassword ? 'text' : 'password'}
+                    placeholder="••••••••"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    className="bg-white/[0.04] border-white/[0.08] text-white placeholder:text-slate-500 pr-10 pl-10 focus:border-violet-500/50 focus:ring-violet-500/20"
+                    required
+                    dir="ltr"
+                    autoComplete="current-password"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-300 transition-colors"
+                  >
+                    {showPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+                  </button>
+                </div>
+              </div>
+
+              <Button
+                type="submit"
+                disabled={localLoading || loading}
+                className="w-full h-11 bg-linear-to-l from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white font-semibold text-base rounded-xl transition-all duration-300 shadow-lg shadow-violet-500/25 hover:shadow-violet-500/40 disabled:opacity-60"
+              >
+                {localLoading || loading ? (
+                  <>
+                    <motion.div
+                      className="size-4 border-2 border-white/30 border-t-white rounded-full"
+                      animate={{ rotate: 360 }}
+                      transition={{ duration: 0.8, repeat: Infinity, ease: 'linear' }}
+                    />
+                    <span>جاري تسجيل الدخول...</span>
+                  </>
+                ) : (
+                  'تسجيل الدخول'
+                )}
+              </Button>
+            </form>
+
+            <p className="mt-6 text-center text-slate-500 text-xs">
+              نظام إدارة الجودة © <CopyrightYear />
+            </p>
+          </motion.div>
+        </div>
+      </motion.div>
+    </div>
   );
 }
