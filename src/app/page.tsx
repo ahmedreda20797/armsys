@@ -54,6 +54,7 @@ const RiskCenterPage       = dynamic(() => import('@/components/pages/RiskCenter
 const OperationsCenterPage = dynamic(() => import('@/components/pages/OperationsCenterPage'), { loading: () => <PageSkeleton />, ssr: false });
 const NotificationCenterPage = dynamic(() => import('@/components/pages/NotificationCenterPage'), { loading: () => <PageSkeleton />, ssr: false });
 const RulesEnginePage      = dynamic(() => import('@/components/pages/RulesEnginePage'),      { loading: () => <PageSkeleton />, ssr: false });
+const WorkflowDesignerPage = dynamic(() => import('@/components/pages/workflow-designer/WorkflowDesignerPage'), { loading: () => <PageSkeleton />, ssr: false });
 
 // ─── Background preload ───────────────────────────────────────────────────────
 function PreloadPages() {
@@ -123,6 +124,7 @@ function PageRouter() {
     case 'operationsCenter': return <OperationsCenterPage key="operationsCenter" />;
     case 'notifications':    return <NotificationCenterPage key="notifications" />;
     case 'rulesEngine':      return <RulesEnginePage      key="rulesEngine" />;
+    case 'workflowDesigner': return <WorkflowDesignerPage key="workflowDesigner" />;
     default:                 return <HomePage             key="home" />;
   }
 }

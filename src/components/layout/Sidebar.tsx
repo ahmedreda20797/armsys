@@ -29,6 +29,7 @@ import {
   Bell,
   Zap,
   Shield,
+  Workflow,
 } from 'lucide-react';
 import { usePermissions } from '@/hooks/usePermissions';
 import { useAuth } from '@/contexts/AuthContext';
@@ -59,6 +60,7 @@ const ICON_MAP: Record<string, LucideIcon> = {
   Bell,
   Zap,
   Shield,
+  Workflow,
 };
 
 interface SidebarProps {

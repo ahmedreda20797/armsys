@@ -69,6 +69,7 @@ export const APP_PAGES: PageConfig[] = [
   { id: 'knowledgeBase', title: 'قاعدة المعرفة', icon: 'BookOpen', permissionKey: 'knowledgeBase', availableActions: ['create', 'update', 'delete'], groupId: 'reports' },
   // ═══ ⚙️ الإدارة والإعدادات ═══
   { id: 'controlPanel', title: 'مركز التحكم', icon: 'Shield', permissionKey: 'controlPanel', availableActions: [], groupId: 'settings' },
+  { id: 'workflowDesigner', title: 'مصمم المسارات', icon: 'Workflow', permissionKey: 'workflowDesigner', availableActions: ['create', 'update', 'delete'], groupId: 'settings' },
   { id: 'rulesEngine', title: 'الأتمتة والقواعد', icon: 'Zap', permissionKey: 'rulesEngine', availableActions: ['create', 'update', 'delete'], groupId: 'settings' },
   { id: 'firebase', title: 'Firebase Settings', icon: 'Database', permissionKey: 'firebase', availableActions: [], groupId: 'settings' },
 ];
