@@ -34,6 +34,7 @@ import { WorkflowOutline } from '@/components/visual-builder/panels/WorkflowOutl
 import { SearchEverywhere } from '@/components/visual-builder/panels/SearchEverywhere';
 import { VersionManager } from '@/components/visual-builder/panels/VersionManager';
 import { TemplateLibrary } from '@/components/visual-builder/panels/TemplateLibrary';
+import { NodeTemplateLibrary } from '@/components/visual-builder/panels/NodeTemplateLibrary';
 import { DocumentationPanel } from '@/components/visual-builder/panels/DocumentationPanel';
 import { SimulationPanel } from '@/components/visual-builder/panels/SimulationPanel';
 import { VariablePicker } from '@/components/visual-builder/panels/VariablePicker';
@@ -48,7 +49,7 @@ import type {
 } from '@/components/visual-builder/engine/types';
 import type {
   VBValidationReport, VBNodeConfig, VBWorkflowDocumentation,
-  VBVariableEntry, VBWorkflowRecord,
+  VBVariableEntry, VBWorkflowRecord, VBNodeTemplate,
 } from '@/components/visual-builder/engine/v2-types';
 import type { WorkflowVariable } from '@/workflow/types';
 
@@ -197,6 +198,7 @@ function WorkflowDesignerInner() {
   const [rightMode, setRightMode] = useState<RightPanelMode>('inspector');
   const [explorerOpen, setExplorerOpen] = useState(false);
   const [templatesOpen, setTemplatesOpen] = useState(false);
+  const [nodeTemplatesOpen, setNodeTemplatesOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [varPickerOpen, setVarPickerOpen] = useState(false);
   const [varPickerTarget, setVarPickerTarget] = useState<VarPickerTarget | null>(null);
@@ -370,6 +372,12 @@ function WorkflowDesignerInner() {
     if (sel.length > 0 && rightMode !== 'inspector') setRightMode('inspector');
   }, [rightMode]);
 
+  const onEdgeClick = useCallback((edge: VBEdge) => {
+    setSelectedNodes([]);
+    setSelectedEdge(edge);
+    if (rightMode !== 'inspector') setRightMode('inspector');
+  }, [rightMode]);
+
   const focusNode = useCallback((id: string) => {
     setNodes((nds) => nds.map((n) => ({ ...n, selected: n.id === id })));
     setSelectedNodes(nodes.filter((n) => n.id === id));
@@ -534,6 +542,36 @@ function WorkflowDesignerInner() {
     toast.success(`تم إضافة قالب بـ ${newNodes.length} عقدة`);
   }, [nodes, edges, pushHistory, rf]);
 
+  // ── Apply node template (PART 8) ───────────────────────────────────────
+  const applyNodeTemplate = useCallback((tpl: VBNodeTemplate) => {
+    const def = NODE_DEF_MAP.get(tpl.nodeType);
+    if (!def) { toast.error(`نوع عقدة غير معروف: ${tpl.nodeType}`); return; }
+    pushHistory(nodes, edges);
+    // Drop the new node near the center of the current viewport
+    const center = rf.screenToFlowPosition({
+      x: window.innerWidth / 2,
+      y: window.innerHeight / 2,
+    });
+    const newNode: VBNode = {
+      id: generateNodeId(def.type),
+      type: 'workflowNode',
+      position: canvasConfig.snapToGrid
+        ? { x: Math.round(center.x / canvasConfig.gridSize) * canvasConfig.gridSize, y: Math.round(center.y / canvasConfig.gridSize) * canvasConfig.gridSize }
+        : { x: center.x, y: center.y },
+      data: {
+        definition: def,
+        label: tpl.config.label || def.label,
+        description: tpl.config.description || def.description,
+        status: 'idle',
+        config: { ...(tpl.config.config ?? {}) },
+        validationErrors: [],
+      },
+    };
+    setNodes((nds) => [...nds, newNode]);
+    setIsDirty(true);
+    toast.success(`تم إضافة "${tpl.name}"`);
+  }, [nodes, edges, canvasConfig, pushHistory, rf]);
+
   // ── Open workflow from explorer ────────────────────────────────────────
   const openWorkflow = useCallback((_w: VBWorkflowRecord) => {
     setExplorerOpen(false);
@@ -641,6 +679,7 @@ function WorkflowDesignerInner() {
         onAutoLayout={runAutoLayout}
         onToggleExplorer={() => setExplorerOpen(true)}
         onToggleTemplates={() => setTemplatesOpen(true)}
+        onToggleNodeTemplates={() => setNodeTemplatesOpen(true)}
         onToggleSearch={() => setSearchOpen(true)}
         onToggleSimulation={() => { setRightPanelOpen(true); setRightMode('simulation'); }}
         onToggleAnalytics={() => { setRightPanelOpen(true); setRightMode('simulation'); }}
@@ -675,6 +714,7 @@ function WorkflowDesignerInner() {
             onDrop={onDrop}
             onDragOver={onDragOver}
             onSelectionChange={onSelectionChange}
+            onEdgeClick={onEdgeClick}
           />
         </main>
 
@@ -716,7 +756,7 @@ function WorkflowDesignerInner() {
                   validation={validation}
                   onUpdateNode={onUpdateNode}
                   onUpdateEdge={onUpdateEdge}
-                  onClose={() => setSelectedNodes([])}
+                  onClose={() => { setSelectedNodes([]); setSelectedEdge(null); }}
                   onPickVariable={openVarPicker}
                 />
               )}
@@ -770,6 +810,13 @@ function WorkflowDesignerInner() {
           </div>
         </div>
       )}
+
+      {/* Node Templates (PART 8) */}
+      <NodeTemplateLibrary
+        open={nodeTemplatesOpen}
+        onClose={() => setNodeTemplatesOpen(false)}
+        onApply={applyNodeTemplate}
+      />
 
       {/* Search Everywhere */}
       <SearchEverywhere

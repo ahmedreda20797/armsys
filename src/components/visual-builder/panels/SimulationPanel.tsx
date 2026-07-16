@@ -16,7 +16,7 @@ import type { VBSimulationState, VBExecutionStep, VBWorkflowMetrics } from '../e
 import {
   buildSimulation, initialSimState, stepForward, stepBack, restartSim, runSim,
 } from '../engine/v2-simulation';
-import { computeExecutionOrder } from '../engine/v2-validation';
+import { computeExecutionOrder, computeMetrics, computeDepth } from '../engine/v2-validation';
 
 interface SimulationPanelProps {
   nodes: VBNode[];
@@ -228,7 +228,6 @@ export const SimulationPanel = memo(function SimulationPanel({
 
 function AnalyticsView({ nodes, edges }: { nodes: VBNode[]; edges: VBEdge[] }) {
   const metrics = React.useMemo(() => {
-    const { computeMetrics, computeDepth } = require('../engine/v2-validation') as typeof import('../engine/v2-validation');
     const m = computeMetrics(nodes);
     m.edgeCount = edges.length;
     m.depth = computeDepth(nodes, edges);

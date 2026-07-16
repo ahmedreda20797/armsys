@@ -2,6 +2,10 @@
  * Universal Visual Builder — V2 Validation Engine
  * Extends V1 validateGraph with 16 checks + workflow scoring + metrics.
  * Pure stateless functions. No side effects. No execution.
+ *
+ * Design note: `issue()` is a closure factory created inside `validateGraphV2`
+ * so there is NO module-level mutable state — this keeps validation
+ * referentially transparent and safe under React's StrictMode double-invoke.
  */
 
 import type { VBNode, VBEdge } from './types';
@@ -17,8 +21,9 @@ import type {
 import { isExprGroup, isExprCondition } from './v2-types';
 import { validateGraph } from './validationEngine';
 
-let issueCounter = 0;
-function issue(
+/* ─── Issue factory (closure, no module state) ──────────────────────────── */
+
+type IssueFactory = (
   severity: VBValidationSeverity,
   code: VBValidationCode,
   message: string,
@@ -26,10 +31,15 @@ function issue(
   category: VBValidationIssue['category'],
   fixable: boolean,
   nodeId?: string,
-  edgeId?: string
-): VBValidationIssue {
-  issueCounter += 1;
-  return { id: `issue_${issueCounter}`, severity, code, message, messageAr, category, fixable, nodeId, edgeId };
+  edgeId?: string,
+) => VBValidationIssue;
+
+function createIssueFactory(): IssueFactory {
+  let counter = 0;
+  return (severity, code, message, messageAr, category, fixable, nodeId, edgeId) => {
+    counter += 1;
+    return { id: `issue_${counter}`, severity, code, message, messageAr, category, fixable, nodeId, edgeId };
+  };
 }
 
 /* ─── Metrics ────────────────────────────────────────────────────────────── */
@@ -115,7 +125,8 @@ function validateExpression(
   node: VBExprNode,
   knownFields: Set<string>,
   issues: VBValidationIssue[],
-  nodeId?: string
+  issue: IssueFactory,
+  nodeId?: string,
 ): void {
   if (isExprCondition(node)) {
     if (!node.field) {
@@ -140,7 +151,7 @@ function validateExpression(
         'Empty condition group',
         'مجموعة شروط فارغة', 'conditions', true, nodeId));
     }
-    node.children.forEach((c) => validateExpression(c, knownFields, issues, nodeId));
+    node.children.forEach((c) => validateExpression(c, knownFields, issues, issue, nodeId));
   }
 }
 
@@ -151,7 +162,7 @@ export function validateGraphV2(
   edges: VBEdge[],
   variables: { name: string }[] = []
 ): VBValidationReport {
-  issueCounter = 0;
+  const issue = createIssueFactory();
   const issues: VBValidationIssue[] = [];
 
   // 1. Delegate structural checks to V1 engine
@@ -182,14 +193,13 @@ export function validateGraphV2(
   nodes.forEach((n) => {
     const outputs = n.data.definition.ports.filter((p) => p.type === 'output');
     if (outputs.length > 1 && (sourceEdgeCount.get(n.id) ?? 0) < outputs.length) {
-      // not every branch is connected — info level only
       issues.push(issue('info', 'UNREACHABLE_BRANCH',
         `Node "${n.data.label}" has unconnected branches`,
         `العقدة "${n.data.label}" لها فروع غير متصلة`, 'structure', false, n.id));
     }
   });
 
-  // 4. Infinite loop detection (cycle through loop nodes without exit)
+  // 4. Infinite loop detection (loop nodes without a 'done' exit edge)
   const loopNodes = nodes.filter((n) => n.data.definition.type === 'loop');
   loopNodes.forEach((loop) => {
     const hasDoneEdge = edges.some((e) => e.source === loop.id && e.sourceHandle === 'done');
@@ -210,7 +220,7 @@ export function validateGraphV2(
     }
   });
 
-  // 6. Missing required configuration for action nodes
+  // 6. Missing required configuration for action / request nodes
   nodes.forEach((n) => {
     const def = n.data.definition;
     if (def.category === 'actions' || def.category === 'requests') {
@@ -249,16 +259,16 @@ export function validateGraphV2(
   // 8. Validate expressions on nodes/edges
   nodes.forEach((n) => {
     const cfg = n.data.config as Partial<VBNodeConfig> | undefined;
-    if (cfg?.condition) validateExpression(cfg.condition, knownFields, issues, n.id);
+    if (cfg?.condition) validateExpression(cfg.condition, knownFields, issues, issue, n.id);
     cfg?.inputs?.forEach((inp) => {
       if (inp.source === 'expression' && inp.expression) {
-        validateExpression(inp.expression, knownFields, issues, n.id);
+        validateExpression(inp.expression, knownFields, issues, issue, n.id);
       }
     });
   });
   edges.forEach((e) => {
     const data = (e.data ?? {}) as { condition?: VBExprNode };
-    if (data.condition) validateExpression(data.condition, knownFields, issues);
+    if (data.condition) validateExpression(data.condition, knownFields, issues, issue);
   });
 
   // 9. Missing trigger (info)

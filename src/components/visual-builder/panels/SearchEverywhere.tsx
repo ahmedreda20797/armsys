@@ -72,12 +72,24 @@ export const SearchEverywhere = memo(function SearchEverywhere({
         }
       });
     });
-    // Templates
+    // Templates (node + workflow)
     [...NODE_TEMPLATES, ...WORKFLOW_TEMPLATES].forEach((t) => {
       const name = 'name' in t ? t.name : '';
       const desc = 'description' in t ? t.description : '';
       if (name.toLowerCase().includes(q) || desc.toLowerCase().includes(q)) {
         out.push({ id: t.id, kind: 'template', title: name, subtitle: desc, icon: 'FileText' });
+      }
+    });
+    // Actions & conditions on current canvas — search node configs
+    nodes.forEach((n) => {
+      const cfg = (n.data.config ?? {}) as Record<string, unknown> | undefined;
+      if (cfg && JSON.stringify(cfg).toLowerCase().includes(q)) {
+        const title = n.data.definition.category === 'actions' ? `إجراء: ${n.data.label}` : `تكوين: ${n.data.label}`;
+        out.push({ id: `${n.id}-action`, kind: 'action', title, subtitle: n.data.definition.type, icon: 'Zap', nodeId: n.id });
+      }
+      const nodeCfg = cfg as { condition?: unknown } | undefined;
+      if (nodeCfg?.condition && JSON.stringify(nodeCfg.condition).toLowerCase().includes(q)) {
+        out.push({ id: `${n.id}-cond`, kind: 'condition', title: `شرط: ${n.data.label}`, subtitle: n.data.definition.type, icon: 'GitBranch', nodeId: n.id });
       }
     });
     return out.slice(0, 30);

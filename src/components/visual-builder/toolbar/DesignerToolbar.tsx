@@ -5,7 +5,7 @@ import {
   Undo2, Redo2, Save, Upload, CheckCircle2, ZoomIn, ZoomOut,
   Maximize2, Crosshair, Map, Grid3x3, Magnet, MoreHorizontal,
   AlertTriangle, Loader2, Trash2, Copy,
-  Play, FolderOpen, LayoutTemplate, Search, Wand2, GitBranch, Gauge,
+  Play, FolderOpen, LayoutTemplate, Search, Wand2, GitBranch, Gauge, Bookmark,
 } from 'lucide-react';
 import {
   Tooltip,
@@ -46,6 +46,7 @@ interface DesignerToolbarProps {
   onAutoLayout?: () => void;
   onToggleExplorer?: () => void;
   onToggleTemplates?: () => void;
+  onToggleNodeTemplates?: () => void;
   onToggleSearch?: () => void;
   onToggleSimulation?: () => void;
   onToggleAnalytics?: () => void;
@@ -213,7 +214,8 @@ export const DesignerToolbar = memo(function DesignerToolbar(props: DesignerTool
       <ToolBtn icon={Play} label="محاكاة" onClick={props.onToggleSimulation ?? (() => {})} />
       <ToolBtn icon={Gauge} label="تحليلات" onClick={props.onToggleAnalytics ?? (() => {})} />
       <ToolBtn icon={FolderOpen} label="مستكشف المسارات" onClick={props.onToggleExplorer ?? (() => {})} />
-      <ToolBtn icon={LayoutTemplate} label="القوالب" onClick={props.onToggleTemplates ?? (() => {})} />
+      <ToolBtn icon={LayoutTemplate} label="قوالب المسارات" onClick={props.onToggleTemplates ?? (() => {})} />
+      <ToolBtn icon={Bookmark} label="قوالب العقد" onClick={props.onToggleNodeTemplates ?? (() => {})} />
       <ToolBtn icon={Search} label="بحث (Ctrl+K)" onClick={props.onToggleSearch ?? (() => {})} />
 
       {/* ── Spacer ──────────────────────────────────────────────── */}

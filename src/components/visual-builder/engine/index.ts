@@ -22,3 +22,8 @@ export {
   VARIABLE_SOURCES, NODE_TEMPLATES, WORKFLOW_TEMPLATES, SAMPLE_WORKFLOWS,
 } from './v2-catalogs';
 export { CONFIG_SCHEMAS, getConfigSchema } from './v2-config-schemas';
+export {
+  subscribe, getAllTemplates, getFavorites, isFavorite, toggleFavorite,
+  saveTemplate, cloneTemplate, incrementUsage, deleteTemplate,
+  searchTemplates, getCategories,
+} from './v2-node-template-store';

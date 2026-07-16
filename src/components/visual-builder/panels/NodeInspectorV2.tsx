@@ -4,6 +4,7 @@
  * PART 3 — Node Inspector V2
  * Professional 14-tab inspector. Lazy-loads tab content for performance.
  * Replaces the basic PropertiesPanel with a complete authoring surface.
+ * Includes "Save Node as Template" (PART 8) in the header.
  */
 
 import React, { memo, useState, Suspense, lazy } from 'react';
@@ -11,7 +12,7 @@ import {
   Settings, SlidersHorizontal, ArrowDownToLine, ArrowUpFromLine,
   GitBranch, Variable as VarIcon, Shield, UserCheck, RefreshCw,
   Clock, AlertTriangle, FileText, CheckCircle2, BookOpen,
-  X, ChevronRight,
+  X, ChevronRight, BookmarkPlus,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type {
@@ -21,6 +22,7 @@ import { getConfigSchema } from '../engine/v2-config-schemas';
 import { DynamicConfigForm } from './DynamicConfigForm';
 import { ExpressionBuilder } from './ExpressionBuilder';
 import { EdgeInspector } from './EdgeInspector';
+import { SaveNodeTemplateDialog } from './SaveNodeTemplateDialog';
 
 type InspectorTab =
   | 'general' | 'config' | 'inputs' | 'outputs' | 'conditions'
@@ -58,6 +60,7 @@ export const NodeInspectorV2 = memo(function NodeInspectorV2({
   node, edge, validation, onUpdateNode, onUpdateEdge, onClose, onPickVariable,
 }: NodeInspectorV2Props) {
   const [activeTab, setActiveTab] = useState<InspectorTab>('general');
+  const [showSaveTemplate, setShowSaveTemplate] = useState(false);
 
   // ── Edge mode ────────────────────────────────────────────────────────
   if (!node && edge) {
@@ -65,7 +68,7 @@ export const NodeInspectorV2 = memo(function NodeInspectorV2({
       <div className="flex flex-col h-full">
         <div className="px-3 py-2 border-b border-slate-800 flex items-center justify-between">
           <span className="text-xs font-bold text-slate-300">خصائص الاتصال</span>
-          <button onClick={onClose} className="text-slate-500 hover:text-slate-300 p-1"><X className="w-3.5 h-3.5" /></button>
+          <button onClick={onClose} className="text-slate-500 hover:text-slate-300 p-1" aria-label="إغلاق"><X className="w-3.5 h-3.5" /></button>
         </div>
         <EdgeInspector edge={edge} onUpdate={(data) => onUpdateEdge(edge.id, data)} onPickCondition={() => onPickVariable({ kind: 'edge-condition', edgeId: edge.id })} />
       </div>
@@ -88,22 +91,34 @@ export const NodeInspectorV2 = memo(function NodeInspectorV2({
   return (
     <div className="flex flex-col h-full">
       {/* Header */}
-      <div className="px-3 py-2 border-b border-slate-800 flex items-center justify-between">
-        <div className="min-w-0">
+      <div className="px-3 py-2 border-b border-slate-800 flex items-center justify-between gap-2">
+        <div className="min-w-0 flex-1">
           <p className="text-xs font-bold text-slate-200 truncate">{node.data.label}</p>
           <p className="text-[9px] text-slate-500 truncate font-mono">{node.id}</p>
         </div>
-        <button onClick={onClose} className="text-slate-500 hover:text-slate-300 p-1 rounded hover:bg-slate-800"><X className="w-3.5 h-3.5" /></button>
+        <button
+          onClick={() => setShowSaveTemplate(true)}
+          className="flex-shrink-0 p-1 rounded hover:bg-slate-800 text-slate-500 hover:text-violet-300 transition-colors"
+          title="حفظ كقالب"
+          aria-label="حفظ كقالب"
+        >
+          <BookmarkPlus className="w-3.5 h-3.5" />
+        </button>
+        <button onClick={onClose} className="flex-shrink-0 text-slate-500 hover:text-slate-300 p-1 rounded hover:bg-slate-800" aria-label="إغلاق">
+          <X className="w-3.5 h-3.5" />
+        </button>
       </div>
 
       {/* Tab strip — scrollable */}
-      <div className="flex border-b border-slate-800 overflow-x-auto arm-scroll-shadow">
+      <div className="flex border-b border-slate-800 overflow-x-auto arm-scroll-shadow" role="tablist">
         {TABS.map(({ id, label, icon: Icon }) => {
           const count = id === 'validation' ? nodeIssues.length : 0;
           return (
             <button
               key={id}
               onClick={() => setActiveTab(id)}
+              role="tab"
+              aria-selected={activeTab === id}
               className={cn(
                 'flex items-center gap-1 px-2.5 py-2 text-[10px] font-medium whitespace-nowrap transition-colors border-b-2 -mb-px flex-shrink-0',
                 activeTab === id
@@ -139,6 +154,14 @@ export const NodeInspectorV2 = memo(function NodeInspectorV2({
           />
         </Suspense>
       </div>
+
+      {/* Save-as-template dialog (PART 8) */}
+      {showSaveTemplate && (
+        <SaveNodeTemplateDialog
+          node={node}
+          onClose={() => setShowSaveTemplate(false)}
+        />
+      )}
     </div>
   );
 });

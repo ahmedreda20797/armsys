@@ -46,18 +46,21 @@ function isValidConnection(
   const targetNode = nodes.find((n) => n.id === target);
   if (!sourceNode || !targetNode) return false;
 
-  // Only one Start node
-  if (targetNode.type === 'start') return false;
-  // Only one End node
-  if (sourceNode.type === 'end') return false;
-  // Start can only connect out
-  if (sourceNode.type === 'start' && targetNode.type === 'start') return false;
+  const sourceType = sourceNode.data.definition.type;
+  const targetType = targetNode.data.definition.type;
+
+  // Cannot connect TO a Start node
+  if (targetType === 'start') return false;
+  // Cannot connect FROM an End node
+  if (sourceType === 'end') return false;
+  // Prevent self-referencing through Start
+  if (sourceType === 'start' && targetType === 'start') return false;
 
   // Singleton ports: check max connections (default 999)
-  const sourceDef = NODE_DEF_MAP.get(sourceNode.type);
+  const sourceDef = NODE_DEF_MAP.get(sourceType);
   const sourcePort = sourceDef?.ports.find((p) => p.id === sourceHandle);
   if (sourcePort?.maxConnections !== undefined) {
-    const outgoingCount = /* count edges from this handle — approximate */ 0; // simplified
+    const outgoingCount = /* count edges from this handle — approximate */ 0;
     // For V1 we allow unlimited
   }
 
@@ -76,6 +79,7 @@ interface WorkflowCanvasInnerProps {
   onDrop: (event: React.DragEvent, position: XYPosition) => void;
   onDragOver: (event: React.DragEvent) => void;
   onSelectionChange: (nodes: VBNode[]) => void;
+  onEdgeClick?: (edge: VBEdge) => void;
   onViewportChange?: (viewport: VBViewport) => void;
 }
 
@@ -89,6 +93,7 @@ function WorkflowCanvasInner({
   onDrop,
   onDragOver,
   onSelectionChange,
+  onEdgeClick,
   onViewportChange,
 }: WorkflowCanvasInnerProps) {
   const rfInstance = useReactFlow();
@@ -108,6 +113,7 @@ function WorkflowCanvasInner({
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         onConnect={onConnect}
+        onEdgeClick={(_evt, edge) => onEdgeClick?.(edge as unknown as VBEdge)}
         onDrop={(e) => {
           const position = rfInstance.screenToFlowPosition({
             x: e.clientX,

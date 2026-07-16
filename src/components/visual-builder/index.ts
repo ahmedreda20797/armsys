@@ -74,5 +74,7 @@ export { WorkflowOutline } from './panels/WorkflowOutline';
 export { SearchEverywhere } from './panels/SearchEverywhere';
 export { VersionManager } from './panels/VersionManager';
 export { TemplateLibrary } from './panels/TemplateLibrary';
+export { NodeTemplateLibrary } from './panels/NodeTemplateLibrary';
+export { SaveNodeTemplateDialog } from './panels/SaveNodeTemplateDialog';
 export { DocumentationPanel } from './panels/DocumentationPanel';
 export { SimulationPanel } from './panels/SimulationPanel';
