@@ -5,6 +5,7 @@ import {
   Undo2, Redo2, Save, Upload, CheckCircle2, ZoomIn, ZoomOut,
   Maximize2, Crosshair, Map, Grid3x3, Magnet, MoreHorizontal,
   AlertTriangle, Loader2, Trash2, Copy,
+  Play, FolderOpen, LayoutTemplate, Search, Wand2, GitBranch, Gauge,
 } from 'lucide-react';
 import {
   Tooltip,
@@ -41,6 +42,16 @@ interface DesignerToolbarProps {
   onToggleSnap: () => void;
   onDeleteSelected: () => void;
   onDuplicateSelected: () => void;
+  // V2 additions
+  onAutoLayout?: () => void;
+  onToggleExplorer?: () => void;
+  onToggleTemplates?: () => void;
+  onToggleSearch?: () => void;
+  onToggleSimulation?: () => void;
+  onToggleAnalytics?: () => void;
+  onToggleDocumentation?: () => void;
+  onToggleVersions?: () => void;
+  onToggleOutline?: () => void;
 }
 
 /* ─── Toolbar button ────────────────────────────────────────────────────── */
@@ -194,6 +205,16 @@ export const DesignerToolbar = memo(function DesignerToolbar(props: DesignerTool
         onClick={props.onToggleSnap}
         active={props.snapToGrid}
       />
+
+      <Divider />
+
+      {/* ── V2 Authoring tools ─────────────────────────────────── */}
+      <ToolBtn icon={Wand2} label="ترتيب تلقائي (Ctrl+L)" onClick={props.onAutoLayout ?? (() => {})} />
+      <ToolBtn icon={Play} label="محاكاة" onClick={props.onToggleSimulation ?? (() => {})} />
+      <ToolBtn icon={Gauge} label="تحليلات" onClick={props.onToggleAnalytics ?? (() => {})} />
+      <ToolBtn icon={FolderOpen} label="مستكشف المسارات" onClick={props.onToggleExplorer ?? (() => {})} />
+      <ToolBtn icon={LayoutTemplate} label="القوالب" onClick={props.onToggleTemplates ?? (() => {})} />
+      <ToolBtn icon={Search} label="بحث (Ctrl+K)" onClick={props.onToggleSearch ?? (() => {})} />
 
       {/* ── Spacer ──────────────────────────────────────────────── */}
       <div className="flex-1" />
