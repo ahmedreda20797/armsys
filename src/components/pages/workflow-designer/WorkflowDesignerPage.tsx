@@ -107,7 +107,7 @@ function createStarterWorkflow(): { nodes: VBNode[]; edges: VBEdge[] } {
   const edges: VBEdge[] = [
     { id: generateEdgeId(nodes[0].id, nodes[1].id), source: nodes[0].id, target: nodes[1].id, sourceHandle: 'out', targetHandle: 'in', type: 'default' },
     { id: generateEdgeId(nodes[1].id, nodes[2].id), source: nodes[1].id, target: nodes[2].id, sourceHandle: 'out', targetHandle: 'in', type: 'default' },
-    { id: generateEdgeId(nodes[2].id, nodes[3].id), source: nodes[2].id, target: nodes[3].id, sourceHandle: 'yes', targetHandle: 'in', type: 'success' },
+    { id: generateEdgeId(nodes[2].id, nodes[3].id), source: nodes[2].id, target: nodes[3].id, sourceHandle: 'yes', targetHandle: 'in', type: 'smoothstep' },
   ];
 
   return { nodes, edges };

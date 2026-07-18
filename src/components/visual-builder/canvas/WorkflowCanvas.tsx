@@ -99,6 +99,25 @@ function WorkflowCanvasInner({
   const rfInstance = useReactFlow();
   const viewport = useStore((s) => s.transform);
 
+  // Dev-time assertion: catch unsupported edge types before React Flow spams warnings
+  useEffect(() => {
+    if (process.env.NODE_ENV !== 'production') {
+      const BUILT_IN_EDGE_TYPES = new Set(['default', 'bezier', 'straight', 'smoothstep', 'step']);
+      const seen = new Set<string>();
+      edges.forEach((e) => {
+        const t = e.type ?? 'default';
+        if (!BUILT_IN_EDGE_TYPES.has(t) && !seen.has(t)) {
+          seen.add(t);
+          console.warn(
+            `[VB Edge Guard] Edge "${e.id}" uses unsupported type "${t}". ` +
+            `React Flow built-in types: ${[...BUILT_IN_EDGE_TYPES].join(', ')}. ` +
+            `Semantic classification should use edge.data.kind (VBEdgeKind) instead.`
+          );
+        }
+      });
+    }
+  }, [edges]);
+
   // Forward viewport changes
   useEffect(() => {
     onViewportChange?.({ x: viewport[0], y: viewport[1], zoom: viewport[2] });

@@ -5,7 +5,8 @@
  */
 
 export type VBNodeStatus = 'idle' | 'active' | 'error' | 'warning' | 'success' | 'disabled';
-export type VBConnectionType = 'default' | 'conditional' | 'error' | 'success' | 'loop';
+/** React Flow built-in edge types only — semantic classification lives in VBEdgeData.kind */
+export type VBConnectionType = 'default' | 'smoothstep' | 'bezier' | 'straight' | 'step';
 
 export interface VBPosition { x: number; y: number; }
 
