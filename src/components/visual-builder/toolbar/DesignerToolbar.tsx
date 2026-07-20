@@ -1,19 +1,18 @@
 'use client';
 
-import React, { memo, useState } from 'react';
+import React, { memo } from 'react';
 import {
   Undo2, Redo2, Save, Upload, CheckCircle2, ZoomIn, ZoomOut,
-  Maximize2, Crosshair, Map, Grid3x3, Magnet, MoreHorizontal,
-  AlertTriangle, Loader2, Trash2, Copy,
-  Play, FolderOpen, LayoutTemplate, Search, Wand2, GitBranch, Gauge, Bookmark,
+  Maximize2, Crosshair, Map, Grid3x3, Magnet,
+  AlertTriangle, Loader2, Trash2, Copy, ClipboardCopy, ClipboardPaste,
+  Play, FolderOpen, LayoutTemplate, Search, Wand2, Gauge, Bookmark,
 } from 'lucide-react';
 import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
+  Tooltip, TooltipContent, TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 import type { VBValidationResult } from '../engine/types';
+import type { VBValidationReport } from '../engine/v2-types';
 
 /* ─── Types ────────────────────────────────────────────────────────────── */
 
@@ -23,11 +22,13 @@ interface DesignerToolbarProps {
   isSaving: boolean;
   isPublishing: boolean;
   hasChanges: boolean;
-  validation: VBValidationResult | null;
+  /** Accepts the richer V2 report (which extends V1 result) or V1 result. */
+  validation: VBValidationResult | VBValidationReport | null;
   showMinimap: boolean;
   showGrid: boolean;
   snapToGrid: boolean;
   selectedCount: number;
+  canPaste?: boolean;
   onUndo: () => void;
   onRedo: () => void;
   onSave: () => void;
@@ -42,6 +43,8 @@ interface DesignerToolbarProps {
   onToggleSnap: () => void;
   onDeleteSelected: () => void;
   onDuplicateSelected: () => void;
+  onCopySelected?: () => void;
+  onPaste?: () => void;
   // V2 additions
   onAutoLayout?: () => void;
   onToggleExplorer?: () => void;
@@ -69,14 +72,9 @@ interface ToolBtnProps {
 }
 
 const ToolBtn = memo(function ToolBtn({
-  icon: Icon,
-  label,
-  onClick,
-  disabled = false,
-  active = false,
-  variant = 'default',
-  loading = false,
-  className,
+  icon: Icon, label, onClick,
+  disabled = false, active = false,
+  variant = 'default', loading = false, className,
 }: ToolBtnProps) {
   const btn = (
     <button
@@ -92,7 +90,7 @@ const ToolBtn = memo(function ToolBtn({
         variant === 'success' && !disabled && 'text-emerald-400 hover:bg-emerald-500/10',
         variant === 'warning' && !disabled && 'text-amber-400 hover:bg-amber-500/10',
         !active && !disabled && variant === 'default' && 'text-slate-400',
-        className
+        className,
       )}
     >
       {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Icon className="w-4 h-4" />}
@@ -108,8 +106,6 @@ const ToolBtn = memo(function ToolBtn({
     </Tooltip>
   );
 });
-
-/* ─── Divider ──────────────────────────────────────────────────────────── */
 
 function Divider() {
   return <div className="w-px h-5 bg-slate-700/50 mx-1" />;
@@ -134,7 +130,6 @@ export const DesignerToolbar = memo(function DesignerToolbar(props: DesignerTool
         icon={Save}
         label="حفظ (Ctrl+S)"
         onClick={props.onSave}
-        disabled={!props.hasChanges}
         loading={props.isSaving}
       />
       <ToolBtn
@@ -162,10 +157,22 @@ export const DesignerToolbar = memo(function DesignerToolbar(props: DesignerTool
 
       <Divider />
 
-      {/* ── Selection actions ──────────────────────────────────── */}
+      {/* ── Selection actions: Copy / Cut / Paste / Duplicate / Delete ── */}
+      <ToolBtn
+        icon={ClipboardCopy}
+        label="نسخ (Ctrl+C)"
+        onClick={props.onCopySelected ?? (() => {})}
+        disabled={props.selectedCount === 0}
+      />
+      <ToolBtn
+        icon={ClipboardPaste}
+        label="لصق (Ctrl+V)"
+        onClick={props.onPaste ?? (() => {})}
+        disabled={!props.canPaste}
+      />
       <ToolBtn
         icon={Copy}
-        label="نسخ (Ctrl+D)"
+        label="تكرار (Ctrl+D)"
         onClick={props.onDuplicateSelected}
         disabled={props.selectedCount === 0}
       />
@@ -182,30 +189,15 @@ export const DesignerToolbar = memo(function DesignerToolbar(props: DesignerTool
       {/* ── Zoom / View ────────────────────────────────────────── */}
       <ToolBtn icon={ZoomIn} label="تكبير" onClick={props.onZoomIn} />
       <ToolBtn icon={ZoomOut} label="تصغير" onClick={props.onZoomOut} />
-      <ToolBtn icon={Maximize2} label="ملاءمة الشاشة" onClick={props.onFitView} />
+      <ToolBtn icon={Maximize2} label="ملاءمة الشاشة (Ctrl+0)" onClick={props.onFitView} />
       <ToolBtn icon={Crosshair} label="توسيط" onClick={props.onCenterView} />
 
       <Divider />
 
       {/* ── Canvas toggles ──────────────────────────────────────── */}
-      <ToolBtn
-        icon={Map}
-        label="خريطة صغيرة"
-        onClick={props.onToggleMinimap}
-        active={props.showMinimap}
-      />
-      <ToolBtn
-        icon={Grid3x3}
-        label="الشبكة"
-        onClick={props.onToggleGrid}
-        active={props.showGrid}
-      />
-      <ToolBtn
-        icon={Magnet}
-        label="الالتصاق"
-        onClick={props.onToggleSnap}
-        active={props.snapToGrid}
-      />
+      <ToolBtn icon={Map} label="خريطة صغيرة" onClick={props.onToggleMinimap} active={props.showMinimap} />
+      <ToolBtn icon={Grid3x3} label="الشبكة" onClick={props.onToggleGrid} active={props.showGrid} />
+      <ToolBtn icon={Magnet} label="الالتصاق" onClick={props.onToggleSnap} active={props.snapToGrid} />
 
       <Divider />
 

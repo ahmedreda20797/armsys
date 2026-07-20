@@ -42,6 +42,21 @@ export interface VBNode {
     config: Record<string, unknown>;
     validationErrors: string[];
     executionCount?: number;
+    /**
+     * Phase 4 — Authoring attributes. These live on `data` so they are
+     * always visible to the renderer without unpacking `config`.
+     * (When absent, defaults are: enabled=true, collapsed=false.)
+     */
+    /** Tailwind bg-* class overriding the definition color. */
+    colorOverride?: string;
+    /** Icon key overriding the definition icon. */
+    iconOverride?: string;
+    /** Disabled nodes are skipped by validation/simulation. */
+    enabled?: boolean;
+    /** Collapsed nodes render compactly (handles still visible). */
+    collapsed?: boolean;
+    /** Free-form author notes (visible on hover / in inspector). */
+    notes?: string;
   };
   selected?: boolean;
 }

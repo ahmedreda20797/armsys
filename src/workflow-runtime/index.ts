@@ -1,91 +1,81 @@
 /**
- * ARM ERP — Workflow Runtime Foundation
+ * ARM ERP — Workflow Runtime V1
  *
  * Public barrel. Single import point for the entire runtime:
  *
  *   import {
  *     createWorkflowRuntime,
  *     type RuntimeWorkflow,
- *     type WorkflowContextInput,
- *     NodeNotFoundError,
+ *     type ExecuteResult,
+ *     ValidationError,
  *   } from '@/workflow-runtime';
  *
  * Pure TypeScript. No React, No ReactFlow, No Firebase, No Browser APIs.
  * Runs identically in Node.js, API Routes, Background Workers, and future
- * Queue Workers.
+ * Queue Workers (Redis / Firebase).
  *
  * @module workflow-runtime
  */
 
 /* ─── Types ───────────────────────────────────────────────────────────── */
-export * from './types/runtime';
+
+export type {
+  ExecutionState,
+  VariableScope,
+  VariableValue,
+  RuntimeNode,
+  RuntimeNodeKind,
+  RuntimeBranch,
+  RuntimeEdge,
+  RuntimeWorkflow,
+  ConditionOperator,
+  Condition,
+  RuntimeContext as RuntimeContextDTO,
+  VariableSnapshotScoped,
+  HistoryEntry,
+  StepStatus,
+  LogLevel,
+  LogEntry,
+  ExecutorOutcome,
+  ExecutorResult,
+  RuntimeEventType,
+  RuntimeEvent,
+  RuntimeEventSubscriber,
+  QueueItem,
+  QueuePriority,
+  ValidationResult,
+  ValidationFailure,
+  RuntimeConfig,
+} from './types/runtime.types';
+
+export {
+  DEFAULT_RUNTIME_CONFIG,
+  TERMINAL_STATES,
+  ACTIVE_STATES,
+  SCOPE_PRECEDENCE,
+  DEFAULT_NODE_TYPE_TO_KIND,
+} from './types/runtime.types';
 
 /* ─── Errors ──────────────────────────────────────────────────────────── */
+
 export {
   WorkflowRuntimeError,
+  ValidationError,
+  ExecutionError,
+  TransitionError,
+  QueueError,
+  SerializationError,
+  VariableMissingError,
   NodeNotFoundError,
   InfiniteLoopError,
-  VariableMissingError,
-  DispatcherError,
-  InvalidTransitionError,
+  ExecutorNotRegisteredError,
   WorkflowTimeoutError,
   RuntimeCancelledError,
-  ConditionEvaluationError,
-  TriggerError,
   isWorkflowRuntimeError,
-  type WorkflowErrorDetails,
-} from './errors/WorkflowError';
+  type ValidationViolation,
+} from './errors/RuntimeErrors';
 
-export {
-  RetryPolicy,
-  createRetryPolicy,
-  DEFAULT_RETRY_POLICY,
-  type RetryPolicyConfig,
-  type RetryDecision,
-  type BackoffStrategy,
-} from './errors/RetryPolicy';
-
-/* ─── Variables ───────────────────────────────────────────────────────── */
-export {
-  VariableStore,
-  createVariableStore,
-} from './variables/VariableStore';
-
-export {
-  VariableResolver,
-  createVariableResolver,
-  type ResolverSources,
-  type ResolveOptions,
-} from './variables/VariableResolver';
-
-/* ─── Conditions ──────────────────────────────────────────────────────── */
-export {
-  ConditionEvaluator,
-  createConditionEvaluator,
-  applyOperator,
-  type ConditionNode,
-  type FieldLookup,
-} from './conditions/ConditionEvaluator';
-
-/* ─── Events ──────────────────────────────────────────────────────────── */
-export {
-  RuntimeEventBus,
-  createRuntimeEventBus,
-  isRuntimeEventType,
-} from './events/RuntimeEvents';
-
-/* ─── Queue ───────────────────────────────────────────────────────────── */
-export {
-  RuntimeQueue,
-  createRuntimeQueue,
-} from './queue/RuntimeQueue';
-
-/* ─── Engine ──────────────────────────────────────────────────────────── */
-export {
-  createWorkflowContext,
-  mergeWorkflowContext,
-  getContextNamespace,
-} from './engine/WorkflowContext';
+/* ─── Execution State Machine ─────────────────────────────────────────── */
 
 export {
   canTransition,
@@ -94,65 +84,114 @@ export {
   isActive,
   getAllowedTransitions,
   StateTracker,
-} from './engine/WorkflowState';
+} from './engine/ExecutionState';
+
+/* ─── Runtime Context ────────────────────────────────────────────────── */
 
 export {
-  ExecutionCursor,
-  createExecutionCursor,
-  type CursorSnapshot,
-  type ExecutionCursorOptions,
-} from './engine/ExecutionCursor';
+  RuntimeContext,
+  createRuntimeContext,
+  type RuntimeContextOptions,
+} from './engine/RuntimeContext';
+
+/* ─── Event Bus ──────────────────────────────────────────────────────── */
+
+export {
+  EventBus,
+  createEventBus,
+  isRuntimeEventType,
+} from './events/EventBus';
+
+/* ─── Variable Engine ────────────────────────────────────────────────── */
+
+export {
+  VariableResolver,
+  createVariableResolver,
+  type VariableSnapshot,
+  type VariableUpdater,
+} from './variables/VariableResolver';
+
+/* ─── Execution Logger ────────────────────────────────────────────────── */
+
+export {
+  ExecutionLogger,
+  createExecutionLogger,
+  type LogSink,
+  type LogContext,
+  type ExecutionLoggerOptions,
+} from './logging/ExecutionLogger';
+
+/* ─── Execution Queue ─────────────────────────────────────────────────── */
+
+export {
+  ExecutionQueue,
+  createExecutionQueue,
+  type EnqueueOptions,
+} from './queue/ExecutionQueue';
+
+/* ─── Executors ──────────────────────────────────────────────────────── */
+
+export {
+  BaseExecutor,
+  type ExecutorContext,
+} from './executors/BaseExecutor';
+
+export {
+  ExecutorRegistry,
+  createExecutorRegistry,
+  autoRegister,
+} from './executors/ExecutorRegistry';
+
+export {
+  StartExecutor,
+  EndExecutor,
+  IfExecutor,
+  SwitchExecutor,
+  DelayExecutor,
+  NotifyExecutor,
+  SetVariableExecutor,
+  CreateCAPAExecutor,
+  AssignExecutor,
+  PlaceholderExecutor,
+  registerStandardExecutors,
+} from './executors/Executors';
+
+export {
+  applyCondition,
+} from './executors/ConditionOps';
+
+/* ─── Validation ──────────────────────────────────────────────────────── */
+
+export {
+  RuntimeValidator,
+  createRuntimeValidator,
+  buildAdjacency,
+  type ValidatorOptions,
+} from './validation/RuntimeValidator';
+
+/* ─── Serialization ──────────────────────────────────────────────────── */
+
+export {
+  RuntimeSerializer,
+  createRuntimeSerializer,
+  type SerializedRuntime,
+} from './serialization/RuntimeSerializer';
+
+/* ─── Workflow Executor ──────────────────────────────────────────────── */
 
 export {
   WorkflowExecutor,
   createWorkflowExecutor,
   type WorkflowExecutorPorts,
+  type ExecutionOutcome,
 } from './engine/WorkflowExecutor';
+
+/* ─── Workflow Runtime ───────────────────────────────────────────────── */
 
 export {
   WorkflowRuntime,
   createWorkflowRuntime,
   type WorkflowRuntimeOptions,
-  type StartOptions,
+  type ExecuteOptions,
+  type ExecuteResult,
 } from './engine/WorkflowRuntime';
-
-/* ─── Execution ───────────────────────────────────────────────────────── */
-export {
-  ExecutionSession,
-  type ExecutionSessionOptions,
-} from './execution/ExecutionSession';
-
-export {
-  ExecutionResult,
-  buildExecutionResult,
-  type ExecutionResultInput,
-} from './execution/ExecutionResult';
-
-export {
-  ExecutionHistory,
-  createExecutionHistory,
-  type HistoryMetrics,
-} from './execution/ExecutionHistory';
-
-export {
-  buildExecutionStep,
-  startedStep,
-  completeStep,
-  failStep,
-  type StepBuildInput,
-} from './execution/ExecutionStep';
-
-/* ─── Dispatchers ─────────────────────────────────────────────────────── */
-export {
-  ActionDispatcher,
-  createActionDispatcher,
-  type DispatchInput,
-} from './dispatcher/ActionDispatcher';
-
-export {
-  TriggerDispatcher,
-  createTriggerDispatcher,
-  type TriggerContext,
-  type TriggerResolver,
-  type TriggerResolution,
-} from './dispatcher/TriggerDispatcher';

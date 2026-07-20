@@ -12,7 +12,14 @@ import {
   Settings, SlidersHorizontal, ArrowDownToLine, ArrowUpFromLine,
   GitBranch, Variable as VarIcon, Shield, UserCheck, RefreshCw,
   Clock, AlertTriangle, FileText, CheckCircle2, BookOpen,
-  X, ChevronRight, BookmarkPlus,
+  X, ChevronRight, BookmarkPlus, Palette, Eye, EyeOff, StickyNote, Ban,
+} from 'lucide-react';
+// Icon catalog used by the Appearance tab (kept separate to avoid name clashes
+// with the layout icons imported above).
+import {
+  Play, Square, Zap, Shuffle, Merge, Calculator, Scale, ShieldCheck,
+  ClipboardCheck, Bell, RefreshCcw, Users, Award, Plane,
+  BarChart3, Globe, Code2, Mail, Sparkles, Cpu, PenLine, Variable,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type {
@@ -23,15 +30,17 @@ import { DynamicConfigForm } from './DynamicConfigForm';
 import { ExpressionBuilder } from './ExpressionBuilder';
 import { EdgeInspector } from './EdgeInspector';
 import { SaveNodeTemplateDialog } from './SaveNodeTemplateDialog';
+import { NODE_COLORS } from '../components/ColorPalette';
 
 type InspectorTab =
   | 'general' | 'config' | 'inputs' | 'outputs' | 'conditions'
   | 'variables' | 'permissions' | 'assignments' | 'retry' | 'timeout'
-  | 'error' | 'metadata' | 'validation' | 'docs';
+  | 'error' | 'metadata' | 'validation' | 'docs' | 'appearance';
 
 const TABS: { id: InspectorTab; label: string; icon: React.ElementType }[] = [
   { id: 'general',      label: 'عام',        icon: Settings        },
   { id: 'config',       label: 'إعداد',      icon: SlidersHorizontal },
+  { id: 'appearance',   label: 'المظهر',     icon: Palette         },
   { id: 'inputs',       label: 'مدخلات',     icon: ArrowDownToLine  },
   { id: 'outputs',      label: 'مخرجات',     icon: ArrowUpFromLine  },
   { id: 'conditions',   label: 'شروط',       icon: GitBranch        },
@@ -54,10 +63,12 @@ interface NodeInspectorV2Props {
   onUpdateEdge: (id: string, data: Partial<VBEdge>) => void;
   onClose: () => void;
   onPickVariable: (target: { kind: 'node-config' | 'node-condition' | 'edge-condition'; fieldKey?: string; conditionId?: string; edgeId?: string }) => void;
+  /** Phase 8 — focus a validation issue (move camera + select). */
+  onFocusIssue?: (nodeId?: string, edgeId?: string) => void;
 }
 
 export const NodeInspectorV2 = memo(function NodeInspectorV2({
-  node, edge, validation, onUpdateNode, onUpdateEdge, onClose, onPickVariable,
+  node, edge, validation, onUpdateNode, onUpdateEdge, onClose, onPickVariable, onFocusIssue,
 }: NodeInspectorV2Props) {
   const [activeTab, setActiveTab] = useState<InspectorTab>('general');
   const [showSaveTemplate, setShowSaveTemplate] = useState(false);
@@ -151,6 +162,7 @@ export const NodeInspectorV2 = memo(function NodeInspectorV2({
             validation={validation}
             onUpdateNode={onUpdateNode}
             onPickVariable={onPickVariable}
+            onFocusIssue={onFocusIssue}
           />
         </Suspense>
       </div>
@@ -169,7 +181,7 @@ export const NodeInspectorV2 = memo(function NodeInspectorV2({
 /* ─── Tab content dispatcher ────────────────────────────────────────────── */
 
 const InspectorContent = memo(function InspectorContent({
-  tab, node, cfg, schema, nodeIssues, validation, onUpdateNode, onPickVariable,
+  tab, node, cfg, schema, nodeIssues, validation, onUpdateNode, onPickVariable, onFocusIssue,
 }: {
   tab: InspectorTab;
   node: VBNode;
@@ -179,6 +191,7 @@ const InspectorContent = memo(function InspectorContent({
   validation: VBValidationReport;
   onUpdateNode: NodeInspectorV2Props['onUpdateNode'];
   onPickVariable: NodeInspectorV2Props['onPickVariable'];
+  onFocusIssue?: NodeInspectorV2Props['onFocusIssue'];
 }) {
   const inputCls = 'w-full bg-slate-800/60 border border-slate-700/50 rounded-lg px-3 py-1.5 text-xs text-slate-200 placeholder:text-slate-500 focus:outline-none focus:border-violet-500/50';
 
@@ -209,6 +222,11 @@ const InspectorContent = memo(function InspectorContent({
           onChange={(key, value) => onUpdateNode(node.id, { configPatch: { ...((cfg.config as Record<string, unknown>) ?? {}), [key]: value } })}
           onPickVariable={(fieldKey) => onPickVariable({ kind: 'node-config', fieldKey })}
         />
+      );
+
+    case 'appearance':
+      return (
+        <AppearanceTab node={node} onUpdateNode={onUpdateNode} />
       );
 
     case 'inputs':
@@ -387,30 +405,12 @@ const InspectorContent = memo(function InspectorContent({
 
     case 'validation':
       return (
-        <div className="space-y-2" dir="rtl">
-          {nodeIssues.length === 0 ? (
-            <div className="flex flex-col items-center py-8 text-emerald-500">
-              <CheckCircle2 className="w-8 h-8 opacity-40 mb-2" />
-              <p className="text-xs">لا توجد مشاكل لهذه العقدة</p>
-            </div>
-          ) : (
-            nodeIssues.map((issue) => (
-              <div key={issue.id} className={cn(
-                'flex gap-2 p-2.5 rounded-lg border',
-                issue.severity === 'error' ? 'bg-red-500/10 border-red-500/20' :
-                issue.severity === 'warning' ? 'bg-amber-500/10 border-amber-500/20' :
-                'bg-blue-500/10 border-blue-500/20'
-              )}>
-                <AlertTriangle className={cn('w-3.5 h-3.5 flex-shrink-0 mt-0.5',
-                  issue.severity === 'error' ? 'text-red-400' : issue.severity === 'warning' ? 'text-amber-400' : 'text-blue-400')} />
-                <div>
-                  <p className="text-xs text-slate-300">{issue.messageAr}</p>
-                  <p className="text-[8px] text-slate-500 mt-0.5 font-mono">{issue.code} · {issue.category}</p>
-                </div>
-              </div>
-            ))
-          )}
-        </div>
+        <ValidationIssuesTab
+          nodeIssues={nodeIssues}
+          allIssues={validation.issues}
+          onFocusIssue={onFocusIssue}
+          currentNodeId={node.id}
+        />
       );
 
     case 'docs':
@@ -433,7 +433,207 @@ const InspectorContent = memo(function InspectorContent({
   }
 });
 
+/* ─── Phase 4 — Appearance tab ───────────────────────────────────────────── */
+
+const ICON_CHOICES = [
+  'Zap', 'Bell', 'Mail', 'GitBranch', 'ShieldCheck', 'Users', 'Award',
+  'Plane', 'FileText', 'AlertTriangle', 'BarChart3', 'Globe', 'Code2',
+  'Sparkles', 'Variable', 'Cpu', 'PenLine', 'Eye', 'Calculator', 'Scale',
+];
+
+function AppearanceTab({
+  node, onUpdateNode,
+}: {
+  node: VBNode;
+  onUpdateNode: NodeInspectorV2Props['onUpdateNode'];
+}) {
+  const inputCls = 'w-full bg-slate-800/60 border border-slate-700/50 rounded-lg px-3 py-1.5 text-xs text-slate-200 placeholder:text-slate-500 focus:outline-none focus:border-violet-500/50';
+  const currentColor = node.data.colorOverride ?? node.data.definition.color;
+  const currentIcon = node.data.iconOverride ?? node.data.definition.icon;
+  const isEnabled = node.data.enabled ?? true;
+  const isCollapsed = node.data.collapsed ?? false;
+
+  return (
+    <div className="space-y-3" dir="rtl">
+      {/* Color */}
+      <Field label="اللون">
+        <div className="grid grid-cols-5 gap-1.5">
+          {NODE_COLORS.map((c) => (
+            <button
+              key={c}
+              onClick={() => onUpdateNode(node.id, { colorOverride: c })}
+              className={cn(
+                'h-7 rounded-md transition-transform hover:scale-110',
+                c,
+                currentColor === c && 'ring-2 ring-white ring-offset-1 ring-offset-slate-900',
+              )}
+              aria-label={c}
+            />
+          ))}
+        </div>
+      </Field>
+
+      {/* Icon */}
+      <Field label="الأيقونة">
+        <div className="grid grid-cols-5 gap-1.5">
+          {ICON_CHOICES.map((ic) => {
+            const IconComp = ICON_LOOKUP[ic] ?? Settings;
+            return (
+              <button
+                key={ic}
+                onClick={() => onUpdateNode(node.id, { iconOverride: ic })}
+                title={ic}
+                className={cn(
+                  'h-7 rounded-md flex items-center justify-center border transition-colors',
+                  currentIcon === ic
+                    ? 'bg-violet-600/30 border-violet-500/40 text-violet-300'
+                    : 'bg-slate-800/60 border-slate-700/40 text-slate-400 hover:text-slate-200',
+                )}
+              >
+                <IconComp className="w-3.5 h-3.5" />
+              </button>
+            );
+          })}
+        </div>
+      </Field>
+
+      {/* Enabled toggle */}
+      <Field label="الحالة">
+        <button
+          onClick={() => onUpdateNode(node.id, { enabled: !isEnabled })}
+          className={cn(
+            'flex items-center justify-between w-full px-3 py-2 rounded-lg border transition-colors',
+            isEnabled
+              ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-300'
+              : 'bg-slate-700/30 border-slate-600/40 text-slate-400',
+          )}
+        >
+          <span className="text-xs flex items-center gap-1.5">
+            {isEnabled ? <Eye className="w-3.5 h-3.5" /> : <Ban className="w-3.5 h-3.5" />}
+            {isEnabled ? 'مفعّلة' : 'معطّلة'}
+          </span>
+          <span className={cn(
+            'relative w-9 h-5 rounded-full transition-colors',
+            isEnabled ? 'bg-emerald-500' : 'bg-slate-600',
+          )}>
+            <span className={cn(
+              'absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform',
+              isEnabled ? 'left-0.5' : 'left-4.5',
+            )} style={{ left: isEnabled ? '2px' : '18px' }} />
+          </span>
+        </button>
+      </Field>
+
+      {/* Collapsed toggle */}
+      <Field label="العرض">
+        <button
+          onClick={() => onUpdateNode(node.id, { collapsed: !isCollapsed })}
+          className={cn(
+            'flex items-center justify-between w-full px-3 py-2 rounded-lg border transition-colors',
+            isCollapsed
+              ? 'bg-violet-500/10 border-violet-500/20 text-violet-300'
+              : 'bg-slate-800/60 border-slate-700/40 text-slate-400',
+          )}
+        >
+          <span className="text-xs flex items-center gap-1.5">
+            {isCollapsed ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+            {isCollapsed ? 'مطوية' : 'موسّعة'}
+          </span>
+        </button>
+      </Field>
+
+      {/* Notes */}
+      <Field label="ملاحظات داخلية">
+        <textarea
+          value={node.data.notes ?? ''}
+          onChange={(e) => onUpdateNode(node.id, { notes: e.target.value })}
+          rows={3}
+          placeholder="ملاحظات للمصممين (لا تظهر في التنفيذ)..."
+          className={`${inputCls} resize-none`}
+        />
+        <p className="text-[9px] text-slate-500 mt-1 flex items-center gap-1">
+          <StickyNote className="w-2.5 h-2.5" /> تظهر عند تمرير الفأرة فوق العقدة
+        </p>
+      </Field>
+    </div>
+  );
+}
+
+/* ─── Phase 8 — Validation issues tab with click-to-focus ─────────────────── */
+
+function ValidationIssuesTab({
+  nodeIssues, allIssues, onFocusIssue, currentNodeId,
+}: {
+  nodeIssues: VBValidationReport['issues'];
+  allIssues: VBValidationReport['issues'];
+  onFocusIssue?: NodeInspectorV2Props['onFocusIssue'];
+  currentNodeId: string;
+}) {
+  // Show node-specific issues first, then global issues that have no nodeId.
+  const globalIssues = allIssues.filter((i) => !i.nodeId);
+  const showGlobal = nodeIssues.length === 0;
+
+  if (nodeIssues.length === 0 && globalIssues.length === 0) {
+    return (
+      <div className="flex flex-col items-center py-8 text-emerald-500" dir="rtl">
+        <CheckCircle2 className="w-8 h-8 opacity-40 mb-2" />
+        <p className="text-xs">لا توجد مشاكل لهذه العقدة</p>
+      </div>
+    );
+  }
+
+  const renderIssue = (issue: VBValidationReport['issues'][number]) => (
+    <button
+      key={issue.id}
+      onClick={() => {
+        if (onFocusIssue && (issue.nodeId || issue.edgeId)) {
+          onFocusIssue(issue.nodeId, issue.edgeId);
+        }
+      }}
+      disabled={!onFocusIssue || (!issue.nodeId && !issue.edgeId)}
+      className={cn(
+        'w-full text-right flex gap-2 p-2.5 rounded-lg border transition-colors',
+        issue.severity === 'error' ? 'bg-red-500/10 border-red-500/20 hover:bg-red-500/15' :
+        issue.severity === 'warning' ? 'bg-amber-500/10 border-amber-500/20 hover:bg-amber-500/15' :
+        'bg-blue-500/10 border-blue-500/20 hover:bg-blue-500/15',
+        (!onFocusIssue || (!issue.nodeId && !issue.edgeId)) && 'cursor-default',
+      )}
+    >
+      <AlertTriangle className={cn('w-3.5 h-3.5 flex-shrink-0 mt-0.5',
+        issue.severity === 'error' ? 'text-red-400' : issue.severity === 'warning' ? 'text-amber-400' : 'text-blue-400')} />
+      <div className="flex-1 min-w-0">
+        <p className="text-xs text-slate-300">{issue.messageAr}</p>
+        <p className="text-[8px] text-slate-500 mt-0.5 font-mono">{issue.code} · {issue.category}</p>
+      </div>
+      {(issue.nodeId || issue.edgeId) && onFocusIssue && (
+        <ChevronRight className="w-3 h-3 text-slate-500 flex-shrink-0 mt-1" />
+      )}
+    </button>
+  );
+
+  return (
+    <div className="space-y-2" dir="rtl">
+      {nodeIssues.map(renderIssue)}
+      {showGlobal && globalIssues.length > 0 && (
+        <>
+          <p className="text-[9px] text-slate-500 uppercase tracking-wider pt-2">مشاكل عامة</p>
+          {globalIssues.map(renderIssue)}
+        </>
+      )}
+      {/* Unused: silence TS for currentNodeId param used only for context. */}
+      <span className="hidden">{currentNodeId}</span>
+    </div>
+  );
+}
+
 /* ─── Small helpers ─────────────────────────────────────────────────────── */
+
+const ICON_LOOKUP: Record<string, React.ElementType> = {
+  Play, Square, Zap, GitBranch, Shuffle, Merge, Clock, RefreshCw,
+  PenLine, Eye, Calculator, Scale, ShieldCheck, ClipboardCheck,
+  Bell, UserCheck, RefreshCcw, Users, Award, Plane, FileText,
+  AlertTriangle, BarChart3, Globe, Code2, Mail, Sparkles, Variable, Cpu,
+};
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (

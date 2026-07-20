@@ -49,15 +49,37 @@ export {
 
 export { CONFIG_SCHEMAS, getConfigSchema } from './engine/v2-config-schemas';
 
+// ── Phase 10/11 — Serialization ─────────────────────────────────────────
+export {
+  serializeGraph, serializeGraphToString,
+  deserializeGraph, deserializeGraphFromString,
+  saveGraphToLocalStorage, loadGraphFromLocalStorage,
+  getRecentGraphId, listLocalGraphIds, generateGraphId,
+  DESIGNER_VERSION,
+  type VBSerializedGraph, type VBSerializedNode, type VBSerializedEdge,
+  type DeserializeResult, type DeserializeWarning,
+} from './engine/serializer';
+
+// ── Clipboard (Copy / Cut / Paste) ──────────────────────────────────────
+export {
+  copySelection, cutSelection, pasteSelection, hasClipboard, clearClipboard,
+  type VBClipboardPayload,
+} from './engine/clipboard';
+
 // ── Nodes ───────────────────────────────────────────────────────────────
 export { WORKFLOW_NODE_DEFINITIONS, NODE_CATEGORIES, NODE_DEF_MAP } from './nodes/nodeDefinitions';
 export { WorkflowNodeRenderer, nodeTypes } from './nodes/WorkflowNodeRenderer';
 
 // ── Canvas ──────────────────────────────────────────────────────────────
-export { WorkflowCanvas } from './canvas/WorkflowCanvas';
+export { WorkflowCanvas, isValidConnection as isValidCanvasConnection } from './canvas/WorkflowCanvas';
 
 // ── Toolbar ──────────────────────────────────────────────────────────────
 export { DesignerToolbar } from './toolbar/DesignerToolbar';
+
+// ── Phase 13 / 14 — Context Menu + Error Boundary + Color Palette ────────
+export { CanvasContextMenu, NodeContextMenu, isNodeTarget } from './components/ContextMenu';
+export { DesignerErrorBoundary, RecoveryDialog } from './components/DesignerErrorBoundary';
+export { ColorPalette, NODE_COLORS } from './components/ColorPalette';
 
 // ── Panels (V1) ──────────────────────────────────────────────────────────
 export { NodeLibraryPanel } from './panels/NodeLibraryPanel';
