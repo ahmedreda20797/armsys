@@ -27,7 +27,7 @@ import { toast } from 'sonner';
 import {
   Workflow, PanelRightClose, PanelRightOpen, PanelLeftClose, PanelLeftOpen,
   CheckCircle2, AlertCircle, Settings, BookOpen, ListTree,
-  GitBranch, FileText, Layers, FolderOpen, Download, Upload,
+  GitBranch, FileText, Layers, FolderOpen, Download, Upload, Plus,
 } from 'lucide-react';
 
 // ── Visual Builder Framework ──────────────────────────────────────────────
@@ -135,6 +135,50 @@ function createStarterWorkflow(): { nodes: VBNode[]; edges: VBEdge[] } {
   ];
 
   return { nodes, edges };
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   Phase 3 — Enterprise empty state.
+   Shown when the canvas has no nodes. pointer-events-none on the wrapper so
+   it never intercepts drag-drop; only the CTA button opts back in.
+   ════════════════════════════════════════════════════════════════════════ */
+
+function CanvasEmptyState({ onAddStart }: { onAddStart: () => void }) {
+  return (
+    <div className="absolute inset-0 z-10 flex items-center justify-center pointer-events-none" dir="rtl">
+      <div className="flex flex-col items-center text-center max-w-sm px-6 select-none">
+        {/* Illustration */}
+        <div className="relative mb-5">
+          <div className="absolute inset-0 bg-violet-500/20 blur-2xl rounded-full" />
+          <div className="relative w-20 h-20 rounded-2xl bg-gradient-to-br from-violet-600/30 to-indigo-600/20 border border-violet-500/30 flex items-center justify-center shadow-xl shadow-violet-900/20">
+            <Workflow className="w-9 h-9 text-violet-300" strokeWidth={1.5} />
+          </div>
+        </div>
+        {/* Headline */}
+        <h2 className="text-base font-bold text-slate-200 mb-1.5">ابدأ بسحب أول عقدة من المكتبة</h2>
+        <p className="text-xs text-slate-500 leading-relaxed mb-5">
+          اسحب أي عقدة من المكتبة على اليسار وأفلتها هنا، أو انقر نقرتين على المساحة الفارغة لإضافة عقدة بداية.
+        </p>
+        {/* CTA */}
+        <button
+          onClick={onAddStart}
+          className="pointer-events-auto flex items-center gap-2 px-4 py-2 rounded-lg bg-violet-600/20 border border-violet-500/40 text-violet-200 text-xs font-medium hover:bg-violet-600/30 hover:border-violet-500/60 transition-all shadow-lg shadow-violet-900/10"
+        >
+          <Plus className="w-4 h-4" />
+          إضافة عقدة بداية
+        </button>
+        {/* Hint chips */}
+        <div className="flex items-center gap-2 mt-6">
+          <span className="flex items-center gap-1 px-2 py-1 rounded-md bg-slate-800/40 border border-slate-700/40 text-[10px] text-slate-500">
+            <kbd className="font-mono text-slate-400">Ctrl</kbd>+<kbd className="font-mono text-slate-400">S</kbd> حفظ
+          </span>
+          <span className="flex items-center gap-1 px-2 py-1 rounded-md bg-slate-800/40 border border-slate-700/40 text-[10px] text-slate-500">
+            <kbd className="font-mono text-slate-400">Ctrl</kbd>+<kbd className="font-mono text-slate-400">Z</kbd> تراجع
+          </span>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 const SAMPLE_VARIABLES: WorkflowVariable[] = [
@@ -270,6 +314,20 @@ function WorkflowDesignerInner() {
     });
   }, [nodes, validation]);
 
+  // Phase 5 — explicit feedback after creating a node: if it landed with
+  // validation errors, surface a toast so the author knows to check the panel.
+  useEffect(() => {
+    const id = lastCreatedNodeRef.current;
+    if (!id) return;
+    const errs = getNodeValidationErrors(id, validation);
+    if (errs.length > 0) {
+      toast.warning(`أُضيفت العقدة — ${errs.length} تحذير/خطأ. راجع لوحة الفحص`);
+    } else {
+      toast.success('تمت إضافة العقدة بنجاح');
+    }
+    lastCreatedNodeRef.current = null;
+  }, [validation]);
+
   // Apply simulation highlight to nodes (renders active node differently).
   const nodesForCanvas = useMemo(() => {
     if (!simHighlight) return nodesWithValidation;
@@ -290,6 +348,9 @@ function WorkflowDesignerInner() {
   const futureRef = useRef<HistorySnapshot[]>([]);
   const [, setHistVer] = useState(0);
   const MAX_HISTORY = 100;
+  // Tracks the most recently created node id so the validation effect can toast
+  // feedback specifically for that node (Phase 5 — explicit drop feedback).
+  const lastCreatedNodeRef = useRef<string | null>(null);
 
   const captureSnapshot = useCallback((): HistorySnapshot => ({
     nodes: nodes.map((n) => ({ ...n, data: { ...n.data } })),
@@ -343,17 +404,13 @@ function WorkflowDesignerInner() {
   const [isSaving, setIsSaving] = useState(false);
   const [isPublishing, setIsPublishing] = useState(false);
 
-  // ── Drag & Drop ────────────────────────────────────────────────────────
-  const onDrop = useCallback((event: React.DragEvent, position: { x: number; y: number }) => {
-    event.preventDefault();
-    const defJson = event.dataTransfer.getData('application/reactflow');
-    if (!defJson) return;
-    let def: VBNodeDefinition;
-    try { def = JSON.parse(defJson); } catch { return; }
-
+  // ── Node creation core (Phase 2 — shared by drag-drop, double-click, empty-state) ──
+  // Returns true on success, false on rejection. Centralises ID gen, default data,
+  // snapping, history, auto-select/focus, recently-used tracking, and the drop pulse.
+  const createNodeAt = useCallback((def: VBNodeDefinition, position: { x: number; y: number }, opts?: { silent?: boolean }): boolean => {
     if (def.isSingleton && nodes.some((n) => n.data.definition.type === def.type)) {
-      toast.error(`عقدة "${def.label}" موجودة بالفعل`);
-      return;
+      if (!opts?.silent) toast.error(`عقدة "${def.label}" موجودة بالفعل`);
+      return false;
     }
     pushHistory();
     const newNode: VBNode = {
@@ -367,34 +424,77 @@ function WorkflowDesignerInner() {
         : position,
       data: {
         definition: def, label: def.label, description: def.description,
-        status: 'idle', config: { ...(def.defaultData ?? {}) }, validationErrors: [],
+        // 'success' triggers the drop-landing pulse; reverted to 'idle' below.
+        status: 'success', config: { ...(def.defaultData ?? {}) }, validationErrors: [],
       },
     };
+    lastCreatedNodeRef.current = newNode.id;
     setNodes((nds) => {
       const next = [...nds, newNode];
-      // Auto-select & focus the freshly-dropped node (Phase 2).
+      // Auto-select & focus the freshly-created node (Phase 2).
       setTimeout(() => {
         const node = next.find((n) => n.id === newNode.id);
         if (node) {
           setSelectedNodes([node]);
           setSelectedEdges([]);
+          if (rightMode !== 'inspector') setRightMode('inspector');
           rf.setCenter(node.position.x + 90, node.position.y + 30, { zoom: 1, duration: 200 });
         }
       }, 30);
       return next.map((n) => ({ ...n, selected: n.id === newNode.id ? true : undefined }));
     });
+    // Drop pulse — revert to 'idle' after 600ms (same timing pattern as edge animation).
+    setTimeout(() => {
+      setNodes((nds) => nds.map((n) => (n.id === newNode.id && n.data.status === 'success' ? { ...n, data: { ...n.data, status: 'idle' as const } } : n)));
+    }, 600);
     setIsDirty(true);
     setRecentlyUsed((prev) => {
       const next = [def.type, ...prev.filter((t) => t !== def.type)].slice(0, 10);
       try { localStorage.setItem('wf_recent', JSON.stringify(next)); } catch { /* noop */ }
       return next;
     });
-  }, [nodes, canvasConfig, pushHistory, rf]);
+    return true;
+  }, [nodes, canvasConfig, pushHistory, rf, rightMode]);
+
+  // ── Drag & Drop ────────────────────────────────────────────────────────
+  const onDrop = useCallback((event: React.DragEvent, position: { x: number; y: number }) => {
+    event.preventDefault();
+    const defJson = event.dataTransfer.getData('application/reactflow');
+    if (!defJson) {
+      // eslint-disable-next-line no-console
+      console.warn('[WorkflowDesigner] Drop ignored — no application/reactflow payload on dataTransfer.');
+      return;
+    }
+    let def: VBNodeDefinition;
+    try {
+      def = JSON.parse(defJson);
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('[WorkflowDesigner] Drop payload could not be parsed as JSON:', err, defJson);
+      toast.error('تعذّرت قراءة بيانات العقدة المسحوبة');
+      return;
+    }
+    if (!def || !def.type) {
+      // eslint-disable-next-line no-console
+      console.error('[WorkflowDesigner] Drop payload missing node definition.type:', def);
+      toast.error('بيانات العقدة غير مكتملة');
+      return;
+    }
+    createNodeAt(def, position);
+  }, [createNodeAt]);
 
   const onDragOver = useCallback((event: React.DragEvent) => {
     event.preventDefault();
     event.dataTransfer.dropEffect = 'move';
   }, []);
+
+  // ── Double-click empty canvas → add Start node (Phase 3 empty-state UX) ──
+  const handleCanvasDoubleClick = useCallback((event: React.MouseEvent) => {
+    const startDef = NODE_DEF_MAP.get('start');
+    if (!startDef) return;
+    const position = rf.screenToFlowPosition({ x: event.clientX, y: event.clientY });
+    createNodeAt(startDef, position);
+  }, [rf, createNodeAt]);
 
   // ── Node / edge changes ────────────────────────────────────────────────
   const onNodesChange = useCallback((changes: any) => {
@@ -1144,6 +1244,7 @@ function WorkflowDesignerInner() {
             if (nodeId) handleNodeContextMenu(e, nodeId);
             else handleCanvasContextMenu(e);
           }}
+          onDoubleClick={handleCanvasDoubleClick}
         >
           <WorkflowCanvas
             nodes={nodesForCanvas}
@@ -1159,6 +1260,17 @@ function WorkflowDesignerInner() {
             onViewportChange={onViewportChange}
             isValid={isValidConnectionCb}
           />
+          {/* Phase 3 — Enterprise empty state. Layered above the canvas with
+              pointer-events-none so it never blocks drag-drop; the button opts
+              back into pointer events. */}
+          {nodes.length === 0 && (
+            <CanvasEmptyState onAddStart={() => {
+              const startDef = NODE_DEF_MAP.get('start');
+              if (!startDef) return;
+              const center = rf.screenToFlowPosition({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
+              createNodeAt(startDef, center);
+            }} />
+          )}
         </main>
 
         {/* Right — Mode-switching panel */}

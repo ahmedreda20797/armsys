@@ -14,6 +14,7 @@ import ReactFlow, {
   type OnConnect,
   type IsValidConnection,
   useStore,
+  useReactFlow,
   SelectionMode,
 } from 'reactflow';
 import 'reactflow/dist/style.css';
@@ -166,14 +167,37 @@ function WorkflowCanvasInner({
     }
   }, [exposeInstance]);
 
+  // Use ReactFlow's official coordinate conversion (replaces manual transform math).
+  const rfInstance = useReactFlow();
+
+  // Drag-over visual feedback (Phase 4 — drop-zone highlight).
+  const [isDragOver, setIsDragOver] = React.useState(false);
+
   // Stable handlers (React Flow re-renders on identity changes).
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
-    const { x, y, zoom } = viewportRef.current;
-    // Convert screen (client) → flow coords using the current transform.
-    const position = { x: (e.clientX - x) / zoom, y: (e.clientY - y) / zoom };
-    onDrop(e, position);
-  }, [onDrop]);
+    setIsDragOver(false);
+    try {
+      const position = rfInstance.screenToFlowPosition({ x: e.clientX, y: e.clientY });
+      onDrop(e, position);
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('[WorkflowCanvas] screenToFlowPosition failed, falling back to manual math:', err);
+      const { x, y, zoom } = viewportRef.current;
+      const position = { x: (e.clientX - x) / zoom, y: (e.clientY - y) / zoom };
+      onDrop(e, position);
+    }
+  }, [onDrop, rfInstance]);
+
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    if (!isDragOver) setIsDragOver(true);
+  }, [isDragOver]);
+
+  const handleDragLeave = useCallback(() => {
+    setIsDragOver(false);
+  }, []);
 
   const handleEdgeClick = useCallback((_evt: React.MouseEvent, edge: Edge) => {
     const vbEdge = edges.find((e) => e.id === edge.id) ?? (edge as unknown as VBEdge);
@@ -206,7 +230,10 @@ function WorkflowCanvasInner({
   }, [edges]);
 
   return (
-    <div className="flex-1 relative">
+    <div
+      className={cn('flex-1 relative transition-shadow', isDragOver && 'ring-2 ring-inset ring-violet-500/60 shadow-[inset_0_0_60px_rgba(139,92,246,0.08)]')}
+      onDragLeave={handleDragLeave}
+    >
       <ReactFlow
         nodes={nodes as Node[]}
         edges={edges as Edge[]}
@@ -216,7 +243,7 @@ function WorkflowCanvasInner({
         onConnect={onConnect}
         onEdgeClick={handleEdgeClick}
         onDrop={handleDrop}
-        onDragOver={onDragOver}
+        onDragOver={(e) => { handleDragOver(e); onDragOver(e); }}
         onSelectionChange={handleSelectionChange}
         isValidConnection={isValid}
         fitView
@@ -257,6 +284,15 @@ function WorkflowCanvasInner({
           />
         )}
       </ReactFlow>
+
+      {/* Phase 4 — drop-zone hint shown while dragging over the canvas */}
+      {isDragOver && (
+        <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center">
+          <div className="px-4 py-2 rounded-xl bg-violet-600/20 border border-violet-400/40 backdrop-blur-sm text-violet-200 text-xs font-medium shadow-lg">
+            أفلت هنا لإضافة العقدة
+          </div>
+        </div>
+      )}
 
       <ZoomIndicator />
     </div>
