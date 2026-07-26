@@ -14,12 +14,11 @@ import ReactFlow, {
   type OnConnect,
   type IsValidConnection,
   useStore,
-  useReactFlow,
   SelectionMode,
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 
-import type { VBNode, VBEdge, VBCanvasConfig, VBViewport } from '../engine/types';
+import type { VBNode, VBEdge, VBNodeDefinition, VBCanvasConfig, VBViewport } from '../engine/types';
 import { nodeTypes } from '../nodes/WorkflowNodeRenderer';
 import { NODE_DEF_MAP } from '../nodes/nodeDefinitions';
 import { cn } from '@/lib/utils';
@@ -124,11 +123,13 @@ interface WorkflowCanvasInnerProps {
   onNodesChange: OnNodesChange;
   onEdgesChange: OnEdgesChange;
   onConnect: OnConnect;
-  onDrop: (event: React.DragEvent, position: { x: number; y: number }) => void;
-  onDragOver: (event: React.DragEvent) => void;
   onSelectionChange: (nodes: VBNode[], edges: VBEdge[]) => void;
   onEdgeClick?: (edge: VBEdge) => void;
   onViewportChange?: (viewport: VBViewport) => void;
+  /** Definition being dragged from the node library via Pointer Events. */
+  draggingDefinition?: VBNodeDefinition | null;
+  pointerScreenPosition?: { x: number; y: number } | null;
+  canvasRef?: React.Ref<HTMLDivElement>;
   /** Validation predicate — when supplied, drives live connection feedback. */
   isValid?: IsValidConnection | undefined;
   /** Reflector so the page can call screenToFlowPosition on drop. */
@@ -138,8 +139,8 @@ interface WorkflowCanvasInnerProps {
 function WorkflowCanvasInner({
   nodes, edges, config,
   onNodesChange, onEdgesChange, onConnect,
-  onDrop, onDragOver, onSelectionChange, onEdgeClick,
-  onViewportChange, isValid, exposeInstance,
+  onSelectionChange, onEdgeClick,
+  onViewportChange, isValid, exposeInstance, draggingDefinition, pointerScreenPosition, canvasRef,
 }: WorkflowCanvasInnerProps) {
   const transform = useStore((s) => s.transform);
 
@@ -167,37 +168,15 @@ function WorkflowCanvasInner({
     }
   }, [exposeInstance]);
 
-  // Use ReactFlow's official coordinate conversion (replaces manual transform math).
-  const rfInstance = useReactFlow();
-
-  // Drag-over visual feedback (Phase 4 — drop-zone highlight).
-  const [isDragOver, setIsDragOver] = React.useState(false);
-
-  // Stable handlers (React Flow re-renders on identity changes).
-  const handleDrop = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragOver(false);
-    try {
-      const position = rfInstance.screenToFlowPosition({ x: e.clientX, y: e.clientY });
-      onDrop(e, position);
-    } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error('[WorkflowCanvas] screenToFlowPosition failed, falling back to manual math:', err);
-      const { x, y, zoom } = viewportRef.current;
-      const position = { x: (e.clientX - x) / zoom, y: (e.clientY - y) / zoom };
-      onDrop(e, position);
-    }
-  }, [onDrop, rfInstance]);
-
-  const handleDragOver = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    e.dataTransfer.dropEffect = 'move';
-    if (!isDragOver) setIsDragOver(true);
-  }, [isDragOver]);
-
-  const handleDragLeave = useCallback(() => {
-    setIsDragOver(false);
-  }, []);
+  // Pointer Events are used instead of HTML5 drag/drop so mouse, trackpad and
+  // touch all follow one reliable interaction path.
+  const isPointerOver = Boolean(draggingDefinition && pointerScreenPosition);
+  const dragPosition = pointerScreenPosition
+    ? { x: pointerScreenPosition.x, y: pointerScreenPosition.y }
+    : { x: 0, y: 0 };
+  const dropIsAllowed = !draggingDefinition?.isSingleton || !nodes.some(
+    (node) => node.data.definition.type === draggingDefinition.type,
+  );
 
   const handleEdgeClick = useCallback((_evt: React.MouseEvent, edge: Edge) => {
     const vbEdge = edges.find((e) => e.id === edge.id) ?? (edge as unknown as VBEdge);
@@ -231,8 +210,14 @@ function WorkflowCanvasInner({
 
   return (
     <div
-      className={cn('flex-1 relative transition-shadow', isDragOver && 'ring-2 ring-inset ring-violet-500/60 shadow-[inset_0_0_60px_rgba(139,92,246,0.08)]')}
-      onDragLeave={handleDragLeave}
+      ref={canvasRef}
+      data-workflow-canvas="true"
+      className={cn(
+        'flex-1 relative transition-shadow',
+        isPointerOver && 'ring-2 ring-inset shadow-[inset_0_0_60px_rgba(139,92,246,0.08)]',
+        isPointerOver && (dropIsAllowed ? 'ring-violet-500/60' : 'ring-red-500/70'),
+        isPointerOver && (dropIsAllowed ? 'cursor-copy' : 'cursor-not-allowed'),
+      )}
     >
       <ReactFlow
         nodes={nodes as Node[]}
@@ -242,8 +227,6 @@ function WorkflowCanvasInner({
         onEdgesChange={onEdgesChange}
         onConnect={onConnect}
         onEdgeClick={handleEdgeClick}
-        onDrop={handleDrop}
-        onDragOver={(e) => { handleDragOver(e); onDragOver(e); }}
         onSelectionChange={handleSelectionChange}
         isValidConnection={isValid}
         fitView
@@ -285,11 +268,20 @@ function WorkflowCanvasInner({
         )}
       </ReactFlow>
 
-      {/* Phase 4 — drop-zone hint shown while dragging over the canvas */}
-      {isDragOver && (
+      {/* Pointer drag ghost is intentionally non-interactive. */}
+      {isPointerOver && draggingDefinition && (
         <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center">
-          <div className="px-4 py-2 rounded-xl bg-violet-600/20 border border-violet-400/40 backdrop-blur-sm text-violet-200 text-xs font-medium shadow-lg">
-            أفلت هنا لإضافة العقدة
+          <div
+            className={cn(
+              'absolute -translate-x-1/2 -translate-y-1/2 flex items-center gap-2 px-3 py-2 rounded-lg border backdrop-blur-sm text-xs font-medium shadow-xl transition-colors',
+              dropIsAllowed
+                ? 'bg-violet-600/30 border-violet-400/60 text-violet-100'
+                : 'bg-red-600/25 border-red-400/60 text-red-100',
+            )}
+            style={{ left: dragPosition.x, top: dragPosition.y }}
+          >
+            <span className={cn('w-2 h-2 rounded-full', dropIsAllowed ? 'bg-violet-300' : 'bg-red-300')} />
+            {dropIsAllowed ? `إفلات لإضافة: ${draggingDefinition.label}` : `غير مسموح: ${draggingDefinition.label} موجودة بالفعل`}
           </div>
         </div>
       )}

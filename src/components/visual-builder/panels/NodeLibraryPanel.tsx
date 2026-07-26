@@ -20,7 +20,8 @@ const ICON_MAP: Record<string, React.ElementType> = {
 };
 
 interface NodeLibraryProps {
-  onDragStart: (e: React.DragEvent, definition: VBNodeDefinition) => void;
+  onPointerStart: (e: React.PointerEvent, definition: VBNodeDefinition) => void;
+  onCreateAtViewportCenter: (definition: VBNodeDefinition) => void;
   favorites: string[];
   recentlyUsed: string[];
   onToggleFavorite: (type: string) => void;
@@ -29,20 +30,31 @@ interface NodeLibraryProps {
 const NodeCard = memo(function NodeCard({
   def,
   isFavorite,
-  onDragStart,
+  onPointerStart,
+  onCreateAtViewportCenter,
   onToggleFavorite,
 }: {
   def: VBNodeDefinition;
   isFavorite: boolean;
-  onDragStart: (e: React.DragEvent, def: VBNodeDefinition) => void;
+  onPointerStart: (e: React.PointerEvent, def: VBNodeDefinition) => void;
+  onCreateAtViewportCenter: (def: VBNodeDefinition) => void;
   onToggleFavorite: (type: string) => void;
 }) {
   const Icon = ICON_MAP[def.icon] ?? Zap;
   return (
     <div
-      draggable
-      onDragStart={(e) => onDragStart(e, def)}
-      className="group flex items-center gap-2.5 px-3 py-2 rounded-lg cursor-grab active:cursor-grabbing hover:bg-slate-800/60 border border-transparent hover:border-slate-700/50 transition-all duration-100 select-none"
+      role="button"
+      tabIndex={0}
+      title={`${def.label} — ${def.description}`}
+      onPointerDown={(e) => onPointerStart(e, def)}
+      onDoubleClick={() => onCreateAtViewportCenter(def)}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onCreateAtViewportCenter(def);
+        }
+      }}
+      className="group flex items-center gap-2.5 px-3 py-2 rounded-lg cursor-grab active:cursor-grabbing hover:bg-slate-800/60 border border-transparent hover:border-slate-700/50 transition-all duration-100 select-none touch-none"
     >
       <div className={cn('w-7 h-7 rounded-md flex items-center justify-center flex-shrink-0', def.color, 'bg-opacity-20 border border-white/10')}>
         <Icon className="w-3.5 h-3.5 text-white" />
@@ -53,6 +65,7 @@ const NodeCard = memo(function NodeCard({
       </div>
       <button
         onClick={(e) => { e.stopPropagation(); onToggleFavorite(def.type); }}
+        onDoubleClick={(e) => e.stopPropagation()}
         className={cn('opacity-0 group-hover:opacity-100 transition-opacity p-0.5 rounded', isFavorite ? 'opacity-100 text-amber-400' : 'text-slate-500 hover:text-amber-400')}
       >
         <Star className="w-3 h-3" fill={isFavorite ? 'currentColor' : 'none'} />
@@ -62,7 +75,8 @@ const NodeCard = memo(function NodeCard({
 });
 
 export const NodeLibraryPanel = memo(function NodeLibraryPanel({
-  onDragStart,
+  onPointerStart,
+  onCreateAtViewportCenter,
   favorites,
   recentlyUsed,
   onToggleFavorite,
@@ -151,7 +165,8 @@ export const NodeLibraryPanel = memo(function NodeLibraryPanel({
                       key={def.type}
                       def={def}
                       isFavorite={favorites.includes(def.type)}
-                      onDragStart={onDragStart}
+                      onPointerStart={onPointerStart}
+                      onCreateAtViewportCenter={onCreateAtViewportCenter}
                       onToggleFavorite={onToggleFavorite}
                     />
                   ))}

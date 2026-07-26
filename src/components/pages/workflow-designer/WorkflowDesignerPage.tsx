@@ -155,9 +155,9 @@ function CanvasEmptyState({ onAddStart }: { onAddStart: () => void }) {
           </div>
         </div>
         {/* Headline */}
-        <h2 className="text-base font-bold text-slate-200 mb-1.5">ابدأ بسحب أول عقدة من المكتبة</h2>
+        <h2 className="text-base font-bold text-slate-200 mb-1.5">ابدأ ببناء مسار العمل</h2>
         <p className="text-xs text-slate-500 leading-relaxed mb-5">
-          اسحب أي عقدة من المكتبة على اليسار وأفلتها هنا، أو انقر نقرتين على المساحة الفارغة لإضافة عقدة بداية.
+          اسحب عقدة من مكتبة العقد إلى مساحة العمل، أو اضغط مرتين على أي عقدة لإضافتها تلقائيًا.
         </p>
         {/* CTA */}
         <button
@@ -231,12 +231,19 @@ type ContextMenuState =
   | { kind: 'canvas'; position: ContextMenuPosition }
   | { kind: 'node'; position: ContextMenuPosition; nodeId: string };
 
+function debugDnd(event: string, detail?: unknown) {
+  if (process.env.NODE_ENV !== 'production') {
+    console.debug(`[Workflow DnD] ${event}`, detail ?? '');
+  }
+}
+
 /* ════════════════════════════════════════════════════════════════════════
    MAIN DESIGNER COMPONENT (inside ReactFlowProvider)
    ════════════════════════════════════════════════════════════════════════ */
 
 function WorkflowDesignerInner() {
   const rf = useReactFlow();
+  const canvasRef = useRef<HTMLDivElement>(null);
 
   // ── Graph state ────────────────────────────────────────────────────────
   const initial = useMemo(() => createStarterWorkflow(), []);
@@ -282,6 +289,8 @@ function WorkflowDesignerInner() {
   const [recentlyUsed, setRecentlyUsed] = useState<string[]>(() => {
     try { return JSON.parse(localStorage.getItem('wf_recent') ?? '[]'); } catch { return []; }
   });
+  const [draggingDefinition, setDraggingDefinition] = useState<VBNodeDefinition | null>(null);
+  const [pointerScreenPosition, setPointerScreenPosition] = useState<{ x: number; y: number } | null>(null);
 
   // ── Context menu & color palette (Phase 13 / 4) ────────────────────────
   const [contextMenu, setContextMenu] = useState<ContextMenuState>({ kind: 'none' });
@@ -428,6 +437,7 @@ function WorkflowDesignerInner() {
         status: 'success', config: { ...(def.defaultData ?? {}) }, validationErrors: [],
       },
     };
+    debugDnd('nodeCreated', { id: newNode.id, type: def.type, position: newNode.position });
     lastCreatedNodeRef.current = newNode.id;
     setNodes((nds) => {
       const next = [...nds, newNode];
@@ -437,6 +447,7 @@ function WorkflowDesignerInner() {
         if (node) {
           setSelectedNodes([node]);
           setSelectedEdges([]);
+          setRightPanelOpen(true);
           if (rightMode !== 'inspector') setRightMode('inspector');
           rf.setCenter(node.position.x + 90, node.position.y + 30, { zoom: 1, duration: 200 });
         }
@@ -456,37 +467,55 @@ function WorkflowDesignerInner() {
     return true;
   }, [nodes, canvasConfig, pushHistory, rf, rightMode]);
 
-  // ── Drag & Drop ────────────────────────────────────────────────────────
-  const onDrop = useCallback((event: React.DragEvent, position: { x: number; y: number }) => {
-    event.preventDefault();
-    const defJson = event.dataTransfer.getData('application/reactflow');
-    if (!defJson) {
-      // eslint-disable-next-line no-console
-      console.warn('[WorkflowDesigner] Drop ignored — no application/reactflow payload on dataTransfer.');
-      return;
-    }
-    let def: VBNodeDefinition;
-    try {
-      def = JSON.parse(defJson);
-    } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error('[WorkflowDesigner] Drop payload could not be parsed as JSON:', err, defJson);
-      toast.error('تعذّرت قراءة بيانات العقدة المسحوبة');
-      return;
-    }
-    if (!def || !def.type) {
-      // eslint-disable-next-line no-console
-      console.error('[WorkflowDesigner] Drop payload missing node definition.type:', def);
-      toast.error('بيانات العقدة غير مكتملة');
-      return;
-    }
-    createNodeAt(def, position);
+  // ── Pointer-driven node creation ───────────────────────────────────────
+  const startPointerDrag = useCallback((event: React.PointerEvent, definition: VBNodeDefinition) => {
+    if (event.button !== 0) return;
+    debugDnd('dragStart', { type: definition.type, pointerType: event.pointerType });
+    setDraggingDefinition(definition);
+  }, []);
+
+  const finishPointerDrag = useCallback(() => {
+    setDraggingDefinition(null);
+    setPointerScreenPosition(null);
+  }, []);
+
+  const createFromPointerDrop = useCallback((definition: VBNodeDefinition, position: { x: number; y: number }) => {
+    debugDnd('drop', { type: definition.type });
+    debugDnd('flowPosition', position);
+    createNodeAt(definition, position);
   }, [createNodeAt]);
 
-  const onDragOver = useCallback((event: React.DragEvent) => {
-    event.preventDefault();
-    event.dataTransfer.dropEffect = 'move';
-  }, []);
+  const createAtCanvasCenter = useCallback((definition: VBNodeDefinition) => {
+    const bounds = canvasRef.current?.getBoundingClientRect();
+    if (!bounds) return;
+    const screenPosition = { x: bounds.left + bounds.width / 2, y: bounds.top + bounds.height / 2 };
+    const flowPosition = rf.screenToFlowPosition(screenPosition);
+    debugDnd('libraryDoubleClick', { type: definition.type, screenPosition, flowPosition });
+    createNodeAt(definition, flowPosition);
+  }, [createNodeAt, rf]);
+
+  const updatePointerDrag = useCallback((event: React.PointerEvent) => {
+    if (!draggingDefinition) return;
+    const bounds = canvasRef.current?.getBoundingClientRect();
+    if (!bounds) return;
+    const isOverCanvas = event.clientX >= bounds.left && event.clientX <= bounds.right
+      && event.clientY >= bounds.top && event.clientY <= bounds.bottom;
+    setPointerScreenPosition(isOverCanvas ? { x: event.clientX - bounds.left, y: event.clientY - bounds.top } : null);
+  }, [draggingDefinition]);
+
+  const completePointerDrag = useCallback((event: React.PointerEvent) => {
+    if (!draggingDefinition) return;
+    const bounds = canvasRef.current?.getBoundingClientRect();
+    const isOverCanvas = Boolean(bounds && event.clientX >= bounds.left && event.clientX <= bounds.right
+      && event.clientY >= bounds.top && event.clientY <= bounds.bottom);
+    if (isOverCanvas) {
+      const screenPosition = { x: event.clientX, y: event.clientY };
+      const flowPosition = rf.screenToFlowPosition(screenPosition);
+      debugDnd('screenPosition', screenPosition);
+      createFromPointerDrop(draggingDefinition, flowPosition);
+    }
+    finishPointerDrag();
+  }, [draggingDefinition, createFromPointerDrop, finishPointerDrag, rf]);
 
   // ── Double-click empty canvas → add Start node (Phase 3 empty-state UX) ──
   const handleCanvasDoubleClick = useCallback((event: React.MouseEvent) => {
@@ -1102,6 +1131,9 @@ function WorkflowDesignerInner() {
     <div
       className="flex flex-col h-screen bg-slate-950 overflow-hidden"
       onContextMenu={handleCanvasContextMenu}
+      onPointerMove={updatePointerDrag}
+      onPointerUp={completePointerDrag}
+      onPointerCancel={finishPointerDrag}
     >
       {/* Hidden import input */}
       <input
@@ -1225,10 +1257,8 @@ function WorkflowDesignerInner() {
         {leftPanelOpen && (
           <aside className="w-64 flex-shrink-0">
             <NodeLibraryPanel
-              onDragStart={(e, def) => {
-                e.dataTransfer.setData('application/reactflow', JSON.stringify(def));
-                e.dataTransfer.effectAllowed = 'move';
-              }}
+              onPointerStart={startPointerDrag}
+              onCreateAtViewportCenter={createAtCanvasCenter}
               favorites={favorites}
               recentlyUsed={recentlyUsed}
               onToggleFavorite={toggleFavorite}
@@ -1253,8 +1283,9 @@ function WorkflowDesignerInner() {
             onNodesChange={onNodesChange}
             onEdgesChange={onEdgesChange}
             onConnect={onConnect}
-            onDrop={onDrop}
-            onDragOver={onDragOver}
+            draggingDefinition={draggingDefinition}
+            pointerScreenPosition={pointerScreenPosition}
+            canvasRef={canvasRef}
             onSelectionChange={onSelectionChange}
             onEdgeClick={onEdgeClick}
             onViewportChange={onViewportChange}
