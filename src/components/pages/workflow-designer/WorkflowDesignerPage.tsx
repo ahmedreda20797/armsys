@@ -1117,6 +1117,63 @@ function WorkflowDesignerInner() {
     }
   }, [rf]);
 
+  // ── Phase 6 — dev-only synthetic drop test (?debug-drops) ──────────────
+  // Proves the node-creation pipeline works for every category the spec lists
+  // (Start, End, Trigger, If, Switch, Delay, Loop, Variables, Actions, Requests)
+  // without manual dragging. Never runs in production. To use: append
+  // ?debug-drops to the URL and reload. Results print to the browser console.
+  const debugDropsRanRef = useRef(false);
+  useEffect(() => {
+    if (debugDropsRanRef.current) return;
+    if (process.env.NODE_ENV === 'production') return;
+    if (typeof window === 'undefined') return;
+    if (!new URLSearchParams(window.location.search).has('debug-drops')) return;
+    debugDropsRanRef.current = true;
+
+    const testTypes = [
+      'start', 'end', 'trigger',
+      'condition', 'switch', 'delay', 'loop',
+      'set_variable', 'get_variable', 'math', 'compare',
+      'notify', 'assign', 'update_status', 'hr_action',
+      'create_request', 'risk_action', 'generate_report',
+    ];
+    // eslint-disable-next-line no-console
+    console.group('%c[debug-drops] Synthetic node creation test', 'color:#a78bfa;font-weight:bold');
+    const results: { type: string; ok: boolean; reason?: string }[] = [];
+    testTypes.forEach((type, i) => {
+      const def = NODE_DEF_MAP.get(type);
+      if (!def) {
+        results.push({ type, ok: false, reason: 'no definition in NODE_DEF_MAP' });
+        return;
+      }
+      try {
+        // 'start' is a singleton — only the first call succeeds; subsequent
+        // calls are expected to be rejected. Skip duplicates for a clean pass.
+        if (def.isSingleton && results.some((r) => r.type === type && r.ok)) {
+          results.push({ type, ok: true, reason: 'singleton already added (skipped)' });
+          return;
+        }
+        const position = { x: 60 + (i % 6) * 220, y: 60 + Math.floor(i / 6) * 140 };
+        createNodeAt(def, position, { silent: true });
+        results.push({ type, ok: true });
+      } catch (err) {
+        results.push({ type, ok: false, reason: String(err) });
+      }
+    });
+    const passed = results.filter((r) => r.ok).length;
+    results.forEach((r) => {
+      const tag = r.ok ? '%c✓' : '%c✗';
+      const color = r.ok ? 'color:#10b981' : 'color:#ef4444';
+      // eslint-disable-next-line no-console
+      console.log(`${tag} ${r.type.padEnd(16)} ${r.reason ?? ''}`, color);
+    });
+    // eslint-disable-next-line no-console
+    console.log(`%c${passed}/${results.length} node types created successfully`, 'color:#a78bfa;font-weight:bold');
+    // eslint-disable-next-line no-console
+    console.groupEnd();
+  }, [createNodeAt]);
+
+
   const canUndo = pastRef.current.length > 0;
   const canRedo = futureRef.current.length > 0;
   const errorCount = validation.errors.length;

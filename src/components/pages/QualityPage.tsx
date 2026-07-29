@@ -168,6 +168,7 @@ export default function QualityPage() {
   const [deductions, setDeductions] = useState<QualityWithEmployee[]>([]);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [monthFilter, setMonthFilter] = useState('all');
   const [isAddOpen, setIsAddOpen] = useState(false);
@@ -195,6 +196,7 @@ export default function QualityPage() {
   }, []);
 
   const fetchData = async () => {
+    setError(null);
     try {
       const [qRes, empRes] = await Promise.all([
         authFetch('/api/quality'),
@@ -209,6 +211,7 @@ export default function QualityPage() {
         setEmployees(empData);
       }
     } catch {
+      setError('تعذّر تحميل بيانات الخصومات');
       setDeductions([]);
       setEmployees([]);
     } finally {
@@ -523,6 +526,16 @@ export default function QualityPage() {
             <Skeleton key={i} className="h-20 rounded-lg bg-slate-800/50" />
           ))}
         </div>
+      ) : error ? (
+        <Card className="border-rose-500/30 bg-rose-500/5">
+          <CardContent className="flex flex-col items-center justify-center py-14">
+            <div className="size-12 rounded-full bg-rose-500/10 flex items-center justify-center mb-3">
+              <AlertTriangle className="size-6 text-rose-400" />
+            </div>
+            <p className="text-rose-300 text-sm font-medium">{error}</p>
+            <Button variant="outline" size="sm" className="mt-4" onClick={() => fetchData()}>إعادة المحاولة</Button>
+          </CardContent>
+        </Card>
       ) : filtered.length === 0 ? (
         <Card className="border-slate-700/40 bg-slate-800/30">
           <CardContent className="flex flex-col items-center justify-center py-14">

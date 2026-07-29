@@ -2,13 +2,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getAll } from '@/lib/db';
 import { requireAuth } from '@/lib/verify-permission';
 import { createSmartNotification } from '@/lib/rules-engine';
+import { isOverdueCAPA, capaDueDateMs, isTerminalCAPA, CAPA_SLA_DAYS } from '@/lib/metrics';
 
-const SLA_DAYS: Record<string, number> = {
-  critical: 1,
-  high: 3,
-  medium: 7,
-  low: 14,
-};
+const SLA_DAYS = CAPA_SLA_DAYS;
 
 // SLA notification thresholds (in days)
 const WARNING_THRESHOLD = 1;    // Warn when 1 day remaining
@@ -40,8 +36,7 @@ export async function GET(request: NextRequest) {
 
     const capaCases = await getAll<any>('capaCases');
 
-    const CLOSED_STATUSES = ['closed', 'rejected'];
-    const openCases = capaCases.filter((c: any) => !CLOSED_STATUSES.includes(c.status));
+    const openCases = capaCases.filter((c: any) => !isTerminalCAPA(c));
 
     const results: {
       checked: number;
@@ -70,15 +65,19 @@ export async function GET(request: NextRequest) {
 
     for (const capa of openCases) {
       const slaDays = capa.slaDays || SLA_DAYS[capa.priority] || 7;
-      const createdMs = new Date(capa.createdAt).getTime();
-      const dueMs = createdMs + slaDays * ONE_DAY_MS;
+      const nowDate = new Date();
+      // Use canonical capaDueDateMs — if correctiveDueDate is set, it IS the due date
+      // (no double-add of SLA). Otherwise due = createdAt + slaDays.
+      const dueMs = capaDueDateMs(capa);
 
-      // If correctiveDueDate is set, use it as the base date instead
-      const baseDate = capa.correctiveDueDate ? new Date(capa.correctiveDueDate).getTime() : createdMs;
-      const effectiveDueMs = baseDate + slaDays * ONE_DAY_MS;
+      if (dueMs === null) {
+        // Cannot determine due date — skip this case
+        results.skipped++;
+        continue;
+      }
 
-      const daysRemaining = Math.ceil((effectiveDueMs - now) / ONE_DAY_MS);
-      const overdueDays = Math.max(0, Math.floor((now - effectiveDueMs) / ONE_DAY_MS));
+      const daysRemaining = Math.ceil((dueMs - now) / ONE_DAY_MS);
+      const overdueDays = Math.max(0, Math.floor((now - dueMs) / ONE_DAY_MS));
 
       let action: 'warning' | 'critical' | 'escalation' | 'none' = 'none';
 

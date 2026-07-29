@@ -590,9 +590,6 @@ export default function HomePage() {
         <motion.div variants={fadeUp}>
           <QuickStatCard icon={<AlertCircle className="size-5" />} label="حالات الجودة" value={stats.qualitySummary.totalCases} color="text-orange-400" gradient="from-orange-500/10 to-amber-600/5" />
         </motion.div>
-        <motion.div variants={fadeUp}>
-          <QuickStatCard icon={<FileSpreadsheet className="size-5" />} label="التقارير" value="✓" color="text-rose-400" gradient="from-rose-500/10 to-pink-600/5" />
-        </motion.div>
       </motion.div>
 
       {/* ══════════════════════════════════════════════════════════
@@ -716,7 +713,6 @@ export default function HomePage() {
                     <div className="space-y-2">
                       <StatusRow icon={<Fingerprint className="size-3.5" />} label="آخر مزامنة بصمة" value={stats.biometricLastSync ? new Date(stats.biometricLastSync).toLocaleDateString('ar-EG') : 'لم يتم بعد'} ok={!!stats.biometricLastSync} />
                       <StatusRow icon={<Users className="size-3.5" />} label="إجمالي السجلات" value={`${stats.biometricRecordCount.toLocaleString()} سجل`} ok={stats.biometricRecordCount > 0} />
-                      <StatusRow icon={<Database className="size-3.5" />} label="قاعدة البيانات" value="SQLite - نشطة" ok />
                     </div>
                   </div>
                 </SectionCard>

@@ -1,7 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAll, getAllBatch, getEmployeeMap } from '@/lib/db';
 import { requireAuth } from '@/lib/verify-permission';
-import { CAPA_RISK_WEIGHTS, CAPA_RISK_CAPS } from '@/lib/risk-weights';
+// Canonical metric layer — the ONLY risk/overdue definitions in the system.
+import {
+  computeRisk,
+  levelForScore,
+  isOverdueCAPA,
+  isClosedCAPA,
+  isTerminalCAPA,
+  RISK_LEVEL_BANDS,
+  type RiskBreakdown,
+} from '@/lib/metrics';
 
 interface EmployeeRisk {
   employeeId: string;
@@ -10,35 +19,8 @@ interface EmployeeRisk {
   position: string;
   riskScore: number;
   riskLevel: 'low' | 'medium' | 'high' | 'critical';
-  breakdown: {
-    delayCount: number;
-    delayPoints: number;
-    absenceCount: number;
-    absencePoints: number;
-    qualityViolations: number;
-    qualityPoints: number;
-    hrViolations: number;
-    hrPoints: number;
-    openFollowUps: number;
-    openFollowUpPoints: number;
-    highPriorityFollowUps: number;
-    highPriorityPoints: number;
-    criticalFollowUps: number;
-    criticalPoints: number;
-    complaints: number;
-    complaintPoints: number;
-    repeatedIssues: number;
-    repeatedPoints: number;
-    // CAPA integration factors
-    openCapas: number;
-    openCapaPoints: number;
-    overdueCapas: number;
-    overdueCapaPoints: number;
-    criticalCapas: number;
-    criticalCapaPoints: number;
-    reopenedCapas: number;
-    reopenedCapaPoints: number;
-  };
+  // Canonical breakdown shape — every factor is { count, points }.
+  breakdown: RiskBreakdown;
   openCases: number;
   lastActivity: string;
   trend: 'increasing' | 'stable' | 'improving';
@@ -144,7 +126,6 @@ export async function GET(request: NextRequest) {
     }
 
     // ── Pre-compute CAPA stats per employee ──
-    const CLOSED_STATUSES = ['closed', 'rejected'];
     const empCapa = new Map<string, { open: number; overdue: number; critical: number; reopened: number; capaIds: string[]; lastDate: string }>();
 
     for (const c of capaCases) {
@@ -155,7 +136,7 @@ export async function GET(request: NextRequest) {
         linkedIds.push(...c.relatedEmployeeIds);
       }
 
-      const isClosed = CLOSED_STATUSES.includes(c.status);
+      const terminal = isTerminalCAPA(c);
 
       for (const eid of linkedIds) {
         if (!empCapa.has(eid)) {
@@ -163,26 +144,12 @@ export async function GET(request: NextRequest) {
         }
         const stat = empCapa.get(eid)!;
 
-        if (!isClosed) {
+        if (!terminal) {
           stat.open += 1;
-
-          // Check overdue: SLA exceeded
-          const slaDays = c.slaDays || 7;
-          const createdMs = new Date(c.createdAt).getTime();
-          const dueMs = createdMs + slaDays * 86400000;
-          if (Date.now() > dueMs) {
-            stat.overdue += 1;
-          }
-
-          // Critical priority CAPAs
-          if (c.priority === 'critical') {
-            stat.critical += 1;
-          }
-
-          // Reopened CAPAs
-          if (c.status === 'reopened') {
-            stat.reopened += 1;
-          }
+          // Canonical overdue rule (correctiveDueDate-aware, single source)
+          if (isOverdueCAPA(c, now)) stat.overdue += 1;
+          if (c.priority === 'critical') stat.critical += 1;
+          if (c.status === 'reopened') stat.reopened += 1;
         }
 
         // Track CAPA IDs for this employee (for "View CAPA" button)
@@ -207,32 +174,24 @@ export async function GET(request: NextRequest) {
       const comp = empComplaints.get(emp.id) || { open: 0, lastDate: '' };
       const capa = empCapa.get(emp.id) || { open: 0, overdue: 0, critical: 0, reopened: 0, capaIds: [], lastDate: '' };
 
-      // Skip employees with zero risk
-      if (att.delays === 0 && att.absences === 0 && qCount === 0 && hCount === 0 && fu.open === 0 && comp.open === 0 && capa.open === 0) continue;
-
-      const delayPoints = att.delays * 1;
-      const absencePoints = att.absences * 3;
-      const qualityPoints = qCount * 5;
-      const hrPoints = hCount * 5;
-      const openFollowUpPoints = fu.open * 3;
-      const highPriorityPoints = fu.high * 5;
-      const criticalPoints = fu.critical * 10;
-      const complaintPoints = comp.open * 8;
-      const repeatedPoints = fu.repeated * 5;
-
-      // CAPA risk factors (harmonized with Employee 360 via shared weights)
-      const openCapaPoints = Math.min(capa.open * CAPA_RISK_WEIGHTS.openCapa, CAPA_RISK_CAPS.openCapa);
-      const overdueCapaPoints = Math.min(capa.overdue * CAPA_RISK_WEIGHTS.overdueCapa, CAPA_RISK_CAPS.overdueCapa);
-      const criticalCapaPoints = Math.min(capa.critical * CAPA_RISK_WEIGHTS.criticalCapa, CAPA_RISK_CAPS.criticalCapa);
-      const reopenedCapaPoints = Math.min(capa.reopened * CAPA_RISK_WEIGHTS.reopenedCapa, CAPA_RISK_CAPS.reopenedCapa);
-
-      const totalScore = delayPoints + absencePoints + qualityPoints + hrPoints + openFollowUpPoints + highPriorityPoints + criticalPoints + complaintPoints + repeatedPoints + openCapaPoints + overdueCapaPoints + criticalCapaPoints + reopenedCapaPoints;
-
-      // ── Risk Level ──
-      let riskLevel: 'low' | 'medium' | 'high' | 'critical' = 'low';
-      if (totalScore >= 36) riskLevel = 'critical';
-      else if (totalScore >= 21) riskLevel = 'high';
-      else if (totalScore >= 11) riskLevel = 'medium';
+      // Canonical risk score — the ONLY formula in the system.
+      // Zero-risk employees are INCLUDED with score 0 so lowRiskCount
+      // reflects the true workforce, not just employees with any factor.
+      const { score: totalScore, level: riskLevel, breakdown } = computeRisk({
+        delayCount: att.delays,
+        absenceCount: att.absences,
+        qualityCount: qCount,
+        hrCount: hCount,
+        openFollowUpCount: fu.open,
+        highPriorityFollowUpCount: fu.high,
+        criticalFollowUpCount: fu.critical,
+        openComplaintCount: comp.open,
+        repeatedIssueCount: fu.repeated,
+        openCapaCount: capa.open,
+        overdueCapaCount: capa.overdue,
+        criticalCapaCount: capa.critical,
+        reopenedCapaCount: capa.reopened,
+      });
 
       // ── Trend (simple heuristic: recent 7 days activity vs older) ──
       const recentAttendance = attendanceRecords.filter(
@@ -242,7 +201,7 @@ export async function GET(request: NextRequest) {
         (f: any) => f.employeeId === emp.id && f.date >= sevenDaysAgoStr && (f.status === 'open' || f.status === 'under_follow_up')
       ).length;
       const recentCapas = capaCases.filter(
-        (c: any) => (c.employeeId === emp.id || (c.relatedEmployeeIds || []).includes(emp.id)) && !CLOSED_STATUSES.includes(c.status) && (c.updatedAt || c.createdAt || '') >= sevenDaysAgoStr
+        (c: any) => (c.employeeId === emp.id || (c.relatedEmployeeIds || []).includes(emp.id)) && !isTerminalCAPA(c) && (c.updatedAt || c.createdAt || '') >= sevenDaysAgoStr
       ).length;
       let trend: 'increasing' | 'stable' | 'improving' = 'stable';
       if (recentAttendance >= 3 || recentFollowUps >= 2 || recentCapas >= 2) trend = 'increasing';
@@ -256,7 +215,7 @@ export async function GET(request: NextRequest) {
       if (hCount >= 2) recommendations.push('إحالة لإدارة الموارد البشرية');
       if (fu.critical > 0) recommendations.push('فتح قضية CAPA');
       if (comp.open > 0) recommendations.push('مراجعة شكاوى العملاء');
-      if (totalScore >= 36) recommendations.push('تصعيد لمدير الموارد البشرية فوراً');
+      if (riskLevel === 'critical') recommendations.push('تصعيد لمدير الموارد البشرية فوراً');
       if (fu.repeated > 0) recommendations.push('تحليل السبب الجذري للمشكلة المتكررة');
       if (capa.overdue > 0) recommendations.push('إعطاز حالات كابا — اتخاذ إجراء فوري');
       if (capa.reopened > 0) recommendations.push('حالات كابا معاد فتحها — مراجعة فعالية الإجراءات التصحيحية');
@@ -273,35 +232,7 @@ export async function GET(request: NextRequest) {
         position: emp.position || '',
         riskScore: totalScore,
         riskLevel,
-        breakdown: {
-          delayCount: att.delays,
-          delayPoints,
-          absenceCount: att.absences,
-          absencePoints,
-          qualityViolations: qCount,
-          qualityPoints,
-          hrViolations: hCount,
-          hrPoints,
-          openFollowUps: fu.open,
-          openFollowUpPoints,
-          highPriorityFollowUps: fu.high,
-          highPriorityPoints,
-          criticalFollowUps: fu.critical,
-          criticalPoints,
-          complaints: comp.open,
-          complaintPoints,
-          repeatedIssues: fu.repeated,
-          repeatedPoints,
-          // CAPA breakdown
-          openCapas: capa.open,
-          openCapaPoints,
-          overdueCapas: capa.overdue,
-          overdueCapaPoints,
-          criticalCapas: capa.critical,
-          criticalCapaPoints,
-          reopenedCapas: capa.reopened,
-          reopenedCapaPoints,
-        },
+        breakdown,
         openCases: fu.open + comp.open + capa.open,
         lastActivity,
         trend,
@@ -325,7 +256,7 @@ export async function GET(request: NextRequest) {
     const highRiskCount = risks.filter(r => r.riskLevel === 'high').length;
     const criticalRiskCount = risks.filter(r => r.riskLevel === 'critical').length;
     const openCasesTotal = risks.reduce((s, r) => s + r.openCases, 0);
-    const immediateActionCount = risks.filter(r => r.riskScore >= 21).length;
+    const immediateActionCount = risks.filter(r => r.riskScore >= RISK_LEVEL_BANDS.high).length;
 
     // ── Department analysis ──
     const deptAnalysis: Record<string, { count: number; avgScore: number; totalScore: number; openCases: number; qualityViolations: number; attendanceIssues: number; openCapas: number; overdueCapas: number }> = {};
@@ -335,10 +266,10 @@ export async function GET(request: NextRequest) {
       deptAnalysis[dept].count += 1;
       deptAnalysis[dept].totalScore += r.riskScore;
       deptAnalysis[dept].openCases += r.openCases;
-      deptAnalysis[dept].qualityViolations += r.breakdown.qualityViolations;
-      deptAnalysis[dept].attendanceIssues += r.breakdown.delayCount + r.breakdown.absenceCount;
-      deptAnalysis[dept].openCapas += r.breakdown.openCapas;
-      deptAnalysis[dept].overdueCapas += r.breakdown.overdueCapas;
+      deptAnalysis[dept].qualityViolations += r.breakdown.quality.count;
+      deptAnalysis[dept].attendanceIssues += r.breakdown.delay.count + r.breakdown.absence.count;
+      deptAnalysis[dept].openCapas += r.breakdown.openCapa.count;
+      deptAnalysis[dept].overdueCapas += r.breakdown.overdueCapa.count;
     }
     for (const dept of Object.values(deptAnalysis)) {
       dept.avgScore = dept.count > 0 ? Math.round(dept.totalScore / dept.count) : 0;

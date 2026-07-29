@@ -71,7 +71,8 @@ interface Employee360Data {
     complaints: { total: number; open: number };
     capa: { total: number; open: number; closed: number; overdue: number; critical: number; reopened: number; effectiveness: number };
   };
-  risk: { score: number; level: 'low' | 'medium' | 'high' | 'critical'; breakdown?: Record<string, number> };
+  // breakdown is canonical shape: one { count, points } entry per factor.
+  risk: { score: number; level: 'low' | 'medium' | 'high' | 'critical'; breakdown?: Record<string, { count: number; points: number }> };
   healthScore: number;
   timeline: any[];
   recommendations: string[];
@@ -439,9 +440,10 @@ export default function Employee360Page({ employeeId: propEmployeeId, onClose }:
       if (!mountedRef.current) return;
 
       setData(json);
-    } catch {
+    } catch (e) {
       if (mountedRef.current) {
         setError('خطأ في الاتصال بالخادم');
+        console.error('[employee-360] fetch failed:', e);
       }
     } finally {
       if (mountedRef.current) {
@@ -668,19 +670,28 @@ export default function Employee360Page({ employeeId: propEmployeeId, onClose }:
                   <span className={`text-sm ${getRiskColor(risk.level)}`}>({getRiskLabel(risk.level)})</span>
                 </div>
                 <div className="mt-3 space-y-1.5 text-sm text-slate-400">
-                  <p>الحضور: {stats.attendance.totalAbsent > 4 ? `+${Math.min((stats.attendance.totalAbsent - 4) * 3, 20)} نقطة` : '0 نقطة'}</p>
-                  <p>الجودة: {stats.quality.deductionDays > 0 ? `+${Math.min(stats.quality.deductionDays * 5, 25)} نقطة` : '0 نقطة'}</p>
-                  <p>المتابعات المفتوحة: {stats.followUps.open > 0 ? `+${Math.min(stats.followUps.open * 3, 15)} نقطة` : '0 نقطة'}</p>
-                  <p>الحالات الحرجة: {stats.followUps.critical > 0 ? `+${Math.min(stats.followUps.critical * 10, 30)} نقطة` : '0 نقطة'}</p>
-                  <p>الشكاوى: {stats.complaints.open > 0 ? `+${Math.min(stats.complaints.open * 5, 20)} نقطة` : '0 نقطة'}</p>
-                  {risk.breakdown && (
-                    <>
-                      <p className="text-cyan-400/70 mt-2">CAPA مفتوحة: {risk.breakdown.openCapa > 0 ? `+${risk.breakdown.openCapa} نقطة` : '0 نقطة'}</p>
-                      <p className="text-cyan-400/70">CAPA متأخرة: {risk.breakdown.overdueCapa > 0 ? `+${risk.breakdown.overdueCapa} نقطة` : '0 نقطة'}</p>
-                      <p className="text-cyan-400/70">CAPA حرجة: {risk.breakdown.criticalCapa > 0 ? `+${risk.breakdown.criticalCapa} نقطة` : '0 نقطة'}</p>
-                      <p className="text-cyan-400/70">CAPA معاد فتحها: {risk.breakdown.reopenedCapa > 0 ? `+${risk.breakdown.reopenedCapa} نقطة` : '0 نقطة'}</p>
-                    </>
-                  )}
+                  {/* Render directly from the canonical risk.breakdown returned by the API.
+                      No client-side re-derivation — the breakdown already reflects every
+                      factor (delay, absence, quality, hr, follow-ups, complaints, CAPA). */}
+                  {risk.breakdown && [
+                    { label: 'تأخير حضور', key: 'delay' },
+                    { label: 'غياب', key: 'absence' },
+                    { label: 'الجودة', key: 'quality' },
+                    { label: 'مخالفات موارد بشرية', key: 'hr' },
+                    { label: 'المتابعات المفتوحة', key: 'openFollowUp' },
+                    { label: 'متابعة أولوية عالية', key: 'highPriorityFollowUp' },
+                    { label: 'الحالات الحرجة', key: 'criticalFollowUp' },
+                    { label: 'الشكاوى', key: 'complaint' },
+                    { label: 'مشكلة متكررة', key: 'repeatedIssue' },
+                    { label: 'CAPA مفتوحة', key: 'openCapa' },
+                    { label: 'CAPA متأخرة', key: 'overdueCapa' },
+                    { label: 'CAPA حرجة', key: 'criticalCapa' },
+                    { label: 'CAPA معاد فتحها', key: 'reopenedCapa' },
+                  ].map((item) => {
+                    const factor = risk.breakdown![item.key];
+                    if (!factor || factor.count === 0) return null;
+                    return <p key={item.key}>{item.label}: +{factor.points} نقطة <span className="text-slate-600">(×{factor.count})</span></p>;
+                  })}
                 </div>
               </div>
             </div>
@@ -888,7 +899,7 @@ export default function Employee360Page({ employeeId: propEmployeeId, onClose }:
         ))}
       </motion.div>
 
-      {/* CAPA Effectiveness */}
+      {/* CAPA Effectiveness — effectiveness is a percentage (0-100) from calcCAPAEffectiveness */}
       {stats.capa.closed > 0 && (
         <motion.div variants={slideUpFade}>
           <GlassCard className="p-5">
@@ -902,12 +913,12 @@ export default function Employee360Page({ employeeId: propEmployeeId, onClose }:
               <motion.div
                 className="h-full rounded-full bg-cyan-500"
                 initial={{ width: 0 }}
-                animate={{ width: `${stats.capa.closed > 0 ? (stats.capa.effectiveness / stats.capa.closed) * 100 : 0}%` }}
+                animate={{ width: `${Math.min(Math.max(stats.capa.effectiveness, 0), 100)}%` }}
                 transition={{ delay: 0.4, duration: 1, ease: [0.22, 1, 0.36, 1] }}
               />
             </div>
             <p className="text-slate-400 text-xs mt-2">
-              {stats.capa.effectiveness} من {stats.capa.closed} حالة مغلقة فعّالة ({stats.capa.closed > 0 ? Math.round((stats.capa.effectiveness / stats.capa.closed) * 100) : 0}%)
+              {Math.min(Math.max(stats.capa.effectiveness, 0), 100)}% من الحالات المغلقة فعّالة
             </p>
           </GlassCard>
         </motion.div>

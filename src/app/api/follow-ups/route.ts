@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAll, withEmployee, sortByDateField, createRecord, getById } from '@/lib/db';
 import { requireAuth } from '@/lib/verify-permission';
+import { computeRisk, isOverdueFollowUp } from '@/lib/metrics';
 
 const SCORE_MAP: Record<string, number> = { low: 1, medium: 3, high: 5, critical: 10 };
+const ACTIVE_FOLLOWUP_STATUSES = ['open', 'under_review', 'under_follow_up'] as const;
 
 async function getUsernameById(userId: string): Promise<string> {
   const user = await getById('users', userId);
@@ -48,17 +50,29 @@ export async function GET(request: NextRequest) {
     const enrichedMap = new Map(recordsWithEmployee.map((r: any) => [r.id, r]));
     const merged = records.map((r: any) => enrichedMap.get(r.id) || r);
 
-    // Calculate risk scores for employee summary
-    const empRiskMap = new Map<string, number>();
+    // Calculate risk scores for employee summary — canonical computeRisk()
+    const empFollowUpMap = new Map<string, any[]>();
     for (const r of merged) {
-      const rec = r as any;
-      const eid = rec.employeeId;
+      const eid = (r as any).employeeId;
       if (!eid) continue;
-      const current = empRiskMap.get(eid) || 0;
-      const highCount = (rec.priorityLevel === 'high' ? 1 : 0);
-      const critCount = (rec.priorityLevel === 'critical' ? 1 : 0);
-      const openCount = (rec.status === 'open' || rec.status === 'under_review' || rec.status === 'under_follow_up' ? 1 : 0);
-      empRiskMap.set(eid, current + (highCount * 5) + (critCount * 10) + (openCount * 3));
+      if (!empFollowUpMap.has(eid)) empFollowUpMap.set(eid, []);
+      empFollowUpMap.get(eid)!.push(r);
+    }
+    const empRiskMap = new Map<string, number>();
+    for (const [eid, fuList] of empFollowUpMap) {
+      const open = fuList.filter((f: any) => ACTIVE_FOLLOWUP_STATUSES.includes(f.status));
+      const high = fuList.filter((f: any) => f.priorityLevel === 'high' && ACTIVE_FOLLOWUP_STATUSES.includes(f.status));
+      const critical = fuList.filter((f: any) => f.priorityLevel === 'critical' && ACTIVE_FOLLOWUP_STATUSES.includes(f.status));
+      const risk = computeRisk({
+        delayCount: 0, absenceCount: 0, qualityCount: 0, hrCount: 0,
+        openFollowUpCount: open.length,
+        highPriorityFollowUpCount: high.length,
+        criticalFollowUpCount: critical.length,
+        openComplaintCount: 0,
+        repeatedIssueCount: 0,
+        openCapaCount: 0, overdueCapaCount: 0, criticalCapaCount: 0, reopenedCapaCount: 0,
+      });
+      empRiskMap.set(eid, risk.score);
     }
 
     return NextResponse.json({ data: merged, employeeRiskScores: Object.fromEntries(empRiskMap) });

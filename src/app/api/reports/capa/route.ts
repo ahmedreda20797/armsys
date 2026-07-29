@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAll } from '@/lib/db';
 import { requireAuth } from '@/lib/verify-permission';
+import { isOverdueCAPA, isClosedCAPA, isTerminalCAPA, calcCAPAEffectiveness } from '@/lib/metrics';
 
 /* ── Types ────────────────────────────────────────────────────── */
 
@@ -101,16 +102,6 @@ interface CAPAReportResponse {
 
 /* ── Helpers ──────────────────────────────────────────────────── */
 
-/** Returns true if the case is in a closed state (counted towards closed metrics). */
-function isClosed(status: CAPAStatus): boolean {
-  return status === 'closed';
-}
-
-/** Returns true if the case is in a terminal state (closed or rejected). */
-function isTerminal(status: CAPAStatus): boolean {
-  return status === 'closed' || status === 'rejected';
-}
-
 /** Extracts 'YYYY-MM' from an ISO date string. */
 function toMonthKey(dateStr: string): string {
   const d = new Date(dateStr);
@@ -128,32 +119,19 @@ function getLast12Months(): string[] {
   return months;
 }
 
-/**
- * Calculates effectiveness percentage.
- * Effective closed cases / total closed cases × 100
- */
-function calcEffectiveness(cases: CAPACase[]): number {
-  const closedCases = cases.filter((c) => isClosed(c.status));
-  if (closedCases.length === 0) return 0;
-  const effective = closedCases.filter(
-    (c) => c.verificationResult === 'effective'
-  ).length;
-  return Math.round((effective / closedCases.length) * 100);
-}
-
-/** Builds group-level metrics from a subset of cases. */
+/** Builds group-level metrics from a subset of cases — uses canonical overdue/effectiveness. */
 function buildGroupMetrics(cases: CAPACase[]): GroupMetrics {
+  const closedCases = cases.filter((c) => isClosedCAPA(c));
+  const effective = closedCases.filter((c) => c.verificationResult === 'effective').length;
   return {
     total: cases.length,
-    open: cases.filter((c) => !isTerminal(c.status)).length,
-    closed: cases.filter((c) => isClosed(c.status)).length,
-    overdue: cases.filter(
-      (c) => c.overdueDays > 0 && !isTerminal(c.status)
-    ).length,
+    open: cases.filter((c) => !isTerminalCAPA(c)).length,
+    closed: closedCases.length,
+    overdue: cases.filter((c) => isOverdueCAPA(c)).length,
     critical: cases.filter(
-      (c) => c.priority === 'critical' && !isTerminal(c.status)
+      (c) => c.priority === 'critical' && !isTerminalCAPA(c)
     ).length,
-    effectivenessPct: calcEffectiveness(cases),
+    effectivenessPct: calcCAPAEffectiveness(cases),
   };
 }
 
@@ -203,16 +181,14 @@ export async function GET(
 
     const summary: SummaryMetrics = {
       total: cases.length,
-      open: cases.filter((c) => !isTerminal(c.status)).length,
-      closed: cases.filter((c) => isClosed(c.status)).length,
-      overdue: cases.filter(
-        (c) => c.overdueDays > 0 && !isTerminal(c.status)
-      ).length,
+      open: cases.filter((c) => !isTerminalCAPA(c)).length,
+      closed: cases.filter((c) => isClosedCAPA(c)).length,
+      overdue: cases.filter((c) => isOverdueCAPA(c)).length,
       critical: cases.filter(
-        (c) => c.priority === 'critical' && !isTerminal(c.status)
+        (c) => c.priority === 'critical' && !isTerminalCAPA(c)
       ).length,
       reopened: cases.filter((c) => c.status === 'reopened').length,
-      effectivenessPct: calcEffectiveness(cases),
+      effectivenessPct: calcCAPAEffectiveness(cases),
     };
 
     /* ── 2. By Department ──────────────────────────────────────── */
@@ -258,13 +234,11 @@ export async function GET(
           employeeName: emp.name,
           department: emp.dept,
           total: emp.cases.length,
-          open: emp.cases.filter((c) => !isTerminal(c.status)).length,
-          closed: emp.cases.filter((c) => isClosed(c.status)).length,
-          overdue: emp.cases.filter(
-            (c) => c.overdueDays > 0 && !isTerminal(c.status)
-          ).length,
+          open: emp.cases.filter((c) => !isTerminalCAPA(c)).length,
+          closed: emp.cases.filter((c) => isClosedCAPA(c)).length,
+          overdue: emp.cases.filter((c) => isOverdueCAPA(c)).length,
           critical: emp.cases.filter(
-            (c) => c.priority === 'critical' && !isTerminal(c.status)
+            (c) => c.priority === 'critical' && !isTerminalCAPA(c)
           ).length,
         };
       });
@@ -285,11 +259,9 @@ export async function GET(
       return {
         month,
         total: mc.length,
-        open: mc.filter((c) => !isTerminal(c.status)).length,
-        closed: mc.filter((c) => isClosed(c.status)).length,
-        overdue: mc.filter(
-          (c) => c.overdueDays > 0 && !isTerminal(c.status)
-        ).length,
+        open: mc.filter((c) => !isTerminalCAPA(c)).length,
+        closed: mc.filter((c) => isClosedCAPA(c)).length,
+        overdue: mc.filter((c) => isOverdueCAPA(c)).length,
       };
     });
 

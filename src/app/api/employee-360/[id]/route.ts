@@ -1,7 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAll, getById, findWhere, findWhereContains } from '@/lib/db';
 import { verifyPermission } from '@/lib/verify-permission';
-import { CAPA_RISK_WEIGHTS, CAPA_RISK_CAPS } from '@/lib/risk-weights';
+// Canonical metric layer — single source of truth for risk + CAPA overdue.
+import {
+  computeRisk,
+  isOverdueCAPA,
+  isClosedCAPA,
+  isTerminalCAPA,
+  calcCAPAEffectiveness,
+  type RiskBreakdown,
+} from '@/lib/metrics';
 
 // ══════════════════════════════════════════════════════════════
 //  Safe fetch helper — never throws, returns empty array on failure
@@ -124,42 +132,39 @@ export async function GET(
       ['open', 'under_investigation', 'pending_resolution'].includes(c.status)
     );
 
-    // ═══ CAPA stats ═══
+    // ═══ CAPA stats — overdue + effectiveness via canonical capaMetrics ═══
     const openCapa = empCapa.filter((c: any) =>
       ['open', 'investigation', 'root_cause_analysis', 'corrective_action', 'preventive_action', 'verification', 'reopened'].includes(c.status)
     );
-    const closedCapa = empCapa.filter((c: any) => c.status === 'closed');
-    const overdueCapa = empCapa.filter((c: any) => c.overdueDays > 0 && c.status !== 'closed' && c.status !== 'rejected');
-    const criticalCapa = empCapa.filter((c: any) => c.priority === 'critical' && c.status !== 'closed' && c.status !== 'rejected');
+    const closedCapa = empCapa.filter((c: any) => isClosedCAPA(c));
+    const overdueCapa = empCapa.filter((c: any) => isOverdueCAPA(c, now));
+    const criticalCapa = empCapa.filter((c: any) => c.priority === 'critical' && !isTerminalCAPA(c));
     const reopenedCapa = empCapa.filter((c: any) => c.status === 'reopened');
-    const capaEffectiveness = closedCapa.length > 0
-      ? closedCapa.filter((c: any) => c.verificationResult === 'effective').length
-      : 0;
+    const capaEffectiveness = calcCAPAEffectiveness(empCapa as any[]);
 
-    // ═══ Risk Score Calculation (includes CAPA factors) ═══
-    let riskScore = 0;
-
-    if (totalAbsent > 4) riskScore += Math.min((totalAbsent - 4) * 3, 20);
-    if (totalLate > 5) riskScore += Math.min((totalLate - 5) * 1, 10);
-    riskScore += Math.min(qualityDeductionDays * 5, 25);
-    riskScore += Math.min(hrDeductionDays * 5, 15);
-    riskScore += Math.min(openFollowUps.length * 3, 15);
-    riskScore += Math.min(criticalFollowUps.length * 10, 30);
-    riskScore += Math.min(openComplaints.length * 5, 20);
-    // CAPA risk factors (harmonized with Risk Center via shared weights)
-    riskScore += Math.min(openCapa.length * CAPA_RISK_WEIGHTS.openCapa, CAPA_RISK_CAPS.openCapa);
-    riskScore += Math.min(overdueCapa.length * CAPA_RISK_WEIGHTS.overdueCapa, CAPA_RISK_CAPS.overdueCapa);
-    riskScore += Math.min(criticalCapa.length * CAPA_RISK_WEIGHTS.criticalCapa, CAPA_RISK_CAPS.criticalCapa);
-    riskScore += Math.min(reopenedCapa.length * CAPA_RISK_WEIGHTS.reopenedCapa, CAPA_RISK_CAPS.reopenedCapa);
-
-    riskScore = Math.min(riskScore, 100);
-
-    // Risk level
-    let riskLevel: 'low' | 'medium' | 'high' | 'critical';
-    if (riskScore <= 10) riskLevel = 'low';
-    else if (riskScore <= 25) riskLevel = 'medium';
-    else if (riskScore <= 50) riskLevel = 'high';
-    else riskLevel = 'critical';
+    // ═══ Risk Score — canonical computeRisk() (single source of truth) ═══
+    // Factors not relevant to this employee are passed as 0.
+    const highPriorityFollowUps = empFollowUps.filter(
+      (f: any) => f.priorityLevel === 'high' && !['closed', 'cancelled', 'resolved'].includes(f.status)
+    );
+    const risk = computeRisk({
+      delayCount: totalLate,
+      absenceCount: totalAbsent,
+      qualityCount: empQuality.length,
+      hrCount: empHrDeductions.length,
+      openFollowUpCount: openFollowUps.length,
+      highPriorityFollowUpCount: highPriorityFollowUps.length,
+      criticalFollowUpCount: criticalFollowUps.length,
+      openComplaintCount: openComplaints.length,
+      repeatedIssueCount: 0, // not tracked per-employee here yet
+      openCapaCount: openCapa.length,
+      overdueCapaCount: overdueCapa.length,
+      criticalCapaCount: criticalCapa.length,
+      reopenedCapaCount: reopenedCapa.length,
+    });
+    const riskScore = risk.score;
+    const riskLevel = risk.level;
+    const riskBreakdown: RiskBreakdown = risk.breakdown;
 
     // ═══ Health Score (inverse of risk) ═══
     const healthScore = Math.max(100 - riskScore, 0);
@@ -357,19 +362,7 @@ export async function GET(
       risk: {
         score: riskScore,
         level: riskLevel,
-        breakdown: {
-          attendance: totalAbsent > 4 ? Math.min((totalAbsent - 4) * 3, 20) : 0,
-          late: totalLate > 5 ? Math.min((totalLate - 5) * 1, 10) : 0,
-          quality: Math.min(qualityDeductionDays * 5, 25),
-          hrDeductions: Math.min(hrDeductionDays * 5, 15),
-          openFollowUps: Math.min(openFollowUps.length * 3, 15),
-          criticalFollowUps: Math.min(criticalFollowUps.length * 10, 30),
-          openComplaints: Math.min(openComplaints.length * 5, 20),
-          openCapa: Math.min(openCapa.length * 3, 15),
-          overdueCapa: Math.min(overdueCapa.length * 5, 20),
-          criticalCapa: Math.min(criticalCapa.length * 10, 30),
-          reopenedCapa: Math.min(reopenedCapa.length * 7, 20),
-        },
+        breakdown: riskBreakdown,
       },
       healthScore,
       timeline,

@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import ExcelJS from 'exceljs';
 import { getAll, getEmployeeMap, TTL } from '@/lib/db';
 import { verifyPermission, requireAuth } from '@/lib/verify-permission';
+import { capaOverdueDays, CAPA_SLA_DAYS } from '@/lib/metrics';
 import type { CAPACase } from '@/types';
 
 // ══════════════════════════════════════════════════════════════
@@ -78,12 +79,7 @@ const COLUMNS = [
 //  SLA defaults
 // ══════════════════════════════════════════════════════════════
 
-const SLA_DAYS: Record<string, number> = {
-  critical: 1,
-  high: 3,
-  medium: 7,
-  low: 14,
-};
+const SLA_DAYS = CAPA_SLA_DAYS;
 
 // ══════════════════════════════════════════════════════════════
 //  Helper: Enrich a CAPA case with computed fields
@@ -132,7 +128,8 @@ function mapRow(c: CAPACase): ExportRow {
     problemDescription: c.problemDescription || '',
     assignedToName: c.assignedToName || '',
     slaDays: c.slaDays || SLA_DAYS[c.priority] || 7,
-    overdueDays: c.overdueDays ?? 0,
+    // Dynamic overdue — recomputed at export time, never the stale stored value.
+    overdueDays: capaOverdueDays(c),
     correctiveAction: c.correctiveAction || '',
     correctiveStatus: CORRECTIVE_STATUS_MAP[c.correctiveStatus] || c.correctiveStatus,
     preventiveAction: c.preventiveAction || '',

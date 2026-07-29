@@ -2,14 +2,10 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getAll, createRecord, sortByDateField, getEmployeeMap, invalidateCache } from '@/lib/db';
 import { requireAuth } from '@/lib/verify-permission';
 import { createSmartNotification } from '@/lib/rules-engine';
+import { isOverdueCAPA, capaOverdueDays, capaDueDateMs, isClosedCAPA, CAPA_SLA_DAYS } from '@/lib/metrics';
 import type { CAPACase } from '@/types';
 
-const SLA_DAYS: Record<string, number> = {
-  critical: 1,
-  high: 3,
-  medium: 7,
-  low: 14,
-};
+const SLA_DAYS = CAPA_SLA_DAYS;
 
 // ══════════════════════════════════════════════════════════════
 //  GET /api/capa-cases — Fetch with server-side filtering
@@ -54,16 +50,19 @@ export async function GET(request: NextRequest) {
     // Sort by createdAt descending
     records.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
-    // Calculate overdue and SLA info
-    const now = Date.now();
+    // Calculate overdue and SLA info — canonical capaMetrics
+    const nowDate = new Date();
     const enriched = records.map((r) => {
-      const dueDate = r.correctiveDueDate || r.createdAt;
-      const slaDays = r.slaDays || SLA_DAYS[r.priority] || 7;
-      const dueMs = new Date(dueDate).getTime() + slaDays * 86400000;
-      const overdueDays = r.status === 'closed' ? 0 : Math.max(0, Math.floor((now - dueMs) / 86400000));
-      const daysRemaining = r.status === 'closed' ? 0 : Math.max(0, Math.ceil((dueMs - now) / 86400000));
-      const isOverdue = r.status !== 'closed' && r.status !== 'rejected' && now > dueMs;
-      return { ...r, overdueDays, daysRemaining, isOverdue, slaDays };
+      const overdue = isOverdueCAPA(r, nowDate);
+      const overdueDays = capaOverdueDays(r, nowDate);
+      // daysRemaining only meaningful for active cases
+      const dueMs = capaDueDateMs(r);
+      const daysRemaining = isClosedCAPA(r)
+        ? 0
+        : dueMs !== null
+          ? Math.max(0, Math.ceil((dueMs - nowDate.getTime()) / 86400000))
+          : 0;
+      return { ...r, overdueDays, daysRemaining, isOverdue: overdue, slaDays: r.slaDays || SLA_DAYS[r.priority] || 7 };
     });
 
     // Pagination

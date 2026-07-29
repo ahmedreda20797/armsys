@@ -56,6 +56,7 @@ export default function CAPAPage() {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [systemUsers, setSystemUsers] = useState<{ id: string; name: string; email?: string; role?: string }[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [priorityFilter, setPriorityFilter] = useState('all');
@@ -114,6 +115,7 @@ export default function CAPAPage() {
   }, [navParams]);
 
   const fetchData = async () => {
+    setError(null);
     try {
       const [capaRes, empRes, usrRes] = await Promise.allSettled([
         authFetch('/api/capa-cases'),
@@ -132,7 +134,7 @@ export default function CAPAPage() {
         const u = await usrRes.value.json();
         setSystemUsers(Array.isArray(u) ? u : []);
       }
-    } catch { setCases([]); setEmployees([]); }
+    } catch { setError('تعذّر تحميل حالات CAPA'); setCases([]); setEmployees([]); }
     finally { setLoading(false); }
   };
 
@@ -375,9 +377,17 @@ export default function CAPAPage() {
         </div>
       </div>
 
-      {/* ═══ Loading / Empty ═══ */}
+      {/* ═══ Loading / Error / Empty ═══ */}
       {loading ? (
         <div className="space-y-2.5">{[1, 2, 3].map((i) => (<Skeleton key={i} className="h-28 rounded-lg bg-slate-800/50" />))}</div>
+      ) : error ? (
+        <Card className="border-rose-500/30 bg-rose-500/5">
+          <CardContent className="flex flex-col items-center justify-center py-14">
+            <div className="size-12 rounded-full bg-rose-500/10 flex items-center justify-center mb-3"><AlertTriangle className="size-6 text-rose-400" /></div>
+            <p className="text-rose-300 text-sm font-medium">{error}</p>
+            <Button variant="outline" size="sm" className="mt-4" onClick={() => fetchData()}>إعادة المحاولة</Button>
+          </CardContent>
+        </Card>
       ) : displayed.length === 0 ? (
         <Card className="border-slate-700/40 bg-slate-800/30">
           <CardContent className="flex flex-col items-center justify-center py-14">

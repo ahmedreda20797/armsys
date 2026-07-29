@@ -181,10 +181,6 @@ function getTodayStr(): string {
   return new Date().toISOString().split('T')[0];
 }
 
-function calculateRiskScore(highCount: number, criticalCount: number, openCount: number): number {
-  return (highCount * 5) + (criticalCount * 10) + (openCount * 3);
-}
-
 function getRiskLevel(score: number): { label: string; color: string } {
   if (score >= 26) return { label: 'مرتفع', color: 'text-red-400 bg-red-500/15 border-red-500/30' };
   if (score >= 11) return { label: 'متوسط', color: 'text-yellow-400 bg-yellow-500/15 border-yellow-500/30' };
@@ -229,6 +225,7 @@ export default function FollowUpsPage() {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [systemUsers, setSystemUsers] = useState<SystemUser[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [typeFilter, setTypeFilter] = useState('all');
@@ -280,6 +277,7 @@ export default function FollowUpsPage() {
   }, []);
 
   const fetchData = async () => {
+    setError(null);
     try {
       const [fuRes, empRes, usrRes] = await Promise.allSettled([
         authFetch('/api/follow-ups'),
@@ -301,6 +299,7 @@ export default function FollowUpsPage() {
         setSystemUsers(Array.isArray(usrData) ? usrData : []);
       }
     } catch {
+      setError('تعذّر تحميل المتابعات');
       setFollowUps([]);
       setEmployees([]);
     } finally {
@@ -731,11 +730,21 @@ export default function FollowUpsPage() {
         </CardContent>
       </Card>
 
-      {/* ═══ Loading / Empty / Content ═══ */}
+      {/* ═══ Loading / Error / Empty / Content ═══ */}
       {loading ? (
         <div className="space-y-3">
           {[1, 2, 3].map(i => <Skeleton key={i} className="h-48 rounded-lg bg-slate-800/50" />)}
         </div>
+      ) : error ? (
+        <Card className="border-rose-500/30 bg-rose-500/5">
+          <CardContent className="flex flex-col items-center justify-center py-14">
+            <div className="size-12 rounded-full bg-rose-500/10 flex items-center justify-center mb-3">
+              <AlertTriangle className="size-6 text-rose-400" />
+            </div>
+            <p className="text-rose-300 text-sm font-medium">{error}</p>
+            <Button variant="outline" size="sm" className="mt-4" onClick={() => fetchData()}>إعادة المحاولة</Button>
+          </CardContent>
+        </Card>
       ) : filtered.length === 0 ? (
         <Card className="border-slate-700/40 bg-slate-800/30">
           <CardContent className="flex flex-col items-center justify-center py-14">
@@ -819,7 +828,7 @@ export default function FollowUpsPage() {
                           </td>
                           <td className="px-3 py-2.5 whitespace-nowrap text-center">
                             <Badge variant="outline" className={`text-[10px] ${item.priorityLevel === 'critical' ? 'bg-red-500/15 text-red-400 border-red-500/30' : 'bg-slate-700/50 text-slate-400 border-slate-600/50'}`}>
-                              {item.score || SCORE_MAP[item.priorityLevel] || 3}
+                              {item.score ?? SCORE_MAP[item.priorityLevel] ?? 3}
                             </Badge>
                           </td>
                           <td className="px-3 py-2.5 whitespace-nowrap">
@@ -1046,7 +1055,7 @@ export default function FollowUpsPage() {
                                     </span>
                                     <span className="text-slate-500 flex items-center gap-1">
                                       <FileText className="size-2.5" />
-                                      النقاط: <span className="text-slate-300">{item.score || SCORE_MAP[item.priorityLevel] || 3}</span>
+                                      النقاط: <span className="text-slate-300">{item.score ?? SCORE_MAP[item.priorityLevel] ?? 3}</span>
                                     </span>
                                     {item.nextFollowUpDate && (
                                       <span className={`flex items-center gap-1 ${isOverdue ? 'text-red-400' : 'text-slate-500'}`}>
@@ -1126,7 +1135,7 @@ export default function FollowUpsPage() {
                     {getStatusBadge(viewingItem.status).label}
                   </div>
                   <Badge variant="outline" className="text-[11px] bg-slate-700/50 text-slate-300 border-slate-600/50 px-2 py-0.5">
-                    النقاط: {viewingItem.score || SCORE_MAP[viewingItem.priorityLevel] || 3}
+                    النقاط: {viewingItem.score ?? SCORE_MAP[viewingItem.priorityLevel] ?? 3}
                   </Badge>
                 </div>
 

@@ -32,22 +32,8 @@ interface EmployeeRisk {
   position: string;
   riskScore: number;
   riskLevel: 'low' | 'medium' | 'high' | 'critical';
-  breakdown: {
-    delayCount: number; delayPoints: number;
-    absenceCount: number; absencePoints: number;
-    qualityViolations: number; qualityPoints: number;
-    hrViolations: number; hrPoints: number;
-    openFollowUps: number; openFollowUpPoints: number;
-    highPriorityFollowUps: number; highPriorityPoints: number;
-    criticalFollowUps: number; criticalPoints: number;
-    complaints: number; complaintPoints: number;
-    repeatedIssues: number; repeatedPoints: number;
-    // CAPA integration factors
-    openCapas: number; openCapaPoints: number;
-    overdueCapas: number; overdueCapaPoints: number;
-    criticalCapas: number; criticalCapaPoints: number;
-    reopenedCapas: number; reopenedCapaPoints: number;
-  };
+  // Canonical breakdown shape — one { count, points } entry per factor.
+  breakdown: Record<string, { count: number; points: number }>;
   openCases: number;
   lastActivity: string;
   trend: 'increasing' | 'stable' | 'improving';
@@ -120,6 +106,7 @@ export default function RiskCenterPage() {
   const [summary, setSummary] = useState<SummaryStats | null>(null);
   const [deptAnalysis, setDeptAnalysis] = useState<Record<string, any>>({});
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [levelFilter, setLevelFilter] = useState('all');
   const [deptFilter, setDeptFilter] = useState('all');
@@ -131,6 +118,8 @@ export default function RiskCenterPage() {
   }, []);
 
   const fetchRiskData = async () => {
+    setLoading(true);
+    setError(null);
     try {
       const res = await authFetch('/api/risk-center');
       if (res.ok) {
@@ -138,9 +127,17 @@ export default function RiskCenterPage() {
         setEmployees(data.employees || []);
         setSummary(data.summary || null);
         setDeptAnalysis(data.departmentAnalysis || {});
+      } else {
+        setError('تعذر تحميل بيانات المخاطر');
+        setEmployees([]);
+        setSummary(null);
+        setDeptAnalysis({});
       }
     } catch {
+      setError('تعذر تحميل بيانات المخاطر');
       setEmployees([]);
+      setSummary(null);
+      setDeptAnalysis({});
     } finally {
       setLoading(false);
     }
@@ -314,6 +311,19 @@ export default function RiskCenterPage() {
         <div className="space-y-3">
           {[1, 2, 3, 4].map(i => <Skeleton key={i} className="h-16 rounded-lg bg-slate-800/50" />)}
         </div>
+      ) : error ? (
+        <Card className="border-rose-500/30 bg-rose-500/5">
+          <CardContent className="flex flex-col items-center justify-center py-14">
+            <div className="size-12 rounded-full bg-rose-500/10 flex items-center justify-center mb-3">
+              <AlertCircle className="size-6 text-rose-400" />
+            </div>
+            <p className="text-rose-300 text-sm font-medium">{error}</p>
+            <p className="text-slate-600 text-xs mt-1">تعذّر الاتصال بقاعدة البيانات</p>
+            <Button variant="outline" size="sm" className="mt-4" onClick={fetchRiskData}>
+              إعادة المحاولة
+            </Button>
+          </CardContent>
+        </Card>
       ) : filtered.length === 0 ? (
         <Card className="border-slate-700/40 bg-slate-800/30">
           <CardContent className="flex flex-col items-center justify-center py-14">
@@ -381,10 +391,10 @@ export default function RiskCenterPage() {
                               {emp.openCases}
                             </Badge>
                           </td>
-                          <td className="px-3 py-2.5 whitespace-nowrap text-center text-xs">{emp.breakdown.qualityViolations || '—'}</td>
-                          <td className="px-3 py-2.5 whitespace-nowrap text-center text-xs">{emp.breakdown.hrViolations || '—'}</td>
-                          <td className="px-3 py-2.5 whitespace-nowrap text-center text-xs">{emp.breakdown.absenceCount || '—'}</td>
-                          <td className="px-3 py-2.5 whitespace-nowrap text-center text-xs">{emp.breakdown.delayCount || '—'}</td>
+                          <td className="px-3 py-2.5 whitespace-nowrap text-center text-xs">{emp.breakdown.quality?.count || '—'}</td>
+                          <td className="px-3 py-2.5 whitespace-nowrap text-center text-xs">{emp.breakdown.hr?.count || '—'}</td>
+                          <td className="px-3 py-2.5 whitespace-nowrap text-center text-xs">{emp.breakdown.absence?.count || '—'}</td>
+                          <td className="px-3 py-2.5 whitespace-nowrap text-center text-xs">{emp.breakdown.delay?.count || '—'}</td>
                           <td className="px-3 py-2.5 whitespace-nowrap">
                             <div className="flex items-center gap-1">
                               {getTrendIcon(emp.trend)}
@@ -528,34 +538,38 @@ export default function RiskCenterPage() {
                   <CardContent className="px-4 pb-3">
                     <div className="space-y-2">
                       {[
-                        { label: 'تأخير حضور', count: selectedEmployee.breakdown.delayCount, points: selectedEmployee.breakdown.delayPoints, icon: Clock, color: 'text-cyan-400' },
-                        { label: 'غياب', count: selectedEmployee.breakdown.absenceCount, points: selectedEmployee.breakdown.absencePoints, icon: AlertCircle, color: 'text-red-400' },
-                        { label: 'مخالفات جودة', count: selectedEmployee.breakdown.qualityViolations, points: selectedEmployee.breakdown.qualityPoints, icon: Award, color: 'text-amber-400' },
-                        { label: 'مخالفات موارد بشرية', count: selectedEmployee.breakdown.hrViolations, points: selectedEmployee.breakdown.hrPoints, icon: UserCheck, color: 'text-violet-400' },
-                        { label: 'حالات متابعة مفتوحة', count: selectedEmployee.breakdown.openFollowUps, points: selectedEmployee.breakdown.openFollowUpPoints, icon: Activity, color: 'text-blue-400' },
-                        { label: 'متابعة أولوية عالية', count: selectedEmployee.breakdown.highPriorityFollowUps, points: selectedEmployee.breakdown.highPriorityPoints, icon: AlertTriangle, color: 'text-orange-400' },
-                        { label: 'متابعة حرجة', count: selectedEmployee.breakdown.criticalFollowUps, points: selectedEmployee.breakdown.criticalPoints, icon: ShieldX, color: 'text-red-500' },
-                        { label: 'شكاوى عملاء', count: selectedEmployee.breakdown.complaints, points: selectedEmployee.breakdown.complaintPoints, icon: FileWarning, color: 'text-rose-400' },
-                        { label: 'مشكلة متكررة', count: selectedEmployee.breakdown.repeatedIssues, points: selectedEmployee.breakdown.repeatedPoints, icon: FileWarning, color: 'text-yellow-400' },
+                        { label: 'تأخير حضور', key: 'delay', icon: Clock, color: 'text-cyan-400' },
+                        { label: 'غياب', key: 'absence', icon: AlertCircle, color: 'text-red-400' },
+                        { label: 'مخالفات جودة', key: 'quality', icon: Award, color: 'text-amber-400' },
+                        { label: 'مخالفات موارد بشرية', key: 'hr', icon: UserCheck, color: 'text-violet-400' },
+                        { label: 'حالات متابعة مفتوحة', key: 'openFollowUp', icon: Activity, color: 'text-blue-400' },
+                        { label: 'متابعة أولوية عالية', key: 'highPriorityFollowUp', icon: AlertTriangle, color: 'text-orange-400' },
+                        { label: 'متابعة حرجة', key: 'criticalFollowUp', icon: ShieldX, color: 'text-red-500' },
+                        { label: 'شكاوى عملاء', key: 'complaint', icon: FileWarning, color: 'text-rose-400' },
+                        { label: 'مشكلة متكررة', key: 'repeatedIssue', icon: FileWarning, color: 'text-yellow-400' },
                         // CAPA breakdown items
-                        { label: 'حالات كابا مفتوحة', count: selectedEmployee.breakdown.openCapas, points: selectedEmployee.breakdown.openCapaPoints, icon: FileText, color: 'text-teal-400' },
-                        { label: 'حالات كابا متأخرة', count: selectedEmployee.breakdown.overdueCapas, points: selectedEmployee.breakdown.overdueCapaPoints, icon: AlertCircle, color: 'text-red-400' },
-                        { label: 'حالات كابا حرجة', count: selectedEmployee.breakdown.criticalCapas, points: selectedEmployee.breakdown.criticalCapaPoints, icon: ShieldX, color: 'text-red-500' },
-                        { label: 'حالات كابا معاد فتحها', count: selectedEmployee.breakdown.reopenedCapas, points: selectedEmployee.breakdown.reopenedCapaPoints, icon: ShieldAlert, color: 'text-orange-500' },
-                      ].map(item => item.count > 0 && (
-                        <div key={item.label} className="flex items-center justify-between py-1.5 px-2 rounded-lg bg-slate-800/50">
-                          <div className="flex items-center gap-2">
-                            <item.icon className={`size-3.5 ${item.color}`} />
-                            <span className="text-slate-300 text-xs">{item.label}</span>
+                        { label: 'حالات كابا مفتوحة', key: 'openCapa', icon: FileText, color: 'text-teal-400' },
+                        { label: 'حالات كابا متأخرة', key: 'overdueCapa', icon: AlertCircle, color: 'text-red-400' },
+                        { label: 'حالات كابا حرجة', key: 'criticalCapa', icon: ShieldX, color: 'text-red-500' },
+                        { label: 'حالات كابا معاد فتحها', key: 'reopenedCapa', icon: ShieldAlert, color: 'text-orange-500' },
+                      ].map((item) => {
+                        const factor = selectedEmployee.breakdown[item.key] || { count: 0, points: 0 };
+                        if (factor.count === 0) return null;
+                        return (
+                          <div key={item.key} className="flex items-center justify-between py-1.5 px-2 rounded-lg bg-slate-800/50">
+                            <div className="flex items-center gap-2">
+                              <item.icon className={`size-3.5 ${item.color}`} />
+                              <span className="text-slate-300 text-xs">{item.label}</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span className="text-slate-500 text-[10px]">×{factor.count}</span>
+                              <Badge variant="outline" className={`text-[10px] bg-slate-700/50 ${item.color} border-slate-600/50`}>
+                                +{factor.points}
+                              </Badge>
+                            </div>
                           </div>
-                          <div className="flex items-center gap-2">
-                            <span className="text-slate-500 text-[10px]">×{item.count}</span>
-                            <Badge variant="outline" className={`text-[10px] bg-slate-700/50 ${item.color} border-slate-600/50`}>
-                              +{item.points}
-                            </Badge>
-                          </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                     <div className="mt-3 pt-2 border-t border-slate-700/30 flex items-center justify-between">
                       <span className="text-slate-400 text-xs font-medium">الإجمالي</span>

@@ -5,6 +5,7 @@ import {
   sortByDateField, getEmployeeMap,
 } from '@/lib/db';
 import { requireAuth } from '@/lib/verify-permission';
+import { isOverdueFollowUp } from '@/lib/metrics';
 
 function getTodayStr(): string {
   const now = new Date();
@@ -121,7 +122,7 @@ function computeMonthlyPerformance(
   const monthQuality = qualityDeductions.filter((qd: any) => qd.month === monthKey);
 
   const workingDaysSet = new Set(monthRecords.map((r: any) => r.date));
-  const totalWorkingDays = workingDaysSet.size || 22;
+  const totalWorkingDays = workingDaysSet.size;
 
   const perfMap = new Map<string, EmployeePerformanceItem>();
 
@@ -419,7 +420,7 @@ export async function GET(request: NextRequest) {
     // --- Follow-ups summary ---
     const followUpsSummary = {
       totalActive: allFollowUps.filter((f: any) => f.status === 'open' || f.status === 'in_progress').length,
-      totalOverdue: allFollowUps.filter((f: any) => f.status === 'overdue').length,
+      totalOverdue: allFollowUps.filter((f: any) => isOverdueFollowUp(f)).length,
       totalCompleted: allFollowUps.filter((f: any) => f.status === 'completed').length,
       todaysScheduled: todaysFollowUps.length,
     };
