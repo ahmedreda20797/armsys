@@ -9,31 +9,38 @@ import bcrypt from 'bcryptjs';
 //  Configuration
 // ═══════════════════════════════════════════════════
 
-// ─── STARTUP VALIDATION: Fail securely if JWT_SECRET is missing ───
-if (!process.env.JWT_SECRET) {
-  console.error(
-    '[CRITICAL SECURITY] JWT_SECRET environment variable is not set. ' +
-    'The application cannot start securely. ' +
-    'Set JWT_SECRET to a strong random value (min 32 characters) in your environment.'
-  );
-  throw new Error(
-    'JWT_SECRET environment variable is required. ' +
-    'Refusing to start with insecure configuration. ' +
-    'Set JWT_SECRET to a strong random string (min 32 chars).'
-  );
-}
+// ─── LAZY VALIDATION: Defer JWT_SECRET check to first runtime use ───
+let _jwtSecret: Uint8Array | null = null;
 
-const _rawSecret = process.env.JWT_SECRET as string;
-if (_rawSecret.length < 32) {
-  console.error(
-    `[CRITICAL SECURITY] JWT_SECRET is too short (${_rawSecret.length} chars). Minimum 32 characters required.`
-  );
-  throw new Error(
-    `JWT_SECRET must be at least 32 characters long. Current length: ${_rawSecret.length}.`
-  );
-}
+function getJwtSecret(): Uint8Array {
+  if (_jwtSecret) return _jwtSecret;
 
-const JWT_SECRET = new TextEncoder().encode(_rawSecret);
+  const raw = process.env.JWT_SECRET;
+  if (!raw) {
+    console.error(
+      '[CRITICAL SECURITY] JWT_SECRET environment variable is not set. ' +
+      'The application cannot start securely. ' +
+      'Set JWT_SECRET to a strong random value (min 32 characters) in your environment.'
+    );
+    throw new Error(
+      'JWT_SECRET environment variable is required. ' +
+      'Refusing to start with insecure configuration. ' +
+      'Set JWT_SECRET to a strong random string (min 32 chars).'
+    );
+  }
+
+  if (raw.length < 32) {
+    console.error(
+      `[CRITICAL SECURITY] JWT_SECRET is too short (${raw.length} chars). Minimum 32 characters required.`
+    );
+    throw new Error(
+      `JWT_SECRET must be at least 32 characters long. Current length: ${raw.length}.`
+    );
+  }
+
+  _jwtSecret = new TextEncoder().encode(raw);
+  return _jwtSecret;
+}
 
 const ACCESS_TOKEN_EXPIRY = '15m';    // Short-lived access token
 const REFRESH_TOKEN_EXPIRY = '7d';   // Long-lived refresh token
@@ -98,7 +105,7 @@ export async function signToken(payload: JWTPayload, type: 'access' | 'refresh')
     .setIssuedAt()
     .setIssuer('arm-erp')
     .setExpirationTime(expiry)
-    .sign(JWT_SECRET);
+    .sign(getJwtSecret());
 }
 
 /**
@@ -107,7 +114,7 @@ export async function signToken(payload: JWTPayload, type: 'access' | 'refresh')
  */
 export async function verifyToken(token: string): Promise<DecodedToken | null> {
   try {
-    const { payload } = await jwtVerify(token, JWT_SECRET, {
+    const { payload } = await jwtVerify(token, getJwtSecret(), {
       issuer: 'arm-erp',
     });
 
