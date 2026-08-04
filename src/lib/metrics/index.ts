@@ -15,3 +15,4 @@
 export * from './riskMetrics';
 export * from './followUpMetrics';
 export * from './capaMetrics';
+export * from './kpiMetrics';

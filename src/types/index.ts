@@ -277,7 +277,7 @@ export interface KnowledgeArticle {
   updatedAt: string;
 }
 
-export type PageId = 'home' | 'employees' | 'biometric' | 'attendance' | 'requests' | 'rules' | 'quality' | 'hrDeductions' | 'travel' | 'reports' | 'firebase' | 'followUps' | 'capa' | 'complaints' | 'knowledgeBase' | 'riskCenter' | 'operationsCenter' | 'employee360' | 'notifications' | 'rulesEngine' | 'controlPanel';
+export type PageId = 'home' | 'employees' | 'biometric' | 'attendance' | 'requests' | 'rules' | 'quality' | 'hrDeductions' | 'travel' | 'reports' | 'firebase' | 'followUps' | 'capa' | 'complaints' | 'knowledgeBase' | 'riskCenter' | 'operationsCenter' | 'employee360' | 'notifications' | 'rulesEngine' | 'controlPanel' | 'observations' | 'observationCategories' | 'observationTemplates' | 'kpiDashboard' | 'monthClose' | 'kpiSettings' | 'qualityAuditLog';
 
 export interface AppNotification {
   id: string;
