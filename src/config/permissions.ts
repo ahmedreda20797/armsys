@@ -59,6 +59,12 @@ export const APP_PAGES: PageConfig[] = [
   { id: 'capa', title: 'نظام كابا', icon: 'ShieldCheck', permissionKey: 'capa', availableActions: ['create', 'update', 'delete'], groupId: 'quality_ctrl' },
   { id: 'riskCenter', title: 'مركز المخاطر', icon: 'AlertTriangle', permissionKey: 'riskCenter', availableActions: [], groupId: 'quality_ctrl' },
   { id: 'complaints', title: 'شكاوى العملاء', icon: 'MessageSquareWarning', permissionKey: 'complaints', availableActions: ['create', 'update', 'delete'], groupId: 'quality_ctrl' },
+  // ── Quality KPI (Phase 1) ──
+  { id: 'observations', title: 'ملاحظات الجودة', icon: 'Eye', permissionKey: 'observations', availableActions: ['create', 'update', 'delete'], groupId: 'quality_ctrl' },
+  { id: 'observationCategories', title: 'تصنيفات الملاحظات', icon: 'Tags', permissionKey: 'observationCategories', availableActions: ['create', 'update', 'delete'], groupId: 'quality_ctrl', overlayOnly: true },
+  { id: 'observationTemplates', title: 'قوالب الملاحظات', icon: 'FilePlus2', permissionKey: 'observationTemplates', availableActions: ['create', 'update', 'delete'], groupId: 'quality_ctrl', overlayOnly: true },
+  { id: 'kpiDashboard', title: 'لوحة مؤشرات الجودة', icon: 'Gauge', permissionKey: 'kpiDashboard', availableActions: [], groupId: 'quality_ctrl' },
+  { id: 'qualityAuditLog', title: 'سجل مراجعة الجودة', icon: 'ScrollText', permissionKey: 'qualityAuditLog', availableActions: [], groupId: 'quality_ctrl' },
   // ═══ 🏢 الموارد البشرية ═══
   { id: 'hrDeductions', title: 'خصومات الموارد البشرية', icon: 'Banknote', permissionKey: 'hrDeductions', availableActions: ['create', 'update', 'delete', 'approve'], groupId: 'hr' },
   { id: 'rules', title: 'قواعد الخصم', icon: 'Scale', permissionKey: 'rules', availableActions: ['create', 'update', 'delete'], groupId: 'hr' },
@@ -72,6 +78,9 @@ export const APP_PAGES: PageConfig[] = [
   { id: 'workflowDesigner', title: 'مصمم المسارات', icon: 'Workflow', permissionKey: 'workflowDesigner', availableActions: ['create', 'update', 'delete'], groupId: 'settings' },
   { id: 'rulesEngine', title: 'الأتمتة والقواعد', icon: 'Zap', permissionKey: 'rulesEngine', availableActions: ['create', 'update', 'delete'], groupId: 'settings' },
   { id: 'firebase', title: 'Firebase Settings', icon: 'Database', permissionKey: 'firebase', availableActions: [], groupId: 'settings' },
+  // ── Month close / KPI settings (Phase 1) ──
+  { id: 'monthClose', title: 'إغلاق الشهر', icon: 'CalendarCog', permissionKey: 'monthClose', availableActions: ['approve'], groupId: 'settings' },
+  { id: 'kpiSettings', title: 'إعدادات مؤشرات الجودة', icon: 'Settings2', permissionKey: 'kpiSettings', availableActions: ['update'], groupId: 'settings' },
 ];
 
 // Role presets with action-level permissions
@@ -113,6 +122,14 @@ export const HR_PERMISSIONS: PermissionsMap = {
   operationsCenter: 'none',
   notifications: 'read',
   rulesEngine: 'none',
+  // Quality KPI (Phase 1)
+  observations: 'none',
+  observationCategories: 'none',
+  observationTemplates: 'none',
+  kpiDashboard: 'none',
+  qualityAuditLog: 'none',
+  monthClose: 'none',
+  kpiSettings: 'none',
 };
 
 export const MANAGER_PERMISSIONS: PermissionsMap = {
@@ -137,6 +154,14 @@ export const MANAGER_PERMISSIONS: PermissionsMap = {
   operationsCenter: 'read',
   notifications: 'read',
   rulesEngine: 'none',
+  // Quality KPI (Phase 1) — managers approve and close months
+  observations: makeEditWithActions(['create', 'update', 'delete', 'approve']),
+  observationCategories: makeEditWithActions(['create', 'update', 'delete']),
+  observationTemplates: makeEditWithActions(['create', 'update', 'delete']),
+  kpiDashboard: 'read',
+  qualityAuditLog: 'read',
+  monthClose: makeEditWithActions(['approve']),
+  kpiSettings: 'none',
 };
 
 export const QUALITY_PERMISSIONS: PermissionsMap = {
@@ -161,6 +186,14 @@ export const QUALITY_PERMISSIONS: PermissionsMap = {
   operationsCenter: 'read',
   notifications: makeEditWithActions([]),
   rulesEngine: makeEditWithActions([]),
+  // Quality KPI (Phase 1) — quality creates, does NOT approve
+  observations: makeEditWithActions(['create', 'update', 'delete']),
+  observationCategories: makeEditWithActions(['create', 'update', 'delete']),
+  observationTemplates: makeEditWithActions(['create', 'update', 'delete']),
+  kpiDashboard: 'read',
+  qualityAuditLog: 'read',
+  monthClose: 'none',
+  kpiSettings: 'none',
 };
 
 export const DEFAULT_PERMISSIONS: PermissionsMap = {
@@ -185,6 +218,14 @@ export const DEFAULT_PERMISSIONS: PermissionsMap = {
   operationsCenter: 'read',
   notifications: 'read',
   rulesEngine: 'none',
+  // Quality KPI (Phase 1)
+  observations: 'read',
+  observationCategories: 'none',
+  observationTemplates: 'none',
+  kpiDashboard: 'read',
+  qualityAuditLog: 'read',
+  monthClose: 'none',
+  kpiSettings: 'none',
 };
 
 // Migrate old string permissions to new format

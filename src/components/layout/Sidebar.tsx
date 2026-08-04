@@ -30,6 +30,13 @@ import {
   Zap,
   Shield,
   Workflow,
+  Eye,
+  Tags,
+  FilePlus2,
+  Gauge,
+  CalendarCog,
+  Settings2,
+  ScrollText,
 } from 'lucide-react';
 import { usePermissions } from '@/hooks/usePermissions';
 import { useAuth } from '@/contexts/AuthContext';
@@ -61,6 +68,13 @@ const ICON_MAP: Record<string, LucideIcon> = {
   Zap,
   Shield,
   Workflow,
+  Eye,
+  Tags,
+  FilePlus2,
+  Gauge,
+  CalendarCog,
+  Settings2,
+  ScrollText,
 };
 
 interface SidebarProps {

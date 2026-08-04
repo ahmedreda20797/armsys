@@ -55,6 +55,14 @@ const OperationsCenterPage = dynamic(() => import('@/components/pages/Operations
 const NotificationCenterPage = dynamic(() => import('@/components/pages/NotificationCenterPage'), { loading: () => <PageSkeleton />, ssr: false });
 const RulesEnginePage      = dynamic(() => import('@/components/pages/RulesEnginePage'),      { loading: () => <PageSkeleton />, ssr: false });
 const WorkflowDesignerPage = dynamic(() => import('@/components/pages/workflow-designer/WorkflowDesignerPage'), { loading: () => <PageSkeleton />, ssr: false });
+// ── Quality KPI (Phase 1) ──
+const ObservationsPage         = dynamic(() => import('@/components/pages/quality-kpi/ObservationsPage'),         { loading: () => <PageSkeleton />, ssr: false });
+const ObservationCategoriesPage = dynamic(() => import('@/components/pages/quality-kpi/ObservationCategoriesPage'), { loading: () => <PageSkeleton />, ssr: false });
+const ObservationTemplatesPage  = dynamic(() => import('@/components/pages/quality-kpi/ObservationTemplatesPage'),  { loading: () => <PageSkeleton />, ssr: false });
+const KpiDashboardPage         = dynamic(() => import('@/components/pages/quality-kpi/KpiDashboardPage'),         { loading: () => <PageSkeleton />, ssr: false });
+const MonthClosePage           = dynamic(() => import('@/components/pages/quality-kpi/MonthClosePage'),           { loading: () => <PageSkeleton />, ssr: false });
+const KpiSettingsPage          = dynamic(() => import('@/components/pages/quality-kpi/KpiSettingsPage'),          { loading: () => <PageSkeleton />, ssr: false });
+const QualityAuditLogPage      = dynamic(() => import('@/components/pages/quality-kpi/QualityAuditLogPage'),      { loading: () => <PageSkeleton />, ssr: false });
 
 // ─── Background preload ───────────────────────────────────────────────────────
 function PreloadPages() {
@@ -125,6 +133,14 @@ function PageRouter() {
     case 'notifications':    return <NotificationCenterPage key="notifications" />;
     case 'rulesEngine':      return <RulesEnginePage      key="rulesEngine" />;
     case 'workflowDesigner': return <WorkflowDesignerPage key="workflowDesigner" />;
+    // ── Quality KPI (Phase 1) ──
+    case 'observations':          return <ObservationsPage          key="observations" />;
+    case 'observationCategories': return <ObservationCategoriesPage key="observationCategories" />;
+    case 'observationTemplates':  return <ObservationTemplatesPage  key="observationTemplates" />;
+    case 'kpiDashboard':          return <KpiDashboardPage          key="kpiDashboard" />;
+    case 'monthClose':            return <MonthClosePage            key="monthClose" />;
+    case 'kpiSettings':           return <KpiSettingsPage           key="kpiSettings" />;
+    case 'qualityAuditLog':       return <QualityAuditLogPage       key="qualityAuditLog" />;
     default:                 return <HomePage             key="home" />;
   }
 }

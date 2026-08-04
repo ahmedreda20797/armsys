@@ -44,6 +44,7 @@ import {
   Plus,
   RotateCcw,
 } from 'lucide-react';
+import { EmployeeQualityKpiPanel } from '@/components/pages/quality-kpi/EmployeeQualityKpiPanel';
 
 // ══════════════════════════════════════════════════════════════
 //  Types
@@ -1004,10 +1005,16 @@ export default function Employee360Page({ employeeId: propEmployeeId, onClose }:
       case 'performance': return renderPerformanceTab();
       case 'attendance':
       case 'requests':
-      case 'quality':
       case 'hr':
       case 'followups':
         return renderTimelineContent(activeTab);
+      case 'quality':
+        return (
+          <motion.div variants={staggerGrid} initial="hidden" animate="visible" className="space-y-4">
+            <EmployeeQualityKpiPanel employeeId={employeeId} />
+            {renderTimelineContent('quality')}
+          </motion.div>
+        );
       case 'documents':
         return (
           <motion.div variants={scaleIn} initial="hidden" animate="visible">
