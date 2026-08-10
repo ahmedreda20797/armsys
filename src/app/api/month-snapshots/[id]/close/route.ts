@@ -1,128 +1,87 @@
 // ══════════════════════════════════════════════════════════════
 //  /api/month-snapshots/[id]/close
 //
-//  POST — close (freeze) a month: generate the immutable snapshot
-//  from current observations and persist it.
+//  POST — close (freeze) a month (spec §8/§9).
 //
-//  IDEMPOTENT: calling close on an already-closed month regenerates
-//  the snapshot from current observations (refresh). This is safe
-//  because reopen is the only operation that restores editability,
-//  and close is always the last word on a month's scores.
+//  IDEMPOTENT (spec §3): if the month is ALREADY closed, the request
+//  returns the existing frozen snapshot UNCHANGED — it does NOT
+//  regenerate the snapshot, modify it, change generatedAt, or change
+//  employee scores. A duplicate close is a no-op that returns the
+//  already-frozen data. This is safe against double-clicks, retries,
+//  duplicate requests, and concurrent close requests.
 //
-//  Permission: 'approve' on 'monthClose' (manager/admin only).
+//  On a genuine close (month was open or had no snapshot):
+//    1. Load the month's observations and active employee records.
+//    2. Compute the snapshot via the CANONICAL KPI engine (only
+//       approved observations affect the score; pending/rejected do
+//       not — spec §9).
+//    3. Freeze employee metadata, settings, KPI values, ranking,
+//       category totals, and approval statistics.
+//    4. Persist. Mark status = closed. Audit + notify.
+//
+//  On a re-close (after reopen): archive the previous frozen version
+//  into snapshotHistory before replacing the active fields (§13).
+//
+//  Permission: 'approve' on 'monthClose' (manager/admin only, via the
+//  existing permission system — no hardcoded roles).
+//
+//  This route is THIN (spec §2): it authenticates, validates input,
+//  and delegates to the month-snapshots service. No score formula
+//  lives here.
 // ══════════════════════════════════════════════════════════════
 
 import { NextRequest } from 'next/server';
-import { getAll, createRecordWithId, invalidateCache, TTL } from '@/lib/db';
 import { verifyPermission } from '@/lib/verify-permission';
 import {
-  forbiddenError, validationError, notFoundError,
+  forbiddenError, validationError,
   internalError, logServerFailure,
 } from '@/lib/api-error';
-import { getKpiSettings } from '@/lib/kpi-settings';
-import { computeMonthSnapshot } from '@/lib/metrics/kpiMetrics';
 import { resolveActor } from '@/lib/auth/actor-resolver';
-import { makeRecordAuditEvent, writeQualityAudit } from '@/lib/audit/server-audit-logger';
+import { writeAudit } from '@/lib/audit';
+import { AUDIT_LOG_TABLE } from '@/app/api/quality-audit-log/route';
 import { notifyMonthClosed } from '@/lib/notifications/quality-events';
-import { MONTH_SNAPSHOTS_TABLE, getMonthSnapshot } from '@/lib/month-lock';
-import type { QualityObservation, MonthSnapshot } from '@/types/quality-kpi';
-import type { EmployeeLike } from '@/lib/metrics/kpiMetrics';
-import type { Employee } from '@/types';
+import { validateMonthKey } from '@/lib/month-utils';
+import { closeMonth } from '@/lib/month-snapshots';
 
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
+    // ── 1. Authenticate + authorize (existing permission system) ──
     const permCheck = await verifyPermission(request, 'monthClose', 'approve');
     if (!permCheck.allowed) return forbiddenError(permCheck.error);
 
+    // ── 2. Validate month key (strict YYYY-MM, spec §18) ──
     const { id: monthKey } = await params;
+    const monthError = validateMonthKey(monthKey);
+    if (monthError) return validationError(monthError);
 
-    // Validate month key format.
-    if (!/^\d{4}-\d{2}$/.test(monthKey)) {
-      return validationError('صيغة الشهر غير صحيحة (YYYY-MM مطلوبة)');
-    }
-
+    // ── 3. Resolve actor (server-side, never trust client) ──
     const actor = await resolveActor(permCheck.user?.id);
-    const now = new Date().toISOString();
 
-    // ── Gather data for snapshot ──
-    const settings = await getKpiSettings();
-    const allObs = await getAll<QualityObservation>('qualityObservations', TTL.MEDIUM);
-    const monthObs = allObs.filter((o) => o.month === monthKey);
+    // ── 4. Delegate to service (idempotent close + canonical engine) ──
+    const result = await closeMonth(monthKey, actor);
+    const { snapshot, kind } = result;
 
-    const employees = await getAll<Employee>('employees', TTL.MEDIUM);
-    const empMap = new Map<string, EmployeeLike>();
-    for (const e of employees) {
-      empMap.set(e.id, {
-        id: e.id,
-        name: e.name,
-        department: e.department,
-        position: e.position,
+    // ── 5. Audit + notify ONLY on a genuine close ──
+    // A duplicate/idempotent close must NOT re-notify (spec §15) or
+    // write a redundant audit entry — it is a pure read-and-return.
+    if (kind === 'created') {
+      await writeAudit({
+        collection: AUDIT_LOG_TABLE,
+        actorId: actor.id,
+        actorName: actor.name,
+        action: 'close_month',
+        entityType: 'month',
+        entityId: monthKey,
+        monthKey,
+        after: { monthKey, status: 'closed', closedAt: snapshot.closedAt } as Record<string, unknown>,
+        details: `إغلاق شهر ${monthKey} (${Object.keys(snapshot.employeeScores).length} موظف)`,
       });
+
+      await notifyMonthClosed(monthKey, actor.name);
     }
-    const supervisorMap = new Map<string, string | null>();
-
-    // ── Compute the immutable snapshot (single source: kpiMetrics) ──
-    const computed = computeMonthSnapshot(
-      monthObs,
-      monthKey,
-      empMap,
-      supervisorMap,
-      settings,
-    );
-
-    // Preserve reopen history across a re-close (idempotent refresh).
-    const previous = await getMonthSnapshot(monthKey);
-
-    const auditEvent = makeRecordAuditEvent({
-      action: previous?.status === 'closed' ? 'close_refresh' : 'close',
-      actorId: actor.id,
-      actorName: actor.name,
-      details: previous?.status === 'closed'
-        ? 'إعادة توليد لقطة الشهر'
-        : `إغلاق شهر ${monthKey}`,
-    });
-
-    const snapshot: MonthSnapshot = {
-      id: monthKey,
-      schemaVersion: 1,
-      monthKey,
-      status: 'closed',
-      closedAt: now,
-      closedBy: actor.id,
-      closedByName: actor.name,
-      reopenCount: previous?.reopenCount ?? 0,
-      reopenReason: previous?.reopenReason ?? '',
-      auditLog: [...(previous?.auditLog || []), auditEvent],
-      generatedAt: now,
-      settingsSnapshot: settings,
-      employeeScores: computed.employeeScores,
-      departmentScores: computed.departmentScores,
-      topEmployees: computed.topEmployees,
-      bottomEmployees: computed.bottomEmployees,
-      categoryTotals: computed.categoryTotals,
-      approvalStats: computed.approvalStats,
-    };
-
-    // ── Persist (idempotent: createRecordWithId overwrites by monthKey) ──
-    await createRecordWithId(MONTH_SNAPSHOTS_TABLE, monthKey, snapshot);
-    await invalidateCache(MONTH_SNAPSHOTS_TABLE);
-
-    // ── Audit trail + notification (fire-and-forget) ──
-    await writeQualityAudit({
-      actorId: actor.id,
-      actorName: actor.name,
-      action: 'close_month',
-      entityType: 'month',
-      entityId: monthKey,
-      monthKey,
-      after: { monthKey, status: 'closed', closedAt: now } as Record<string, unknown>,
-      details: `إغلاق شهر ${monthKey} (${Object.keys(snapshot.employeeScores).length} موظف)`,
-    });
-
-    await notifyMonthClosed(monthKey, actor.name);
 
     return Response.json(snapshot);
   } catch (error) {

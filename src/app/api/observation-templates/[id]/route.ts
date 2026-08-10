@@ -7,13 +7,15 @@
 // ══════════════════════════════════════════════════════════════
 
 import { NextRequest } from 'next/server';
-import { getById, updateRecord, deleteRecord } from '@/lib/db';
+import { getById, updateRecord, deleteRecord, getAll, TTL } from '@/lib/db';
 import { requireAuth, verifyPermission } from '@/lib/verify-permission';
 import {
-  forbiddenError, notFoundError, internalError, logServerFailure,
+  forbiddenError, notFoundError, validationError, internalError, logServerFailure,
 } from '@/lib/api-error';
+import { validateForeignKeys } from '@/lib/db-validation';
 import { resolveActor } from '@/lib/auth/actor-resolver';
-import { writeQualityAudit } from '@/lib/audit/server-audit-logger';
+import { writeAudit } from '@/lib/audit';
+import { AUDIT_LOG_TABLE } from '@/app/api/quality-audit-log/route';
 import type { ObservationTemplate, Severity } from '@/types/quality-kpi';
 import { TEMPLATES_TABLE } from '../route';
 
@@ -38,11 +40,27 @@ export async function PUT(
     if (patch.defaultPoints !== undefined) patch.defaultPoints = Number(patch.defaultPoints);
     if (patch.severity !== undefined) patch.severity = patch.severity as Severity;
 
+    // When categoryId is supplied, validate the FK and resolve the
+    // authoritative categoryName server-side. The client may never
+    // store a mismatched (categoryId=A, categoryName=B) pair.
+    if (patch.categoryId !== undefined) {
+      const fkValidation = await validateForeignKeys([
+        { table: 'observationCategories', id: String(patch.categoryId), label: 'التصنيف' },
+      ]);
+      if (!fkValidation.valid) return validationError(fkValidation.error!);
+
+      const categories = await getAll<{ id: string; name: string }>('observationCategories', TTL.STATIC);
+      const category = categories.find((c) => c.id === patch.categoryId);
+      if (!category) return validationError('التصنيف غير موجود');
+      patch.categoryName = category.name;
+    }
+
     const updated = await updateRecord(TEMPLATES_TABLE, id, patch);
     if (!updated) return notFoundError('القالب غير موجود');
 
     const actor = await resolveActor(permCheck.user?.id);
-    await writeQualityAudit({
+    await writeAudit({
+      collection: AUDIT_LOG_TABLE,
       actorId: actor.id,
       actorName: actor.name,
       action: 'update',
@@ -115,7 +133,8 @@ export async function DELETE(
     await deleteRecord(TEMPLATES_TABLE, id);
 
     const actor = await resolveActor(permCheck.user?.id);
-    await writeQualityAudit({
+    await writeAudit({
+      collection: AUDIT_LOG_TABLE,
       actorId: actor.id,
       actorName: actor.name,
       action: 'delete',

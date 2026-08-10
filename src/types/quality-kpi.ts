@@ -9,75 +9,45 @@
 //
 //  Every persisted document carries `schemaVersion` to support
 //  forward-compatible, additive-only schema evolution.
+//
+//  NOTE: The generic primitives (ApprovalEvent, AuditEvent,
+//  PerformanceFactor, …) are OWNED by the generic libraries under
+//  src/lib/{approvals,audit,kpi-scoring}/types.ts. This file only
+//  re-exports them so existing Quality consumers keep compiling
+//  unchanged. The dependency arrow is always Quality → generic, never
+//  the reverse.
 // ══════════════════════════════════════════════════════════════
 
 // ─────────────────────────────────────────────────────────────
-//  Generic primitives (reusable by future modules)
+//  Generic primitives — owned by the generic libraries and
+//  re-exported here for Quality consumers. (type-only)
 // ─────────────────────────────────────────────────────────────
+import type {
+  ApprovalAction,
+  ApprovalEvent,
+  ApprovalStatus,
+} from '@/lib/approvals/types';
+import type { AuditEvent, TimelinePoint, TimelineTone } from '@/lib/audit/types';
+import type {
+  PerformanceFactor,
+  ScoreAdjustment,
+  ScoreInput,
+  ScoreResult,
+} from '@/lib/kpi-scoring/types';
 
-/** Actions recorded in an append-only approval history. */
-export type ApprovalAction = 'submit' | 'approve' | 'reject' | 'override' | 'reopen';
-
-/** A single immutable entry in an approval history. Nothing overwrites these. */
-export interface ApprovalEvent {
-  action: ApprovalAction;
-  actorId: string;
-  actorName: string;
-  timestamp: string; // ISO 8601
-  notes: string;
-  /** Present only on override events — captures the point change. */
-  pointsBefore?: number;
-  /** Present only on override events — captures the point change. */
-  pointsAfter?: number;
-}
-
-/** The projected latest approval state, derived from the history for fast queries. */
-export type ApprovalStatus = 'pending' | 'approved' | 'rejected';
-
-/** A generic chronological event used to build timelines (Improvement #7). */
-export interface AuditEvent {
-  action: string;
-  actorId: string;
-  actorName: string;
-  timestamp: string; // ISO 8601
-  details: string;
-}
-
-/** A timeline point derived from audit/approval history — never a stored field. */
-export interface TimelinePoint {
-  key: string;
-  label: string;
-  timestamp: string;
-  actorName: string;
-  details: string;
-  /** Semantic tone for presentation (drives icon/color, not logic). */
-  tone: 'neutral' | 'positive' | 'negative' | 'pending';
-}
-
-/**
- * Performance Engine adapter interface.
- *
- * Every scoring component (Quality today; Attendance, Productivity,
- * Customer Satisfaction, etc. tomorrow) exposes this same shape so a
- * unified Performance Engine can combine them without coupling to any
- * one factor's internals.
- */
-export interface PerformanceFactor {
-  /** Stable factor identifier, e.g. 'quality'. */
-  factorId: string;
-  /** Human-readable factor name. */
-  factorName: string;
-  /** Computed score for this factor (already clamped to [0, maxScore]). */
-  score: number;
-  /** Maximum possible score for this factor (e.g. 100). */
-  maxScore: number;
-  /** Relative weight inside the unified engine (default 1). */
-  weight: number;
-  /** Normalized 0–1 contribution = score / maxScore. */
-  normalized: number;
-  /** Optional structured breakdown for display. */
-  breakdown?: Record<string, number>;
-}
+// Re-export so existing Quality consumers keep compiling unchanged.
+export type {
+  ApprovalAction,
+  ApprovalEvent,
+  ApprovalStatus,
+  AuditEvent,
+  TimelinePoint,
+  TimelineTone,
+  PerformanceFactor,
+  ScoreAdjustment,
+  ScoreInput,
+  ScoreResult,
+};
 
 // ─────────────────────────────────────────────────────────────
 //  Severity & priority (shared enums as string-literal unions)
@@ -314,12 +284,46 @@ export interface MonthApprovalStats {
 export type MonthSnapshotStatus = 'open' | 'closed';
 
 /**
- * One immutable document per month (id = monthKey, e.g. "2026-08").
+ * A frozen point-in-time copy of a month's KPI snapshot.
  *
- * Generated once on Close Month and never recomputed. Reopen flips
- * `status` back to `open` (live again) and never deletes this frozen
- * document; a fresh Close regenerates. `settingsSnapshot` records the
- * KPI configuration used to produce the scores.
+ * When a month is closed again after a reopen (re-close), the previous
+ * frozen values are archived here BEFORE the active snapshot is replaced
+ * (Milestone 5, spec §12/§13). This keeps the historical audit trail
+ * complete without redesigning the snapshot schema. The current/active
+ * snapshot fields remain on {@link MonthSnapshot} itself; this is an
+ * append-only archive of superseded close versions.
+ */
+export interface SnapshotHistoryEntry {
+  /** ISO timestamp when this version was originally closed. */
+  closedAt: string;
+  /** Who closed this version. */
+  closedBy: string | null;
+  closedByName: string | null;
+  /** ISO timestamp the snapshot payload was generated. */
+  generatedAt: string;
+  /** The KPI settings used to compute this version. */
+  settingsSnapshot: KpiSettings;
+  employeeScores: Record<string, EmployeeScoreEntry>;
+  departmentScores: Record<string, DepartmentScoreEntry>;
+  topEmployees: RankedEmployee[];
+  bottomEmployees: RankedEmployee[];
+  categoryTotals: Record<string, number>;
+  approvalStats: MonthApprovalStats;
+}
+
+/**
+ * One document per month (id = monthKey, e.g. "2026-08").
+ *
+ * Generated once on Close Month. Reopen flips `status` back to `open`
+ * (live again) and never deletes the frozen document — only the status
+ * field changes. A fresh Close after edits archives the previous frozen
+ * version into `snapshotHistory` (Milestone 5 §12/§13) and replaces the
+ * active fields. `settingsSnapshot` records the KPI configuration used
+ * to produce the current scores.
+ *
+ * **Idempotency (Milestone 5 §3):** Close on an already-closed month
+ * returns the existing frozen snapshot unchanged — it does NOT
+ * regenerate, modify, or re-stamp it.
  */
 export interface MonthSnapshot {
   id: string; // = monthKey
@@ -341,6 +345,12 @@ export interface MonthSnapshot {
   bottomEmployees: RankedEmployee[];
   categoryTotals: Record<string, number>;
   approvalStats: MonthApprovalStats;
+  /**
+   * Append-only archive of superseded closed versions (Milestone 5 §12).
+   * Optional for forward-compatibility with documents written before
+   * Milestone 5; newly created/closed snapshots always populate it.
+   */
+  snapshotHistory?: SnapshotHistoryEntry[];
 }
 
 // ─────────────────────────────────────────────────────────────

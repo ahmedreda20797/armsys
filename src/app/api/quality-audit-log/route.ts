@@ -8,7 +8,7 @@
 
 import { NextRequest } from 'next/server';
 import { getAll, sortByDateField, TTL } from '@/lib/db';
-import { requireAuth } from '@/lib/verify-permission';
+import { verifyPermission } from '@/lib/verify-permission';
 import {
   unauthorizedError, forbiddenError, internalError, logServerFailure,
 } from '@/lib/api-error';
@@ -18,12 +18,13 @@ export const AUDIT_LOG_TABLE = 'qualityAuditLog';
 
 export async function GET(request: NextRequest) {
   try {
-    const auth = await requireAuth(request);
-    if (!auth) return unauthorizedError();
-
-    // Manager/admin only — audit log is sensitive.
-    if (auth.role !== 'admin' && auth.role !== 'manager') {
-      return forbiddenError('سجل التدقيق متاح للمدير والمسؤول فقط');
+    // Manager/admin only — audit log is sensitive. Enforced via the
+    // existing permission contract ('qualityAuditLog' page) rather than a
+    // hardcoded role check.
+    const permCheck = await verifyPermission(request, 'qualityAuditLog', 'view');
+    if (!permCheck.allowed) {
+      // Distinguish unauthenticated (no valid JWT) from forbidden.
+      return permCheck.user ? forbiddenError(permCheck.error) : unauthorizedError(permCheck.error);
     }
 
     const { searchParams } = new URL(request.url);

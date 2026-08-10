@@ -1,56 +1,37 @@
 // ══════════════════════════════════════════════════════════════
-//  Generic score calculator (Improvement #8 — Performance Engine)
+//  Generic score calculator — pure-function scoring component
 //
-//  A pure-function scoring component that Quality KPI consumes as
-//  its FIRST user. Future performance factors (Attendance, Response
-//  Time, Productivity, Customer Satisfaction, Training, Compliance)
-//  can expose the same PerformanceFactor interface, and a unified
-//  Performance Engine will combine them without coupling.
+//  A domain-agnostic, pure-function scoring component that Quality
+//  KPI consumes as its FIRST user. Future scoring components
+//  (Attendance, Response Time, Productivity, Customer Satisfaction,
+//  Training, Compliance) expose the same {@link PerformanceFactor}
+//  interface, and a unified Performance Engine will combine them
+//  without coupling.
 //
-//  All functions are pure — no I/O, no side effects.
+//  All functions are pure — no I/O, no side effects, no database
+//  access, no module-specific vocabulary. This library hardcodes
+//  nothing.
 // ══════════════════════════════════════════════════════════════
 
-import type { PerformanceFactor } from '@/types/quality-kpi';
-
-/** Input to the score calculator. */
-export interface ScoreInput {
-  /** Starting score before adjustments (typically 100). */
-  startScore: number;
-  /** Sum of approved deduction points. */
-  deductions: number;
-  /** Sum of approved bonus points. */
-  bonuses: number;
-  /** Whether bonuses are allowed (from config). */
-  allowBonus: boolean;
-  /** Maximum bonus that can be applied (from config). */
-  maximumBonus: number;
-  /** Floor score can never go below (from config). */
-  minimumScore: number;
-}
-
-/** Output of the score calculator. */
-export interface ScoreResult {
-  /** Final score after deductions and (possibly capped) bonuses. */
-  score: number;
-  /** Effective deduction points applied (same as input deductions). */
-  deductions: number;
-  /** Effective bonus points applied (may be capped). */
-  effectiveBonus: number;
-  /** Original bonus sum before capping. */
-  rawBonus: number;
-  /** Whether the bonus was capped. */
-  bonusCapped: boolean;
-}
+import type { PerformanceFactor, ScoreAdjustment, ScoreInput, ScoreResult } from './types';
 
 /**
- * Compute a score from adjustments.
+ * Compute a score from explicit deduction and bonus sums.
  *
  * Formula:
  *   effectiveBonus = allowBonus ? min(bonuses, maximumBonus) : 0
- *   score = max(minimumScore, startScore − deductions + effectiveBonus)
+ *   score = max(minimumScore, startScore - deductions + effectiveBonus)
  *
  * This is the ONLY scoring formula in the system. All consumers
- * (Quality KPI, future factors) MUST call this.
+ * (Quality KPI, future factors) MUST call this or
+ * {@link computeScoreFromAdjustments}.
+ *
+ * @param input - The scoring parameters (see {@link ScoreInput}).
+ * @returns A {@link ScoreResult} with the final score and a full
+ *          breakdown of deductions/bonuses/capping.
+ *
+ * @remarks
+ * Side effects: none. This is a pure function.
  */
 export function computeScoreFromAdjustments(input: ScoreInput): ScoreResult {
   const rawBonus = input.bonuses;
@@ -70,22 +51,76 @@ export function computeScoreFromAdjustments(input: ScoreInput): ScoreResult {
 }
 
 /**
- * Clamp a value to a minimum bound.
- * Generic utility reused across scoring logic.
+ * Clamp a value to a minimum bound. Generic utility reused across
+ * scoring logic.
+ *
+ * @param value    - The value to clamp.
+ * @param minimum  - The floor value.
+ * @returns `value` if it is >= `minimum`, otherwise `minimum`.
+ *
+ * @remarks
+ * Side effects: none. This is a pure function.
  */
 export function clampScore(value: number, minimum: number): number {
   return Math.max(minimum, value);
 }
 
 /**
- * Convert a ScoreResult into a PerformanceFactor for the
- * unified Performance Engine interface.
+ * Aggregate a list of {@link ScoreAdjustment}s into a {@link ScoreResult}
+ * for a given configuration. This is a convenience wrapper around
+ * {@link computeScoreFromAdjustments} that first sums the adjustments
+ * into deduction and bonus totals.
  *
- * @param factorId   - Stable identifier, e.g. 'quality'.
+ * @param adjustments  - The list of scored adjustments (deductions and bonuses).
+ * @param startScore   - Starting score before adjustments (typically 100).
+ * @param allowBonus   - Whether bonuses are allowed (from config).
+ * @param maximumBonus - Maximum bonus that may be applied (from config).
+ * @param minimumScore - Floor the score can never go below (from config).
+ * @returns A {@link ScoreResult} reflecting all adjustments.
+ *
+ * @remarks
+ * Side effects: none. This is a pure function. The adjustments list
+ * is not modified.
+ */
+export function aggregateAdjustments(
+  adjustments: ScoreAdjustment[],
+  startScore: number,
+  allowBonus: boolean,
+  maximumBonus: number,
+  minimumScore: number,
+): ScoreResult {
+  let deductions = 0;
+  let bonuses = 0;
+  for (const adj of adjustments) {
+    if (adj.isBonus) {
+      bonuses += Math.abs(adj.delta);
+    } else {
+      deductions += Math.abs(adj.delta);
+    }
+  }
+  return computeScoreFromAdjustments({
+    startScore,
+    deductions,
+    bonuses,
+    allowBonus,
+    maximumBonus,
+    minimumScore,
+  });
+}
+
+/**
+ * Convert a {@link ScoreResult} into a {@link PerformanceFactor} for
+ * the unified Performance Engine interface.
+ *
+ * @param factorId   - Stable identifier, e.g. 'quality' or 'attendance'.
  * @param factorName - Human-readable name, e.g. 'Quality'.
  * @param result     - The computed score.
  * @param weight     - Relative weight (default 1).
  * @param breakdown  - Optional structured breakdown for display.
+ * @returns A {@link PerformanceFactor} ready for the unified engine.
+ *
+ * @remarks
+ * Side effects: none. This is a pure function.
  */
 export function toPerformanceFactor(
   factorId: string,

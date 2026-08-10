@@ -1,11 +1,16 @@
 // ══════════════════════════════════════════════════════════════
 //  /api/month-snapshots
 //
-//  GET — list month snapshots (most recent first).
+//  GET — list available monthly snapshots (most recent first).
 //
-//  Permission: requireAuth. Returns summary fields only — the
-//  detailed per-employee scores live on the detail endpoint.
-//  This keeps the list payload small even with many months.
+//  Milestone 5 (spec §6):
+//    • Authentication required (requireAuth).
+//    • No manager permission required for read.
+//    • Returns REAL Firebase data only — no fake/demo months.
+//    • Supports optional ?status=open|closed filtering.
+//    • Returns a compact summary (employeeScores stripped) so the
+//      list payload stays small; full detail lives on the [month]
+//      detail endpoint.
 // ══════════════════════════════════════════════════════════════
 
 import { NextRequest } from 'next/server';
@@ -23,8 +28,11 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const status = searchParams.get('status'); // 'open' | 'closed' | undefined
 
+    // Real Firebase data only — no generated/demo months.
     let snapshots = await getAll<MonthSnapshot>(MONTH_SNAPSHOTS_TABLE, TTL.STATIC);
-    if (status) snapshots = snapshots.filter((s) => s.status === status);
+    if (status === 'open' || status === 'closed') {
+      snapshots = snapshots.filter((s) => s.status === status);
+    }
 
     // Most recent month first.
     const sorted = sortByField(snapshots, 'monthKey', 'desc');
@@ -38,10 +46,13 @@ export async function GET(request: NextRequest) {
       closedBy: s.closedBy,
       closedByName: s.closedByName,
       reopenCount: s.reopenCount,
+      reopenReason: s.reopenReason,
       generatedAt: s.generatedAt,
       employeeCount: Object.keys(s.employeeScores || {}).length,
       departmentCount: Object.keys(s.departmentScores || {}).length,
       approvalStats: s.approvalStats,
+      // Number of archived prior close versions (Milestone 5 §12 history).
+      historyCount: (s.snapshotHistory?.length ?? 0),
     }));
 
     return Response.json(summary);

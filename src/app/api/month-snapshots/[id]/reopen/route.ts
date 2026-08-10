@@ -1,96 +1,92 @@
 // ══════════════════════════════════════════════════════════════
 //  /api/month-snapshots/[id]/reopen
 //
-//  POST — reopen a closed month: flip status back to 'open' so
-//  observations can be edited again. REVERSIBLE: the frozen
-//  snapshot document is NEVER deleted — only its status field
-//  changes, and reopenCount increments. A fresh Close regenerates.
+//  POST — reopen a closed month (spec §11).
 //
-//  Permission: 'approve' on 'monthClose' (manager/admin only).
-//  Requires a reason (audited).
+//  Flips status back to 'open' so observations can be edited again.
+//  REVERSIBLE & NON-DESTRUCTIVE (spec §12): the frozen snapshot
+//  document is NEVER deleted — only its `status` field changes.
+//  `reopenCount` increments, the latest reason is stored, and the
+//  previous close metadata (closedAt/closedBy/…) plus the full audit
+//  trail are preserved. A fresh Close archives the prior frozen
+//  version and generates a new one.
+//
+//  A meaningful reason is REQUIRED — empty/blank reasons are rejected.
+//
+//  Idempotent: reopening an already-open month is safe and returns
+//  the existing open document unchanged (no second notification).
+//
+//  Permission: 'approve' on 'monthClose' (manager/admin only, via the
+//  existing permission system — no hardcoded roles).
+//
+//  This route is THIN (spec §2): authenticates, validates input,
+//  delegates to the month-snapshots service. No business logic here.
 // ══════════════════════════════════════════════════════════════
 
 import { NextRequest } from 'next/server';
-import { updateRecord, invalidateCache } from '@/lib/db';
 import { verifyPermission } from '@/lib/verify-permission';
 import {
-  forbiddenError, validationError, notFoundError, lockedError,
+  forbiddenError, validationError, notFoundError,
   internalError, logServerFailure,
 } from '@/lib/api-error';
 import { resolveActor } from '@/lib/auth/actor-resolver';
-import { makeRecordAuditEvent, writeQualityAudit } from '@/lib/audit/server-audit-logger';
+import { writeAudit } from '@/lib/audit';
+import { AUDIT_LOG_TABLE } from '@/app/api/quality-audit-log/route';
 import { notifyMonthReopened } from '@/lib/notifications/quality-events';
-import { getMonthSnapshot } from '@/lib/month-lock';
-import type { MonthSnapshot } from '@/types/quality-kpi';
+import { validateMonthKey } from '@/lib/month-utils';
+import { reopenMonth } from '@/lib/month-snapshots';
 
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
+    // ── 1. Authenticate + authorize ──
     const permCheck = await verifyPermission(request, 'monthClose', 'approve');
     if (!permCheck.allowed) return forbiddenError(permCheck.error);
 
+    // ── 2. Validate month key (strict YYYY-MM) ──
     const { id: monthKey } = await params;
+    const monthError = validateMonthKey(monthKey);
+    if (monthError) return validationError(monthError);
 
-    if (!/^\d{4}-\d{2}$/.test(monthKey)) {
-      return validationError('صيغة الشهر غير صحيحة (YYYY-MM مطلوبة)');
-    }
-
+    // ── 3. Require a meaningful reason (spec §11) ──
     const body = await request.json().catch(() => ({}));
-    const reason: string = (body.reason || '').trim();
+    const reason: string = typeof body?.reason === 'string' ? body.reason.trim() : '';
     if (!reason) {
       return validationError('سبب إعادة الفتح مطلوب');
     }
 
-    const existing = await getMonthSnapshot(monthKey);
-    if (!existing) {
+    // ── 4. Resolve actor (server-side) ──
+    const actor = await resolveActor(permCheck.user?.id);
+
+    // ── 5. Delegate to service (idempotent reopen, never deletes data) ──
+    const result = await reopenMonth(monthKey, reason, actor);
+    if (!result) {
       return notFoundError('لا توجد لقطة لهذا الشهر لإعادة فتحه');
     }
+    const { snapshot: reopened, kind } = result;
 
-    // Idempotent: already open — return as-is.
-    if (existing.status === 'open') {
-      return Response.json(existing);
+    // ── 6. Audit + notify ONLY on a genuine reopen ──
+    // An already-open month is returned idempotently without a second
+    // notification (spec §15) or duplicate audit entry.
+    if (kind === 'reopened') {
+      await writeAudit({
+        collection: AUDIT_LOG_TABLE,
+        actorId: actor.id,
+        actorName: actor.name,
+        action: 'reopen_month',
+        entityType: 'month',
+        entityId: monthKey,
+        monthKey,
+        before: { status: 'closed' } as Record<string, unknown>,
+        after: { status: 'open', reopenCount: reopened.reopenCount } as Record<string, unknown>,
+        reason,
+        details: `إعادة فتح شهر ${monthKey}: ${reason}`,
+      });
+
+      await notifyMonthReopened(monthKey, actor.name, reason);
     }
-
-    const actor = await resolveActor(permCheck.user?.id);
-    const now = new Date().toISOString();
-
-    const auditEvent = makeRecordAuditEvent({
-      action: 'reopen',
-      actorId: actor.id,
-      actorName: actor.name,
-      details: `إعادة فتح شهر ${monthKey}: ${reason}`,
-    });
-
-    // REVERSIBLE: never delete the frozen snapshot — only flip status.
-    // Reopen count and reason are preserved for the audit trail.
-    const updated = await updateRecord('monthSnapshots', monthKey, {
-      status: 'open',
-      reopenCount: (existing.reopenCount || 0) + 1,
-      reopenReason: reason,
-      auditLog: [...(existing.auditLog || []), auditEvent],
-    });
-    if (!updated) return lockedError('فشل تحديث حالة الشهر');
-    const reopened = updated as unknown as MonthSnapshot;
-
-    await invalidateCache('monthSnapshots');
-
-    // Global audit trail (fire-and-forget).
-    await writeQualityAudit({
-      actorId: actor.id,
-      actorName: actor.name,
-      action: 'reopen_month',
-      entityType: 'month',
-      entityId: monthKey,
-      monthKey,
-      before: { status: 'closed' } as Record<string, unknown>,
-      after: { status: 'open', reopenCount: reopened.reopenCount } as Record<string, unknown>,
-      reason,
-      details: `إعادة فتح شهر ${monthKey}: ${reason}`,
-    });
-
-    await notifyMonthReopened(monthKey, actor.name, reason);
 
     return Response.json(reopened);
   } catch (error) {

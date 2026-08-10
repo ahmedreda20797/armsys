@@ -9,12 +9,21 @@ import { NextRequest } from 'next/server';
 import { getById, updateRecord, deleteRecord } from '@/lib/db';
 import { verifyPermission } from '@/lib/verify-permission';
 import {
-  forbiddenError, notFoundError, internalError, logServerFailure,
+  forbiddenError, notFoundError, validationError, internalError, logServerFailure,
 } from '@/lib/api-error';
 import { resolveActor } from '@/lib/auth/actor-resolver';
-import { writeQualityAudit } from '@/lib/audit/server-audit-logger';
+import { writeAudit } from '@/lib/audit';
+import { AUDIT_LOG_TABLE } from '@/app/api/quality-audit-log/route';
 import type { ObservationCategory, Priority } from '@/types/quality-kpi';
 import { OBSERVATION_CATEGORIES_TABLE } from '@/lib/observation-categories';
+
+/**
+ * True when value is a finite number and >= 0. Rejects NaN, Infinity,
+ * -Infinity, non-numeric inputs, and negatives.
+ */
+function isFiniteNonNegative(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0;
+}
 
 export async function PUT(
   request: NextRequest,
@@ -36,14 +45,25 @@ export async function PUT(
     for (const f of allowed) {
       if (body[f] !== undefined) patch[f] = body[f];
     }
-    if (patch.defaultPointValue !== undefined) patch.defaultPointValue = Number(patch.defaultPointValue);
-    if (patch.weight !== undefined) patch.weight = Number(patch.weight);
+    if (patch.defaultPointValue !== undefined) {
+      patch.defaultPointValue = Number(patch.defaultPointValue);
+      if (!isFiniteNonNegative(patch.defaultPointValue)) {
+        return validationError('قيمة النقاط الافتراضية يجب أن تكون رقماً موجباً أو صفراً');
+      }
+    }
+    if (patch.weight !== undefined) {
+      patch.weight = Number(patch.weight);
+      if (!isFiniteNonNegative(patch.weight)) {
+        return validationError('الوزن يجب أن يكون رقماً موجباً أو صفراً');
+      }
+    }
     if (patch.priority !== undefined) patch.priority = patch.priority as Priority;
 
     const updated = await updateRecord(OBSERVATION_CATEGORIES_TABLE, id, patch);
     if (!updated) return notFoundError('التصنيف غير موجود');
 
-    await writeQualityAudit({
+    await writeAudit({
+      collection: AUDIT_LOG_TABLE,
       actorId: actor.id,
       actorName: actor.name,
       action: 'update',
@@ -77,7 +97,8 @@ export async function DELETE(
     await deleteRecord(OBSERVATION_CATEGORIES_TABLE, id);
 
     const actor = await resolveActor(permCheck.user?.id);
-    await writeQualityAudit({
+    await writeAudit({
+      collection: AUDIT_LOG_TABLE,
       actorId: actor.id,
       actorName: actor.name,
       action: 'delete',

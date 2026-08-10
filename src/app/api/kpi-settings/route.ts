@@ -11,12 +11,23 @@
 import { NextRequest } from 'next/server';
 import { requireAuth, verifyPermission } from '@/lib/verify-permission';
 import {
-  forbiddenError, unauthorizedError, internalError, logServerFailure,
+  validationError, forbiddenError, unauthorizedError, internalError, logServerFailure,
 } from '@/lib/api-error';
 import { getKpiSettings, updateKpiSettings } from '@/lib/kpi-settings';
 import { resolveActor } from '@/lib/auth/actor-resolver';
-import { writeQualityAudit } from '@/lib/audit/server-audit-logger';
+import { writeAudit } from '@/lib/audit';
+import { AUDIT_LOG_TABLE } from '@/app/api/quality-audit-log/route';
 import type { KpiSettings, TrendCalculation } from '@/types/quality-kpi';
+
+/** The set of supported trend-calculation modes. */
+const TREND_CALCULATIONS: readonly TrendCalculation[] = [
+  'rollingAverage', 'movingScore', 'simpleAverage',
+];
+
+/** True when value is a finite number (rejects NaN, Infinity, non-numbers). */
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value);
+}
 
 export async function GET(request: NextRequest) {
   try {
@@ -37,30 +48,58 @@ export async function PUT(request: NextRequest) {
     if (!permCheck.allowed) return forbiddenError(permCheck.error);
 
     const body = await request.json();
-    const allowedFields: Array<keyof KpiSettings> = [
-      'defaultScore', 'minimumScore', 'allowBonus', 'maximumBonus',
-      'approvalRequired', 'leaderboardEnabled', 'closeMonthLock', 'trendCalculation',
-    ];
+
+    // ── Parse and validate each allowed field ──
     const patch: Partial<KpiSettings> = {};
-    for (const field of allowedFields) {
-      if (body[field] !== undefined) {
-        // Type-safe assignment per field kind.
-        const value = body[field];
-        if (field === 'allowBonus' || field === 'approvalRequired' || field === 'leaderboardEnabled' || field === 'closeMonthLock') {
-          (patch as Record<string, unknown>)[field] = Boolean(value);
-        } else if (field === 'defaultScore' || field === 'minimumScore' || field === 'maximumBonus') {
-          (patch as Record<string, unknown>)[field] = Number(value);
-        } else if (field === 'trendCalculation') {
-          (patch as Record<string, unknown>)[field] = value as TrendCalculation;
+
+    // Boolean fields must be actual booleans.
+    for (const f of ['allowBonus', 'approvalRequired', 'leaderboardEnabled', 'closeMonthLock'] as const) {
+      if (body[f] !== undefined) {
+        if (typeof body[f] !== 'boolean') {
+          return validationError(`الحقل ${f} يجب أن يكون قيمة منطقية (true/false)`);
         }
+        (patch as Record<string, unknown>)[f] = body[f];
       }
     }
 
+    // Numeric fields must be finite and non-negative.
+    const numericFields = ['defaultScore', 'minimumScore', 'maximumBonus'] as const;
+    const numericValues: Record<string, number> = {};
+    for (const f of numericFields) {
+      if (body[f] !== undefined) {
+        if (!isFiniteNumber(body[f])) {
+          return validationError(`الحقل ${f} يجب أن يكون رقماً صالحاً`);
+        }
+        if ((body[f] as number) < 0) {
+          return validationError(`الحقل ${f} يجب أن يكون موجباً أو صفراً`);
+        }
+        numericValues[f] = body[f] as number;
+        (patch as Record<string, unknown>)[f] = body[f] as number;
+      }
+    }
+
+    // trendCalculation must be one of the supported enum values.
+    if (body.trendCalculation !== undefined) {
+      if (!TREND_CALCULATIONS.includes(body.trendCalculation as TrendCalculation)) {
+        return validationError('طريقة حساب الاتجاه غير مدعومة');
+      }
+      (patch as Record<string, unknown>).trendCalculation = body.trendCalculation as TrendCalculation;
+    }
+
+    // Cross-field rule: minimumScore cannot exceed defaultScore.
+    // Evaluate against the incoming value if provided, else the current setting.
     const before = await getKpiSettings();
+    const effectiveDefault = numericValues.defaultScore ?? before.defaultScore;
+    const effectiveMinimum = numericValues.minimumScore ?? before.minimumScore;
+    if (effectiveMinimum > effectiveDefault) {
+      return validationError('الحد الأدنى للنقاط لا يمكن أن يتجاوز النقاط الافتراضية');
+    }
+
     const updated = await updateKpiSettings(patch, permCheck.user?.id || 'system', '');
 
     const actor = await resolveActor(permCheck.user?.id);
-    await writeQualityAudit({
+    await writeAudit({
+      collection: AUDIT_LOG_TABLE,
       actorId: actor.id,
       actorName: actor.name,
       action: 'update',

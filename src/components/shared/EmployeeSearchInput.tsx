@@ -61,6 +61,8 @@ interface EmployeeSearchInputProps {
   placeholder?: string;
   /** Show department alongside name */
   showDepartment?: boolean;
+  /** Show position alongside name (in addition to or instead of department) */
+  showPosition?: boolean;
   /** Allow clearing the selection (shows "— بدون —" and X button) */
   allowClear?: boolean;
   /** Label for the clear option */
@@ -88,6 +90,7 @@ export function EmployeeSearchInput({
   label,
   placeholder = 'اكتب اسم أو حرف من اسم الموظف...',
   showDepartment = false,
+  showPosition = false,
   allowClear = false,
   clearLabel = '— بدون —',
   showAllOption = false,
@@ -237,7 +240,8 @@ export function EmployeeSearchInput({
                     </div>
                     <div className="min-w-0 flex-1">
                       <p className="truncate">{emp.name}</p>
-                      {showDepartment && emp.department && <p className="text-slate-500 text-[10px]">{emp.department}</p>}
+                      {showDepartment && emp.department && <p className="text-slate-500 text-[10px]">{emp.department}{showPosition && emp.position ? ` · ${emp.position}` : ''}</p>}
+                      {!showDepartment && showPosition && emp.position && <p className="text-slate-500 text-[10px]">{emp.position}</p>}
                     </div>
                   </button>
                 ))
@@ -314,9 +318,8 @@ export function EmployeeSearchInput({
                   </div>
                   <div className="min-w-0 flex-1">
                     <p className="truncate">{emp.name}</p>
-                    {showDepartment && emp.department && (
-                      <p className="text-slate-500 text-[10px]">{emp.department}</p>
-                    )}
+                    {showDepartment && emp.department && <p className="text-slate-500 text-[10px]">{emp.department}{showPosition && emp.position ? ` · ${emp.position}` : ''}</p>}
+                    {!showDepartment && showPosition && emp.position && <p className="text-slate-500 text-[10px]">{emp.position}</p>}
                   </div>
                 </button>
               ))

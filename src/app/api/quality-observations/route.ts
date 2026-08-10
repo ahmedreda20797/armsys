@@ -12,12 +12,15 @@
 import { NextRequest } from 'next/server';
 import { getAll, findWhere, createRecord, sortByDateField, getEmployeeMap, invalidateCache, TTL } from '@/lib/db';
 import { requireAuth, verifyPermission } from '@/lib/verify-permission';
-import { validationError, unauthorizedError, forbiddenError, internalError, conflictError, logServerFailure } from '@/lib/api-error';
-import { checkForDuplicate } from '@/lib/idempotency';
+import { validationError, unauthorizedError, forbiddenError, internalError, conflictError, lockedError, logServerFailure } from '@/lib/api-error';
+import { isValidPoints } from '@/lib/metrics/kpiMetrics';
+import { dedupByClientRequest } from '@/lib/idempotency';
 import { validateEmployeeActive, validateForeignKeys } from '@/lib/db-validation';
+import { isMonthClosed } from '@/lib/month-lock';
 import { resolveActor } from '@/lib/auth/actor-resolver';
-import { makeApprovalEvent, appendApprovalEvent, projectLatestStatus } from '@/lib/approvals/approval-history';
-import { makeRecordAuditEvent, writeQualityAudit } from '@/lib/audit/server-audit-logger';
+import { makeApprovalEvent, appendApprovalEvent, projectLatestApprovalStatus } from '@/lib/approvals';
+import { makeAuditEvent, writeAudit } from '@/lib/audit';
+import { AUDIT_LOG_TABLE } from '@/app/api/quality-audit-log/route';
 import { notifyObservationAwaitingApproval } from '@/lib/notifications/quality-events';
 import type { QualityObservation, ApprovalEvent } from '@/types/quality-kpi';
 
@@ -99,9 +102,16 @@ export async function POST(request: NextRequest) {
       return validationError('الموظف والتاريخ والنوع والتصنيف مطلوبة');
     }
 
+    // ── Guard: cannot create observations in a closed month (Milestone 5 §10) ──
+    // Reuses the existing month-lock mechanism from Milestone 4.
+    const month = deriveMonth(observationDate);
+    if (await isMonthClosed(month)) {
+      return lockedError(`الشهر ${month} مغلق ولا يمكن إضافة ملاحظات عليه`);
+    }
+
     // ── Idempotency check (prevents duplicate from retries/double-clicks) ──
     if (clientRequestId) {
-      const dupCheck = await checkForDuplicate<QualityObservation>(OBSERVATIONS_TABLE, clientRequestId);
+      const dupCheck = await dedupByClientRequest<QualityObservation>(OBSERVATIONS_TABLE, clientRequestId);
       if (dupCheck.isDuplicate) {
         // Return the original record transparently (idempotent).
         return Response.json(dupCheck.existing, { status: 200 });
@@ -150,6 +160,11 @@ export async function POST(request: NextRequest) {
     const catDefault = categoriesWithDefaults.find((c) => c.id === categoryId);
     const effectivePoints = wantsPoints ? Number(points ?? catDefault?.defaultPointValue ?? 0) : 0;
 
+    // ── Validate points: must be finite and non-negative ──
+    if (wantsPoints && !isValidPoints(effectivePoints)) {
+      return validationError('قيمة النقاط غير صالحة (يجب أن تكون رقم موجب أو صفر)');
+    }
+
     // ── Build approval history (append-only) ──
     let approvalHistory: ApprovalEvent[] = [];
     let approvalStatus: QualityObservation['approvalStatus'] = 'pending';
@@ -161,18 +176,16 @@ export async function POST(request: NextRequest) {
         notes: 'إرسال للاعتماد',
       });
       approvalHistory = appendApprovalEvent(approvalHistory, submitEvent);
-      approvalStatus = projectLatestStatus(approvalHistory);
+      approvalStatus = projectLatestApprovalStatus(approvalHistory);
     }
 
     // ── Build audit log ──
-    const auditEvent = makeRecordAuditEvent({
+    const auditEvent = makeAuditEvent({
       action: 'create',
       actorId: observerId,
       actorName: observerName,
       details: 'إنشاء ملاحظة جودة',
     });
-
-    const month = deriveMonth(observationDate);
 
     const observation = await createRecord<QualityObservation>(OBSERVATIONS_TABLE, {
       schemaVersion: 1,
@@ -208,7 +221,8 @@ export async function POST(request: NextRequest) {
     });
 
     // ── Audit + notification (fire-and-forget, never block) ──
-    await writeQualityAudit({
+    await writeAudit({
+      collection: AUDIT_LOG_TABLE,
       actorId: observerId,
       actorName: observerName,
       action: 'create',
@@ -222,6 +236,9 @@ export async function POST(request: NextRequest) {
     if (wantsPoints) {
       await notifyObservationAwaitingApproval(employeeName, observerName, observation.id);
     }
+
+    // Invalidate observation cache so subsequent GETs reflect the new record.
+    invalidateCache(OBSERVATIONS_TABLE);
 
     return Response.json(observation, { status: 201 });
   } catch (error) {

@@ -19,8 +19,9 @@ import {
   forbiddenError, internalError, logServerFailure,
 } from '@/lib/api-error';
 import { resolveActor } from '@/lib/auth/actor-resolver';
-import { makeApprovalEvent, appendApprovalEvent, projectLatestStatus } from '@/lib/approvals/approval-history';
-import { makeRecordAuditEvent, writeQualityAudit } from '@/lib/audit/server-audit-logger';
+import { makeApprovalEvent, appendApprovalEvent, projectLatestApprovalStatus } from '@/lib/approvals';
+import { makeAuditEvent, writeAudit } from '@/lib/audit';
+import { AUDIT_LOG_TABLE } from '@/app/api/quality-audit-log/route';
 import type { QualityObservation, ApprovalEvent } from '@/types/quality-kpi';
 import type { QualityDeduction } from '@/types';
 
@@ -99,7 +100,7 @@ export async function POST(request: NextRequest) {
       });
       const approvalHistory: ApprovalEvent[] = appendApprovalEvent([], approveEvent);
 
-      const auditEvent = makeRecordAuditEvent({
+      const auditEvent = makeAuditEvent({
         action: 'create',
         actorId: actor.id,
         actorName: actor.name,
@@ -135,7 +136,7 @@ export async function POST(request: NextRequest) {
         applyPointDeduction: true,
         points,
         isBonus: false,
-        approvalStatus: projectLatestStatus(approvalHistory),
+        approvalStatus: projectLatestApprovalStatus(approvalHistory),
         approvalHistory,
         auditLog: [auditEvent],
         createdById: actor.id,
@@ -147,7 +148,8 @@ export async function POST(request: NextRequest) {
     }
 
     // Audit trail for the migration run.
-    await writeQualityAudit({
+    await writeAudit({
+      collection: AUDIT_LOG_TABLE,
       actorId: actor.id,
       actorName: actor.name,
       action: 'migration',

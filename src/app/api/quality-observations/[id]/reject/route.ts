@@ -17,8 +17,9 @@ import {
 } from '@/lib/api-error';
 import { isMonthClosed } from '@/lib/month-lock';
 import { resolveActor } from '@/lib/auth/actor-resolver';
-import { makeApprovalEvent, appendApprovalEvent, projectLatestStatus } from '@/lib/approvals/approval-history';
-import { makeRecordAuditEvent, writeQualityAudit } from '@/lib/audit/server-audit-logger';
+import { makeApprovalEvent, appendApprovalEvent, projectLatestApprovalStatus } from '@/lib/approvals';
+import { makeAuditEvent, writeAudit } from '@/lib/audit';
+import { AUDIT_LOG_TABLE } from '@/app/api/quality-audit-log/route';
 import { notifyObservationRejected } from '@/lib/notifications/quality-events';
 import type { QualityObservation } from '@/types/quality-kpi';
 import { OBSERVATIONS_TABLE } from '../../route';
@@ -65,9 +66,9 @@ export async function POST(
     });
 
     const newHistory = appendApprovalEvent(existing.approvalHistory || [], rejectEvent);
-    const newStatus = projectLatestStatus(newHistory);
+    const newStatus = projectLatestApprovalStatus(newHistory);
 
-    const auditEvent = makeRecordAuditEvent({
+    const auditEvent = makeAuditEvent({
       action: 'reject',
       actorId: actor.id,
       actorName: actor.name,
@@ -81,7 +82,8 @@ export async function POST(
     });
     if (!updated) return notFoundError('الملاحظة غير موجودة');
 
-    await writeQualityAudit({
+    await writeAudit({
+      collection: AUDIT_LOG_TABLE,
       actorId: actor.id,
       actorName: actor.name,
       action: 'reject',

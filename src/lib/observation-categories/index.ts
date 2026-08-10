@@ -1,5 +1,5 @@
 // ══════════════════════════════════════════════════════════════
-//  Observation Categories — seed + management (Improvement #3)
+//  Observation Categories — seed + management
 //
 //  Default categories with both defaultPointValue AND weight.
 //  Points drive the current score formula; weight is stored for
@@ -7,11 +7,17 @@
 //
 //  Seeds are idempotent — checked on first read and only created
 //  if the collection is empty.
+//
+//  NOTE: This module IS coupled to Quality's ObservationCategory
+//  type by design — it is the Quality category provider. Its PATTERN
+//  (idempotent seed, DEFAULT_CATEGORIES export) is the reusable
+//  template for future modules' own category providers.
 // ══════════════════════════════════════════════════════════════
 
 import { getAll, createRecord, TTL } from '@/lib/db';
-import type { ObservationCategory, Severity, Priority } from '@/types/quality-kpi';
+import type { ObservationCategory, Priority } from '@/types/quality-kpi';
 
+/** The RTDB collection name for observation categories. */
 export const OBSERVATION_CATEGORIES_TABLE = 'observationCategories';
 
 /** Default categories to seed on first read. */
@@ -121,6 +127,11 @@ export const DEFAULT_CATEGORIES: Omit<ObservationCategory, 'id' | 'createdAt' | 
 /**
  * Seed the default categories if the collection is empty.
  * Idempotent — safe to call on every request.
+ *
+ * @remarks
+ * Side effects:
+ *   - Reads from RTDB (cached).
+ *   - Writes to RTDB only if the collection is empty (first read).
  */
 export async function seedCategoriesIfEmpty(): Promise<void> {
   const existing = await getAll<ObservationCategory>(OBSERVATION_CATEGORIES_TABLE, TTL.STATIC);

@@ -18,8 +18,10 @@ import {
 } from '@/lib/api-error';
 import { isMonthClosed } from '@/lib/month-lock';
 import { resolveActor } from '@/lib/auth/actor-resolver';
-import { makeRecordAuditEvent, writeQualityAudit } from '@/lib/audit/server-audit-logger';
-import { getEmployeeMap, TTL } from '@/lib/db';
+import { makeAuditEvent, writeAudit } from '@/lib/audit';
+import { AUDIT_LOG_TABLE } from '@/app/api/quality-audit-log/route';
+import { getEmployeeMap, TTL, invalidateCache } from '@/lib/db';
+import { validateEmployeeActive } from '@/lib/db-validation';
 import type { QualityObservation } from '@/types/quality-kpi';
 import { OBSERVATIONS_TABLE } from '../route';
 
@@ -72,6 +74,10 @@ export async function PUT(
     let department = existing.department;
     let positionSnapshot = existing.positionSnapshot;
     if (body.employeeId && body.employeeId !== existing.employeeId) {
+      // Validate the new employee exists AND is active before reassigning.
+      const empActive = await validateEmployeeActive(body.employeeId);
+      if (!empActive.valid) return validationError(empActive.error!);
+
       const empMap = await getEmployeeMap();
       const emp = empMap.get(body.employeeId);
       if (!emp) return validationError('الموظف غير موجود');
@@ -127,7 +133,7 @@ export async function PUT(
     if (patch.points !== undefined) patch.points = Number(patch.points);
 
     // Append audit event.
-    const auditEvent = makeRecordAuditEvent({
+    const auditEvent = makeAuditEvent({
       action: 'update',
       actorId: actor.id,
       actorName: actor.name,
@@ -139,7 +145,8 @@ export async function PUT(
     if (!updated) return notFoundError('الملاحظة غير موجودة');
 
     // Audit trail (fire-and-forget).
-    await writeQualityAudit({
+    await writeAudit({
+      collection: AUDIT_LOG_TABLE,
       actorId: actor.id,
       actorName: actor.name,
       action: 'update',
@@ -150,6 +157,9 @@ export async function PUT(
       after: { ...updated } as Record<string, unknown>,
       details: `تعديل ملاحظة جودة للموظف ${employeeName}`,
     });
+
+    // Invalidate observation cache so subsequent GETs reflect the update.
+    invalidateCache(OBSERVATIONS_TABLE);
 
     return Response.json(updated);
   } catch (error) {
@@ -183,7 +193,8 @@ export async function DELETE(
     await deleteRecord(OBSERVATIONS_TABLE, id);
 
     const actor = await resolveActor(permCheck.user?.id);
-    await writeQualityAudit({
+    await writeAudit({
+      collection: AUDIT_LOG_TABLE,
       actorId: actor.id,
       actorName: actor.name,
       action: 'delete',
@@ -193,6 +204,9 @@ export async function DELETE(
       before: { ...existing } as Record<string, unknown>,
       details: `حذف ملاحظة جودة للموظف ${existing.employeeName}`,
     });
+
+    // Invalidate observation cache so subsequent GETs reflect the deletion.
+    invalidateCache(OBSERVATIONS_TABLE);
 
     return Response.json({ message: 'تم حذف الملاحظة بنجاح' });
   } catch (error) {

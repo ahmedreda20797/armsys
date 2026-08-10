@@ -17,8 +17,17 @@ import {
 import { seedCategoriesIfEmpty, OBSERVATION_CATEGORIES_TABLE } from '@/lib/observation-categories';
 export { OBSERVATION_CATEGORIES_TABLE };
 import { resolveActor } from '@/lib/auth/actor-resolver';
-import { writeQualityAudit } from '@/lib/audit/server-audit-logger';
+import { writeAudit } from '@/lib/audit';
+import { AUDIT_LOG_TABLE } from '@/app/api/quality-audit-log/route';
 import type { ObservationCategory, Priority } from '@/types/quality-kpi';
+
+/**
+ * True when value is a finite number and >= 0. Rejects NaN, Infinity,
+ * -Infinity, non-numeric inputs, and negatives.
+ */
+function isFiniteNonNegative(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0;
+}
 
 export async function GET(request: NextRequest) {
   try {
@@ -49,20 +58,31 @@ export async function POST(request: NextRequest) {
       return validationError('المفتاح والاسم مطلوبان');
     }
 
+    // Validate numeric fields: must be finite and non-negative.
+    const pointValueNum = Number(defaultPointValue);
+    const weightNum = Number(weight);
+    if (!isFiniteNonNegative(pointValueNum)) {
+      return validationError('قيمة النقاط الافتراضية يجب أن تكون رقماً موجباً أو صفراً');
+    }
+    if (!isFiniteNonNegative(weightNum)) {
+      return validationError('الوزن يجب أن يكون رقماً موجباً أو صفراً');
+    }
+
     const actor = await resolveActor(permCheck.user?.id);
 
     const category = await createRecord<ObservationCategory>(OBSERVATION_CATEGORIES_TABLE, {
       schemaVersion: 1,
       key,
       name,
-      defaultPointValue: Number(defaultPointValue) || 0,
-      weight: Number(weight) || 1,
+      defaultPointValue: pointValueNum,
+      weight: weightNum,
       color: color || 'slate',
       priority: (priority || 'medium') as Priority,
       isBonusDefault: Boolean(isBonusDefault),
     });
 
-    await writeQualityAudit({
+    await writeAudit({
+      collection: AUDIT_LOG_TABLE,
       actorId: actor.id,
       actorName: actor.name,
       action: 'create',

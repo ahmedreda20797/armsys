@@ -25,6 +25,8 @@ import {
   ClipboardList, FileText,
 } from 'lucide-react';
 import { ApprovalStatusBadge } from '@/components/shared/kpi';
+import { EmployeeSearchInput } from '@/components/shared/EmployeeSearchInput';
+import { useEmployees } from '@/hooks/use-queries';
 import {
   useObservations, useObservationCategories, useObservationTemplates,
   useCreateObservation, useUpdateObservation, useDeleteObservation,
@@ -59,6 +61,8 @@ export default function ObservationsPage() {
   const { data: observations, isLoading } = useObservations(filters);
   const { data: categories } = useObservationCategories();
   const { data: templates } = useObservationTemplates('recent');
+  const { data: employeesData } = useEmployees();
+  const employeeList: Array<{ id: string; name: string; department: string | null; position: string | null; code: string | null }> = Array.isArray(employeesData) ? employeesData : [];
 
   const obsList: QualityObservation[] = Array.isArray(observations) ? observations : [];
 
@@ -223,6 +227,7 @@ export default function ObservationsPage() {
         onOpenChange={setCreateOpen}
         categories={Array.isArray(categories) ? categories : []}
         templates={Array.isArray(templates) ? templates : []}
+        employees={employeeList}
       />
 
       {/* Edit dialog */}
@@ -353,12 +358,13 @@ function ObservationCard({
 // ─── Create dialog ────────────────────────────────────────────
 
 function CreateObservationDialog({
-  open, onOpenChange, categories, templates,
+  open, onOpenChange, categories, templates, employees,
 }: {
   open: boolean;
   onOpenChange: (o: boolean) => void;
   categories: Array<{ id: string; name: string; defaultPointValue: number; isBonusDefault: boolean }>;
   templates: Array<{ id: string; title: string; categoryId: string; categoryName: string; defaultPoints: number; isBonus: boolean; defaultNotes: string }>;
+  employees: Array<{ id: string; name: string; department: string | null; position: string | null; code: string | null }>;
 }) {
   const [employeeId, setEmployeeId] = useState('');
   const [observationDate, setObservationDate] = useState(new Date().toLocaleDateString('en-GB'));
@@ -434,10 +440,15 @@ function CreateObservationDialog({
           )}
 
           <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1">
-              <Label>معرف الموظف *</Label>
-              <Input value={employeeId} onChange={(e) => setEmployeeId(e.target.value)} placeholder="أدخل معرف الموظف" className="bg-slate-800/50 border-slate-700" />
-            </div>
+            <EmployeeSearchInput
+              employees={employees}
+              value={employeeId}
+              onChange={(id) => setEmployeeId(id)}
+              label="الموظف *"
+              placeholder="ابحث بالاسم أو القسم..."
+              showDepartment
+              showPosition
+            />
             <div className="space-y-1">
               <Label>التاريخ *</Label>
               <Input value={observationDate} onChange={(e) => setObservationDate(e.target.value)} placeholder="DD/MM/YYYY" className="bg-slate-800/50 border-slate-700" />

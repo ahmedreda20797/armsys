@@ -1,23 +1,32 @@
 // ══════════════════════════════════════════════════════════════
-//  Server-side audit logger
+//  Generic server-side audit logger
 //
-//  Writes to the queryable `qualityAuditLog` collection AND
-//  appends to the per-record `auditLog[]` field (via the returned
-//  AuditEvent). The API route persists the record-level update.
+//  Writes audit entries to ANY caller-specified collection AND
+//  provides a factory for per-record audit events. The caller
+//  chooses the collection (e.g. Quality passes 'qualityAuditLog',
+//  HR passes 'hrAuditLog') — this library hardcodes NO collection
+//  names or entity types.
 //
-//  Uses the existing db.ts helpers — no new database layer.
-//  All writes carry schemaVersion for forward-compatible evolution.
+//  This module depends only on db.ts and its own types — it is fully
+//  domain-agnostic and reusable by every module.
 // ══════════════════════════════════════════════════════════════
 
 import { createRecord, invalidateCache } from '@/lib/db';
-import type { AuditEvent, QualityAuditEntityType } from '@/types/quality-kpi';
+import type { AuditEvent, AuditEntityType } from './types';
 
 /** Input for a single audit write. */
 export interface WriteAuditInput {
+  /** The RTDB collection to write the audit entry to (e.g. 'qualityAuditLog'). */
+  collection: string;
+  /** Stable identifier of the user performing the action. */
   actorId: string;
+  /** Display name of the actor (snapshotted for history readability). */
   actorName: string;
+  /** Short machine key describing the action (e.g. 'create', 'update'). */
   action: string;
-  entityType: QualityAuditEntityType;
+  /** The entity type being acted upon (plain string — the library owns no entity vocabulary). */
+  entityType: AuditEntityType;
+  /** Stable identifier of the entity being acted upon. */
   entityId: string;
   /** YYYY-MM month key, when relevant (null otherwise). */
   monthKey: string | null;
@@ -25,19 +34,29 @@ export interface WriteAuditInput {
   before?: Record<string, unknown> | null;
   /** Snapshot of the record AFTER the change (partial). */
   after?: Record<string, unknown> | null;
+  /** Free-text reason for the action (e.g. a rejection reason). */
   reason?: string;
+  /** Human-readable description of the change. */
   details: string;
 }
 
 /**
- * Write a single audit entry to the global `qualityAuditLog` collection.
+ * Write a single audit entry to the caller-specified RTDB collection.
  *
- * This is a fire-and-forget helper — failures are logged but never
- * throw (audit logging must not break the primary operation).
+ * This is fire-and-forget: failures are logged but never throw (audit
+ * logging must not break the primary operation).
+ *
+ * @param input - The audit write parameters (see {@link WriteAuditInput}).
+ *
+ * @remarks
+ * Side effects:
+ *   - Writes one document to `arm_erp/{input.collection}`.
+ *   - Invalidates the cache for that collection.
+ *   - Logs a structured JSON error on failure (never throws).
  */
-export async function writeQualityAudit(input: WriteAuditInput): Promise<void> {
+export async function writeAudit(input: WriteAuditInput): Promise<void> {
   try {
-    await createRecord('qualityAuditLog', {
+    await createRecord(input.collection, {
       schemaVersion: 1,
       timestamp: new Date().toISOString(),
       actorId: input.actorId,
@@ -55,8 +74,8 @@ export async function writeQualityAudit(input: WriteAuditInput): Promise<void> {
     // Structured observability log — never throw from audit writes.
     console.error(JSON.stringify({
       level: 'error',
-      module: 'server-audit-logger',
-      op: 'writeQualityAudit',
+      module: 'audit:server-audit-logger',
+      op: 'writeAudit',
       message: error instanceof Error ? error.message : String(error),
       entityType: input.entityType,
       entityId: input.entityId,
@@ -64,18 +83,30 @@ export async function writeQualityAudit(input: WriteAuditInput): Promise<void> {
   }
 }
 
-/**
- * Build an AuditEvent suitable for appending to a per-record auditLog[].
- *
- * The caller is responsible for persisting this onto the record.
- * This function does NOT write to the database.
- */
-export function makeRecordAuditEvent(input: {
+/** Input for building a per-record {@link AuditEvent}. */
+export interface MakeAuditEventInput {
+  /** Short machine key describing the action (e.g. 'create', 'update'). */
   action: string;
+  /** Stable identifier of the user performing the action. */
   actorId: string;
+  /** Display name of the actor. */
   actorName: string;
+  /** Human-readable description of the change. */
   details: string;
-}): AuditEvent {
+}
+
+/**
+ * Build an {@link AuditEvent} suitable for appending to a per-record
+ * `auditLog[]`. The caller is responsible for persisting this onto the
+ * record — this function does NOT write to the database.
+ *
+ * @param input - The event fields (see {@link MakeAuditEventInput}).
+ * @returns An {@link AuditEvent} stamped with the current ISO timestamp.
+ *
+ * @remarks
+ * Side effects: none. This is a pure function.
+ */
+export function makeAuditEvent(input: MakeAuditEventInput): AuditEvent {
   return {
     action: input.action,
     actorId: input.actorId,

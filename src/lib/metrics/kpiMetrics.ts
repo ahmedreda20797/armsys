@@ -11,12 +11,13 @@
 //
 //  Rules enforced here:
 //    • Score = config-driven (KpiSettings param, never hardcoded).
-//    • Only APPROVED observations count.
+//    • Only APPROVED observations with applyPointDeduction=true count.
 //    • Pending / rejected observations have zero KPI impact.
 //    • Bonuses are capped by maximumBonus; gated by allowBonus.
 //    • Score floors at minimumScore (default 0, never negative).
+//    • Invalid/negative points are ignored (treated as 0).
 //    • Weighted points = Σ(points × categoryWeight), stored for
-//      future analytics. The current formula uses points only.
+//      future analytics. The current formula uses raw points only.
 //    • Trend uses STORED snapshots only — never live recalculation.
 //    • Timeline is derived from audit/approval history (no dup fields).
 //
@@ -36,15 +37,14 @@ import type {
   MonthApprovalStats,
   MonthSnapshot,
   ObservationStatus,
-  QualityObservation,
   RankedEmployee,
   TrendDirection,
   TrendResult,
   EmployeeScoreResult,
   PerformanceFactor,
 } from '@/types/quality-kpi';
-import { computeScoreFromAdjustments, toPerformanceFactor } from '@/lib/kpi-scoring/score-calculator';
-import { buildTimeline } from '@/lib/audit/timeline-builder';
+import { computeScoreFromAdjustments, toPerformanceFactor } from '@/lib/kpi-scoring';
+import { buildTimeline } from '@/lib/audit';
 
 // ─────────────────────────────────────────────────────────────
 //  Observation filters (used by engine and API routes)
@@ -75,6 +75,22 @@ export interface EmployeeLike {
 /** A supervisor map for snapshot generation. */
 export type SupervisorMap = Map<string, string | null>;
 
+/**
+ * Category-level aggregation with full breakdown.
+ * Provides deduction points, bonus points, weighted points,
+ * and observation count per category.
+ */
+export interface CategoryTotal {
+  /** Sum of deduction points from approved observations in this category. */
+  deductionPoints: number;
+  /** Sum of bonus points from approved observations in this category. */
+  bonusPoints: number;
+  /** Sum of (points × categoryWeight) from approved observations. */
+  weightedPoints: number;
+  /** Number of approved observations in this category. */
+  count: number;
+}
+
 /** True if the observation is approved AND applies to KPI scoring. */
 export function isApprovedKpiObs(obs: ObservationLike): boolean {
   return obs.applyPointDeduction && obs.approvalStatus === 'approved';
@@ -100,6 +116,18 @@ export function isRejectedObs(obs: ObservationLike): boolean {
   return obs.applyPointDeduction && obs.approvalStatus === 'rejected';
 }
 
+/**
+ * Validate that observation points are valid for KPI scoring.
+ * Points must be a finite, non-negative number.
+ * Invalid points (NaN, Infinity, negative) are silently ignored.
+ *
+ * @param points - The points value to validate.
+ * @returns True if points are valid and non-negative.
+ */
+export function isValidPoints(points: number): boolean {
+  return Number.isFinite(points) && points >= 0;
+}
+
 // ─────────────────────────────────────────────────────────────
 //  Score computation (delegates to generic kpi-scoring)
 // ─────────────────────────────────────────────────────────────
@@ -107,11 +135,21 @@ export function isRejectedObs(obs: ObservationLike): boolean {
 /**
  * Compute a single employee's score from their observations for
  * a specific month. Only approved observations with
- * applyPointDeduction=true are included.
+ * applyPointDeduction=true and valid (non-negative, finite) points
+ * are included.
+ *
+ * Formula (delegates to generic computeScoreFromAdjustments):
+ *   score = clamp(minimumScore, defaultScore - deductionPoints + allowedBonus, ∞)
+ *   where:
+ *     allowedBonus = allowBonus ? min(bonusPoints, maximumBonus) : 0
+ *
+ * Weighted points = Σ(points × categoryWeight) are computed for
+ * analytics but do NOT affect the score formula.
  *
  * @param observations - The employee's filtered observations for the month.
  * @param settings    - Current KPI settings (config-driven).
  * @param employeeId   - Employee to score.
+ * @returns Full employee score result including counts, category totals, and weighted analytics.
  */
 export function computeEmployeeScore(
   observations: ObservationLike[],
@@ -124,9 +162,13 @@ export function computeEmployeeScore(
   let approvedCount = 0;
   let pendingCount = 0;
   let rejectedCount = 0;
+  let effectiveDeductionCount = 0;
+  let effectiveBonusCount = 0;
   const categoryTotals: Record<string, number> = {};
 
   for (const obs of observations) {
+    // Observations without point deduction never affect KPI points,
+    // even if approved.
     if (!obs.applyPointDeduction) continue;
 
     // Count all approval-relevant statuses
@@ -134,16 +176,19 @@ export function computeEmployeeScore(
     else if (obs.approvalStatus === 'pending') pendingCount++;
     else if (obs.approvalStatus === 'rejected') rejectedCount++;
 
-    // Only approved observations affect the score
-    if (isApprovedKpiObs(obs)) {
+    // Only approved observations affect the score.
+    // Additionally, points must be valid (non-negative, finite).
+    if (isApprovedKpiObs(obs) && isValidPoints(obs.points)) {
       if (obs.isBonus) {
         bonusPoints += obs.points;
+        effectiveBonusCount++;
       } else {
         deductionPoints += obs.points;
+        effectiveDeductionCount++;
       }
       weightedPoints += obs.points * obs.categoryWeight;
 
-      // Category totals (accumulates for approved only)
+      // Category totals (accumulates for approved observations only).
       const cat = obs.categoryId || '_unclassified';
       categoryTotals[cat] = (categoryTotals[cat] || 0) + obs.points;
     }
@@ -185,13 +230,17 @@ export function computeEmployeeScore(
  *
  * The snapshot freezes each employee's metadata (name, department,
  * position, supervisor) at close time — later transfers/promotions
- * cannot mutate historical months (Improvement #1).
+ * cannot mutate historical months.
+ *
+ * Ranking is deterministic: employees are sorted by score descending,
+ * then by employeeId ascending for tie-breaking (no random ordering).
  *
  * @param observations  - All observations for the month.
  * @param monthKey      - "2026-08" format.
  * @param employees     - Employee lookup map.
  * @param supervisorMap - Employee → supervisor mapping.
  * @param settings      - KPI settings used to compute (frozen in snapshot).
+ * @returns Complete month snapshot payload (without 'id' — assigned by persistence layer).
  */
 export function computeMonthSnapshot(
   observations: ObservationLike[],
@@ -223,6 +272,8 @@ export function computeMonthSnapshot(
 
     const dept = emp?.department || 'غير محدد';
 
+    // Freeze employee metadata into snapshot — copied values only,
+    // no references to mutable live employee objects.
     const snapshot: EmployeeSnapshot = {
       employeeId,
       employeeName: emp?.name || 'غير معروف',
@@ -259,7 +310,8 @@ export function computeMonthSnapshot(
     }
   }
 
-  // Rank employees by score descending, then by employeeId for stability.
+  // Rank employees by score descending, then by employeeId for
+  // deterministic tie-breaking (never random).
   scoredEntries.sort((a, b) => {
     if (b.entry.score !== a.entry.score) return b.entry.score - a.entry.score;
     return a.employeeId.localeCompare(b.employeeId);
@@ -275,7 +327,7 @@ export function computeMonthSnapshot(
     departmentScores[dept] = {
       avgScore: scores.length > 0 ? Math.round(sum / scores.length) : 0,
       totalEmployees: scores.length,
-      totalDeductionPoints: 0, // Filled from scoredEntries
+      totalDeductionPoints: 0, // Filled from scoredEntries below.
       totalBonusPoints: 0,
       totalObservations: 0,
     };
@@ -313,7 +365,7 @@ export function computeMonthSnapshot(
   // Category totals (all approved observations, not per-employee).
   const categoryTotals: Record<string, number> = {};
   for (const obs of observations) {
-    if (!isApprovedKpiObs(obs)) continue;
+    if (!isApprovedKpiObs(obs) || !isValidPoints(obs.points)) continue;
     const cat = obs.categoryId || '_unclassified';
     categoryTotals[cat] = (categoryTotals[cat] || 0) + obs.points;
   }
@@ -368,7 +420,17 @@ export function computeMonthSnapshot(
  * Resolve month keys (YYYY-MM) for a given range preset.
  *
  * Uses the provided `now` parameter for deterministic testability.
- * "current_month" returns a single-element array.
+ * Returns months in reverse chronological order (most recent first).
+ *
+ * Year-boundary handling:
+ * - January → previous_month = previous December of the prior year.
+ * - January → last_3_months includes November, December of prior year.
+ * - January → current_year = January only (first month of year).
+ * - December → current_year includes January through December.
+ *
+ * @param range - The KPI range preset.
+ * @param now   - Reference date (defaults to current date; injectable for testing).
+ * @returns Array of normalized "YYYY-MM" month keys, most recent first.
  */
 export function resolveMonthsInRange(range: KpiRangePreset, now?: Date): string[] {
   const date = now ?? new Date();
@@ -423,8 +485,24 @@ function buildMonthKeys(year: number, month: number, count: number): string[] {
  * recalculation. The algorithm is chosen by `trendCalculation`
  * in the KPI settings.
  *
+ * **Trend modes** (assumptions documented):
+ *
+ * - `rollingAverage`: Direction is determined by comparing the
+ *   latest snapshot's average score against the rolling average of
+ *   all supplied snapshots. If deviation > 3 → improving/declining.
+ *   Otherwise → stable.
+ *
+ * - `movingScore`: Direction is determined by month-over-month delta
+ *   (latest score minus previous score). If delta > 3 → improving;
+ *   delta < -3 → declining; otherwise stable.
+ *
+ * - `simpleAverage`: Same as movingScore but with a smaller threshold
+ *   of 2. If delta > 2 → improving; delta < -2 → declining;
+ *   otherwise stable.
+ *
  * @param snapshots - Monthly snapshots ordered most-recent first.
  * @param settings  - Current KPI settings (for trendCalculation mode).
+ * @returns Trend result with direction, deltas, and sample size.
  */
 export function computeTrend(
   snapshots: MonthSnapshot[],
@@ -434,7 +512,7 @@ export function computeTrend(
     return { direction: 'stable', momDelta: 0, rollingAverage: 0, movingScore: 0, sampleSize: 0 };
   }
 
-  // Extract scores from snapshots.
+  // Extract average scores from snapshots.
   const scores = snapshots.map((s) => {
     const entries = Object.values(s.employeeScores);
     if (entries.length === 0) return 0;
@@ -491,7 +569,22 @@ function resolveTrendDirection(
 
 /**
  * Aggregate multiple monthly snapshots into a single summary.
- * Used by the dashboard when displaying "Last 3 Months" etc.
+ *
+ * Used by the dashboard when displaying "Last 3 Months", "Last 6
+ * Months", etc.
+ *
+ * **Aggregation behavior** (important: not every field is averaged):
+ *
+ * | Field                | Aggregation     | Notes                                        |
+ * |----------------------|-----------------|----------------------------------------------|
+ * | `avgScore`           | Average         | Mean of per-employee score entries across all months. Each employee-month entry contributes one data point. |
+ * | `totalEmployees`     | Count (unique)  | Distinct employee IDs across all months.     |
+ * | `totalDeductions`    | Sum             | Total deduction points across all entries.   |
+ * | `totalBonuses`       | Sum             | Total bonus points across all entries.       |
+ * | `categoryTotals`     | Sum             | Category points accumulated across all months. |
+ *
+ * @param snapshots - Monthly snapshots to aggregate.
+ * @returns Aggregated summary with avg, totals, and category breakdown.
  */
 export function aggregateSnapshots(snapshots: MonthSnapshot[]): {
   avgScore: number;
@@ -539,7 +632,7 @@ export function aggregateSnapshots(snapshots: MonthSnapshot[]): {
 }
 
 // ─────────────────────────────────────────────────────────────
-//  Timeline derivation (Improvement #7 — from audit/approval history)
+//  Timeline derivation (from audit/approval history)
 // ─────────────────────────────────────────────────────────────
 
 /**
@@ -548,6 +641,17 @@ export function aggregateSnapshots(snapshots: MonthSnapshot[]): {
  *
  * This is the single source for the timeline view — no duplicated
  * fields needed on the observation itself.
+ *
+ * The conceptual sequence is:
+ *   Created → Edited → Submitted → Approved/Rejected/Override →
+ *   CAPA Linked → Resolved → Closed
+ *
+ * The timeline is derived from the existing append-only histories.
+ * Results are sorted newest-first (chronologically ordered).
+ *
+ * @param auditLog        - Per-record audit trail (edits, status changes, etc.).
+ * @param approvalHistory - Append-only approval events (submit, approve, reject, etc.).
+ * @returns Sorted timeline points ready for display.
  */
 export function buildObservationTimeline(
   auditLog: AuditEvent[],
@@ -557,7 +661,7 @@ export function buildObservationTimeline(
 }
 
 // ─────────────────────────────────────────────────────────────
-//  Performance Engine adapter (Improvement #8)
+//  Performance Engine adapter (Quality → unified interface)
 // ─────────────────────────────────────────────────────────────
 
 /**
@@ -567,8 +671,13 @@ export function buildObservationTimeline(
  * The Quality KPI module is the first consumer; future modules
  * (Attendance, Productivity, etc.) will expose the same interface.
  *
- * @param scoreResult - The computed employee score.
+ * This is an adapter/interface only — it does NOT build the
+ * Performance Engine, Attendance KPI, Sales KPI, HR KPI, or
+ * Travel KPI. Those are future work.
+ *
+ * @param scoreResult - The computed employee score from computeEmployeeScore.
  * @param maxScore    - The maximum possible score (default 100).
+ * @returns A PerformanceFactor exposing { score, maxScore, weight, breakdown }.
  */
 export function qualityToPerformanceFactor(
   scoreResult: EmployeeScoreResult,

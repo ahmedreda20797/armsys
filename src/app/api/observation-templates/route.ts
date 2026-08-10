@@ -17,7 +17,8 @@ import {
 } from '@/lib/api-error';
 import { validateForeignKeys } from '@/lib/db-validation';
 import { resolveActor } from '@/lib/auth/actor-resolver';
-import { makeRecordAuditEvent, writeQualityAudit } from '@/lib/audit/server-audit-logger';
+import { writeAudit } from '@/lib/audit';
+import { AUDIT_LOG_TABLE } from '@/app/api/quality-audit-log/route';
 import type { ObservationTemplate, Severity } from '@/types/quality-kpi';
 
 export const TEMPLATES_TABLE = 'observationTemplates';
@@ -89,7 +90,8 @@ export async function POST(request: NextRequest) {
       createdByName: actor.name,
     });
 
-    await writeQualityAudit({
+    await writeAudit({
+      collection: AUDIT_LOG_TABLE,
       actorId: actor.id,
       actorName: actor.name,
       action: 'create',
