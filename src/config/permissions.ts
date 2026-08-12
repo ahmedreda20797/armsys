@@ -60,7 +60,7 @@ export const APP_PAGES: PageConfig[] = [
   { id: 'riskCenter', title: 'مركز المخاطر', icon: 'AlertTriangle', permissionKey: 'riskCenter', availableActions: [], groupId: 'quality_ctrl' },
   { id: 'complaints', title: 'شكاوى العملاء', icon: 'MessageSquareWarning', permissionKey: 'complaints', availableActions: ['create', 'update', 'delete'], groupId: 'quality_ctrl' },
   // ── Quality KPI (Phase 1) ──
-  { id: 'observations', title: 'ملاحظات الجودة', icon: 'Eye', permissionKey: 'observations', availableActions: ['create', 'update', 'delete'], groupId: 'quality_ctrl' },
+  { id: 'observations', title: 'ملاحظات الجودة', icon: 'Eye', permissionKey: 'observations', availableActions: ['create', 'update', 'delete', 'approve'], groupId: 'quality_ctrl' },
   { id: 'observationCategories', title: 'تصنيفات الملاحظات', icon: 'Tags', permissionKey: 'observationCategories', availableActions: ['create', 'update', 'delete'], groupId: 'quality_ctrl', overlayOnly: true },
   { id: 'observationTemplates', title: 'قوالب الملاحظات', icon: 'FilePlus2', permissionKey: 'observationTemplates', availableActions: ['create', 'update', 'delete'], groupId: 'quality_ctrl', overlayOnly: true },
   { id: 'kpiDashboard', title: 'لوحة مؤشرات الجودة', icon: 'Gauge', permissionKey: 'kpiDashboard', availableActions: [], groupId: 'quality_ctrl' },
@@ -126,7 +126,8 @@ export const HR_PERMISSIONS: PermissionsMap = {
   observations: 'none',
   observationCategories: 'none',
   observationTemplates: 'none',
-  kpiDashboard: 'none',
+  // HR may view the KPI dashboard (read-only); no management/approval authority
+  kpiDashboard: 'read',
   qualityAuditLog: 'none',
   monthClose: 'none',
   kpiSettings: 'none',
@@ -161,7 +162,8 @@ export const MANAGER_PERMISSIONS: PermissionsMap = {
   kpiDashboard: 'read',
   qualityAuditLog: 'read',
   monthClose: makeEditWithActions(['approve']),
-  kpiSettings: 'none',
+  // Manager may view and update KPI settings (level 'edit' grants read + update)
+  kpiSettings: makeEditWithActions(['update']),
 };
 
 export const QUALITY_PERMISSIONS: PermissionsMap = {
@@ -186,9 +188,11 @@ export const QUALITY_PERMISSIONS: PermissionsMap = {
   operationsCenter: 'read',
   notifications: makeEditWithActions([]),
   rulesEngine: makeEditWithActions([]),
-  // Quality KPI (Phase 1) — quality creates, does NOT approve
+  // Quality KPI (Phase 1) — quality creates observations, does NOT approve.
+  // Categories are read-only for the quality role (no management authority);
+  // category management belongs to manager/admin per the authorization model.
   observations: makeEditWithActions(['create', 'update', 'delete']),
-  observationCategories: makeEditWithActions(['create', 'update', 'delete']),
+  observationCategories: 'read',
   observationTemplates: makeEditWithActions(['create', 'update', 'delete']),
   kpiDashboard: 'read',
   qualityAuditLog: 'read',
