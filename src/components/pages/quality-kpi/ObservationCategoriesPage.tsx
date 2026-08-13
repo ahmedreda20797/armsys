@@ -17,7 +17,7 @@ import {
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
-import { Tags, Plus, Pencil, Trash2, Sparkles, TrendingUp } from 'lucide-react';
+import { Tags, Plus, Pencil, Trash2, Sparkles, TrendingUp, ShieldAlert } from 'lucide-react';
 import {
   useObservationCategories, useCreateCategory, useUpdateCategory, useDeleteCategory,
 } from '@/hooks/use-kpi-queries';
@@ -118,6 +118,17 @@ function CategoryDialog({
             الفئات تتحكم في النقاط والوزن واللون المعروض في الملاحظات
           </DialogDescription>
         </DialogHeader>
+
+        {/* Historical-integrity warning (edit mode only) */}
+        {isEdit && (
+          <div className="flex items-start gap-2.5 rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2.5 text-xs text-amber-300">
+            <ShieldAlert className="size-4 shrink-0 mt-0.5" />
+            <p>
+              تعديل هذه الفئة يؤثر على الملاحظات والقوالب الجديدة فقط.
+              الملاحظات التاريخية والبيانات المجمدة تحتفظ بقيمها الأصلية ولا تتأثر.
+            </p>
+          </div>
+        )}
 
         <div className="grid grid-cols-2 gap-3">
           <div className="space-y-1 col-span-2">

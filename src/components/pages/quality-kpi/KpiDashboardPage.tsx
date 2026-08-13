@@ -13,53 +13,28 @@ import {
 } from '@/components/ui/select';
 import {
   Gauge, Users, ArrowDownCircle, ArrowUpCircle, Clock, Trophy,
-  TrendingDown, AlertCircle, BarChart3, Activity,
+  TrendingDown, AlertCircle, BarChart3, Activity, Radio, Building2,
+  CheckCircle2, XCircle, Eye,
 } from 'lucide-react';
-import { ScoreRing, ScoreBadge, TrendArrow, RankMedal } from '@/components/shared/kpi';
+import {
+  ScoreRing, ScoreBadge, TrendArrow, RangeSelector, Leaderboard,
+} from '@/components/shared/kpi';
 import {
   useKpiDashboard, useObservationCategories,
 } from '@/hooks/use-kpi-queries';
+import { useEmployees } from '@/hooks/use-queries';
 import type {
-  KpiRangePreset, TrendResult, RankedEmployee, PerformanceFactor,
+  KpiRangePreset, TrendResult, PerformanceFactor,
 } from '@/types/quality-kpi';
+import type {
+  KpiDashboardResponse,
+  DashboardDepartmentRankEntry,
+  DashboardApprovalStats,
+  DashboardMonthlyScore,
+  DashboardLeaderboardEntry,
+} from '@/lib/kpi-dashboard';
 
-// ─── Types matching the dashboard API response ────────────────
-interface DashboardResponse {
-  range: KpiRangePreset;
-  months: string[];
-  avgScore: number;
-  totalEmployees: number;
-  totalDeductions: number;
-  totalBonuses: number;
-  trend: TrendResult;
-  topEmployees: RankedEmployee[];
-  bottomEmployees: RankedEmployee[];
-  pendingApprovals: number;
-  categoryDistribution: Record<string, number>;
-  performanceFactor: PerformanceFactor;
-  settings: {
-    defaultScore: number;
-    minimumScore: number;
-    allowBonus: boolean;
-    maximumBonus: number;
-  };
-}
-
-interface CategoryLike {
-  id: string;
-  name: string;
-  color?: string;
-}
-
-// ─── Range options ────────────────────────────────────────────
-const RANGE_OPTIONS: { value: KpiRangePreset; label: string }[] = [
-  { value: 'current_month', label: 'الشهر الحالي' },
-  { value: 'previous_month', label: 'الشهر السابق' },
-  { value: 'last_3_months', label: 'آخر 3 أشهر' },
-  { value: 'last_6_months', label: 'آخر 6 أشهر' },
-  { value: 'current_year', label: 'السنة الحالية' },
-];
-
+// ─── Constants ────────────────────────────────────────────────
 const MONTH_LABELS_AR = ['يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو', 'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر'];
 
 function formatMonth(monthKey: string): string {
@@ -95,26 +70,6 @@ function StatCard({
   );
 }
 
-// ─── Leaderboard row ──────────────────────────────────────────
-function LeaderRow({ emp, rank }: { emp: RankedEmployee; rank: number }) {
-  const navigateTo = useAppStore((s) => s.navigateTo);
-  return (
-    <div
-      className="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-slate-800/50 transition-colors cursor-pointer"
-      onClick={() => navigateTo('employee360', undefined, { employeeId: emp.employeeId })}
-    >
-      <div className="w-7 flex justify-center shrink-0">
-        <RankMedal rank={rank} />
-      </div>
-      <div className="flex-1 min-w-0">
-        <p className="text-sm font-medium text-slate-100 truncate">{emp.employeeName}</p>
-        <p className="text-xs text-slate-400 truncate">{emp.department}</p>
-      </div>
-      <ScoreBadge score={emp.score} />
-    </div>
-  );
-}
-
 // ─── Category distribution bar ────────────────────────────────
 function CategoryBar({ name, points, maxPoints, color }: {
   name: string;
@@ -136,22 +91,143 @@ function CategoryBar({ name, points, maxPoints, color }: {
   );
 }
 
+// ─── Department Ranking Widget ────────────────────────────────
+function DepartmentRankingWidget({ ranking }: { ranking: DashboardDepartmentRankEntry[] }) {
+  if (!ranking || ranking.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center py-6 text-center">
+        <Building2 className="size-7 text-slate-600 mb-2" />
+        <p className="text-xs text-slate-500">لا توجد بيانات تصنيف الأقسام</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-2">
+      {ranking.map((dept, i) => (
+        <div
+          key={dept.department}
+          className="flex items-center gap-3 px-3 py-2 rounded-lg bg-slate-800/30"
+        >
+          <span className="w-6 text-center text-xs font-bold text-slate-500 tabular-nums">{i + 1}</span>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-medium text-slate-200 truncate">{dept.department}</p>
+            <p className="text-[11px] text-slate-500">
+              {dept.employeeCount} موظف · {dept.totalObservations} ملاحظة
+            </p>
+          </div>
+          <ScoreBadge score={dept.averageScore} />
+          {dept.totalDeductionPoints > 0 && (
+            <span className="text-[11px] text-rose-400 tabular-nums">-{dept.totalDeductionPoints}</span>
+          )}
+          {dept.totalBonusPoints > 0 && (
+            <span className="text-[11px] text-emerald-400 tabular-nums">+{dept.totalBonusPoints}</span>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ─── Approval Statistics Widget ────────────────────────────────
+function ApprovalStatsWidget({ stats }: { stats: DashboardApprovalStats }) {
+  const navigateTo = useAppStore((s) => s.navigateTo);
+
+  return (
+    <div className="grid grid-cols-2 gap-3">
+      <StatCard
+        icon={Eye}
+        label="إجمالي الطلبات"
+        value={stats.total}
+        accent="bg-slate-500/10 text-slate-400"
+      />
+      <StatCard
+        icon={CheckCircle2}
+        label="معتمدة"
+        value={stats.approved}
+        accent="bg-emerald-500/10 text-emerald-400"
+      />
+      <div
+        className="cursor-pointer"
+        onClick={() => stats.pending > 0 && navigateTo('observations')}
+        role="button"
+        tabIndex={0}
+        onKeyDown={(e) => e.key === 'Enter' && stats.pending > 0 && navigateTo('observations')}
+      >
+        <StatCard
+          icon={Clock}
+          label="بانتظار الاعتماد"
+          value={stats.pending}
+          accent="bg-amber-500/10 text-amber-400"
+          hint={stats.pending > 0 ? 'اضغط للعرض' : undefined}
+        />
+      </div>
+      <StatCard
+        icon={XCircle}
+        label="مرفوضة"
+        value={stats.rejected}
+        accent="bg-rose-500/10 text-rose-400"
+      />
+    </div>
+  );
+}
+
+// ─── Monthly Scores mini-table ──────────────────────────────
+function MonthlyScoresWidget({ scores }: { scores: DashboardMonthlyScore[] }) {
+  if (!scores || scores.length === 0) return null;
+
+  return (
+    <div className="space-y-1">
+      {scores.map((s) => (
+        <div key={s.monthKey} className="flex items-center gap-3 px-3 py-1.5 rounded-lg bg-slate-800/20 text-xs">
+          <span className="text-slate-400 tabular-nums w-20 shrink-0">{formatMonth(s.monthKey)}</span>
+          <ScoreBadge score={s.avgScore} />
+          {s.isLive && (
+            <Badge variant="outline" className="bg-blue-500/10 text-blue-400 border-blue-500/20 text-[10px] px-1.5 py-0 gap-1">
+              <Radio className="size-2.5" /> مباشر
+            </Badge>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 // ─── Page ─────────────────────────────────────────────────────
 export default function KpiDashboardPage() {
   const { canView } = usePermissions('kpiDashboard');
   const [range, setRange] = useState<KpiRangePreset>('current_month');
+  const [customMonths, setCustomMonths] = useState('');
+  const [department, setDepartment] = useState('');
 
-  const { data, isLoading, isFetching, refetch } = useKpiDashboard({ range });
+  const { data, isLoading, isFetching, refetch } = useKpiDashboard({
+    range,
+    customMonths: range === 'custom' ? customMonths : undefined,
+    department: department || undefined,
+  });
   const { data: categoriesData } = useObservationCategories();
+  const { data: employeesData } = useEmployees();
 
-  const dashboard = (data ?? {}) as Partial<DashboardResponse>;
-  const categories = (Array.isArray(categoriesData) ? categoriesData : []) as CategoryLike[];
+  // Derive department list from employees for the filter dropdown.
+  const departments = useMemo(() => {
+    const list = Array.isArray(employeesData) ? employeesData : [];
+    const set = new Set<string>();
+    for (const e of list) {
+      if (e.department) set.add(e.department);
+    }
+    return Array.from(set).sort();
+  }, [employeesData]);
+
+  // Use the full backend contract — no more local partial interface.
+  const dashboard = (data ?? {}) as Partial<KpiDashboardResponse>;
+
+  const categories = Array.isArray(categoriesData) ? categoriesData : [];
 
   // Build categoryId → name/color map for the distribution chart.
   const categoryMap = useMemo(() => {
     const m = new Map<string, { name: string; color: string }>();
     for (const c of categories) {
-      m.set(c.id, { name: c.name, color: c.color || '#3b82f6' });
+      m.set(c.id, { name: c.name, color: (c as any).color || '#3b82f6' });
     }
     return m;
   }, [categories]);
@@ -177,6 +253,8 @@ export default function KpiDashboardPage() {
     if (months.length === 1) return formatMonth(months[0]);
     return `${formatMonth(months[months.length - 1])} — ${formatMonth(months[0])}`;
   }, [dashboard.months]);
+
+  const navigateTo = useAppStore((s) => s.navigateTo);
 
   if (!canView) {
     return (
@@ -220,19 +298,35 @@ export default function KpiDashboardPage() {
           <h1 className="text-2xl font-bold text-slate-100 flex items-center gap-2">
             <Gauge className="size-6 text-blue-400" />
             لوحة مؤشرات الأداء
+            {dashboard.isLive && (
+              <Badge variant="outline" className="bg-blue-500/10 text-blue-400 border-blue-500/20 text-[10px] px-1.5 py-0 gap-1 mr-1">
+                <Radio className="size-2.5 animate-pulse" /> مباشر
+              </Badge>
+            )}
           </h1>
           <p className="text-sm text-slate-400 mt-1">
             {monthsLabel || 'ملخص أداء الجودة'}
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          <Select value={range} onValueChange={(v) => setRange(v as KpiRangePreset)}>
-            <SelectTrigger className="w-44 bg-slate-800/50 border-slate-700">
-              <SelectValue />
+        <div className="flex items-center gap-2 flex-wrap">
+          <RangeSelector
+            value={range}
+            onValueChange={setRange}
+            customMonths={customMonths}
+            onCustomMonthsChange={setCustomMonths}
+          />
+          <Select
+            value={department || 'all'}
+            onValueChange={(v) => setDepartment(v === 'all' ? '' : v)}
+          >
+            <SelectTrigger className="w-40 bg-slate-800/50 border-slate-700">
+              <Building2 className="size-3.5 text-slate-400 me-2" />
+              <SelectValue placeholder="كل الأقسام" />
             </SelectTrigger>
             <SelectContent>
-              {RANGE_OPTIONS.map((opt) => (
-                <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+              <SelectItem value="all">كل الأقسام</SelectItem>
+              {departments.map((d) => (
+                <SelectItem key={d} value={d}>{d}</SelectItem>
               ))}
             </SelectContent>
           </Select>
@@ -279,7 +373,7 @@ export default function KpiDashboardPage() {
         />
       </div>
 
-      {/* Score + Trend row */}
+      {/* Score + Trend + Performance factor row */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         {/* Average score ring */}
         <Card className="bg-slate-800/30 border-slate-700/40">
@@ -349,54 +443,84 @@ export default function KpiDashboardPage() {
 
       {/* Leaderboards */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {/* Top employees */}
+        {/* Top employees — shared Leaderboard */}
         <Card className="bg-slate-800/30 border-slate-700/40">
           <CardContent className="p-4 space-y-2">
             <div className="flex items-center gap-2 px-1 pb-2 border-b border-slate-700/40">
               <Trophy className="size-4 text-amber-400" />
               <h3 className="text-sm font-semibold text-slate-200">الأعلى أداءً</h3>
             </div>
-            {(dashboard.topEmployees ?? []).length > 0 ? (
-              <motion.div
-                initial="hidden"
-                animate="show"
-                variants={{ show: { transition: { staggerChildren: 0.04 } } }}
-                className="space-y-1"
-              >
-                {(dashboard.topEmployees ?? []).slice(0, 10).map((emp, i) => (
-                  <motion.div
-                    key={emp.employeeId}
-                    variants={{ hidden: { opacity: 0, x: 10 }, show: { opacity: 1, x: 0 } }}
-                  >
-                    <LeaderRow emp={emp} rank={i + 1} />
-                  </motion.div>
-                ))}
-              </motion.div>
-            ) : (
-              <EmptyLeaderboard label="لا يوجد موظفون في هذه الفترة. تظهر القائمة بعد إغلاق الشهر." />
-            )}
+            <motion.div
+              initial="hidden"
+              animate="show"
+              variants={{ show: { transition: { staggerChildren: 0.04 } } }}
+            >
+              <Leaderboard
+                entries={(dashboard.topEmployees ?? []) as DashboardLeaderboardEntry[]}
+                variant="top"
+                maxItems={10}
+                onSelect={(eid) => navigateTo('employee360', undefined, { employeeId: eid })}
+                emptyLabel="لا يوجد موظفون في هذه الفترة. تظهر القائمة بعد إغلاق الشهر."
+              />
+            </motion.div>
           </CardContent>
         </Card>
 
-        {/* Bottom employees */}
+        {/* Bottom employees — shared Leaderboard */}
         <Card className="bg-slate-800/30 border-slate-700/40">
           <CardContent className="p-4 space-y-2">
             <div className="flex items-center gap-2 px-1 pb-2 border-b border-slate-700/40">
               <TrendingDown className="size-4 text-rose-400" />
               <h3 className="text-sm font-semibold text-slate-200">يحتاجون تحسيناً</h3>
             </div>
-            {(dashboard.bottomEmployees ?? []).length > 0 ? (
-              <div className="space-y-1">
-                {(dashboard.bottomEmployees ?? []).slice(0, 10).map((emp) => (
-                  <LeaderRow key={emp.employeeId} emp={emp} rank={emp.rank} />
-                ))}
-              </div>
-            ) : (
-              <EmptyLeaderboard label="لا توجد بيانات. تظهر القائمة بعد إغلاق الشهر." />
-            )}
+            <Leaderboard
+              entries={(dashboard.bottomEmployees ?? []) as DashboardLeaderboardEntry[]}
+              variant="bottom"
+              maxItems={10}
+              onSelect={(eid) => navigateTo('employee360', undefined, { employeeId: eid })}
+              emptyLabel="لا توجد بيانات. تظهر القائمة بعد إغلاق الشهر."
+            />
           </CardContent>
         </Card>
       </div>
+
+      {/* Department Ranking + Approval Statistics */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        {/* Department ranking */}
+        <Card className="bg-slate-800/30 border-slate-700/40">
+          <CardContent className="p-4 space-y-2">
+            <div className="flex items-center gap-2 px-1 pb-2 border-b border-slate-700/40">
+              <Building2 className="size-4 text-violet-400" />
+              <h3 className="text-sm font-semibold text-slate-200">تصنيف الأقسام</h3>
+            </div>
+            <DepartmentRankingWidget ranking={dashboard.departmentRanking ?? []} />
+          </CardContent>
+        </Card>
+
+        {/* Approval statistics */}
+        <Card className="bg-slate-800/30 border-slate-700/40">
+          <CardContent className="p-4 space-y-2">
+            <div className="flex items-center gap-2 px-1 pb-2 border-b border-slate-700/40">
+              <CheckCircle2 className="size-4 text-blue-400" />
+              <h3 className="text-sm font-semibold text-slate-200">إحصائيات الاعتماد</h3>
+            </div>
+            <ApprovalStatsWidget stats={dashboard.approvalStats ?? { total: 0, pending: 0, approved: 0, rejected: 0, avgApprovalHours: 0 }} />
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Monthly scores */}
+      {dashboard.monthlyScores && dashboard.monthlyScores.length > 0 && (
+        <Card className="bg-slate-800/30 border-slate-700/40">
+          <CardContent className="p-4 space-y-3">
+            <div className="flex items-center gap-2 px-1">
+              <BarChart3 className="size-4 text-cyan-400" />
+              <h3 className="text-sm font-semibold text-slate-200">النتائج الشهرية</h3>
+            </div>
+            <MonthlyScoresWidget scores={dashboard.monthlyScores} />
+          </CardContent>
+        </Card>
+      )}
 
       {/* Category distribution */}
       <Card className="bg-slate-800/30 border-slate-700/40">
@@ -425,15 +549,6 @@ export default function KpiDashboardPage() {
           )}
         </CardContent>
       </Card>
-    </div>
-  );
-}
-
-function EmptyLeaderboard({ label }: { label: string }) {
-  return (
-    <div className="flex flex-col items-center justify-center py-8 text-center">
-      <Trophy className="size-8 text-slate-600 mb-2" />
-      <p className="text-xs text-slate-500 max-w-xs">{label}</p>
     </div>
   );
 }

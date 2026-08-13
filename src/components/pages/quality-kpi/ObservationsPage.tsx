@@ -22,10 +22,13 @@ import {
 } from '@/components/ui/select';
 import {
   Eye, Plus, Search, Filter, Trash2, Pencil, Check, X, Star, Clock,
-  ClipboardList, FileText,
+  ClipboardList, FileText, Info,
 } from 'lucide-react';
 import { ApprovalStatusBadge } from '@/components/shared/kpi';
 import { EmployeeSearchInput } from '@/components/shared/EmployeeSearchInput';
+import { TimelineView } from '@/components/shared/audit';
+import { ApprovalHistoryTimeline } from '@/components/shared/approval';
+import { buildTimeline } from '@/lib/audit/timeline-builder';
 import { useEmployees } from '@/hooks/use-queries';
 import {
   useObservations, useObservationCategories, useObservationTemplates,
@@ -42,6 +45,10 @@ const SEVERITY_LABELS: Record<string, string> = {
   low: 'منخفض', medium: 'متوسط', high: 'عالٍ', critical: 'حرج',
 };
 
+const STATUS_LABELS: Record<string, string> = {
+  open: 'مفتوحة', in_review: 'قيد المراجعة', resolved: 'تم الحل', closed: 'مغلقة',
+};
+
 // ─── Page ─────────────────────────────────────────────────────
 export default function ObservationsPage() {
   const { canView, canCreate, canUpdate, canDelete, canApprove } = usePermissions('observations');
@@ -56,15 +63,27 @@ export default function ObservationsPage() {
   const [editTarget, setEditTarget] = useState<QualityObservation | null>(null);
   const [approveTarget, setApproveTarget] = useState<QualityObservation | null>(null);
   const [rejectTarget, setRejectTarget] = useState<QualityObservation | null>(null);
+  const [detailTarget, setDetailTarget] = useState<QualityObservation | null>(null);
 
   // Data
   const { data: observations, isLoading } = useObservations(filters);
   const { data: categories } = useObservationCategories();
   const { data: templates } = useObservationTemplates('recent');
   const { data: employeesData } = useEmployees();
-  const employeeList: Array<{ id: string; name: string; department: string | null; position: string | null; code: string | null }> = Array.isArray(employeesData) ? employeesData : [];
+  const employeeList: Array<{ id: string; name: string; department: string | null; position: string | null; code: string | null; mobile: string | null; email?: string | null }> = Array.isArray(employeesData) ? employeesData : [];
 
   const obsList: QualityObservation[] = Array.isArray(observations) ? observations : [];
+
+  // Distinct departments for the filter dropdown.
+  const departments = useMemo(() => {
+    const set = new Set<string>();
+    for (const e of employeeList) {
+      if (e.department) set.add(e.department);
+    }
+    return Array.from(set).sort();
+  }, [employeeList]);
+
+  const categoriesList = Array.isArray(categories) ? categories : [];
 
   // Client-side search (supplements server filters)
   const filtered = useMemo(() => {
@@ -77,6 +96,10 @@ export default function ObservationsPage() {
       o.categoryName?.toLowerCase().includes(q),
     );
   }, [obsList, search]);
+
+  function clearFilters() {
+    setFilters({ month: CURRENT_MONTH });
+  }
 
   const deleteMut = useDeleteObservation();
 
@@ -134,12 +157,17 @@ export default function ObservationsPage() {
         <Button variant="outline" size="sm" onClick={() => setShowFilters((s) => !s)} className="gap-2">
           <Filter className="size-4" /> فلترة
         </Button>
+        {Object.values(filters).some(Boolean) && (
+          <Button variant="ghost" size="sm" onClick={clearFilters} className="text-xs text-slate-400">
+            مسح الفلاتر
+          </Button>
+        )}
       </div>
 
-      {/* Filters panel */}
+      {/* Filters panel — expanded with Department, Employee, Category, Status */}
       {showFilters && (
         <Card className="border-slate-700/40 bg-slate-800/30">
-          <CardContent className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-4">
+          <CardContent className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 pt-4">
             <div className="space-y-1">
               <Label className="text-xs text-slate-400">الشهر</Label>
               <Input
@@ -175,6 +203,66 @@ export default function ObservationsPage() {
                   <SelectItem value="all">الكل</SelectItem>
                   <SelectItem value="false">خصومات</SelectItem>
                   <SelectItem value="true">مكافآت</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs text-slate-400">القسم</Label>
+              <Select
+                value={filters.department ?? 'all'}
+                onValueChange={(v) => setFilters((f) => ({ ...f, department: v === 'all' ? undefined : v }))}
+              >
+                <SelectTrigger className="bg-slate-800/50 border-slate-700"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">كل الأقسام</SelectItem>
+                  {departments.map((d) => (
+                    <SelectItem key={d} value={d}>{d}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs text-slate-400">الموظف</Label>
+              <EmployeeSearchInput
+                employees={employeeList}
+                value={filters.employeeId ?? ''}
+                onChange={(id) => setFilters((f) => ({ ...f, employeeId: id === 'all' ? undefined : id }))}
+                placeholder="فلتر حسب الموظف"
+                variant="filter"
+                showDepartment
+                showAllOption
+                allOptionValue="all"
+                allOptionLabel="كل الموظفين"
+              />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs text-slate-400">التصنيف</Label>
+              <Select
+                value={filters.categoryId ?? 'all'}
+                onValueChange={(v) => setFilters((f) => ({ ...f, categoryId: v === 'all' ? undefined : v }))}
+              >
+                <SelectTrigger className="bg-slate-800/50 border-slate-700"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">كل التصنيفات</SelectItem>
+                  {categoriesList.map((c) => (
+                    <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs text-slate-400">الحالة</Label>
+              <Select
+                value={filters.status ?? 'all'}
+                onValueChange={(v) => setFilters((f) => ({ ...f, status: v === 'all' ? undefined : v }))}
+              >
+                <SelectTrigger className="bg-slate-800/50 border-slate-700"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">الكل</SelectItem>
+                  <SelectItem value="open">مفتوحة</SelectItem>
+                  <SelectItem value="in_review">قيد المراجعة</SelectItem>
+                  <SelectItem value="resolved">تم الحل</SelectItem>
+                  <SelectItem value="closed">مغلقة</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -215,6 +303,7 @@ export default function ObservationsPage() {
                 onDelete={() => handleDelete(obs)}
                 onApprove={() => setApproveTarget(obs)}
                 onReject={() => setRejectTarget(obs)}
+                onDetails={() => setDetailTarget(obs)}
               />
             </motion.div>
           ))}
@@ -225,7 +314,7 @@ export default function ObservationsPage() {
       <CreateObservationDialog
         open={createOpen}
         onOpenChange={setCreateOpen}
-        categories={Array.isArray(categories) ? categories : []}
+        categories={categoriesList}
         templates={Array.isArray(templates) ? templates : []}
         employees={employeeList}
       />
@@ -236,7 +325,7 @@ export default function ObservationsPage() {
           obs={editTarget}
           open={!!editTarget}
           onOpenChange={(o) => !o && setEditTarget(null)}
-          categories={Array.isArray(categories) ? categories : []}
+          categories={categoriesList}
         />
       )}
 
@@ -248,6 +337,20 @@ export default function ObservationsPage() {
       {/* Reject dialog */}
       {rejectTarget && (
         <RejectDialog obs={rejectTarget} open={!!rejectTarget} onOpenChange={(o) => !o && setRejectTarget(null)} />
+      )}
+
+      {/* Detail dialog — timeline + approval history */}
+      {detailTarget && (
+        <ObservationDetailDialog
+          obs={detailTarget}
+          open={!!detailTarget}
+          onOpenChange={(o) => !o && setDetailTarget(null)}
+          canApprove={canApprove}
+          canUpdate={canUpdate}
+          onApprove={() => { setDetailTarget(null); setApproveTarget(detailTarget); }}
+          onReject={() => { setDetailTarget(null); setRejectTarget(detailTarget); }}
+          onEdit={() => { setDetailTarget(null); setEditTarget(detailTarget); }}
+        />
       )}
     </div>
   );
@@ -287,7 +390,7 @@ function EmptyState({ hasFilters }: { hasFilters: boolean }) {
 
 function ObservationCard({
   obs, canUpdate, canDelete, canApprove,
-  onEdit, onDelete, onApprove, onReject,
+  onEdit, onDelete, onApprove, onReject, onDetails,
 }: {
   obs: QualityObservation;
   canUpdate: boolean;
@@ -297,6 +400,7 @@ function ObservationCard({
   onDelete: () => void;
   onApprove: () => void;
   onReject: () => void;
+  onDetails: () => void;
 }) {
   const openEmployee360 = useAppStore((s) => s.openEmployee360);
 
@@ -328,6 +432,9 @@ function ObservationCard({
             </div>
           </div>
           <div className="flex flex-col gap-1">
+            <Button size="sm" variant="ghost" className="gap-1.5 text-slate-400" onClick={onDetails}>
+              <Info className="size-3.5" /> تفاصيل
+            </Button>
             {canApprove && obs.applyPointDeduction && obs.approvalStatus === 'pending' && (
               <>
                 <Button size="sm" variant="outline" className="gap-1.5 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10" onClick={onApprove}>
@@ -352,6 +459,119 @@ function ObservationCard({
         </div>
       </CardContent>
     </Card>
+  );
+}
+
+// ─── Detail dialog (timeline + approval history) ─────────────
+
+function ObservationDetailDialog({
+  obs, open, onOpenChange, canApprove, canUpdate, onApprove, onReject, onEdit,
+}: {
+  obs: QualityObservation;
+  open: boolean;
+  onOpenChange: (o: boolean) => void;
+  canApprove: boolean;
+  canUpdate: boolean;
+  onApprove: () => void;
+  onReject: () => void;
+  onEdit: () => void;
+}) {
+  const openEmployee360 = useAppStore((s) => s.openEmployee360);
+
+  // Derive the timeline using the pure lib function (client-safe, no business logic).
+  const timeline = useMemo(
+    () => buildTimeline(obs.auditLog ?? [], obs.approvalHistory ?? []),
+    [obs.auditLog, obs.approvalHistory],
+  );
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto" dir="rtl">
+        <DialogHeader>
+          <DialogTitle>تفاصيل الملاحظة</DialogTitle>
+          <DialogDescription>{obs.employeeName} — {obs.observationDate}</DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-4">
+          {/* Info grid */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-xs">
+            <InfoCell label="الموظف" value={obs.employeeName} onClick={() => openEmployee360(obs.employeeId)} />
+            <InfoCell label="القسم" value={obs.department} />
+            <InfoCell label="التصنيف" value={obs.categoryName} />
+            <InfoCell label="الخطورة" value={SEVERITY_LABELS[obs.severity] ?? obs.severity} />
+            <InfoCell label="الحالة" value={STATUS_LABELS[obs.status] ?? obs.status} />
+            <InfoCell label="الاعتماد" value={obs.approvalStatus} />
+            <InfoCell label="النقاط" value={obs.applyPointDeduction ? `${obs.isBonus ? '+' : '-'}${obs.points}` : '—'} />
+            <InfoCell label="الملاحظ" value={obs.observerName} />
+            <InfoCell label="تاريخ الإنشاء" value={new Date(obs.createdAt).toLocaleDateString('ar-EG')} />
+            {obs.correctiveAction && <InfoCell label="الإجراء التصحيحي" value={obs.correctiveAction} />}
+            {obs.dueDate && <InfoCell label="تاريخ الاستحقاق" value={obs.dueDate} />}
+            {obs.resolvedDate && <InfoCell label="تاريخ الحل" value={obs.resolvedDate} />}
+          </div>
+
+          {obs.notes && (
+            <div className="rounded-lg border border-slate-700/40 bg-slate-800/30 p-3">
+              <p className="text-[11px] text-slate-400 mb-1">الملاحظات</p>
+              <p className="text-sm text-slate-200 whitespace-pre-wrap">{obs.notes}</p>
+            </div>
+          )}
+
+          {/* Action buttons */}
+          <div className="flex flex-wrap gap-2">
+            {canApprove && obs.applyPointDeduction && obs.approvalStatus === 'pending' && (
+              <>
+                <Button size="sm" className="gap-1.5" onClick={onApprove}>
+                  <Check className="size-3.5" /> اعتماد
+                </Button>
+                <Button size="sm" variant="destructive" className="gap-1.5" onClick={onReject}>
+                  <X className="size-3.5" /> رفض
+                </Button>
+              </>
+            )}
+            {canUpdate && obs.approvalStatus !== 'approved' && (
+              <Button size="sm" variant="outline" className="gap-1.5" onClick={onEdit}>
+                <Pencil className="size-3.5" /> تعديل
+              </Button>
+            )}
+          </div>
+
+          {/* Approval history (append-only, backend-provided) */}
+          <div>
+            <h4 className="text-sm font-semibold text-slate-200 mb-2 flex items-center gap-1.5">
+              <Check className="size-3.5 text-emerald-400" /> سجل الاعتماد
+            </h4>
+            <ApprovalHistoryTimeline events={obs.approvalHistory ?? []} />
+          </div>
+
+          {/* Full timeline (derived via pure lib buildTimeline) */}
+          <div>
+            <h4 className="text-sm font-semibold text-slate-200 mb-2 flex items-center gap-1.5">
+              <Clock className="size-3.5 text-blue-400" /> سجل الأحداث
+            </h4>
+            <TimelineView points={timeline} />
+          </div>
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>إغلاق</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function InfoCell({ label, value, onClick }: { label: string; value: string; onClick?: () => void }) {
+  return (
+    <div className="rounded border border-slate-700/40 bg-slate-800/20 px-2 py-1.5">
+      <p className="text-slate-500">{label}</p>
+      {onClick ? (
+        <button onClick={onClick} className="text-slate-200 font-medium hover:text-blue-400 transition-colors text-right w-full">
+          {value}
+        </button>
+      ) : (
+        <p className="text-slate-200 font-medium">{value}</p>
+      )}
+    </div>
   );
 }
 
