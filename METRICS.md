@@ -212,9 +212,13 @@ a deployment-target decision before centralizing.
 
 ```
 qualityObservations (canonical source)
-  → src/lib/metrics/kpiMetrics.ts   (score, snapshot, trend, aggregation)
-  → src/app/api/*                   (thin HTTP routes)
-  → UI components                   (display only)
+  → src/lib/db.ts                       (data access + in-memory cache)
+  → src/lib/kpi-scoring/score-calculator.ts  (single scoring formula)
+  → src/lib/metrics/kpiMetrics.ts       (score, snapshot, trend, aggregation)
+  → src/lib/month-snapshots.ts          (close/reopen lifecycle)
+  → src/lib/kpi-dashboard/index.ts      (aggregation + filtering)
+  → src/app/api/*                       (thin HTTP routes)
+  → UI components                       (display only — never recompute)
 ```
 
 Quality observations are the **canonical source** of every KPI, monthly score,
@@ -222,11 +226,24 @@ trend, and dashboard metric. Only **approved** observations with
 `applyPointDeduction = true` affect scores. Pending and rejected observations
 have zero KPI impact.
 
+**No module outside `src/lib/metrics/` or `src/lib/kpi-scoring/` may define a
+KPI score, formula, or trend direction.**
+
+### Canonical Source
+
+`src/lib/metrics/kpiMetrics.ts` — single source of truth. All API routes
+consume from this layer; all UI components display only.
+
 ### Score Formula (config-driven)
 
 ```
-score = clamp(defaultScore − deductions + effectiveBonus, minimumScore, ∞)
+effectiveBonus = allowBonus ? min(rawBonus, maximumBonus) : 0
+score = clamp(defaultScore − deductionPoints + effectiveBonus, minimumScore, ∞)
 ```
+
+The single scoring formula lives in `src/lib/kpi-scoring/score-calculator.ts`:
+`computeScoreFromAdjustments(input: ScoreInput): ScoreResult`. The KPI
+engine delegates to it. No other scoring function exists.
 
 | Setting          | Default | Description                                  |
 |------------------|---------|----------------------------------------------|
@@ -237,9 +254,37 @@ score = clamp(defaultScore − deductions + effectiveBonus, minimumScore, ∞)
 | `approvalRequired` | true  | Deductions need manager approval to score    |
 | `closeMonthLock` | true    | Locks observations in closed months          |
 | `trendCalculation` | rollingAverage | Algorithm for trend direction          |
+| `leaderboardEnabled` | true | Show leaderboard on dashboard              |
 
 All settings live in the `kpiSettings/singleton` document. Future business-rule
 changes need no code edit — they're config-driven.
+
+### Eligibility
+
+An observation is **eligible for KPI scoring** when ALL of:
+- `applyPointDeduction === true`
+- `approvalStatus === 'approved'`
+
+Predicates in `kpiMetrics.ts`:
+| Predicate | Condition | KPI Impact |
+|-----------|-----------|------------|
+| `isApprovedKpiObs` | `applyPointDeduction && approvalStatus === 'approved'` | Affects score |
+| `isEffectiveDeductionObs` | approved AND `!isBonus` | Deduction applied |
+| `isEffectiveBonusObs` | approved AND `isBonus` | Bonus applied |
+| `isPendingApprovalObs` | `applyPointDeduction && approvalStatus === 'pending'` | Counted in stats, not score |
+| `isRejectedObs` | `applyPointDeduction && approvalStatus === 'rejected'` | Counted in stats, not score |
+
+### Weighted Analytics
+
+| Points type | Used for | Stored as |
+|-------------|----------|-----------|
+| Raw points (`points`) | Current score calculation | `deductionPoints`, `bonusPoints` in `EmployeeScoreEntry` |
+| Weighted points (`points × categoryWeight`) | Future analytics only | `weightedPoints` in `EmployeeScoreEntry` |
+
+The current formula uses **raw points only**. Weighted points are captured
+and stored for forward compatibility with future weighted analytics engines.
+`categoryTotals: Record<categoryId, deductionPoints>` stores per-category raw
+totals.
 
 ### Score Bands (display)
 
@@ -250,69 +295,193 @@ changes need no code edit — they're config-driven.
 | Medium | ≥50   | amber   |
 | Low    | <50   | rose    |
 
-### Monthly Snapshots (Improvement #1 — frozen org state)
+### Monthly Snapshots
 
-Closing a month produces an **immutable** snapshot that freezes:
-- Employee scores, ranks, deductions, bonuses
-- Employee metadata (name, department, position, supervisor) — so later
-  transfers/promotions/rename never mutate closed months
-- The KPI settings used to compute (`settingsSnapshot`)
+#### Open Month (live preview)
+- No snapshot document exists in the database.
+- `/api/month-snapshots/{monthKey}` computes a **live preview** using the
+  canonical KPI engine. This preview is **not persisted** — it's transient.
+- Dashboard uses live computation for the current calendar month.
+- Employee 360 shows this as "مباشر" (live) badge.
 
-Snapshots are **never recomputed**. The dashboard reads precomputed snapshots;
-only the current open month is live-computed. Reopen flips status back to `open`
-without deleting the frozen document; a fresh Close regenerates.
+#### Closed Month (frozen immutable snapshot)
+- Closing a month produces an **immutable** snapshot that freezes:
+  - **Employee scores, ranks, deductions, bonuses** — per employee
+  - **Employee metadata** (name, department, position, supervisor) — so later
+    transfers/promotions/renames never mutate closed months
+  - **The KPI settings** used to compute (`settingsSnapshot`)
+  - **Department aggregates** (avgScore, totals)
+  - **Category totals**, **approval stats**
+  - **Top/Bottom leaderboards** (10 each)
+- Snapshots are **never recomputed**. The dashboard reads precomputed snapshots;
+  only the current open month is live-computed.
+- Frozen data is served verbatim — no queries to current employee metadata.
 
-### Trend (stored snapshots only)
+#### Snapshot History (append-only archive)
+When a closed month is reopened and then re-closed, the previous frozen version
+is archived in `snapshotHistory[]` (append-only). Each entry preserves the
+full frozen state including scores, metadata, settings, and timestamps.
+
+#### `buildLivePreview` — open-month transient view. Not persisted.
+#### `buildClosedSnapshot` — first close of a month. Appends `close` audit event.
+#### `buildReopenedSnapshot` — flips status to `open`. Increments `reopenCount`.
+  Stores `reopenReason`. Preserves all frozen scores.
+#### `buildReclosedSnapshot` — re-close after reopen. Archives previous
+  version into `snapshotHistory`. Appends `reclose` audit event.
+
+### Close / Reopen Lifecycle
+
+| Operation | Behavior | Idempotent | Audited |
+|-----------|----------|------------|---------|
+| **Close Month** | Computes fresh snapshot, persists, returns frozen | ✓ (returns existing if already closed) | ✓ (`close_month` on first close only) |
+| **Reopen** | Flips status to `open`, stores reason | ✓ (returns existing if already open) | ✓ (`reopen` event) |
+| **Re-close** | Archives previous version, computes new, persists | Same as Close | ✓ (`reclose` event) |
+
+- **Reopen never deletes** the frozen snapshot — only `status` flips.
+- Previous frozen state remains **recoverable** via `snapshotHistory`.
+- New settings snapshot is captured on each close.
+- No duplicate audit/notification on idempotent repeated operations.
+
+### Trend
+
+Supported trend modes (per `settings.trendCalculation`):
+
+| Mode | Algorithm | Threshold |
+|------|-----------|-----------|
+| `rollingAverage` (default) | Deviation of latest vs rolling mean | ±3 points |
+| `movingScore` | Month-over-month delta | ±3 points |
+| `simpleAverage` | Month-over-month delta | ±2 points |
 
 ```
-movingScore    = latest month's average score
-momDelta       = latest − previous month
+direction      = improving | stable | declining
+momDelta       = latest month avg − previous month avg
 rollingAverage = mean across all supplied snapshots
-direction      = improving | stable | declining  (algorithm per trendCalculation)
+movingScore    = latest month's average score
+sampleSize     = number of snapshots in the input
 ```
 
-Trend uses **stored snapshots only** — never live recalculation.
+**Stored-snapshot rule**: Trend uses **stored snapshots only** — never live
+recalculation. This ensures historical trend data is immutable and consistent.
+
+### Dashboard (`/api/kpi-dashboard`)
+
+| Scope | Data source |
+|-------|-------------|
+| **Current month** | Live computation via canonical engine |
+| **Historical months** | Frozen snapshots (never recomputed) |
+| **Custom range** | Aggregation of stored snapshots + current live month |
+| **Employee-scoped** | `filterSnapshot` narrows `employeeScores` per employeeId |
+
+Dashboard response (`KpiDashboardResponse`):
+- `avgScore`, `totalEmployees`, `totalDeductions`, `totalBonuses`
+- `trend: TrendResult`
+- `topEmployees`, `bottomEmployees` (leaderboard)
+- `pendingApprovals`, `approvalStats`
+- `categoryDistribution`, `departmentRanking`
+- `monthlyScores[]` (per-month avgScore, isLive flag)
+- `performanceFactor: PerformanceFactor`
+- `settings` (current, not frozen)
 
 ### Approval Workflow (append-only history)
 
 ```
-Quality creates observation (status: pending)
-  → Manager approves / rejects (status: approved | rejected)
-  → Only approved observations affect the score
+Quality creates observation (approvalStatus: pending)
+  → Manager approves /rejects (approvalStatus: approved | rejected)
+  → Only approved observations with applyPointDeduction=true affect score
 ```
 
 Approval history is **append-only** (`approvalHistory[]`). The latest entry is
 projected to `approvalStatus` for fast queries. Nothing is ever overwritten.
 
-### Weighted Categories (Improvement #3)
+Point override during approval: the approver may set a `points` override. The
+original and override values are captured as `pointsBefore`/`pointsAfter` in
+the approval event (action becomes `override` for audit clarity).
 
-Each category carries both `defaultPointValue` (used now) and `weight` (stored
-as `weightedPoints = Σ points × weight` for future analytics). The current
-formula uses points only; weight is captured for forward compatibility.
+### Employee 360 Quality & KPI Integration (Milestone 9)
 
-### Performance Engine Adapter (Improvement #8)
+The `EmployeeQualityKpiPanel` is a self-contained React Query component that
+consumes canonical APIs only:
 
-`qualityToPerformanceFactor()` converts a quality score into a
-`PerformanceFactor` — the shared interface that a future unified Performance
-Engine (Attendance, Productivity, etc.) will consume. Quality is the first
-adapter; the interface is generic.
+| Data | API Hook | Behavior |
+|------|----------|----------|
+| Current month score | `useKpiDashboard({range:'current_month', employeeId})` | Live computation |
+| Monthly history | `useMonthSnapshots()` + `useMonthSnapshot(monthKey)` per row | Frozen/live per snapshot status |
+| Observations | `useObservations({employeeId, month})` | Filtered by month |
+| Categories | `useObservationCategories()` | Name lookup |
+| Timeline | `buildTimeline(obs.auditLog, obs.approvalHistory)` + `<TimelineView>` | Pure library + shared component |
+
+**Identity key**: `employeeId` (canonical). Employee name, email, mobile, code
+are display/search identifiers only.
+
+**Closed-month integrity**: Historical Employee 360 always displays the
+original frozen snapshot. Even if employee department/position/name changes,
+KPI settings change, category configuration changes, or new observations are
+created in later months, the frozen score and metadata are unchanged.
+
+**Live vs frozen distinction**: The UI shows "مباشر" (live) badge for
+current/open months and "مجمّد" (frozen) badge for closed months.
+
+### Migration (`src/lib/quality-migration/`)
+
+| Feature | Description |
+|---------|-------------|
+| **Source** | Legacy `qualityDeductions` table |
+| **Target** | Canonical `qualityObservations` table |
+| **Migration marker** | `clientRequestId` prefixed with `legacy_quality_migration:` for idempotent detection |
+| **Legacy marker** | Recognises `createdByName === '__system_migration__'` with `[source:<id>]` in notes |
+| **Idempotency** | Both markers checked before creating; re-runs skip already-migrated records |
+| **Legacy preservation** | Migration never deletes or modifies legacy records |
+| **Permission** | Admin-only (`/api/quality-observations/migrate`) |
+
+### PerformanceFactor Adapter
+
+`qualityToPerformanceFactor(scoreResult, maxScore)` converts a quality score
+into the `PerformanceFactor` interface — the shared contract for a future
+unified Performance Engine (Attendance, Sales, Productivity, etc.).
+
+```typescript
+PerformanceFactor {
+  factorId: string;      // 'quality'
+  factorName: string;   // 'Quality KPI'
+  score: number;         // the employee's quality score
+  maxScore: number;      // defaultScore
+  weight: number;        // 1.0 (configurable per factor in future)
+  normalized: number;     // score / maxScore (0–1)
+  breakdown?: Record<string, number>;  // future per-category detail
+}
+```
 
 ### Idempotency & Data Integrity
 
-- **Close Month**: idempotent (re-closing regenerates the same snapshot)
+- **Close Month**: idempotent (returns existing frozen snapshot unchanged)
 - **Reopen**: reversible (never deletes the frozen snapshot)
+- **Re-close**: archives previous version, computes fresh
 - **Observation creation**: dedup via `clientRequestId`
+- **Approval**: idempotent on already-approved/rejected (returns existing)
 - **FK validation**: employee/category existence checked before every write
 - **Server-authoritative**: names, departments, scores always recomputed server-side
+- **Closed-month lock**: mutations blocked when `closeMonthLock` is enabled
 
 ### Consumers
 
-- **KPI Dashboard** (`/api/kpi-dashboard`) — aggregated scores, trend, leaderboard
+- **KPI Dashboard** (`/api/kpi-dashboard`) — aggregated scores, trend, leaderboard, department ranking
 - **Observations** (`/api/quality-observations`) — CRUD + approve/reject
 - **Month Snapshots** (`/api/month-snapshots`) — close/reopen, detail views
-- **Employee 360** — quality tab (score card, trend, deductions, bonuses)
+- **Employee 360** — quality tab with monthly history, frozen scores, timeline (Milestone 9)
 - **Audit Log** (`/api/quality-audit-log`) — global queryable trail
-- **Migration** (`/api/quality-migration`) — admin one-time import from legacy `qualityDeductions`
+- **Migration** (`/api/quality-observations/migrate`) — admin one-time import from legacy `qualityDeductions`
+
+### Permission Model
+
+| Role | Create | Update | Delete | Approve | Close/Reopen | Settings | Audit |
+|------|--------|--------|--------|---------|---------------|----------|-------|
+| **Admin** | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| **Manager** | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| **Quality** | ✓ | ✓ | ✓ | ✗ | ✗ | ✗ | ✓ |
+| **HR** | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
+
+`verifyPermission(request, pageId, action)` enforces server-side. Client-side
+`usePermissions(pageId)` gates UI visibility.
 
 ---
 
@@ -321,15 +490,25 @@ adapter; the interface is generic.
 Run: `npm test` (uses `tsx --test`)
 
 ```
-src/lib/metrics/__tests__/
-├── riskMetrics.test.ts     — 20 tests (formula, caps, levels, negative coercion)
-├── followUpMetrics.test.ts — 14 tests (overdue on-read, active/terminal status)
-├── capaMetrics.test.ts     — 22 tests (SLA, due date, overdue, effectiveness)
-└── kpiMetrics.test.ts      — 56 tests (score formula, floors/caps, bonus gating,
-                                      approved-only, snapshots, rank, trend, timeline)
+src/lib/__tests__/
+├── approvals/approval-history.test.ts     — approval workflow tests
+├── audit/timeline-builder.test.ts        — timeline ordering, labels
+├── idempotency/idempotency.test.ts      — dedup logic
+├── kpi-dashboard/kpi-dashboard.test.ts  — dashboard aggregation
+├── kpi-scoring/score-calculator.test.ts — scoring formula unit tests
+├── metrics/
+│   ├── riskMetrics.test.ts               — 20 tests (formula, caps, levels)
+│   ├── followUpMetrics.test.ts           — 14 tests (overdue, status)
+│   ├── capaMetrics.test.ts               — 22 tests (SLA, effectiveness)
+│   ├── kpiMetrics.test.ts                — 56 tests (score, snapshots, trend)
+│   └── milestone-9-verification.test.ts   — 18 tests (M9 parity, immutability, reopen)
+├── month-snapshots/month-snapshots.test.ts — close/reopen lifecycle
+├── quality-migration/quality-migration.test.ts — migration tests
+└── quality-obs/observation-api.test.ts    — observation API tests
 ```
 
-Total: **112 tests**, all passing.
+Total: **364 tests** (346 existing + 18 new Milestone 9). One pre-existing
+failure in `quality-migration.test.ts` (outside Milestone 9 scope).
 
 ---
 
@@ -342,3 +521,5 @@ Total: **112 tests**, all passing.
 | 8 duplicate attendance records | Data issue, needs business review | Not a code fix |
 | `capaCases` table empty | Data/seed issue | No code change needed |
 | `capa-helpers.ts` client-side `isOverdue()` | Uses `Date.now()` instead of server canonical | Out of scope; UI-only |
+| Concurrent close race | Two simultaneous closes on an open month could both compute | Idempotent guard makes this safe; documented in M5 report |
+| Supervisor map | Currently empty (null) for all employees | No supervisor hierarchy data yet |
