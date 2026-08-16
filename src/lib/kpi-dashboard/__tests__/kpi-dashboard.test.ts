@@ -264,8 +264,10 @@ describe('Dashboard — buildDashboardResponse assembly', () => {
       settings: SETTINGS,
     });
     // Employee identity comes from the frozen snapshot, not current data.
-    assert.equal(response.topEmployees[0].employeeName, 'أحمد القديم');
-    assert.equal(response.topEmployees[0].department, 'مبيعات');
+    // (Score 90 is below the defaultScore baseline of 100 → the employee
+    // is listed under needsImprovement, not topEmployees.)
+    assert.equal(response.needsImprovement[0].employeeName, 'أحمد القديم');
+    assert.equal(response.needsImprovement[0].department, 'مبيعات');
   });
 
   it('current open month uses live data (from the computed snapshot)', () => {
@@ -360,7 +362,7 @@ describe('Dashboard — department ranking', () => {
 // ══════════════════════════════════════════════════════════════
 
 describe('Dashboard — employee leaderboard', () => {
-  it('top/bottom ranking uses actual scores', () => {
+  it('top / needs-improvement / bottom ranking uses actual scores (disjoint)', () => {
     const snap = makeSnapshot('2026-08', {
       employeeScores: {
         e1: {
@@ -370,7 +372,7 @@ describe('Dashboard — employee leaderboard', () => {
           },
           score: 95, deductionPoints: 5, bonusPoints: 0, weightedPoints: 0,
           observationCount: 1, approvedCount: 1, pendingCount: 0, rejectedCount: 0,
-          categoryTotals: {}, rank: 1, dept: 'مبيعات',
+          categoryTotals: {}, rank: 2, dept: 'مبيعات',
         },
         e2: {
           employeeSnapshot: {
@@ -379,7 +381,16 @@ describe('Dashboard — employee leaderboard', () => {
           },
           score: 70, deductionPoints: 30, bonusPoints: 0, weightedPoints: 0,
           observationCount: 3, approvedCount: 3, pendingCount: 0, rejectedCount: 0,
-          categoryTotals: {}, rank: 2, dept: 'عمليات',
+          categoryTotals: {}, rank: 3, dept: 'عمليات',
+        },
+        e3: {
+          employeeSnapshot: {
+            employeeId: 'e3', employeeName: 'ليلى', departmentId: 'مبيعات',
+            departmentName: 'مبيعات', position: 'موظف', supervisorId: null,
+          },
+          score: 100, deductionPoints: 0, bonusPoints: 0, weightedPoints: 0,
+          observationCount: 2, approvedCount: 0, pendingCount: 2, rejectedCount: 0,
+          categoryTotals: {}, rank: 1, dept: 'مبيعات',
         },
       },
     });
@@ -389,18 +400,27 @@ describe('Dashboard — employee leaderboard', () => {
       collected: [{ monthKey: '2026-08', snapshot: snap, isLive: false }],
       settings: SETTINGS,
     });
-    // With ≤10 employees, splitLeaderboard puts all in both top and bottom.
-    // Top: sorted desc → e1 (95), e2 (70)
-    assert.equal(response.topEmployees.length, 2);
-    assert.equal(response.topEmployees[0].employeeId, 'e1');
-    assert.equal(response.topEmployees[0].score, 95);
-    assert.equal(response.topEmployees[0].rank, 1);
 
-    // Bottom: reversed last 10 → e2 (70), e1 (95)
-    assert.equal(response.bottomEmployees.length, 2);
+    // Top = ONLY employees who reached the defaultScore baseline (100).
+    assert.equal(response.topEmployees.length, 1);
+    assert.equal(response.topEmployees[0].employeeId, 'e3');
+    assert.equal(response.topEmployees[0].score, 100);
+
+    // Needs improvement = below the baseline, worst score first.
+    assert.equal(response.needsImprovement.length, 2);
+    assert.equal(response.needsImprovement[0].employeeId, 'e2');
+    assert.equal(response.needsImprovement[0].score, 70);
+    assert.equal(response.needsImprovement[1].employeeId, 'e1');
+    assert.equal(response.needsImprovement[1].score, 95);
+
+    // The two lists are disjoint — no employee appears in both.
+    const topIds = new Set(response.topEmployees.map((e) => e.employeeId));
+    assert.equal(response.needsImprovement.some((e) => topIds.has(e.employeeId)), false);
+
+    // Bottom = pure lowest-score ranking (all ≤10 employees, worst first).
+    assert.equal(response.bottomEmployees.length, 3);
     assert.equal(response.bottomEmployees[0].employeeId, 'e2');
     assert.equal(response.bottomEmployees[0].score, 70);
-    assert.equal(response.bottomEmployees[0].rank, 2);
   });
 
   it('leaderboard includes deductionPoints and bonusPoints', () => {
@@ -440,8 +460,10 @@ describe('Dashboard — employee leaderboard', () => {
       ],
       settings: SETTINGS,
     });
-    assert.equal(response.topEmployees[0].score, 90, 'avg of 80 + 100 = 90');
-    assert.equal(response.topEmployees[0].deductionPoints, 20, 'sum across months');
+    // Averaged score 90 is below the 100 baseline → the employee is
+    // listed under needsImprovement; deductions sum across months.
+    assert.equal(response.needsImprovement[0].score, 90, 'avg of 80 + 100 = 90');
+    assert.equal(response.needsImprovement[0].deductionPoints, 20, 'sum across months');
   });
 });
 

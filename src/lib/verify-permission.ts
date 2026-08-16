@@ -4,7 +4,7 @@
 
 import { getById } from '@/lib/db';
 import type { ActionKey, PagePermission, PermissionLevel, PermissionsMap } from '@/config/permissions';
-import { migratePermission } from '@/config/permissions';
+import { migratePermission, resolveEffectivePermissions } from '@/config/permissions';
 import { authenticateRequestAsync } from '@/lib/auth';
 
 export interface VerifyResult {
@@ -46,8 +46,13 @@ export async function authenticateFromRequest(request: Request): Promise<{
   // 3. Check if suspended
   if (user.isSuspended) return null;
 
-  // 4. Parse permissions
-  const permissions = safeParsePerms(user.permissions) as PermissionsMap;
+  // 4. Resolve EFFECTIVE permissions: role preset overridden by the user's
+  //    stored per-user map (same rule the client AuthContext uses). Without
+  //    this, users whose stored map predates a page key would be denied
+  //    pages their role grants — the stored map is an OVERRIDE, not a
+  //    replacement for the role preset.
+  const stored = safeParsePerms(user.permissions) as PermissionsMap;
+  const permissions = resolveEffectivePermissions(user.role, stored);
 
   return {
     userId: user.id,

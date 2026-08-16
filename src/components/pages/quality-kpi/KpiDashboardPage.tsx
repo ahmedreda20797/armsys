@@ -460,25 +460,30 @@ export default function KpiDashboardPage() {
                 variant="top"
                 maxItems={10}
                 onSelect={(eid) => navigateTo('employee360', undefined, { employeeId: eid })}
-                emptyLabel="لا يوجد موظفون في هذه الفترة. تظهر القائمة بعد إغلاق الشهر."
+                emptyLabel={`لا يوجد موظفون وصلوا إلى الدرجة المرجعية (${maxScore}) في هذه الفترة`}
               />
             </motion.div>
           </CardContent>
         </Card>
 
-        {/* Bottom employees — shared Leaderboard */}
+        {/* Needs improvement — employees below the canonical baseline (service-classified) */}
         <Card className="bg-slate-800/30 border-slate-700/40">
           <CardContent className="p-4 space-y-2">
-            <div className="flex items-center gap-2 px-1 pb-2 border-b border-slate-700/40">
-              <TrendingDown className="size-4 text-rose-400" />
-              <h3 className="text-sm font-semibold text-slate-200">يحتاجون تحسيناً</h3>
+            <div className="flex items-center justify-between px-1 pb-2 border-b border-slate-700/40">
+              <div className="flex items-center gap-2">
+                <TrendingDown className="size-4 text-rose-400" />
+                <h3 className="text-sm font-semibold text-slate-200">يحتاجون تحسيناً</h3>
+              </div>
+              <Badge variant="outline" className="text-slate-500 border-slate-600/40 text-[10px] shrink-0">
+                أقل من {maxScore}
+              </Badge>
             </div>
             <Leaderboard
-              entries={(dashboard.bottomEmployees ?? []) as DashboardLeaderboardEntry[]}
+              entries={(dashboard.needsImprovement ?? []) as DashboardLeaderboardEntry[]}
               variant="bottom"
               maxItems={10}
               onSelect={(eid) => navigateTo('employee360', undefined, { employeeId: eid })}
-              emptyLabel="لا توجد بيانات. تظهر القائمة بعد إغلاق الشهر."
+              emptyLabel="لا يوجد موظفون بحاجة إلى تحسين"
             />
           </CardContent>
         </Card>

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAll, findWhereContains, sortByDateField, withEmployeeFull, createRecord } from '@/lib/db';
 import { verifyPermission, requireAuth } from '@/lib/verify-permission';
+import { isValidLegacyDate } from '@/lib/attendance';
 
 export async function GET(request: NextRequest) {
   try {
@@ -55,6 +56,12 @@ export async function POST(request: NextRequest) {
 
     if (!employeeId || !date) {
       return NextResponse.json({ error: 'employeeId and date are required' }, { status: 400 });
+    }
+
+    // Date-boundary validation (Milestone 2 §22): reject malformed or
+    // non-calendar DD/MM/YYYY strings instead of silently storing them.
+    if (!isValidLegacyDate(date)) {
+      return NextResponse.json({ error: 'صيغة التاريخ غير صحيحة (DD/MM/YYYY مطلوبة)' }, { status: 400 });
     }
 
     // Validate employee exists and is active

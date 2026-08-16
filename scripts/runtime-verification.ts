@@ -141,7 +141,14 @@ async function main() {
   if (!sampleEmployee) {
     report('a live employee to compare', false, 'no employees with current-month observations');
   } else {
-    const dash = await getKpiDashboard({ range: 'current_month', employeeId: sampleEmployee });
+    // Correct call signature: getKpiDashboard(range, { filters }) → { response, error }.
+    const { response: dash, error: dashError } = await getKpiDashboard('current_month', {
+      filters: { employeeId: sampleEmployee },
+    });
+    if (dashError) {
+      report(`employee ${sampleEmployee}: dashboard fetch`, false, dashError);
+      return;
+    }
     const empObs = currentObs.filter((o) => o.employeeId === sampleEmployee);
     const engine = computeEmployeeScore(empObs, settings, sampleEmployee);
     const dashScore = Math.round(dash.avgScore);

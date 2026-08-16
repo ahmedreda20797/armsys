@@ -6,7 +6,7 @@
 
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef, ReactNode } from 'react';
 import { AuthUser } from '@/types';
-import { getPermissionsForRole as getRolePerms } from '@/config/permissions';
+import { resolveEffectivePermissions } from '@/config/permissions';
 
 interface AuthContextType {
   user: AuthUser | null;
@@ -55,18 +55,22 @@ function getRankForRole(role: string): string {
 
 /** Build AuthUser from server data */
 function buildAuthUser(userData: any): AuthUser {
-  let permissions = getRolePerms(userData.role);
+  // Effective permissions = role preset overridden by stored per-user entries.
+  // Same resolution rule as the server (verifyPermission) — see
+  // resolveEffectivePermissions in config/permissions.
+  let stored: Record<string, unknown> | null = null;
   if (userData.permissions) {
     try {
       if (typeof userData.permissions === 'string') {
-        permissions = { ...permissions, ...JSON.parse(userData.permissions) };
+        stored = JSON.parse(userData.permissions);
       } else {
-        permissions = { ...permissions, ...userData.permissions };
+        stored = userData.permissions;
       }
     } catch {
-      /* use role defaults */
+      stored = null; /* use role defaults */
     }
   }
+  const permissions = resolveEffectivePermissions(userData.role, stored);
 
   return {
     id: userData.id,

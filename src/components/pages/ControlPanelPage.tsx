@@ -95,7 +95,7 @@ import {
   Wifi,
   WifiOff,
 } from 'lucide-react';
-import { APP_PAGES, getPermissionsForRole, getActionLabel, type PermissionsMap, type PagePermission, type PermissionLevel, type ActionKey } from '@/config/permissions';
+import { APP_PAGES, getPermissionsForRole, getActionLabel, resolveEffectivePermissions, type PermissionsMap, type PagePermission, type PermissionLevel, type ActionKey } from '@/config/permissions';
 import { authFetch } from '@/lib/api-fetch';
 
 // ══════════════════════════════════════════════════════════════
@@ -482,7 +482,12 @@ export default function ControlPanelPage() {
   const openPermissions = (user: UserRecord) => {
     setPermUserId(user.id);
     setPermUser(user);
-    setTempPermissions({ ...user.permissions });
+    // Initialize from the EFFECTIVE permissions (role preset + stored
+    // overrides) so the editor shows what the user actually has. Starting
+    // from the stored map alone renders pages added after the user's map
+    // was saved as "hidden", and saving would freeze that stale 'none'
+    // over the role's grant.
+    setTempPermissions(resolveEffectivePermissions(user.role, user.permissions));
     setExpandedGroups(new Set());
   };
 

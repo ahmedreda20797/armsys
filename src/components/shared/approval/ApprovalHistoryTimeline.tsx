@@ -67,43 +67,53 @@ export function ApprovalHistoryTimeline({
   );
 
   return (
-    <ol className={cn('relative space-y-4 ps-4', className)} dir="rtl">
-      {/* vertical rail */}
-      <span className="absolute start-27 end-4 top-1/16 h-px -translate-y-1/2 bg-slate-700/60" aria-hidden />
-      <span className="absolute start-35 end-4 top-25 h-px -translate-y-1/2 bg-slate-700/60" aria-hidden />
-
+    <ol className={cn('space-y-4', className)} dir="rtl">
       {ordered.map((ev, i) => {
         const style = ACTION_STYLE[ev.action] ?? ACTION_STYLE.submit;
         const Icon = style.icon;
         const label = ACTION_LABELS[ev.action] ?? ev.action;
         return (
-          <li key={`${ev.timestamp}-${i}`} className="relative">
+          <li
+            key={`${ev.timestamp}-${i}`}
+            // Per-event layout: dot marker → flexible horizontal connector →
+            // content. Pure flex (no absolute positioning, no fixed pixel
+            // widths) so the connector stretches with the available dialog
+            // width and never overflows on narrow screens.
+            className="flex items-start gap-2.5"
+          >
+            {/* Event dot — shrinks never, aligns with the header line */}
             <span
               className={cn(
-                'absolute top-1/16 inset-e-0 size-2.5 rounded-full ring-2 ring-slate-900 translate-x-0',
+                'mt-1 size-2.5 shrink-0 rounded-full ring-2 ring-slate-900',
                 style.dot,
               )}
               aria-hidden
             />
-            <div className="flex items-center gap-2">
-              <Icon className={cn('size-4 shrink-0', style.accent)} />
-              <p className="text-sm font-medium text-slate-100">{label}</p>
+            {/* Content column — takes remaining width, wraps safely */}
+            <div className="min-w-0 flex-1">
+              {/* Header row: icon + label + flexible connector line */}
+              <div className="flex items-center gap-2">
+                <Icon className={cn('size-4 shrink-0', style.accent)} />
+                <p className="shrink-0 text-sm font-medium text-slate-100">{label}</p>
+                {/* Horizontal connector — flexes to fill the remaining width */}
+                <span className="h-px min-w-4 flex-1 bg-slate-700/60" aria-hidden />
+              </div>
+              <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-slate-400">
+                {ev.actorName && <span>{ev.actorName}</span>}
+                <span>·</span>
+                <span className="tabular-nums">{formatTimestamp(ev.timestamp)}</span>
+              </div>
+              {ev.notes && (
+                <p className="mt-1 text-xs text-slate-300 bg-slate-800/40 rounded-md px-2 py-1 border border-slate-700/40 break-words">
+                  {ev.notes}
+                </p>
+              )}
+              {ev.action === 'override' && ev.pointsBefore !== undefined && ev.pointsAfter !== undefined && (
+                <p className="mt-1 text-[11px] text-amber-400 tabular-nums">
+                  النقاط: {ev.pointsBefore} ← {ev.pointsAfter}
+                </p>
+              )}
             </div>
-            <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-slate-400">
-              {ev.actorName && <span>{ev.actorName}</span>}
-              <span>·</span>
-              <span className="tabular-nums">{formatTimestamp(ev.timestamp)}</span>
-            </div>
-            {ev.notes && (
-              <p className="mt-1 text-xs text-slate-300 bg-slate-800/40 rounded-md px-2 py-1 border border-slate-700/40">
-                {ev.notes}
-              </p>
-            )}
-            {ev.action === 'override' && ev.pointsBefore !== undefined && ev.pointsAfter !== undefined && (
-              <p className="mt-1 text-[11px] text-amber-400 tabular-nums">
-                النقاط: {ev.pointsBefore} ← {ev.pointsAfter}
-              </p>
-            )}
           </li>
         );
       })}

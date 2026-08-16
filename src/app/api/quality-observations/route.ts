@@ -27,7 +27,7 @@ import type { QualityObservation, ApprovalEvent } from '@/types/quality-kpi';
 export const OBSERVATIONS_TABLE = 'qualityObservations';
 
 /** Derive a YYYY-MM month key from a DD/MM/YYYY date string. */
-function deriveMonth(dateStr: string): string {
+export function deriveMonth(dateStr: string): string {
   const parts = dateStr.split('/');
   if (parts.length === 3) {
     const [, month, year] = parts;

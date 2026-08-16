@@ -115,8 +115,30 @@ export interface KpiDashboardResponse {
   totalDeductions: number;
   totalBonuses: number;
   trend: TrendResult;
+  /**
+   * Highest-scoring employees who reached the canonical baseline
+   * (score >= settings.defaultScore) in the selected scope — best first.
+   * Employees below the baseline are NEVER listed here; they appear in
+   * {@link needsImprovement}, so the two lists are disjoint by
+   * construction.
+   */
   topEmployees: DashboardLeaderboardEntry[];
+  /**
+   * Lowest-scoring employees in the selected scope (worst first) — a
+   * pure ranking view, NOT an improvement classification. Kept for
+   * contract compatibility; the UI "needs improvement" section consumes
+   * {@link needsImprovement} instead.
+   */
   bottomEmployees: DashboardLeaderboardEntry[];
+  /**
+   * Employees who actually need improvement: their score is BELOW the
+   * canonical baseline (settings.defaultScore) — i.e. they carry net
+   * effective deductions after the capped bonus. Derived entirely from
+   * the existing KPI settings (no separate threshold is configured in
+   * the KPI system); worst score first, capped at 10. Employees at the
+   * baseline (e.g. a valid score of 100) never appear here.
+   */
+  needsImprovement: DashboardLeaderboardEntry[];
   pendingApprovals: number;
   /** Category deduction points keyed by canonical categoryId. */
   categoryDistribution: Record<string, number>;
@@ -367,6 +389,47 @@ function splitLeaderboard(rows: DashboardLeaderboardEntry[]): {
 }
 
 // ─────────────────────────────────────────────────────────────
+//  Improvement classification (canonical baseline rule)
+// ─────────────────────────────────────────────────────────────
+
+/** Max rows in the needs-improvement list (mirrors the top list cap). */
+const IMPROVEMENT_LIST_CAP = 10;
+
+/**
+ * Split the aggregated leaderboard into the DISJOINT top / needs-
+ * improvement populations.
+ *
+ * Canonical rule (no invented threshold): an employee "needs
+ * improvement" when their score is below `settings.defaultScore` — the
+ * configured baseline every employee starts from. The engine formula
+ * (defaultScore − deductions + capped bonus) makes this exactly "has
+ * net effective deductions", so a valid 100-score employee with no
+ * deductions is never classified as needing improvement.
+ *
+ * Both lists stay deterministic: scores sort first, employeeId breaks
+ * ties (mirroring the engine's tie-break).
+ */
+function splitTopAndImprovement(
+  rows: DashboardLeaderboardEntry[],
+  defaultScore: number,
+): {
+  top: DashboardLeaderboardEntry[];
+  needsImprovement: DashboardLeaderboardEntry[];
+} {
+  // rows arrive sorted best-first (aggregateLeaderboard ordering).
+  const top = rows.filter((e) => e.score >= defaultScore).slice(0, 10);
+  const needsImprovement = rows
+    .filter((e) => e.score < defaultScore)
+    .sort((a, b) =>
+      a.score !== b.score
+        ? a.score - b.score // worst first
+        : a.employeeId.localeCompare(b.employeeId),
+    )
+    .slice(0, IMPROVEMENT_LIST_CAP);
+  return { top, needsImprovement };
+}
+
+// ─────────────────────────────────────────────────────────────
 //  PURE assembly (no DB — fully unit-testable)
 // ─────────────────────────────────────────────────────────────
 
@@ -416,7 +479,12 @@ export function buildDashboardResponse(input: BuildDashboardInput): KpiDashboard
 
   // Leaderboard (aggregated from stored employee scores).
   const leaderboard = aggregateLeaderboard(filteredSnapshots);
-  const { top: topEmployees, bottom: bottomEmployees } = splitLeaderboard(leaderboard);
+  // Disjoint top / needs-improvement populations (canonical baseline rule).
+  const { top: topEmployees, needsImprovement } = splitTopAndImprovement(
+    leaderboard,
+    settings.defaultScore,
+  );
+  const { bottom: bottomEmployees } = splitLeaderboard(leaderboard);
 
   // Department ranking + approval stats + category distribution.
   const departmentRanking = aggregateDepartmentRanking(filteredSnapshots);
@@ -451,6 +519,7 @@ export function buildDashboardResponse(input: BuildDashboardInput): KpiDashboard
     trend,
     topEmployees,
     bottomEmployees,
+    needsImprovement,
     pendingApprovals: approvalStats.pending,
     categoryDistribution,
     departmentRanking,
@@ -606,6 +675,7 @@ function emptyResponse(range: KpiRangePreset, months: string[]): KpiDashboardRes
     trend: neutralTrend,
     topEmployees: [],
     bottomEmployees: [],
+    needsImprovement: [],
     pendingApprovals: 0,
     categoryDistribution: {},
     departmentRanking: [],

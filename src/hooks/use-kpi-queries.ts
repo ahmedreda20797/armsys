@@ -86,6 +86,9 @@ export function useUpdateObservation() {
     onSettled: () => {
       qc.invalidateQueries({ queryKey: kpiQueryKeys.observations });
       qc.invalidateQueries({ queryKey: ['kpi', 'dashboard'] });
+      // Open-month snapshot details are live previews — refresh them so
+      // Employee 360 monthly rows reflect the mutation.
+      qc.invalidateQueries({ queryKey: kpiQueryKeys.snapshots });
     },
   });
 }
@@ -98,6 +101,7 @@ export function useDeleteObservation() {
     onSettled: () => {
       qc.invalidateQueries({ queryKey: kpiQueryKeys.observations });
       qc.invalidateQueries({ queryKey: ['kpi', 'dashboard'] });
+      qc.invalidateQueries({ queryKey: kpiQueryKeys.snapshots });
     },
   });
 }

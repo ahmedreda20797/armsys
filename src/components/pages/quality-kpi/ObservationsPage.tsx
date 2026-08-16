@@ -22,7 +22,7 @@ import {
 } from '@/components/ui/select';
 import {
   Eye, Plus, Search, Filter, Trash2, Pencil, Check, X, Star, Clock,
-  ClipboardList, FileText, Info,
+  ClipboardList, FileText, Info, Lock, ShieldAlert,
 } from 'lucide-react';
 import { ApprovalStatusBadge } from '@/components/shared/kpi';
 import { EmployeeSearchInput } from '@/components/shared/EmployeeSearchInput';
@@ -33,7 +33,7 @@ import { useEmployees } from '@/hooks/use-queries';
 import {
   useObservations, useObservationCategories, useObservationTemplates,
   useCreateObservation, useUpdateObservation, useDeleteObservation,
-  useApproveObservation, useRejectObservation,
+  useApproveObservation, useRejectObservation, useMonthSnapshots,
   type ObservationsParams,
 } from '@/hooks/use-kpi-queries';
 import type { QualityObservation } from '@/types/quality-kpi';
@@ -51,7 +51,7 @@ const STATUS_LABELS: Record<string, string> = {
 
 // ─── Page ─────────────────────────────────────────────────────
 export default function ObservationsPage() {
-  const { canView, canCreate, canUpdate, canDelete, canApprove } = usePermissions('observations');
+  const { canView, canCreate, canUpdate, canDelete, canApprove, isAdmin } = usePermissions('observations');
 
   // Filters
   const [filters, setFilters] = useState<ObservationsParams>({ month: CURRENT_MONTH });
@@ -70,6 +70,19 @@ export default function ObservationsPage() {
   const { data: categories } = useObservationCategories();
   const { data: templates } = useObservationTemplates('recent');
   const { data: employeesData } = useEmployees();
+  const { data: snapshotsData } = useMonthSnapshots();
+
+  // Closed months (frozen) — mutations are locked for every role; the UI
+  // hides edit/delete and shows a locked state. The backend enforces the
+  // same rule authoritatively.
+  const closedMonths = useMemo(() => {
+    const snaps = Array.isArray(snapshotsData) ? snapshotsData : [];
+    return new Set(
+      snaps
+        .filter((s) => (s as Record<string, unknown>).status === 'closed')
+        .map((s) => String((s as Record<string, unknown>).monthKey)),
+    );
+  }, [snapshotsData]);
   const employeeList: Array<{ id: string; name: string; department: string | null; position: string | null; code: string | null; mobile: string | null; email?: string | null }> = Array.isArray(employeesData) ? employeesData : [];
 
   const obsList: QualityObservation[] = Array.isArray(observations) ? observations : [];
@@ -299,6 +312,8 @@ export default function ObservationsPage() {
                 canUpdate={canUpdate}
                 canDelete={canDelete}
                 canApprove={canApprove}
+                isAdmin={isAdmin}
+                monthClosed={closedMonths.has(obs.month)}
                 onEdit={() => setEditTarget(obs)}
                 onDelete={() => handleDelete(obs)}
                 onApprove={() => setApproveTarget(obs)}
@@ -347,9 +362,13 @@ export default function ObservationsPage() {
           onOpenChange={(o) => !o && setDetailTarget(null)}
           canApprove={canApprove}
           canUpdate={canUpdate}
+          canDelete={canDelete}
+          isAdmin={isAdmin}
+          monthClosed={closedMonths.has(detailTarget.month)}
           onApprove={() => { setDetailTarget(null); setApproveTarget(detailTarget); }}
           onReject={() => { setDetailTarget(null); setRejectTarget(detailTarget); }}
           onEdit={() => { setDetailTarget(null); setEditTarget(detailTarget); }}
+          onDelete={() => { setDetailTarget(null); handleDelete(detailTarget); }}
         />
       )}
     </div>
@@ -389,13 +408,15 @@ function EmptyState({ hasFilters }: { hasFilters: boolean }) {
 }
 
 function ObservationCard({
-  obs, canUpdate, canDelete, canApprove,
+  obs, canUpdate, canDelete, canApprove, isAdmin, monthClosed,
   onEdit, onDelete, onApprove, onReject, onDetails,
 }: {
   obs: QualityObservation;
   canUpdate: boolean;
   canDelete: boolean;
   canApprove: boolean;
+  isAdmin: boolean;
+  monthClosed: boolean;
   onEdit: () => void;
   onDelete: () => void;
   onApprove: () => void;
@@ -403,6 +424,12 @@ function ObservationCard({
   onDetails: () => void;
 }) {
   const openEmployee360 = useAppStore((s) => s.openEmployee360);
+
+  // Approved observations are editable/deletable ONLY by Admin, and only
+  // while the month is OPEN (backend enforces the same policy).
+  const approved = obs.approvalStatus === 'approved';
+  const canEditThis = canUpdate && !monthClosed && (!approved || isAdmin);
+  const canDeleteThis = canDelete && !monthClosed && (!approved || isAdmin);
 
   return (
     <Card className="border-slate-700/40 bg-slate-800/30 hover:border-slate-600/50 transition-colors">
@@ -435,25 +462,33 @@ function ObservationCard({
             <Button size="sm" variant="ghost" className="gap-1.5 text-slate-400" onClick={onDetails}>
               <Info className="size-3.5" /> تفاصيل
             </Button>
-            {canApprove && obs.applyPointDeduction && obs.approvalStatus === 'pending' && (
+            {monthClosed ? (
+              <Badge variant="outline" className="justify-center gap-1 text-blue-400 border-blue-500/30 text-[10px]">
+                <Lock className="size-3" /> الشهر مغلق
+              </Badge>
+            ) : (
               <>
-                <Button size="sm" variant="outline" className="gap-1.5 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10" onClick={onApprove}>
-                  <Check className="size-3.5" /> اعتماد
-                </Button>
-                <Button size="sm" variant="outline" className="gap-1.5 border-rose-500/30 text-rose-400 hover:bg-rose-500/10" onClick={onReject}>
-                  <X className="size-3.5" /> رفض
-                </Button>
+                {canApprove && obs.applyPointDeduction && obs.approvalStatus === 'pending' && (
+                  <>
+                    <Button size="sm" variant="outline" className="gap-1.5 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10" onClick={onApprove}>
+                      <Check className="size-3.5" /> اعتماد
+                    </Button>
+                    <Button size="sm" variant="outline" className="gap-1.5 border-rose-500/30 text-rose-400 hover:bg-rose-500/10" onClick={onReject}>
+                      <X className="size-3.5" /> رفض
+                    </Button>
+                  </>
+                )}
+                {canEditThis && (
+                  <Button size="sm" variant="ghost" className="gap-1.5 text-slate-400" onClick={onEdit}>
+                    <Pencil className="size-3.5" /> تعديل
+                  </Button>
+                )}
+                {canDeleteThis && (
+                  <Button size="sm" variant="ghost" className="gap-1.5 text-rose-400" onClick={onDelete}>
+                    <Trash2 className="size-3.5" /> حذف
+                  </Button>
+                )}
               </>
-            )}
-            {canUpdate && obs.approvalStatus !== 'approved' && (
-              <Button size="sm" variant="ghost" className="gap-1.5 text-slate-400" onClick={onEdit}>
-                <Pencil className="size-3.5" /> تعديل
-              </Button>
-            )}
-            {canDelete && obs.approvalStatus !== 'approved' && (
-              <Button size="sm" variant="ghost" className="gap-1.5 text-rose-400" onClick={onDelete}>
-                <Trash2 className="size-3.5" /> حذف
-              </Button>
             )}
           </div>
         </div>
@@ -465,18 +500,29 @@ function ObservationCard({
 // ─── Detail dialog (timeline + approval history) ─────────────
 
 function ObservationDetailDialog({
-  obs, open, onOpenChange, canApprove, canUpdate, onApprove, onReject, onEdit,
+  obs, open, onOpenChange, canApprove, canUpdate, canDelete, isAdmin, monthClosed,
+  onApprove, onReject, onEdit, onDelete,
 }: {
   obs: QualityObservation;
   open: boolean;
   onOpenChange: (o: boolean) => void;
   canApprove: boolean;
   canUpdate: boolean;
+  canDelete: boolean;
+  isAdmin: boolean;
+  monthClosed: boolean;
   onApprove: () => void;
   onReject: () => void;
   onEdit: () => void;
+  onDelete: () => void;
 }) {
   const openEmployee360 = useAppStore((s) => s.openEmployee360);
+
+  // Approved observations are editable/deletable ONLY by Admin, and only
+  // while the month is OPEN (backend enforces the same policy).
+  const approved = obs.approvalStatus === 'approved';
+  const canEditThis = canUpdate && !monthClosed && (!approved || isAdmin);
+  const canDeleteThis = canDelete && !monthClosed && (!approved || isAdmin);
 
   // Derive the timeline using the pure lib function (client-safe, no business logic).
   const timeline = useMemo(
@@ -517,23 +563,42 @@ function ObservationDetailDialog({
           )}
 
           {/* Action buttons */}
-          <div className="flex flex-wrap gap-2">
-            {canApprove && obs.applyPointDeduction && obs.approvalStatus === 'pending' && (
-              <>
-                <Button size="sm" className="gap-1.5" onClick={onApprove}>
-                  <Check className="size-3.5" /> اعتماد
+          {monthClosed ? (
+            <div className="flex items-center gap-2 rounded-lg border border-blue-500/30 bg-blue-500/5 px-3 py-2">
+              <Lock className="size-4 text-blue-400 shrink-0" />
+              <p className="text-xs text-blue-300">
+                الشهر {obs.month} مغلق — لا يمكن تعديل أو حذف أو اعتماد ملاحظاته
+              </p>
+            </div>
+          ) : (
+            <div className="flex flex-wrap gap-2">
+              {canApprove && obs.applyPointDeduction && obs.approvalStatus === 'pending' && (
+                <>
+                  <Button size="sm" className="gap-1.5" onClick={onApprove}>
+                    <Check className="size-3.5" /> اعتماد
+                  </Button>
+                  <Button size="sm" variant="destructive" className="gap-1.5" onClick={onReject}>
+                    <X className="size-3.5" /> رفض
+                  </Button>
+                </>
+              )}
+              {canEditThis && approved && isAdmin && (
+                <Button size="sm" variant="outline" className="gap-1.5 border-amber-500/40 text-amber-400 hover:bg-amber-500/10" onClick={onEdit}>
+                  <ShieldAlert className="size-3.5" /> تعديل (مدير النظام)
                 </Button>
-                <Button size="sm" variant="destructive" className="gap-1.5" onClick={onReject}>
-                  <X className="size-3.5" /> رفض
+              )}
+              {canEditThis && !approved && (
+                <Button size="sm" variant="outline" className="gap-1.5" onClick={onEdit}>
+                  <Pencil className="size-3.5" /> تعديل
                 </Button>
-              </>
-            )}
-            {canUpdate && obs.approvalStatus !== 'approved' && (
-              <Button size="sm" variant="outline" className="gap-1.5" onClick={onEdit}>
-                <Pencil className="size-3.5" /> تعديل
-              </Button>
-            )}
-          </div>
+              )}
+              {canDeleteThis && approved && isAdmin && (
+                <Button size="sm" variant="outline" className="gap-1.5 border-rose-500/40 text-rose-400 hover:bg-rose-500/10" onClick={onDelete}>
+                  <Trash2 className="size-3.5" /> حذف (مدير النظام)
+                </Button>
+              )}
+            </div>
+          )}
 
           {/* Approval history (append-only, backend-provided) */}
           <div>
@@ -765,6 +830,7 @@ function EditObservationDialog({
   const [points, setPoints] = useState<number | ''>(obs.points);
 
   const updateMut = useUpdateObservation();
+  const editingApproved = obs.approvalStatus === 'approved';
 
   async function handleSubmit() {
     try {
@@ -788,6 +854,16 @@ function EditObservationDialog({
           <DialogDescription>{obs.employeeName} — {obs.observationDate}</DialogDescription>
         </DialogHeader>
         <div className="space-y-3">
+          {editingApproved && (
+            <div className="flex items-start gap-2 rounded-lg border border-amber-500/40 bg-amber-500/5 p-3">
+              <ShieldAlert className="size-4 text-amber-400 shrink-0 mt-0.5" />
+              <p className="text-xs text-amber-300">
+                هذه ملاحظة معتمدة. تعديل القيم المؤثرة على المؤشر (التصنيف أو النقاط)
+                سيُبطل الاعتماد ويعيد الملاحظة إلى «بانتظار الاعتماد» حتى اعتماد جديد.
+                تعديل الحقول غير المؤثرة (الملاحظات، الأدلة، الخطورة) يحافظ على الاعتماد.
+              </p>
+            </div>
+          )}
           <div className="space-y-1">
             <Label>التصنيف</Label>
             <Select value={categoryId} onValueChange={setCategoryId}>

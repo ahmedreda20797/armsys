@@ -45,6 +45,7 @@ import {
   RotateCcw,
 } from 'lucide-react';
 import { EmployeeQualityKpiPanel } from '@/components/pages/quality-kpi/EmployeeQualityKpiPanel';
+import { EmployeePerformanceSection } from '@/components/pages/employee360/EmployeePerformanceSection';
 
 // ══════════════════════════════════════════════════════════════
 //  Types
@@ -723,24 +724,38 @@ export default function Employee360Page({ employeeId: propEmployeeId, onClose }:
     </motion.div>
   );
 
+  // ═══ Performance tab — Milestone 5 scoped layers first ═══
+  // The raw current-month attendance-rate calculation and the mixed
+  // quality+HR deductions sum were replaced by the canonical scoped
+  // section (stored attendanceResults / monthSnapshots / separate
+  // HR domain). The non-attendance indicators below are unchanged
+  // and now carry an explicit الشهر الحالي scope label.
   const renderPerformanceTab = () => {
-    const totalDays = stats.attendance.totalPresent + stats.attendance.totalLate + stats.attendance.totalAbsent + stats.attendance.totalExempt;
-    const attendanceRate = totalDays > 0 ? Math.round((stats.attendance.totalPresent / totalDays) * 100) : 0;
     const requestApprovalRate = stats.requests.total > 0 ? Math.round((stats.requests.approved / stats.requests.total) * 100) : 0;
 
     return (
       <motion.div variants={containerVariants} initial="hidden" animate="visible" className="space-y-5">
+        {/* Scoped performance history: current month / monthly history / career */}
+        <motion.div variants={slideUpFade}>
+          <EmployeePerformanceSection employeeId={employeeId} />
+        </motion.div>
+
+        {/* Current-month indicators (non-attendance, unchanged calculations) */}
         <motion.div variants={slideUpFade}>
           <GlassCard className="p-6">
-            <h3 className="text-white font-semibold mb-5 flex items-center gap-2">
-              <div className="w-7 h-7 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center">
-                <TrendingUp className="size-4 text-emerald-400" />
-              </div>
-              مؤشرات الأداء
-            </h3>
+            <div className="flex items-center justify-between flex-wrap gap-2 mb-5">
+              <h3 className="text-white font-semibold flex items-center gap-2">
+                <div className="w-7 h-7 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center">
+                  <TrendingUp className="size-4 text-emerald-400" />
+                </div>
+                مؤشرات إضافية
+              </h3>
+              <Badge variant="outline" className="border-emerald-500/30 text-emerald-400 bg-emerald-500/5 text-xs rounded-lg">
+                الشهر الحالي
+              </Badge>
+            </div>
             <div className="space-y-5">
               {[
-                { label: 'نسبة الالتزام بالحضور', value: attendanceRate, color: 'bg-emerald-500', textColor: getHealthColor(attendanceRate) },
                 { label: 'نسبة قبول الطلبات', value: requestApprovalRate, color: 'bg-blue-500', textColor: getHealthColor(requestApprovalRate) },
                 { label: 'درجة الصحة العامة', value: healthScore, color: healthScore >= 80 ? 'bg-emerald-500' : healthScore >= 60 ? 'bg-yellow-500' : healthScore >= 40 ? 'bg-orange-500' : 'bg-red-500', textColor: getHealthColor(healthScore) },
               ].map((bar, i) => (
@@ -764,34 +779,10 @@ export default function Employee360Page({ employeeId: propEmployeeId, onClose }:
                   </div>
                 </motion.div>
               ))}
-            </div>
-          </GlassCard>
-        </motion.div>
-
-        {/* Summary Card */}
-        <motion.div variants={slideUpFade}>
-          <GlassCard className="p-5">
-            <h3 className="text-white font-semibold mb-4 flex items-center gap-2">
-              <div className="w-7 h-7 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center">
-                <BarChart3 className="size-4 text-emerald-400" />
+              <div className="bg-slate-700/20 border border-slate-700/20 rounded-xl p-3.5 text-center">
+                <p className="text-slate-400 text-xs mb-1">الرحلات النشطة — الشهر الحالي</p>
+                <p className="text-white font-bold text-lg">{stats.travel.active}</p>
               </div>
-              ملخص الأداء الشهري
-            </h3>
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-sm">
-              {[
-                { label: 'إجمالي أيام العمل', value: `${totalDays}`, color: '' },
-                { label: 'إجمالي الخصومات', value: `${(stats.quality.deductionDays + stats.hrDeductions.deductionDays).toFixed(1)} يوم`, color: '' },
-                { label: 'الرحلات النشطة', value: `${stats.travel.active}`, color: '' },
-              ].map((item, i) => (
-                <motion.div
-                  key={i}
-                  variants={gridItem}
-                  className="bg-slate-700/20 border border-slate-700/20 rounded-xl p-3.5 text-center"
-                >
-                  <p className="text-slate-400 text-xs mb-1">{item.label}</p>
-                  <p className="text-white font-bold text-lg">{item.value}</p>
-                </motion.div>
-              ))}
             </div>
           </GlassCard>
         </motion.div>

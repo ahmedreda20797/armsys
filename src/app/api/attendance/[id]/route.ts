@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { updateRecord, deleteRecord } from '@/lib/db';
 import { verifyPermission } from '@/lib/verify-permission';
+import { isValidLegacyDate } from '@/lib/attendance';
 
 export async function PUT(
   request: NextRequest,
@@ -15,6 +16,13 @@ export async function PUT(
 
     const { id } = await params;
     const body = await request.json();
+
+    // Date-boundary validation (Milestone 2 §22): a date change must
+    // be a well-formed DD/MM/YYYY calendar date.
+    if (body.date !== undefined && !isValidLegacyDate(body.date)) {
+      return NextResponse.json({ error: 'صيغة التاريخ غير صحيحة (DD/MM/YYYY مطلوبة)' }, { status: 400 });
+    }
+
     const updated = await updateRecord('attendance', id, body);
     if (!updated) {
       return NextResponse.json({ error: 'Record not found' }, { status: 404 });

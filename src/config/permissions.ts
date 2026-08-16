@@ -222,12 +222,14 @@ export const DEFAULT_PERMISSIONS: PermissionsMap = {
   operationsCenter: 'read',
   notifications: 'read',
   rulesEngine: 'none',
-  // Quality KPI (Phase 1)
-  observations: 'read',
+  // Quality KPI (Phase 1) — management pages are NOT part of the generic
+  // default role. Only named staff roles (quality/manager/admin/hr) get
+  // explicit grants in their presets.
+  observations: 'none',
   observationCategories: 'none',
   observationTemplates: 'none',
-  kpiDashboard: 'read',
-  qualityAuditLog: 'read',
+  kpiDashboard: 'none',
+  qualityAuditLog: 'none',
   monthClose: 'none',
   kpiSettings: 'none',
 };
@@ -240,6 +242,32 @@ export function migratePermission(value: string | PagePermission | undefined): P
   }
   // Old format: 'none' | 'read' | 'edit'
   return { level: value as PermissionLevel, actions: {} };
+}
+
+/**
+ * Resolve a user's EFFECTIVE permissions from their role and their stored
+ * per-user permission map.
+ *
+ * This is the SINGLE resolution rule used by every consumer (client
+ * AuthContext, server verifyPermission, Control Panel editor):
+ *
+ *   effective = rolePreset overridden by stored per-user entries
+ *
+ * Semantics:
+ *   • A key MISSING from the stored map falls back to the role preset —
+ *     users created before a page existed inherit their role's grant.
+ *   • An explicit stored entry ALWAYS wins, including 'none' — an admin
+ *     restriction or grant persists regardless of the preset.
+ *   • Admin role users bypass permission lookups entirely at the
+ *     enforcement sites (unchanged behavior).
+ */
+export function resolveEffectivePermissions(
+  role: string | null | undefined,
+  stored: Record<string, unknown> | null | undefined,
+): PermissionsMap {
+  const base = getPermissionsForRole(role || 'user');
+  if (!stored || typeof stored !== 'object') return base;
+  return { ...base, ...(stored as PermissionsMap) };
 }
 
 // Get permissions for a specific role
