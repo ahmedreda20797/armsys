@@ -22,13 +22,18 @@ import {
 } from '@/components/ui/select';
 import {
   Eye, Plus, Search, Filter, Trash2, Pencil, Check, X, Star, Clock,
-  ClipboardList, FileText, Info, Lock, ShieldAlert,
+  ClipboardList, FileText, Info, Lock, ShieldAlert, Copy, ExternalLink, Link2,
 } from 'lucide-react';
 import { ApprovalStatusBadge } from '@/components/shared/kpi';
 import { EmployeeSearchInput } from '@/components/shared/EmployeeSearchInput';
 import { TimelineView } from '@/components/shared/audit';
 import { ApprovalHistoryTimeline } from '@/components/shared/approval';
 import { buildTimeline } from '@/lib/audit/timeline-builder';
+import {
+  classifyEvidence,
+  truncateEvidenceForDisplay,
+  EVIDENCE_EMPTY_LABEL,
+} from '@/lib/quality-observations/evidence';
 import { useEmployees } from '@/hooks/use-queries';
 import {
   useObservations, useObservationCategories, useObservationTemplates,
@@ -562,6 +567,9 @@ function ObservationDetailDialog({
             </div>
           )}
 
+          {/* Evidence viewer — read-only presentation of the stored evidence field */}
+          <ObservationEvidenceSection evidence={obs.evidence} />
+
           {/* Action buttons */}
           {monthClosed ? (
             <div className="flex items-center gap-2 rounded-lg border border-blue-500/30 bg-blue-500/5 px-3 py-2">
@@ -619,6 +627,147 @@ function ObservationDetailDialog({
 
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>إغلاق</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ─── Evidence viewer (الدليل / الإثبات) ──────────────────────
+
+/**
+ * Dedicated evidence section inside the Observation Detail dialog.
+ *
+ * Renders the STORED `evidence` field as-is (no new fetch, no
+ * mutation, no audit event). Three kinds, classified by the pure
+ * lib helper:
+ *   • url   → link preview (visually truncated, break-all) +
+ *             نسخ الدليل / عرض الدليل / فتح الرابط
+ *   • text  → wrapped, scrollable preview + نسخ الدليل / عرض الدليل
+ *   • empty → explicit empty state, NO action buttons
+ *
+ * Copy always copies the ORIGINAL stored value exactly; فتح الرابط
+ * is a real <a target="_blank" rel="noopener noreferrer"> whose href
+ * is guaranteed http(s) by classification (javascript:/data:/… are
+ * classified as text and never linked).
+ */
+function ObservationEvidenceSection({ evidence }: { evidence: string }) {
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const classified = useMemo(() => classifyEvidence(evidence), [evidence]);
+
+  // Copy the ORIGINAL stored value — no trimming, no formatting changes.
+  const copyEvidence = async () => {
+    try {
+      await navigator.clipboard.writeText(evidence);
+      toast.success('تم نسخ الدليل');
+    } catch {
+      toast.error('فشل نسخ الدليل');
+    }
+  };
+
+  if (classified.kind === 'empty') {
+    return (
+      <div className="rounded-lg border border-slate-700/40 bg-slate-800/30 p-3">
+        <p className="text-[11px] text-slate-400 mb-1 flex items-center gap-1.5">
+          <Link2 className="size-3.5" /> الدليل / الإثبات
+        </p>
+        <p className="text-sm text-slate-500">{EVIDENCE_EMPTY_LABEL}</p>
+      </div>
+    );
+  }
+
+  const isUrl = classified.kind === 'url';
+
+  return (
+    <div className="rounded-lg border border-cyan-500/25 bg-cyan-500/5 p-3 min-w-0">
+      <p className="text-[11px] text-slate-400 mb-1.5 flex items-center gap-1.5">
+        <Link2 className="size-3.5 text-cyan-400" /> الدليل / الإثبات
+      </p>
+
+      {isUrl ? (
+        // Visual truncation only — Copy/View/Open always use the full URL.
+        <p className="text-sm text-blue-300 break-all leading-relaxed" dir="ltr">
+          {truncateEvidenceForDisplay(classified.url)}
+        </p>
+      ) : (
+        <div className="max-h-28 overflow-y-auto rounded border border-slate-700/30 bg-slate-800/30 p-2">
+          <p className="text-sm text-slate-200 whitespace-pre-wrap break-words">{classified.text}</p>
+        </div>
+      )}
+
+      <div className="flex flex-wrap gap-2 mt-2.5">
+        <Button size="sm" variant="outline" className="gap-1.5 h-7" onClick={copyEvidence}>
+          <Copy className="size-3.5" /> نسخ الدليل
+        </Button>
+        <Button size="sm" variant="outline" className="gap-1.5 h-7" onClick={() => setPreviewOpen(true)}>
+          <Eye className="size-3.5" /> عرض الدليل
+        </Button>
+        {isUrl && (
+          <a
+            href={classified.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center justify-center gap-1.5 h-7 rounded-md border border-blue-500/40 bg-blue-500/10 px-3 text-xs font-medium text-blue-300 hover:bg-blue-500/20 transition-colors"
+          >
+            <ExternalLink className="size-3.5" /> فتح الرابط
+          </a>
+        )}
+      </div>
+
+      <EvidencePreviewDialog
+        open={previewOpen}
+        onOpenChange={setPreviewOpen}
+        evidence={evidence}
+        url={isUrl ? classified.url : null}
+        onCopy={copyEvidence}
+      />
+    </div>
+  );
+}
+
+/** Small full-evidence viewer — complete value, never truncated. */
+function EvidencePreviewDialog({
+  open, onOpenChange, evidence, url, onCopy,
+}: {
+  open: boolean;
+  onOpenChange: (o: boolean) => void;
+  evidence: string;
+  url: string | null;
+  onCopy: () => void;
+}) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto" dir="rtl">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-1.5">
+            <Link2 className="size-4 text-cyan-400" /> الدليل / الإثبات
+          </DialogTitle>
+          <DialogDescription>القيمة الكاملة للدليل كما تم تسجيلها — بدون أي اقتطاع</DialogDescription>
+        </DialogHeader>
+
+        <div className="rounded-lg border border-slate-700/40 bg-slate-800/30 p-3 min-w-0 max-h-[45vh] overflow-y-auto">
+          {url ? (
+            <p className="text-sm text-blue-300 break-all whitespace-pre-wrap select-text" dir="ltr">{evidence}</p>
+          ) : (
+            <p className="text-sm text-slate-200 break-words whitespace-pre-wrap select-text">{evidence}</p>
+          )}
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" className="gap-1.5" onClick={onCopy}>
+            <Copy className="size-3.5" /> نسخ الدليل
+          </Button>
+          {url && (
+            <a
+              href={url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center justify-center gap-1.5 h-9 rounded-md border border-blue-500/40 bg-blue-500/10 px-4 text-sm font-medium text-blue-300 hover:bg-blue-500/20 transition-colors"
+            >
+              <ExternalLink className="size-4" /> فتح الرابط
+            </a>
+          )}
+          <Button onClick={() => onOpenChange(false)}>إغلاق</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
