@@ -72,6 +72,11 @@ export const APP_PAGES: PageConfig[] = [
   { id: 'travel', title: 'السفر', icon: 'Plane', permissionKey: 'travel', availableActions: ['create', 'update', 'delete', 'export'], groupId: 'travel_ops' },
   // ═══ 📈 التقارير والتحليلات ═══
   { id: 'reports', title: 'التقارير', icon: 'BarChart3', permissionKey: 'reports', availableActions: ['export'], groupId: 'reports' },
+  // ── Unified Reporting Architecture (Milestone 8): the reference
+  //    Quality Deductions report mounts as its own page under the
+  //    SAME 'reports' permission key — existing role grants apply
+  //    unchanged (backend enforcement lives in /api/reports/run).
+  { id: 'qualityDeductionsReport', title: 'تقرير خصومات الجودة', icon: 'FileWarning', permissionKey: 'reports', availableActions: ['export'], groupId: 'reports' },
   { id: 'knowledgeBase', title: 'قاعدة المعرفة', icon: 'BookOpen', permissionKey: 'knowledgeBase', availableActions: ['create', 'update', 'delete'], groupId: 'reports' },
   // ═══ ⚙️ الإدارة والإعدادات ═══
   { id: 'controlPanel', title: 'مركز التحكم', icon: 'Shield', permissionKey: 'controlPanel', availableActions: [], groupId: 'settings' },

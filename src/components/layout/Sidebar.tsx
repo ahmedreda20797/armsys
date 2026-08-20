@@ -37,6 +37,7 @@ import {
   CalendarCog,
   Settings2,
   ScrollText,
+  FileWarning,
 } from 'lucide-react';
 import { usePermissions } from '@/hooks/usePermissions';
 import { useAuth } from '@/contexts/AuthContext';
@@ -75,6 +76,7 @@ const ICON_MAP: Record<string, LucideIcon> = {
   CalendarCog,
   Settings2,
   ScrollText,
+  FileWarning,
 };
 
 interface SidebarProps {
