@@ -28,6 +28,7 @@ import {
   validationError,
 } from '@/lib/api-error';
 import { validateMonthKey } from '@/lib/month-utils';
+import { asScopeViewer, employeeInScope } from '@/lib/scope/server';
 import { getAttendanceKpi } from '@/lib/attendance';
 
 export async function GET(
@@ -45,6 +46,22 @@ export async function GET(
     const monthError = validateMonthKey(monthKey);
     if (monthError) return validationError(monthError);
     if (!employeeId) return validationError('معرّف الموظف مطلوب');
+
+    // ── DATA SCOPE (M0.4 read adoption) ──
+    // Employee-specific KPI: an out-of-scope id resolves EXACTLY like
+    // a never-generated KPI (404 not_generated body) — the caller
+    // learns nothing about out-of-scope employees.
+    const inScope = await employeeInScope(
+      asScopeViewer(permCheck.user!),
+      permCheck.user!.permissions,
+      employeeId,
+    );
+    if (!inScope) {
+      return Response.json(
+        { status: 'not_generated', month: monthKey, employeeId },
+        { status: 404 },
+      );
+    }
 
     // ── 3. Stored result only — explicit not_generated when absent ──
     const kpi = await getAttendanceKpi(monthKey, employeeId);

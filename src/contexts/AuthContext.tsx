@@ -7,6 +7,12 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef, ReactNode } from 'react';
 import { AuthUser } from '@/types';
 import { resolveEffectivePermissions } from '@/config/permissions';
+import {
+  AUTH_REFRESH_INTERVAL_MS,
+  AUTH_FOREGROUND_STALE_MS,
+  shouldPollNow,
+  shouldRefreshOnForeground,
+} from '@/lib/polling-policy';
 
 interface AuthContextType {
   user: AuthUser | null;
@@ -55,7 +61,8 @@ function getRankForRole(role: string): string {
 
 /** Build AuthUser from server data */
 function buildAuthUser(userData: any): AuthUser {
-  // Effective permissions = role preset overridden by stored per-user entries.
+  // Effective permissions = role preset, overridden by the optional
+  // POSITION template, overridden by stored per-user entries.
   // Same resolution rule as the server (verifyPermission) — see
   // resolveEffectivePermissions in config/permissions.
   let stored: Record<string, unknown> | null = null;
@@ -70,7 +77,11 @@ function buildAuthUser(userData: any): AuthUser {
       stored = null; /* use role defaults */
     }
   }
-  const permissions = resolveEffectivePermissions(userData.role, stored);
+  const permissions = resolveEffectivePermissions(
+    userData.role,
+    stored,
+    userData.positionPermissions ?? null,
+  );
 
   return {
     id: userData.id,
@@ -268,18 +279,56 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     initAuth();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Auto-refresh user data every 60 seconds (only when user is logged in)
-  // Does NOT call refreshUser() immediately — initial load already fetched user data
+  // ─── Background identity refresh (visibility-aware) ──────────
+  // Picks up permission/suspension changes for UI reactivity. The
+  // old 60s unconditional interval was the root cause of the idle
+  // /api/auth/me churn. Server-side enforcement is unaffected (it
+  // runs on every API request); this loop only refreshes the client
+  // cache — every 5 minutes while visible, plus once when the tab
+  // returns to the foreground with stale data. The 12-minute token
+  // refresh below is independent and unchanged.
   useEffect(() => {
     if (!user) return;
 
-    refreshIntervalRef.current = setInterval(refreshUser, 60000);
+    let lastRefreshAt = Date.now();
+
+    const tick = () => {
+      if (
+        shouldPollNow({
+          isVisible: typeof document === 'undefined' || !document.hidden,
+          lastPollAt: lastRefreshAt,
+          now: Date.now(),
+          intervalMs: AUTH_REFRESH_INTERVAL_MS,
+        })
+      ) {
+        lastRefreshAt = Date.now();
+        refreshUser();
+      }
+    };
+
+    const onVisibilityChange = () => {
+      if (document.hidden) return;
+      if (
+        shouldRefreshOnForeground({
+          lastFetchAt: lastRefreshAt,
+          now: Date.now(),
+          staleThresholdMs: AUTH_FOREGROUND_STALE_MS,
+        })
+      ) {
+        lastRefreshAt = Date.now();
+        refreshUser();
+      }
+    };
+
+    refreshIntervalRef.current = setInterval(tick, AUTH_REFRESH_INTERVAL_MS);
+    document.addEventListener('visibilitychange', onVisibilityChange);
 
     return () => {
       if (refreshIntervalRef.current) {
         clearInterval(refreshIntervalRef.current);
         refreshIntervalRef.current = null;
       }
+      document.removeEventListener('visibilitychange', onVisibilityChange);
     };
   }, [!!user, refreshUser]); // !!user avoids object-reference churn
 

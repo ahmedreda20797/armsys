@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAll, getAllBatch, withEmployee } from '@/lib/db';
 import { verifyPermission, requireAuth } from '@/lib/verify-permission';
+import { asScopeViewer, employeeInScope, authScopeViewer, filterRowsByEmployeeScope, resolveEmployeeScopeFromDb } from '@/lib/scope/server';
 
 /** Parse DD/MM/YYYY to a comparable number YYYYMMDD for sorting */
 function parseDateToSortable(dateStr: string): number {
@@ -63,6 +64,18 @@ export async function GET(request: NextRequest) {
 
     // ── Fetch all travel deals + employees in parallel ──
     let travelDeals = await getAll('travelDeals');
+
+    // ── READ SCOPE (M0.5) ──
+    // Trips are employee-linked through their STORED employeeId.
+    // Scope runs at the retrieval boundary — BEFORE category
+    // computation, tab COUNTS, filters, month list, urgent list and
+    // pagination — so counts, sort positions and pages all derive
+    // from the authorized dataset only (authorized → filter → sort
+    // → paginate). The employeeId/month/search query params can only
+    // NARROW the authorized set.
+    const scopeCtx = await resolveEmployeeScopeFromDb(authScopeViewer(auth), undefined, auth.permissions);
+    travelDeals = filterRowsByEmployeeScope(travelDeals as Array<{ employeeId?: string | null }>, scopeCtx);
+
     travelDeals = await withEmployee(travelDeals as any[]);
 
     // ── Pre-compute category for all trips (single pass) ──
@@ -237,6 +250,20 @@ export async function POST(request: NextRequest) {
 
     if (!employeeId || !destination || !departureDate) {
       return NextResponse.json({ error: 'Employee ID, destination, and departure date are required' }, { status: 400 });
+    }
+
+    // ── TARGET-EMPLOYEE SCOPE (M0.4) ──
+    // Travel deals are employee-linked records: the target employee
+    // (body.employeeId) must be inside the caller's employee scope
+    // BEFORE the record is created; existence is not revealed to
+    // out-of-scope callers.
+    const inScope = await employeeInScope(
+      asScopeViewer(permCheck.user!),
+      permCheck.user!.permissions,
+      employeeId,
+    );
+    if (!inScope) {
+      return NextResponse.json({ error: 'صلاحية غير كافية' }, { status: 403 });
     }
 
     // Validate employee exists and is active

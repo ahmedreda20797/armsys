@@ -95,7 +95,7 @@ import {
   Wifi,
   WifiOff,
 } from 'lucide-react';
-import { APP_PAGES, getPermissionsForRole, getActionLabel, resolveEffectivePermissions, type PermissionsMap, type PagePermission, type PermissionLevel, type ActionKey } from '@/config/permissions';
+import { APP_PAGES, getPermissionsForRole, getActionLabel, resolveEffectivePermissions, resolvePageScope, type PermissionsMap, type PagePermission, type PermissionLevel, type ActionKey, type DataScope } from '@/config/permissions';
 import { authFetch } from '@/lib/api-fetch';
 
 // ══════════════════════════════════════════════════════════════
@@ -113,6 +113,11 @@ interface UserRecord {
   department?: string;
   lastActivity?: string;
   createdAt: string;
+  // Milestone 10: position template + optional employee linkage
+  positionId?: string | null;
+  positionTitle?: string | null;
+  positionPermissions?: Record<string, unknown> | null;
+  linkedEmployeeId?: string | null;
 }
 
 interface ActivityLogItem {
@@ -148,6 +153,16 @@ interface SessionUser {
 }
 
 const EXCLUDED_PAGES = ['home', 'firebase'];
+
+// Milestone 10 — data scope vocabulary for the permission editor
+const SCOPE_OPTIONS: Array<{ value: DataScope; label: string }> = [
+  { value: 'all', label: 'كل البيانات' },
+  { value: 'department', label: 'القسم' },
+  { value: 'team', label: 'الفريق' },
+  { value: 'subtree', label: 'الفروع المدارة' },
+  { value: 'assigned', label: 'المسند إليّ' },
+  { value: 'own', label: 'سجله فقط' },
+];
 
 const ROLE_OPTIONS = [
   { value: 'admin', label: 'مدير النظام', color: 'bg-red-500/15 text-red-400 border-red-500/20' },
@@ -341,6 +356,31 @@ export default function ControlPanelPage() {
     });
   };
 
+  // Milestone 10 — DATA SCOPE editing ("on WHOSE data?"). The scope
+  // rides on the same permission entry. M0.3: an ABSENT scope no
+  // longer means 'all' — it falls through to the role preset's scope
+  // or fails closed. The editor therefore DISPLAYS the effective
+  // scope (canonical resolvePageScope over the editor map, which is
+  // initialized from the effective map) and PERSISTS every choice
+  // explicitly, including 'all'.
+  const getPermScope = (pid: string): DataScope => {
+    return resolvePageScope(tempPermissions, pid, permUser?.role);
+  };
+
+  const setPermScope = (pid: string, scope: DataScope) => {
+    setTempPermissions(prev => {
+      const existing = prev[pid];
+      const base: PagePermission = typeof existing === 'string' || !existing
+        ? { level: (existing as PermissionLevel) || 'none', actions: {} }
+        : { ...existing };
+      // Stored explicitly — 'all' included. Since M0.3 an absent
+      // scope means "inherit preset / fail closed", so dropping the
+      // field for 'all' would silently narrow a future preset.
+      const next: PagePermission = { ...base, scope };
+      return { ...prev, [pid]: next };
+    });
+  };
+
   const toggleAction = (pid: string, action: ActionKey) => {
     setTempPermissions(prev => {
       const existing = prev[pid];
@@ -487,7 +527,7 @@ export default function ControlPanelPage() {
     // from the stored map alone renders pages added after the user's map
     // was saved as "hidden", and saving would freeze that stale 'none'
     // over the role's grant.
-    setTempPermissions(resolveEffectivePermissions(user.role, user.permissions));
+    setTempPermissions(resolveEffectivePermissions(user.role, user.permissions, user.positionPermissions ?? null));
     setExpandedGroups(new Set());
   };
 
@@ -880,6 +920,24 @@ export default function ControlPanelPage() {
                                                 </div>
                                               ))}
                                             </div>
+                                          </div>
+                                        )}
+                                        {/* Milestone 10 — data scope ("on whose data?") */}
+                                        {level !== 'none' && (
+                                          <div className="px-4 pb-3 pt-0 flex items-center gap-2 flex-wrap">
+                                            <span className="text-slate-500 text-[10px]">نطاق البيانات:</span>
+                                            <Select value={getPermScope(page.id)} onValueChange={(v) => setPermScope(page.id, v as DataScope)}>
+                                              <SelectTrigger className="h-7 w-[130px] text-[10px] border-slate-600/60 bg-slate-800/40 text-slate-300" dir="rtl">
+                                                <SelectValue />
+                                              </SelectTrigger>
+                                              <SelectContent className="bg-slate-800 border-slate-600/60 text-slate-200">
+                                                {SCOPE_OPTIONS.map((opt) => (
+                                                  <SelectItem key={opt.value} value={opt.value} className="text-[11px]">
+                                                    {opt.label}
+                                                  </SelectItem>
+                                                ))}
+                                              </SelectContent>
+                                            </Select>
                                           </div>
                                         )}
                                       </div>

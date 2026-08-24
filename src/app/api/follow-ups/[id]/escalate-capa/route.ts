@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getById, createRecord, getAll, getEmployeeMap, updateRecord, invalidateCache } from '@/lib/db';
 import { verifyPermission } from '@/lib/verify-permission';
+import { asScopeViewer, employeeInScope } from '@/lib/scope/server';
 import { createSmartNotification } from '@/lib/rules-engine';
 
 // ══════════════════════════════════════════════════════════════
@@ -23,6 +24,21 @@ export async function POST(
     const { id } = await params;
     const followUp = await getById('followUps', id);
     if (!followUp) {
+      return NextResponse.json({ error: 'Follow-up not found' }, { status: 404 });
+    }
+
+    // ── TARGET-EMPLOYEE SCOPE (M0.4) ──
+    // Escalation creates a CAPA carrying the follow-up's STORED
+    // employeeId — the target employee must be inside the caller's
+    // authorized scope before anything is created. Out-of-scope (or
+    // unlinked — follow-ups are employee-mandatory) resolves as the
+    // same NOT FOUND body as an unknown record (anti-enumeration).
+    const storedOk = await employeeInScope(
+      asScopeViewer(permCheck.user!),
+      permCheck.user!.permissions,
+      (followUp as any).employeeId,
+    );
+    if (!storedOk) {
       return NextResponse.json({ error: 'Follow-up not found' }, { status: 404 });
     }
 

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { requireAuth, verifyPermission } from '@/lib/verify-permission';
 
 interface FirebaseConfig {
   apiKey: string;
@@ -10,11 +11,44 @@ interface FirebaseConfig {
   databaseURL: string;
 }
 
+/**
+ * M0.1 SSRF hardening: the destination is NOT attacker-controllable.
+ * Only official Firebase Realtime Database hosts over plain https
+ * (no port, no credentials) are accepted — localhost, private/internal
+ * ranges and arbitrary hosts are rejected before any request is made.
+ */
+function isAllowedDatabaseUrl(rawUrl: string): boolean {
+  let url: URL;
+  try {
+    url = new URL(rawUrl);
+  } catch {
+    return false;
+  }
+  if (url.protocol !== 'https:') return false;
+  if (url.port !== '') return false;
+  if (url.username !== '' || url.password !== '') return false;
+  const host = url.hostname.toLowerCase();
+  return host.endsWith('.firebaseio.com') || host.endsWith('.firebasedatabase.app');
+}
+
 // ──────────────────────────────────────────────
 // POST — test Firebase RTDB connectivity via REST API
+// (admin-only diagnostic; used by the Firebase settings page)
 // ──────────────────────────────────────────────
 export async function POST(request: NextRequest) {
   try {
+    // M0.1: this endpoint performs server-side requests to a
+    // caller-supplied URL — it is restricted to users holding the
+    // 'firebase' page permission (in practice: admins).
+    const auth = await requireAuth(request);
+    if (!auth) {
+      return NextResponse.json({ error: 'مطلوب تسجيل الدخول' }, { status: 401 });
+    }
+    const permCheck = await verifyPermission(request, 'firebase');
+    if (!permCheck.allowed) {
+      return NextResponse.json({ error: permCheck.error }, { status: 403 });
+    }
+
     const body = (await request.json()) as Partial<FirebaseConfig>;
 
     // Basic validation
@@ -25,8 +59,15 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const databaseURL = body.databaseURL.replace(/\/$/, ''); // trim trailing slash
-    const testUrl = `${databaseURL}/test-connection.json?auth=${body.apiKey}`;
+    if (typeof body.databaseURL !== 'string' || !isAllowedDatabaseUrl(body.databaseURL.trim())) {
+      return NextResponse.json(
+        { success: false, error: 'رابط قاعدة البيانات غير مسموح — يجب أن يكون رابط Firebase RTDB صالحًا (https)' },
+        { status: 400 }
+      );
+    }
+
+    const databaseURL = body.databaseURL.trim().replace(/\/$/, ''); // trim trailing slash
+    const testUrl = `${databaseURL}/test-connection.json?auth=${encodeURIComponent(body.apiKey)}`;
     const testValue = Date.now().toString();
 
     // ── Step 1: Write a test value ──

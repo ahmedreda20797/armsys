@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createRecord, findWhere, deleteWhere } from '@/lib/db';
 import { verifyPermission } from '@/lib/verify-permission';
+import { asScopeViewer, employeeInScope } from '@/lib/scope/server';
 
 // Waive (cancel) a specific deduction for an employee on a specific day
 // Stores the waiver in 'waivedDeductions' collection
@@ -18,6 +19,20 @@ export async function POST(request: NextRequest) {
 
     if (!employeeId || !date || !month) {
       return NextResponse.json({ error: 'employeeId, date, and month are required' }, { status: 400 });
+    }
+
+    // ── TARGET-EMPLOYEE SCOPE (M0.4) ──
+    // A waiver changes a deduction outcome for a named employee —
+    // an employee-linked mutation. The target employee (body) must
+    // be inside the caller's employee scope BEFORE anything is
+    // written; the deduction business rules are unchanged.
+    const inScope = await employeeInScope(
+      asScopeViewer(permCheck.user!),
+      permCheck.user!.permissions,
+      employeeId,
+    );
+    if (!inScope) {
+      return NextResponse.json({ error: 'صلاحية غير كافية' }, { status: 403 });
     }
 
     // Check if already waived for same type
@@ -57,6 +72,19 @@ export async function DELETE(request: NextRequest) {
 
     if (!employeeId || !date || !month) {
       return NextResponse.json({ error: 'employeeId, date, and month are required' }, { status: 400 });
+    }
+
+    // ── TARGET-EMPLOYEE SCOPE (M0.4) ──
+    // Restoring a waiver mutates that employee's deduction outcome —
+    // same employee-scope rule as creating one, checked BEFORE the
+    // deleteWhere touches any record.
+    const inScope = await employeeInScope(
+      asScopeViewer(permCheck.user!),
+      permCheck.user!.permissions,
+      employeeId,
+    );
+    if (!inScope) {
+      return NextResponse.json({ error: 'صلاحية غير كافية' }, { status: 403 });
     }
 
     const count = await deleteWhere('waivedDeductions', { employeeId, date, month });

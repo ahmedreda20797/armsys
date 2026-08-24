@@ -25,6 +25,7 @@ import {
 } from '@/lib/api-error';
 import { isMonthClosed } from '@/lib/month-lock';
 import { resolveActor } from '@/lib/auth/actor-resolver';
+import { asScopeViewer, employeeInScope, authScopeViewer, linkedRecordInScope, resolveEmployeeScopeFromDb } from '@/lib/scope/server';
 import { makeAuditEvent, writeAudit } from '@/lib/audit';
 import { AUDIT_LOG_TABLE } from '@/app/api/quality-audit-log/route';
 import { notifyObservationAwaitingApproval } from '@/lib/notifications/quality-events';
@@ -48,6 +49,17 @@ export async function GET(
     const { id } = await params;
     const record = await getById<QualityObservation>(OBSERVATIONS_TABLE, id);
     if (!record) return notFoundError('الملاحظة غير موجودة');
+
+    // ── READ SCOPE (M0.5) ──
+    // Observations are employee-mandatory records; evidence lives
+    // INLINE on the parent observation, so scoping the parent scopes
+    // the evidence — there is no separate evidence endpoint to
+    // bypass with. Out-of-scope resolves as the SAME not-found body
+    // as an unknown id (anti-enumeration).
+    const scopeCtx = await resolveEmployeeScopeFromDb(authScopeViewer(auth), undefined, auth.permissions);
+    if (!linkedRecordInScope(record as unknown as { employeeId?: string | null }, scopeCtx)) {
+      return notFoundError('الملاحظة غير موجودة');
+    }
 
     return Response.json(record);
   } catch (error) {
@@ -83,6 +95,23 @@ export async function PUT(
     }
 
     const body = await request.json();
+
+    // ── DATA SCOPE (M0.4) ──
+    // The STORED observation's employeeId is the authorization
+    // target; when the patch reassigns the observation to another
+    // employee (body.employeeId), that NEW target must ALSO be in
+    // scope — checked BEFORE its existence validation so an
+    // out-of-scope id learns nothing. Out-of-scope → 404 identical
+    // to the missing-observation path (anti-enumeration).
+    const scopeViewer = asScopeViewer(permCheck.user!);
+    const reassignTarget = typeof body?.employeeId === 'string' ? body.employeeId : null;
+    const storedInScope = await employeeInScope(scopeViewer, permCheck.user!.permissions, existing.employeeId);
+    const reassignInScope = reassignTarget === null || reassignTarget === existing.employeeId
+      ? true
+      : await employeeInScope(scopeViewer, permCheck.user!.permissions, reassignTarget);
+    if (!storedInScope || !reassignInScope) {
+      return notFoundError('الملاحظة غير موجودة');
+    }
     const actor = await resolveActor(permCheck.user?.id);
 
     // Guard: moving the observation into a DIFFERENT closed month is
@@ -246,6 +275,19 @@ export async function DELETE(
     // Guard: closed month is immutable — ABSOLUTE, even for Admin.
     if (await isMonthClosed(existing.month)) {
       return lockedError(`الشهر ${existing.month} مغلق ولا يمكن حذف ملاحظاته`);
+    }
+
+    // ── DATA SCOPE (M0.4) ──
+    // The stored observation's employee governs; out-of-scope → 404
+    // identical to the missing-observation path. The denial path
+    // writes NO audit event — a refused mutation is not a mutation.
+    const inScope = await employeeInScope(
+      asScopeViewer(permCheck.user!),
+      permCheck.user!.permissions,
+      existing.employeeId,
+    );
+    if (!inScope) {
+      return notFoundError('الملاحظة غير موجودة');
     }
 
     await deleteRecord(OBSERVATIONS_TABLE, id);

@@ -110,6 +110,16 @@ export async function getById<T = Record<string, any>>(table: string, id: string
   return { id, ...(snapshot.val() as Record<string, any>) } as unknown as T;
 }
 
+/**
+ * Lightweight connectivity probe for the public health endpoint (M0.1):
+ * reads AT MOST ONE record from a small table — no full-table scan and
+ * no row data is returned or exposed to unauthenticated callers.
+ */
+export async function pingDatabase(): Promise<void> {
+  const snapshot = await getAdminDb().ref('arm_erp/deductionRules').limitToFirst(1).get();
+  void snapshot; // connectivity itself is the signal; contents are irrelevant
+}
+
 export async function findWhere<T = Record<string, any>>(table: string, filters: Record<string, any>): Promise<T[]> {
   const all = await getAll<any>(table);
   return all.filter((r) => Object.entries(filters).every(([key, value]) => r[key] === value)) as T[];

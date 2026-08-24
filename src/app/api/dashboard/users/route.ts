@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server';
 import { getPermissionsForRole } from '@/config/permissions';
 import { verifyPermission } from '@/lib/verify-permission';
 import { hashPassword } from '@/lib/auth';
+import { POSITIONS_TABLE, parsePositionTemplate, type Position } from '@/lib/organization';
 
 /** Safely parse permissions — handles both string (JSON) and object from Firebase */
 function safeParsePerms(permissions: any): Record<string, any> {
@@ -22,16 +23,30 @@ export async function GET(request: Request) {
     let users = await getAll('users');
     users = sortByDateField(users, 'createdAt', 'desc');
 
-    const usersWithParsedPerms = users.map((u: any) => ({
-      id: u.id,
-      email: u.email,
-      name: u.name,
-      role: u.role,
-      permissions: safeParsePerms(u.permissions),
-      isSuspended: u.isSuspended || false,
-      suspendedAt: u.suspendedAt || null,
-      createdAt: u.createdAt,
-    }));
+    // Positions (Milestone 10): resolve each user's optional position
+    // template ONCE so the Control Panel editor starts from the same
+    // effective truth the server resolver produces.
+    const positions = await getAll<Position>(POSITIONS_TABLE);
+    const positionById = new Map(positions.map((p) => [p.id, p]));
+
+    const usersWithParsedPerms = users.map((u: any) => {
+      const position = u.positionId ? positionById.get(u.positionId) ?? null : null;
+      return {
+        id: u.id,
+        email: u.email,
+        name: u.name,
+        role: u.role,
+        permissions: safeParsePerms(u.permissions),
+        isSuspended: u.isSuspended || false,
+        suspendedAt: u.suspendedAt || null,
+        createdAt: u.createdAt,
+        // Milestone 10: position + optional employee linkage
+        positionId: u.positionId || null,
+        positionTitle: position?.title ?? null,
+        positionPermissions: position ? parsePositionTemplate(position.permissions) : null,
+        linkedEmployeeId: u.linkedEmployeeId || null,
+      };
+    });
 
     return NextResponse.json(usersWithParsedPerms);
   } catch (error) {

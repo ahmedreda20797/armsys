@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getById } from '@/lib/db';
 import { authenticateRequestAsync } from '@/lib/auth';
+import { POSITIONS_TABLE, parsePositionTemplate, type Position } from '@/lib/organization';
 
 /** Safely parse permissions — handles both string (JSON) and object from Firebase */
 function safeParsePerms(permissions: any): Record<string, any> {
@@ -30,6 +31,16 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    // Milestone 10 parity: expose the optional position template so
+    // the CLIENT resolver (AuthContext.buildAuthUser) produces the
+    // SAME effective map as the server (authenticateFromRequest).
+    // Legacy users without a position send null — nothing changes.
+    let positionPermissions: Record<string, any> | null = null;
+    if (user.positionId) {
+      const position = await getById<Position>(POSITIONS_TABLE, user.positionId);
+      positionPermissions = position ? parsePositionTemplate(position.permissions) : null;
+    }
+
     return NextResponse.json({
       id: user.id,
       email: user.email,
@@ -37,6 +48,9 @@ export async function GET(request: NextRequest) {
       role: user.role,
       rank: user.rank,
       permissions: safeParsePerms(user.permissions),
+      positionId: user.positionId || null,
+      positionPermissions,
+      linkedEmployeeId: user.linkedEmployeeId || null,
       isSuspended: user.isSuspended || false,
       suspendedAt: user.suspendedAt || null,
     });

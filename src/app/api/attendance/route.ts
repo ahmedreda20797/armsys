@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getAll, findWhereContains, sortByDateField, withEmployeeFull, createRecord } from '@/lib/db';
 import { verifyPermission, requireAuth } from '@/lib/verify-permission';
 import { isValidLegacyDate } from '@/lib/attendance';
+import { asScopeViewer, employeeInScope, authScopeViewer, filterRowsByEmployeeScope, resolveEmployeeScopeFromDb } from '@/lib/scope/server';
 
 export async function GET(request: NextRequest) {
   try {
@@ -16,6 +17,15 @@ export async function GET(request: NextRequest) {
     const status = searchParams.get('status') || '';
 
     let records = await getAll('attendance');
+
+    // ── READ SCOPE (M0.5) ──
+    // Attendance rows are employee-linked: scope is applied at the
+    // retrieval boundary, BEFORE search/month/status filters —
+    // results are always a subset of AUTHORIZED_SCOPE ∩ FILTER, so
+    // search and filters can never widen visibility. Fail-closed
+    // for rows without a resolvable stored employeeId.
+    const scopeCtx = await resolveEmployeeScopeFromDb(authScopeViewer(auth), undefined, auth.permissions);
+    records = filterRowsByEmployeeScope(records as Array<{ employeeId?: string | null }>, scopeCtx);
 
     if (search) {
       records = records.filter((r: any) =>
@@ -62,6 +72,20 @@ export async function POST(request: NextRequest) {
     // non-calendar DD/MM/YYYY strings instead of silently storing them.
     if (!isValidLegacyDate(date)) {
       return NextResponse.json({ error: 'صيغة التاريخ غير صحيحة (DD/MM/YYYY مطلوبة)' }, { status: 400 });
+    }
+
+    // ── TARGET-EMPLOYEE SCOPE (M0.4) ──
+    // The scope check runs BEFORE the existence validation and the
+    // create: an out-of-scope target is denied without revealing
+    // whether the employee exists. Scope is resolved from the
+    // authenticated identity only.
+    const inScope = await employeeInScope(
+      asScopeViewer(permCheck.user!),
+      permCheck.user!.permissions,
+      employeeId,
+    );
+    if (!inScope) {
+      return NextResponse.json({ error: 'صلاحية غير كافية' }, { status: 403 });
     }
 
     // Validate employee exists and is active

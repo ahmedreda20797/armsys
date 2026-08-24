@@ -1,22 +1,38 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
+import { getCronSecret, isCronRequest } from '@/lib/cron-auth';
 
 /**
  * GET /api/cron/capa-sla-check
  *
  * Vercel Cron endpoint — called every 4 hours.
  * Triggers the SLA monitoring check by calling /api/capa-sla internally.
- * Uses x-internal-scheduler header to bypass user auth.
+ *
+ * M0.1: the incoming call must present the server-side CRON_SECRET as a
+ * Bearer token (Vercel Cron attaches it automatically when CRON_SECRET is
+ * configured), and the same secret is forwarded to /api/capa-sla. The old
+ * x-internal-scheduler header bypass and the hardcoded fallback secret are
+ * removed — when CRON_SECRET is not configured, cron calls fail closed.
  */
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
+    if (!isCronRequest(request)) {
+      if (!getCronSecret()) {
+        console.error(
+          '[CRON capa-sla-check] CRON_SECRET is not configured — cron calls are rejected. ' +
+          'Set CRON_SECRET in the environment to enable scheduled SLA checks.'
+        );
+      }
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const cronSecret = getCronSecret() as string;
     const baseUrl = process.env.VERCEL_URL
       ? `https://${process.env.VERCEL_URL}`
       : process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000';
 
     const response = await fetch(`${baseUrl}/api/capa-sla`, {
       headers: {
-        'x-internal-scheduler': 'true',
-        'Authorization': `Bearer ${process.env.CRON_SECRET || 'internal-cron-token'}`,
+        'Authorization': `Bearer ${cronSecret}`,
       },
       signal: AbortSignal.timeout(60_000), // 60s timeout
     });

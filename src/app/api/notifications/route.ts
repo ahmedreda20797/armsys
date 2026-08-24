@@ -1,11 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAll, createRecord, TTL } from '@/lib/db';
 import { verifyPermission, requireAuth } from '@/lib/verify-permission';
+import { filterVisibleNotifications } from '@/lib/notifications/recipient-visibility';
 import type { AppNotification } from '@/types';
 
 // ══════════════════════════════════════════════════════════════
 //  GET /api/notifications — Fetch with server-side filtering
-//  SECURITY: Users can only see their own notifications unless admin/quality/hr/manager
+//  SECURITY: Recipient + permission visibility (single rule in
+//  lib/notifications/recipient-visibility — shared with the [id]
+//  route and notification-stats)
 // ══════════════════════════════════════════════════════════════
 export async function GET(request: NextRequest) {
   try {
@@ -30,15 +33,15 @@ export async function GET(request: NextRequest) {
 
     let records = await getAll<AppNotification>('notifications', TTL.DEFAULT);
 
-    // ─── OWNERSHIP FILTER: Non-admin users only see their own notifications ───
-    const isAdmin = auth.role === 'admin';
-    const isManagerOrAbove = auth.role === 'admin' || auth.role === 'manager' || auth.role === 'quality' || auth.role === 'hr';
-
-    if (!isAdmin) {
-      records = records.filter(
-        (r) => r.employeeId === auth.userId || r.assignedTo === auth.userId
-      );
-    }
+    // ─── RECIPIENT + PERMISSION VISIBILITY ───
+    // Single rule (admin bypass; directed exact-match; broadcast for
+    // eligible staff; page-content permission gate) — see recipient-visibility.
+    records = filterVisibleNotifications(records, {
+      userId: auth.userId,
+      role: auth.role,
+      permissions: auth.permissions,
+      linkedEmployeeId: auth.linkedEmployeeId ?? null,
+    });
 
     // Server-side filters
     if (priority) records = records.filter((r) => r.priority === priority);

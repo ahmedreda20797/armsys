@@ -31,6 +31,7 @@ import {
   validationError,
 } from '@/lib/api-error';
 import { resolveActor } from '@/lib/auth/actor-resolver';
+import { asScopeViewer, hasUnrestrictedEmployeeScope } from '@/lib/scope/server';
 import { validateMonthKey } from '@/lib/month-utils';
 import { generateMonthlyAttendanceResults } from '@/lib/attendance';
 
@@ -46,6 +47,21 @@ export async function POST(request: NextRequest) {
     if (!month) return validationError('الشهر مطلوب (YYYY-MM)');
     const monthError = validateMonthKey(month);
     if (monthError) return validationError(monthError);
+
+    // ── 2b. BULK WRITE-SCOPE (M0.4) ──
+    // Generation computes + PERSISTS canonical employee-month results
+    // for the WHOLE workforce — employee-linked creates for arbitrary
+    // employees with no per-employee entry point. Like every bulk
+    // employee-record create it requires an UNRESTRICTED employee
+    // scope; scoped viewers are denied fail-closed. The generation
+    // engine itself is untouched.
+    const unrestricted = await hasUnrestrictedEmployeeScope(
+      asScopeViewer(permCheck.user!),
+      permCheck.user!.permissions,
+    );
+    if (!unrestricted) {
+      return forbiddenError('صلاحية غير كافية لتوليد نتائج الحضور لجميع الموظفين');
+    }
 
     // ── 3. Resolve actor server-side (never trust client identity) ──
     const actor = await resolveActor(permCheck.user.id);

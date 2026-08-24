@@ -17,6 +17,7 @@ import {
 } from '@/lib/api-error';
 import { isMonthClosed } from '@/lib/month-lock';
 import { resolveActor } from '@/lib/auth/actor-resolver';
+import { asScopeViewer, employeeInScope } from '@/lib/scope/server';
 import { makeApprovalEvent, appendApprovalEvent, projectLatestApprovalStatus } from '@/lib/approvals';
 import { makeAuditEvent, writeAudit } from '@/lib/audit';
 import { AUDIT_LOG_TABLE } from '@/app/api/quality-audit-log/route';
@@ -49,6 +50,19 @@ export async function POST(
     if (await isMonthClosed(existing.month)) {
       return lockedError(`الشهر ${existing.month} مغلق ولا يمكن رفض ملاحظاته`);
     }
+
+    // ── DATA SCOPE (M0.4) ──
+    // Rejection is a mutation: only observations whose STORED
+    // employee is inside the reviewer's employee scope may be
+    // decided. Denied out-of-scope with the same 404 as a missing
+    // observation, BEFORE any rejection event or audit write.
+    const inScope = await employeeInScope(
+      asScopeViewer(permCheck.user!),
+      permCheck.user!.permissions,
+      existing.employeeId,
+    );
+    if (!inScope) return notFoundError('الملاحظة غير موجودة');
+
 
     const body = await request.json().catch(() => ({}));
     const reason: string = body.reason || '';

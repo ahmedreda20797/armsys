@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAll, withEmployee, sortByDateField } from '@/lib/db';
 import { requireAuth } from '@/lib/verify-permission';
+import { asScopeViewer, employeeInScope, authScopeViewer, filterRowsByEmployeeScope, resolveEmployeeScopeFromDb } from '@/lib/scope/server';
 
 export async function GET(request: NextRequest) {
   try {
@@ -16,6 +17,19 @@ export async function GET(request: NextRequest) {
     const complaintType = searchParams.get('complaintType');
 
     let records = await getAll('complaints');
+
+    // ── READ SCOPE (M0.5, optional-link rule) ──
+    // Complaints are OPTIONALLY employee-linked: an unlinked
+    // complaint is organizational and stays visible, while a linked
+    // one requires its STORED employeeId inside the caller's scope
+    // (same rule as the M0.4 write path). Applied BEFORE filters —
+    // employeeId/status/severity/type can only narrow.
+    const scopeCtx = await resolveEmployeeScopeFromDb(authScopeViewer(auth), undefined, auth.permissions);
+    records = filterRowsByEmployeeScope(
+      records as Array<{ employeeId?: string | null }>,
+      scopeCtx,
+      { optionalLink: true },
+    );
 
     if (employeeId) {
       records = records.filter((r: any) => r.employeeId === employeeId);
@@ -77,6 +91,22 @@ export async function POST(request: NextRequest) {
         { error: 'Customer name, complaint type, and description are required' },
         { status: 400 }
       );
+    }
+
+    // ── TARGET-EMPLOYEE SCOPE (M0.4) ──
+    // The employee link is OPTIONAL: an unlinked complaint is
+    // permission-gated only, but a complaint LINKED to an employee
+    // requires that employee to be inside the caller's scope —
+    // checked before the existence validation.
+    if (employeeId) {
+      const inScope = await employeeInScope(
+        asScopeViewer(permCheck.user!),
+        permCheck.user!.permissions,
+        employeeId,
+      );
+      if (!inScope) {
+        return NextResponse.json({ error: 'صلاحية غير كافية' }, { status: 403 });
+      }
     }
 
     // Validate employee exists if provided (optional field)

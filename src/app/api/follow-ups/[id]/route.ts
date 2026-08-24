@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { getById, updateRecord, deleteRecord } from '@/lib/db';
+import { asScopeViewer, employeeInScope } from '@/lib/scope/server';
 
 const SCORE_MAP: Record<string, number> = { low: 1, medium: 3, high: 5, critical: 10 };
 
@@ -15,6 +17,25 @@ export async function PUT(
 
     const { id } = await params;
     const body = await request.json();
+
+    // ── TARGET RESOURCE + DATA SCOPE (M0.4) ──
+    // The stored follow-up's employeeId is the authorization target;
+    // a body.employeeId reassignment additionally requires the NEW
+    // target to be in scope. Out-of-scope → 404 identical to the
+    // missing-record path (anti-enumeration).
+    const existing = await getById('followUps', id);
+    if (!existing) {
+      return NextResponse.json({ error: 'Follow-up not found' }, { status: 404 });
+    }
+    const viewer = asScopeViewer(permCheck.user!);
+    const storedOk = await employeeInScope(viewer, permCheck.user!.permissions, existing.employeeId);
+    const reassignTarget = typeof body?.employeeId === 'string' ? body.employeeId : null;
+    const targetOk = !reassignTarget || reassignTarget === existing.employeeId
+      ? true
+      : await employeeInScope(viewer, permCheck.user!.permissions, reassignTarget);
+    if (!storedOk || !targetOk) {
+      return NextResponse.json({ error: 'Follow-up not found' }, { status: 404 });
+    }
 
     // Re-calculate score if priority changed
     const updateData: Record<string, any> = {};
@@ -34,7 +55,6 @@ export async function PUT(
       updateData.score = SCORE_MAP[body.priorityLevel] || 3;
     }
 
-    const { updateRecord } = await import('@/lib/db');
     const followUp = await updateRecord('followUps', id, updateData);
 
     return NextResponse.json(followUp);
@@ -56,7 +76,23 @@ export async function DELETE(
     }
 
     const { id } = await params;
-    const { deleteRecord } = await import('@/lib/db');
+
+    // ── TARGET RESOURCE + DATA SCOPE (M0.4) ──
+    // Resolve the stored follow-up's employee BEFORE deleting;
+    // out-of-scope → 404 identical to the missing path.
+    const existing = await getById('followUps', id);
+    if (!existing) {
+      return NextResponse.json({ error: 'Follow-up not found' }, { status: 404 });
+    }
+    const inScope = await employeeInScope(
+      asScopeViewer(permCheck.user!),
+      permCheck.user!.permissions,
+      existing.employeeId,
+    );
+    if (!inScope) {
+      return NextResponse.json({ error: 'Follow-up not found' }, { status: 404 });
+    }
+
     await deleteRecord('followUps', id);
     return NextResponse.json({ message: 'Follow-up deleted successfully' });
   } catch (error) {

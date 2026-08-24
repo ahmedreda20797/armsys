@@ -1,16 +1,25 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAll, TTL } from '@/lib/db';
-import { requireAuth } from '@/lib/verify-permission';
+import { requireAuth, verifyPermission } from '@/lib/verify-permission';
 import type { RuleExecutionLog } from '@/types';
 
 // ══════════════════════════════════════════════════════════════
 //  GET /api/rule-logs — Fetch rule execution logs with filtering
+//
+//  M0.2: execution logs are part of the automation-rules page —
+//  gated by the existing 'rulesEngine' view permission (the same
+//  key PageRouter checks). Admin bypass unchanged.
 // ══════════════════════════════════════════════════════════════
 export async function GET(request: NextRequest) {
   try {
     const auth = await requireAuth(request);
     if (!auth) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const permCheck = await verifyPermission(request, 'rulesEngine', 'view');
+    if (!permCheck.allowed) {
+      return NextResponse.json({ error: permCheck.error }, { status: 403 });
     }
 
     const { searchParams } = new URL(request.url);

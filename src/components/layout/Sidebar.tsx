@@ -38,8 +38,12 @@ import {
   Settings2,
   ScrollText,
   FileWarning,
+  Network,
+  SlidersHorizontal,
 } from 'lucide-react';
 import { usePermissions } from '@/hooks/usePermissions';
+import { useSidebarPages } from '@/hooks/use-sidebar-order';
+import { SidebarCustomizeDialog } from '@/components/shared/SidebarCustomizeDialog';
 import { useAuth } from '@/contexts/AuthContext';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { SIDEBAR_GROUPS } from '@/config/permissions';
@@ -77,6 +81,7 @@ const ICON_MAP: Record<string, LucideIcon> = {
   Settings2,
   ScrollText,
   FileWarning,
+  Network,
 };
 
 interface SidebarProps {
@@ -171,7 +176,8 @@ function CollapsedSidebar({
   userInitials: string;
   onLogout: () => void;
 }) {
-  const { visiblePages } = usePermissions();
+  // Permission-filtered pages in the USER'S saved order (Milestone 10)
+  const visiblePages = useSidebarPages();
 
   return (
     <div
@@ -297,9 +303,13 @@ export function Sidebar({
   isCollapsed,
   onToggleCollapse,
 }: SidebarProps) {
-  const { visiblePages } = usePermissions();
+  // Permission-filtered pages in the USER'S saved order (Milestone 10).
+  // Permission resolution happens FIRST; the personal order only
+  // reorders within the authorized set (never the other way round).
+  const visiblePages = useSidebarPages();
   const { user, logout } = useAuth();
   const isMobile = useIsMobile();
+  const [customizeOpen, setCustomizeOpen] = useState(false);
 
   const userInitials = user?.name
     ? user.name.split(' ').map((n) => n[0]).join('').toUpperCase().slice(0, 2)
@@ -458,6 +468,13 @@ export function Sidebar({
           </div>
         </div>
         <button
+          onClick={() => setCustomizeOpen(true)}
+          className="w-full flex items-center justify-center gap-2 px-4 py-2 mb-2 rounded-lg text-xs font-medium bg-slate-800/60 hover:bg-slate-800 text-slate-300 hover:text-white border border-slate-700/50 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/40"
+        >
+          <SlidersHorizontal className="h-3.5 w-3.5" />
+          <span>تخصيص القائمة</span>
+        </button>
+        <button
           onClick={logout}
           className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold bg-red-600 hover:bg-red-700 active:scale-[0.98] text-white transition-all duration-150 shadow-md shadow-red-900/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500/50"
         >
@@ -465,6 +482,7 @@ export function Sidebar({
           <span>تسجيل الخروج</span>
         </button>
       </div>
+      <SidebarCustomizeDialog open={customizeOpen} onClose={() => setCustomizeOpen(false)} />
     </div>
   );
 

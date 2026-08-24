@@ -23,6 +23,7 @@ import {
   unauthorizedError,
   validationError,
 } from '@/lib/api-error';
+import { asScopeViewer, employeeInScope } from '@/lib/scope/server';
 import { validateMonthKey } from '@/lib/month-utils';
 import { getAttendanceResult } from '@/lib/attendance';
 
@@ -41,6 +42,23 @@ export async function GET(
     const monthError = validateMonthKey(monthKey);
     if (monthError) return validationError(monthError);
     if (!employeeId) return validationError('معرّف الموظف مطلوب');
+
+    // ── DATA SCOPE (M0.4 read adoption) ──
+    // Employee-specific aggregate: the target must be inside the
+    // caller's employee scope. An out-of-scope id resolves EXACTLY
+    // like a never-generated result (404 not_generated body) — the
+    // caller learns nothing about out-of-scope employees.
+    const inScope = await employeeInScope(
+      asScopeViewer(permCheck.user!),
+      permCheck.user!.permissions,
+      employeeId,
+    );
+    if (!inScope) {
+      return Response.json(
+        { status: 'not_generated', month: monthKey, employeeId },
+        { status: 404 },
+      );
+    }
 
     // ── 3. Stored result only — explicit not_generated when absent ──
     const result = await getAttendanceResult(monthKey, employeeId);

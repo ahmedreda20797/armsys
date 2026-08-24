@@ -5,7 +5,10 @@
 //
 //  Milestone 5 (spec §6):
 //    • Authentication required (requireAuth).
-//    • No manager permission required for read.
+//    • M0.2: viewing snapshot data additionally requires the existing
+//      'kpiDashboard' page permission (view) — snapshots ARE the KPI
+//      history the dashboard renders. No new permission key; admin
+//      bypass unchanged.
 //    • Returns REAL Firebase data only — no fake/demo months.
 //    • Supports optional ?status=open|closed filtering.
 //    • Returns a compact summary (employeeScores stripped) so the
@@ -15,8 +18,8 @@
 
 import { NextRequest } from 'next/server';
 import { getAll, sortByField, TTL } from '@/lib/db';
-import { requireAuth } from '@/lib/verify-permission';
-import { unauthorizedError, internalError, logServerFailure } from '@/lib/api-error';
+import { requireAuth, verifyPermission } from '@/lib/verify-permission';
+import { unauthorizedError, forbiddenError, internalError, logServerFailure } from '@/lib/api-error';
 import { MONTH_SNAPSHOTS_TABLE } from '@/lib/month-lock';
 import type { MonthSnapshot } from '@/types/quality-kpi';
 
@@ -24,6 +27,10 @@ export async function GET(request: NextRequest) {
   try {
     const auth = await requireAuth(request);
     if (!auth) return unauthorizedError();
+
+    // M0.2: snapshot reads share the KPI dashboard's view gate.
+    const permCheck = await verifyPermission(request, 'kpiDashboard', 'view');
+    if (!permCheck.allowed) return forbiddenError(permCheck.error);
 
     const { searchParams } = new URL(request.url);
     const status = searchParams.get('status'); // 'open' | 'closed' | undefined

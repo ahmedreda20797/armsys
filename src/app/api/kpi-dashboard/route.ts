@@ -9,8 +9,11 @@
 //  open month via the canonical KPI engine. No score/trend/ranking
 //  formula lives here.
 //
-//  Permission: requireAuth (any authenticated user may view the dashboard;
-//  finer-grained page visibility is handled by the router/permissions layer).
+//  Permission (M0.2): authentication + 'kpiDashboard' view — the SAME
+//  page key the frontend router/sidebar checks (visiblePages ↔
+//  PageRouter ↔ API). A user whose effective kpiDashboard level is
+//  'none' cannot retrieve dashboard data directly through the API.
+//  Admin bypass unchanged (inside verifyPermission).
 //
 //  Query params (established convention — reused, not reinvented):
 //    ?range=current_month|previous_month|last_3_months|last_6_months|current_year|custom
@@ -25,17 +28,23 @@
 // ══════════════════════════════════════════════════════════════
 
 import { NextRequest } from 'next/server';
-import { requireAuth } from '@/lib/verify-permission';
+import { requireAuth, verifyPermission } from '@/lib/verify-permission';
 import {
-  unauthorizedError, validationError,
+  unauthorizedError, forbiddenError, validationError,
   internalError, logServerFailure,
 } from '@/lib/api-error';
 import { getKpiDashboard } from '@/lib/kpi-dashboard';
+import { authScopeViewer, resolveEmployeeScopeFromDb } from '@/lib/scope/server';
 
 export async function GET(request: NextRequest) {
   try {
     const auth = await requireAuth(request);
     if (!auth) return unauthorizedError();
+
+    // M0.2: KPI dashboard data is gated by the existing 'kpiDashboard'
+    // page permission (view = read or edit level). No new permission key.
+    const permCheck = await verifyPermission(request, 'kpiDashboard', 'view');
+    if (!permCheck.allowed) return forbiddenError(permCheck.error);
 
     const { searchParams } = new URL(request.url);
     const range = searchParams.get('range') || 'current_month';
@@ -43,11 +52,22 @@ export async function GET(request: NextRequest) {
     const department = searchParams.get('department');
     const employeeId = searchParams.get('employeeId');
 
+    // M0.5 read scope: resolve the caller's authorized employee set from
+    // the canonical scope engine and hand it to the service, which
+    // intersects every snapshot BEFORE aggregation (leaderboards,
+    // department rankings, category totals, approval stats all derive
+    // from authorized entries only). Unrestricted viewers (Admin, HR,
+    // Quality) pass null — the service then skips the restriction
+    // entirely (established behavior, zero added cost).
+    const scopeCtx = await resolveEmployeeScopeFromDb(authScopeViewer(auth), undefined, auth.permissions);
+    const authorizedEmployeeIds = scopeCtx.isUnrestricted ? null : scopeCtx.employeeIds;
+
     const { response, error } = await getKpiDashboard(range, {
       customMonths,
       filters: {
         department: department || null,
         employeeId: employeeId || null,
+        authorizedEmployeeIds,
       },
     });
 

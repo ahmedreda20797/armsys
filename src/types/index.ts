@@ -24,6 +24,14 @@ export interface Employee {
   createdById: string | null;
   createdAt: string;
   updatedAt: string;
+  /**
+   * Milestone 10 (organization): the employee's node in the
+   * organization tree (arm_erp/orgNodes). OPTIONAL — legacy
+   * employees have none. The free-text `department`/`position`
+   * strings above remain display data and are NEVER rewritten by
+   * organization moves (historical integrity).
+   */
+  orgNodeId?: string | null;
 }
 
 export interface BiometricRecord {
@@ -277,7 +285,7 @@ export interface KnowledgeArticle {
   updatedAt: string;
 }
 
-export type PageId = 'home' | 'employees' | 'biometric' | 'attendance' | 'requests' | 'rules' | 'quality' | 'hrDeductions' | 'travel' | 'reports' | 'firebase' | 'followUps' | 'capa' | 'complaints' | 'knowledgeBase' | 'riskCenter' | 'operationsCenter' | 'employee360' | 'notifications' | 'rulesEngine' | 'controlPanel' | 'observations' | 'observationCategories' | 'observationTemplates' | 'kpiDashboard' | 'monthClose' | 'kpiSettings' | 'qualityAuditLog' | 'qualityDeductionsReport';
+export type PageId = 'home' | 'employees' | 'biometric' | 'attendance' | 'requests' | 'rules' | 'quality' | 'hrDeductions' | 'travel' | 'reports' | 'firebase' | 'followUps' | 'capa' | 'complaints' | 'knowledgeBase' | 'riskCenter' | 'operationsCenter' | 'employee360' | 'notifications' | 'rulesEngine' | 'controlPanel' | 'observations' | 'observationCategories' | 'observationTemplates' | 'kpiDashboard' | 'monthClose' | 'kpiSettings' | 'qualityAuditLog' | 'qualityDeductionsReport' | 'organization';
 
 export interface AppNotification {
   id: string;
@@ -297,6 +305,13 @@ export interface AppNotification {
   actionUrl: string | null;
   sourceType: string | null;
   targetPage: string | null;
+  /**
+   * Milestone 10 (notification routing): explicit recipient USER ids
+   * resolved by the write-side router (src/lib/notifications/
+   * routing.ts). Optional — legacy notifications carry null and use
+   * the directed/broadcast rules only.
+   */
+  recipientUserIds?: string[] | null;
   createdAt: string;
   readAt: string | null;
   acknowledgedAt: string | null;

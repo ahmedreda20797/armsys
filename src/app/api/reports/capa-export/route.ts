@@ -3,6 +3,7 @@ import ExcelJS from 'exceljs';
 import { getAll, getEmployeeMap, TTL } from '@/lib/db';
 import { verifyPermission, requireAuth } from '@/lib/verify-permission';
 import { capaOverdueDays, CAPA_SLA_DAYS } from '@/lib/metrics';
+import { asScopeViewer, filterRowsByEmployeeScope, resolveEmployeeScopeFromDb } from '@/lib/scope/server';
 import type { CAPACase } from '@/types';
 
 // ══════════════════════════════════════════════════════════════
@@ -301,9 +302,25 @@ export async function POST(request: Request) {
     // ── Fetch Data ──
     const allCases = await getAll<CAPACase>('capaCases', TTL.MEDIUM);
 
+    // ── READ SCOPE (M0.5) ──
+    // The export streams exactly the rows the CAPA list would show
+    // this caller (M0.4 optional-link rule, incl. relatedEmployeeIds),
+    // applied BEFORE enrichment and body filters — an exported file is
+    // a list response with a different serializer, nothing more.
+    const scopeCtx = await resolveEmployeeScopeFromDb(
+      asScopeViewer(permCheck.user!),
+      undefined,
+      permCheck.user!.permissions,
+    );
+    const scopedCases = filterRowsByEmployeeScope(
+      allCases as Array<{ employeeId?: string | null; relatedEmployeeIds?: string[] }>,
+      scopeCtx,
+      { optionalLink: true, relatedEmployeeIdsField: 'relatedEmployeeIds' },
+    ) as typeof allCases;
+
     // Enrich with employee names (for cases missing them)
     const empMap = await getEmployeeMap();
-    const enriched = allCases.map((c) => {
+    const enriched = scopedCases.map((c) => {
       if (!c.employeeName && c.employeeId) {
         c.employeeName = empMap.get(c.employeeId)?.name || '';
       }

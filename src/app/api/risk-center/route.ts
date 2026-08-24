@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAll, getAllBatch, getEmployeeMap } from '@/lib/db';
-import { requireAuth } from '@/lib/verify-permission';
+import { requireAuth, verifyPermission } from '@/lib/verify-permission';
+import { filterEmployeesInScope, authScopeViewer, filterRowsByEmployeeScope, resolveEmployeeScopeFromDb } from '@/lib/scope/server';
 // Canonical metric layer — the ONLY risk/overdue definitions in the system.
 import {
   computeRisk,
@@ -35,6 +36,14 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
+    // M0.2: risk data is gated by the existing 'riskCenter' page
+    // permission — a valid token alone must not expose workforce risk
+    // scores. Admin bypass unchanged (inside verifyPermission).
+    const permCheck = await verifyPermission(request, 'riskCenter', 'view');
+    if (!permCheck.allowed) {
+      return NextResponse.json({ error: permCheck.error }, { status: 403 });
+    }
+
     const { searchParams } = new URL(request.url);
     const deptFilter = searchParams.get('department');
     const levelFilter = searchParams.get('level');
@@ -52,13 +61,35 @@ export async function GET(request: NextRequest) {
       getEmployeeMap(),
     ]);
 
-    const employees = batch.get('employees') || [];
-    const attendanceRecords = batch.get('attendance') || [];
-    const qualityDeductions = batch.get('qualityDeductions') || [];
-    const hrDeductions = batch.get('hrDeductions') || [];
-    const followUps = batch.get('followUps') || [];
-    const complaints = batch.get('complaints') || [];
-    const capaCases = batch.get('capaCases') || [];
+    // ═══════════════════════════════════════════════════
+    // READ SCOPE (M0.5) — risk rows exist only for employees
+    // inside the caller's authorized scope, and every factor
+    // table is intersected with the same scope BEFORE any
+    // score, ranking, summary or department analysis is
+    // computed. Complaints/CAPA follow the M0.4 optional-link
+    // rule (unlinked = organizational; any present link,
+    // incl. CAPA relatedEmployeeIds, must be in scope) so a
+    // per-employee breakdown only counts cases the viewer
+    // could actually open. The risk formula itself is
+    // untouched — authorization only changes WHICH employees
+    // are scored.
+    // ═══════════════════════════════════════════════════
+    const scopeCtx = await resolveEmployeeScopeFromDb(authScopeViewer(auth), undefined, auth.permissions);
+    const employees = filterEmployeesInScope(batch.get('employees') || [], scopeCtx);
+    const attendanceRecords = filterRowsByEmployeeScope(batch.get('attendance') || [], scopeCtx);
+    const qualityDeductions = filterRowsByEmployeeScope(batch.get('qualityDeductions') || [], scopeCtx);
+    const hrDeductions = filterRowsByEmployeeScope(batch.get('hrDeductions') || [], scopeCtx);
+    const followUps = filterRowsByEmployeeScope(batch.get('followUps') || [], scopeCtx);
+    const complaints = filterRowsByEmployeeScope(
+      batch.get('complaints') || [],
+      scopeCtx,
+      { optionalLink: true },
+    );
+    const capaCases = filterRowsByEmployeeScope(
+      batch.get('capaCases') || [],
+      scopeCtx,
+      { optionalLink: true, relatedEmployeeIdsField: 'relatedEmployeeIds' },
+    );
 
     // ── 30-day window ──
     const now = new Date();

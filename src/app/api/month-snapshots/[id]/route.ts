@@ -14,17 +14,21 @@
 //  then delegates to the month-snapshots service. No scoring logic
 //  lives here (spec §2).
 //
-//  Permission: requireAuth.
+//  Permission (M0.2): authentication + 'kpiDashboard' view — the same
+//  gate as the snapshot LIST endpoint (snapshot detail IS dashboard
+//  data). Admin bypass unchanged.
 // ══════════════════════════════════════════════════════════════
 
 import { NextRequest } from 'next/server';
-import { requireAuth } from '@/lib/verify-permission';
+import { requireAuth, verifyPermission } from '@/lib/verify-permission';
 import {
-  unauthorizedError, validationError,
+  unauthorizedError, forbiddenError, validationError,
   internalError, logServerFailure,
 } from '@/lib/api-error';
 import { validateMonthKey } from '@/lib/month-utils';
 import { getMonthDetail } from '@/lib/month-snapshots';
+import { scopeMonthSnapshotToEmployees } from '@/lib/kpi-dashboard';
+import { authScopeViewer, resolveEmployeeScopeFromDb } from '@/lib/scope/server';
 
 export async function GET(
   request: NextRequest,
@@ -33,6 +37,10 @@ export async function GET(
   try {
     const auth = await requireAuth(request);
     if (!auth) return unauthorizedError();
+
+    // M0.2: snapshot detail shares the KPI dashboard's view gate.
+    const permCheck = await verifyPermission(request, 'kpiDashboard', 'view');
+    if (!permCheck.allowed) return forbiddenError(permCheck.error);
 
     const { id: monthKey } = await params;
 
@@ -44,6 +52,22 @@ export async function GET(
     // Service handles the closed-vs-open branching and delegates to
     // the canonical KPI engine for the open-month live preview.
     const detail = await getMonthDetail(monthKey);
+
+    // M0.5 read scope: snapshot detail is employee-linked dashboard
+    // data. A scoped viewer receives the SAME frozen/live values for
+    // authorized employees only — employeeScores restricted, every
+    // employee-derived aggregate (department scores, category totals,
+    // approval stats) rebuilt from authorized entries, leaderboards
+    // filtered, archived history versions restricted identically. No
+    // KPI value is recomputed; unrestricted viewers get the snapshot
+    // byte-for-byte as before.
+    if (detail) {
+      const scopeCtx = await resolveEmployeeScopeFromDb(authScopeViewer(auth), undefined, auth.permissions);
+      if (!scopeCtx.isUnrestricted) {
+        return Response.json(scopeMonthSnapshotToEmployees(detail, scopeCtx.employeeIds));
+      }
+    }
+
     return Response.json(detail);
   } catch (error) {
     logServerFailure('month-snapshots/[id]', 'GET', error);

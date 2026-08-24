@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { findFirst, updateRecord } from '@/lib/db';
+import { findFirst, updateRecord, getById } from '@/lib/db';
+import { POSITIONS_TABLE, parsePositionTemplate, type Position } from '@/lib/organization';
 import { verifyPassword, hashPassword, signToken, storeRefreshToken } from '@/lib/auth';
 import { checkRateLimit, recordFailedAttempt, resetRateLimit } from '@/lib/rate-limiter';
 
@@ -95,6 +96,14 @@ export async function POST(request: NextRequest) {
     await storeRefreshToken(refreshToken, user.id);
 
     // ─── Return tokens + minimal user data ──────────
+    // Milestone 10 parity: position template for the client resolver
+    // (see /api/auth/me — same fields, same rule).
+    let positionPermissions: Record<string, any> | null = null;
+    if (user.positionId) {
+      const position = await getById<Position>(POSITIONS_TABLE, user.positionId);
+      positionPermissions = position ? parsePositionTemplate(position.permissions) : null;
+    }
+
     return NextResponse.json({
       accessToken,
       refreshToken,
@@ -104,6 +113,9 @@ export async function POST(request: NextRequest) {
         name: user.name,
         role: user.role,
         permissions: safeParsePerms(user.permissions),
+        positionId: user.positionId || null,
+        positionPermissions,
+        linkedEmployeeId: user.linkedEmployeeId || null,
         rank: user.rank,
         isSuspended: user.isSuspended || false,
         suspendedAt: user.suspendedAt || null,

@@ -1,0 +1,1064 @@
+'use client';
+
+// ══════════════════════════════════════════════════════════════
+//  OrganizationPage — Milestone 10 Configuration Center
+//
+//  Three clear sections (NOT a monolithic settings page):
+//    1. الهيكل        — org tree: create/rename/move/archive nodes,
+//                       assign managers, assign/move employees, with
+//                       impact preview before every restructure.
+//    2. الوظائف       — position catalog with permission templates.
+//    3. وصول المستخدمين — position assignment + optional employee
+//                       linkage (user ↔ employee, never accounts).
+//
+//  Dark theme / RTL Arabic / responsive (no hardcoded widths).
+//  Admin-only by default (safe defaults — permission registry).
+// ══════════════════════════════════════════════════════════════
+
+import { useState, useMemo, useCallback } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { motion, AnimatePresence } from 'framer-motion';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Badge } from '@/components/ui/badge';
+import { Skeleton } from '@/components/ui/skeleton';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { Checkbox } from '@/components/ui/checkbox';
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
+} from '@/components/ui/dialog';
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from '@/components/ui/select';
+import {
+  Network, Plus, Pencil, Trash2, FolderTree, ChevronDown, ChevronLeft,
+  Building2, Users, UserCog, Briefcase, Save, Loader2, Search,
+  ArrowRightLeft, ShieldAlert, UserRound, RotateCcw,
+} from 'lucide-react';
+import { toast } from 'sonner';
+import { apiFetch } from '@/lib/query-provider';
+import { usePermissions } from '@/hooks/usePermissions';
+import { APP_PAGES } from '@/config/permissions';
+import {
+  ORG_NODE_TYPE_LABELS_AR, ORG_NODE_STATUS_LABELS_AR,
+  type OrgNode, type OrgTreeNode, type OrgNodeType, type Position,
+} from '@/lib/organization';
+
+// ─── API types (mirrors /api/organization + /api/positions) ───
+interface OrgEmployeeRefDto { id: string; name: string | null; code: string | null; orgNodeId: string | null }
+interface OrgUserDto {
+  id: string; name: string; role: string;
+  positionId: string | null; positionTitle: string | null; linkedEmployeeId: string | null;
+}
+interface OrganizationData {
+  tree: OrgTreeNode[];
+  nodes: OrgNode[];
+  employees: OrgEmployeeRefDto[];
+  unassignedEmployeeCount: number;
+  users: OrgUserDto[];
+}
+interface ImpactPreview {
+  impact: { nodeId: string; nodeName: string; subtreeNodeCount: number; employeeCount: number; managerUserIds: string[] };
+  moveValidation: { ok: boolean; reason: string | null } | null;
+}
+
+const TYPE_OPTIONS: Array<{ value: OrgNodeType; label: string }> = [
+  { value: 'company', label: ORG_NODE_TYPE_LABELS_AR.company },
+  { value: 'department', label: ORG_NODE_TYPE_LABELS_AR.department },
+  { value: 'team', label: ORG_NODE_TYPE_LABELS_AR.team },
+  { value: 'subteam', label: ORG_NODE_TYPE_LABELS_AR.subteam },
+];
+
+const TYPE_STYLES: Record<OrgNodeType, string> = {
+  company: 'bg-violet-500/10 text-violet-300 border-violet-500/20',
+  department: 'bg-blue-500/10 text-blue-300 border-blue-500/20',
+  team: 'bg-emerald-500/10 text-emerald-300 border-emerald-500/20',
+  subteam: 'bg-cyan-500/10 text-cyan-300 border-cyan-500/20',
+};
+
+const EDITABLE_PAGES = APP_PAGES.filter((p) => !['home', 'firebase'].includes(p.id));
+
+export default function OrganizationPage() {
+  // Action checks against the 'organization' permission key — the
+  // same registry the backend verifyPermission uses.
+  const { canDoAction } = usePermissions();
+  const canCreate = canDoAction('organization', 'create');
+  const canUpdate = canDoAction('organization', 'update');
+  const canDelete = canDoAction('organization', 'delete');
+  const qc = useQueryClient();
+  const [activeTab, setActiveTab] = useState('tree');
+
+  const orgQuery = useQuery({
+    queryKey: ['organization'],
+    queryFn: () => apiFetch<OrganizationData>('/api/organization'),
+  });
+  const positionsQuery = useQuery({
+    queryKey: ['positions'],
+    queryFn: () => apiFetch<Position[]>('/api/positions'),
+  });
+
+  const invalidate = useCallback(() => {
+    qc.invalidateQueries({ queryKey: ['organization'] });
+    qc.invalidateQueries({ queryKey: ['positions'] });
+  }, [qc]);
+
+  if (orgQuery.isLoading) {
+    return (
+      <div dir="rtl" className="space-y-4">
+        <Skeleton className="h-10 w-64 rounded-xl bg-slate-800/60" />
+        <Skeleton className="h-[420px] rounded-2xl bg-slate-800/40" />
+      </div>
+    );
+  }
+  if (orgQuery.isError || !orgQuery.data) {
+    return (
+      <div dir="rtl" className="space-y-4">
+        <h1 className="text-2xl font-bold text-white">الهيكل التنظيمي</h1>
+        <Card className="border-slate-700/50 bg-slate-800/50">
+          <CardContent className="py-12 text-center text-slate-400">
+            <ShieldAlert className="size-10 mx-auto mb-3 text-amber-400" />
+            تعذر تحميل البيانات — تحقق من صلاحياتك ثم أعد المحاولة
+            <div className="mt-4"><Button variant="outline" size="sm" onClick={() => orgQuery.refetch()}>إعادة المحاولة</Button></div>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  const org = orgQuery.data;
+
+  return (
+    <div dir="rtl" className="space-y-5 pb-8">
+      {/* Header */}
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div className="flex items-center gap-3">
+          <div className="p-3 rounded-2xl bg-gradient-to-br from-violet-500/20 to-indigo-500/10 border border-violet-500/30">
+            <Network className="size-6 text-violet-400" />
+          </div>
+          <div>
+            <h1 className="text-xl md:text-2xl font-bold text-white">الهيكل التنظيمي</h1>
+            <p className="text-slate-400 text-xs mt-0.5">
+              إدارة الأقسام والفرق والوظائف وربط المستخدمين — أساس الصلاحيات والنطاقات
+            </p>
+          </div>
+        </div>
+        <Badge variant="outline" className="border-slate-600/60 text-slate-400 text-[10px]">
+          {org.nodes.length} عقدة · {org.employees.length} موظف · {org.unassignedEmployeeCount} بدون عقدة
+        </Badge>
+      </div>
+
+      <Tabs value={activeTab} onValueChange={setActiveTab}>
+        <TabsList className="bg-slate-800/50 border border-slate-700/30">
+          <TabsTrigger value="tree" className="gap-1.5 data-[state=active]:bg-slate-700/60"><FolderTree className="size-3.5" />الهيكل</TabsTrigger>
+          <TabsTrigger value="positions" className="gap-1.5 data-[state=active]:bg-slate-700/60"><Briefcase className="size-3.5" />الوظائف</TabsTrigger>
+          <TabsTrigger value="users" className="gap-1.5 data-[state=active]:bg-slate-700/60"><UserCog className="size-3.5" />وصول المستخدمين</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="tree" className="mt-4">
+          <TreeTab org={org} canCreate={canCreate} canUpdate={canUpdate} canDelete={canDelete} onDone={invalidate} />
+        </TabsContent>
+        <TabsContent value="positions" className="mt-4">
+          <PositionsTab positions={positionsQuery.data ?? []} loading={positionsQuery.isLoading}
+            canCreate={canCreate} canUpdate={canUpdate} canDelete={canDelete} onDone={invalidate} />
+        </TabsContent>
+        <TabsContent value="users" className="mt-4">
+          <UserAccessTab org={org} positions={positionsQuery.data ?? []} onDone={invalidate} />
+        </TabsContent>
+      </Tabs>
+    </div>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════
+//  TAB 1 — Organization tree
+// ══════════════════════════════════════════════════════════════
+
+interface TreeTabProps {
+  org: OrganizationData;
+  canCreate: boolean; canUpdate: boolean; canDelete: boolean;
+  onDone: () => void;
+}
+
+function TreeTab({ org, canCreate, canUpdate, canDelete, onDone }: TreeTabProps) {
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const [createParent, setCreateParent] = useState<OrgNode | null>(null);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [editNode, setEditNode] = useState<OrgNode | null>(null);
+  const [moveNode, setMoveNode] = useState<OrgNode | null>(null);
+  const [memberNode, setMemberNode] = useState<OrgTreeNode | null>(null);
+
+  const toggleCollapse = (id: string) => {
+    setCollapsed((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const openCreate = (parent: OrgNode | null) => {
+    setCreateParent(parent);
+    setCreateOpen(true);
+  };
+
+  const renderNode = (node: OrgTreeNode, depth: number): React.ReactNode => (
+    <div key={node.id}>
+      <div
+        className={`group flex items-center gap-2 py-2.5 px-2 md:px-3 rounded-xl border transition-colors ${
+          node.status === 'archived'
+            ? 'border-slate-700/20 bg-slate-800/20 opacity-60'
+            : 'border-slate-700/30 bg-slate-800/40 hover:bg-slate-800/70'
+        }`}
+        style={{ marginRight: depth * 18 }}
+      >
+        {node.children.length > 0 ? (
+          <button onClick={() => toggleCollapse(node.id)} className="text-slate-400 hover:text-white shrink-0" aria-label={collapsed.has(node.id) ? 'توسيع' : 'طي'}>
+            {collapsed.has(node.id) ? <ChevronLeft className="size-4" /> : <ChevronDown className="size-4" />}
+          </button>
+        ) : (
+          <span className="w-4 shrink-0" />
+        )}
+        <Building2 className="size-4 text-slate-400 shrink-0" />
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className={`text-sm font-semibold truncate ${node.status === 'archived' ? 'text-slate-500 line-through' : 'text-white'}`}>{node.name}</span>
+            <Badge variant="outline" className={`text-[9px] border ${TYPE_STYLES[node.type]}`}>{ORG_NODE_TYPE_LABELS_AR[node.type]}</Badge>
+            {node.status === 'archived' && (
+              <Badge variant="outline" className="text-[9px] border-slate-600 text-slate-400">{ORG_NODE_STATUS_LABELS_AR.archived}</Badge>
+            )}
+          </div>
+          <p className="text-[10px] text-slate-500 mt-0.5 truncate">
+            {node.subtreeEmployeeCount} موظف في الفرع{node.employeeCount !== node.subtreeEmployeeCount ? ` (${node.employeeCount} مباشرة)` : ''}
+            {node.managerUserName ? ` · مدير: ${node.managerUserName}` : ' · بدون مدير'}
+          </p>
+        </div>
+        <div className="flex items-center gap-0.5 shrink-0 opacity-100 md:opacity-60 md:group-hover:opacity-100 transition-opacity">
+          {canUpdate && (
+            <>
+              <Button variant="ghost" size="icon" className="size-7 text-slate-400 hover:text-white" onClick={() => setMemberNode(node)} aria-label="أعضاء العقدة">
+                <Users className="size-3.5" />
+              </Button>
+              <Button variant="ghost" size="icon" className="size-7 text-slate-400 hover:text-white" onClick={() => setMoveNode(node)} aria-label="نقل العقدة">
+                <ArrowRightLeft className="size-3.5" />
+              </Button>
+              <Button variant="ghost" size="icon" className="size-7 text-slate-400 hover:text-white" onClick={() => setEditNode(node)} aria-label="تعديل العقدة">
+                <Pencil className="size-3.5" />
+              </Button>
+            </>
+          )}
+          {canCreate && (
+            <Button variant="ghost" size="icon" className="size-7 text-emerald-400 hover:text-emerald-300" onClick={() => openCreate(node)} aria-label="إضافة فرع">
+              <Plus className="size-3.5" />
+            </Button>
+          )}
+        </div>
+      </div>
+      <AnimatePresence initial={false}>
+        {!collapsed.has(node.id) && node.children.length > 0 && (
+          <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden space-y-1.5 mt-1.5">
+            {node.children.map((child) => renderNode(child, depth + 1))}
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+
+  return (
+    <div className="space-y-4">
+      {org.tree.length === 0 ? (
+        <Card className="border-slate-700/50 bg-slate-800/50">
+          <CardContent className="py-12 text-center">
+            <Network className="size-12 mx-auto mb-4 text-slate-600" />
+            <p className="text-slate-300 font-semibold mb-1">لا يوجد هيكل تنظيمي بعد</p>
+            <p className="text-slate-500 text-xs mb-4">ابدأ بإنشاء عقدة الشركة — جذر الهيكل</p>
+            {canCreate && <Button size="sm" className="bg-violet-600 hover:bg-violet-700" onClick={() => openCreate(null)}>إنشاء عقدة الشركة</Button>}
+          </CardContent>
+        </Card>
+      ) : (
+        <>
+          {canCreate && (
+            <div className="flex items-center justify-between flex-wrap gap-2">
+              <p className="text-slate-500 text-xs">انقل موظفاً بين الفرق فيغير نطاق بياناته تلقائياً — دون إعادة ضبط أي صلاحيات</p>
+              <Button size="sm" variant="outline" className="border-slate-700/50 text-slate-300 hover:bg-slate-800 gap-1.5" onClick={() => openCreate(null)} disabled={!canCreate}>
+                <Plus className="size-3.5" /> إضافة قسم
+              </Button>
+            </div>
+          )}
+          <Card className="border-slate-700/30 bg-slate-800/30">
+            <CardContent className="pt-4">
+              <div className="space-y-1.5">
+                {org.tree.map((root) => renderNode(root, 0))}
+              </div>
+            </CardContent>
+          </Card>
+        </>
+      )}
+
+      <NodeCreateDialog open={createOpen} onClose={() => setCreateOpen(false)} parent={createParent} nodes={org.nodes} users={org.users} onDone={onDone} />
+      <NodeEditDialog node={editNode} onClose={() => setEditNode(null)} users={org.users} onDone={onDone} canArchive={canUpdate} />
+      <NodeMoveDialog node={moveNode} nodes={org.nodes} onClose={() => setMoveNode(null)} onDone={onDone} />
+      <NodeMembersDialog node={memberNode} org={org} onClose={() => setMemberNode(null)} onDone={onDone} />
+    </div>
+  );
+}
+
+// ─── Create node ───
+function NodeCreateDialog({ open, onClose, parent, nodes, users, onDone }: {
+  open: boolean; onClose: () => void; parent: OrgNode | null; nodes: OrgNode[]; users: OrgUserDto[]; onDone: () => void;
+}) {
+  const [name, setName] = useState('');
+  const [type, setType] = useState<OrgNodeType>('department');
+  const [parentId, setParentId] = useState<string>(parent?.id ?? '');
+  const [managerUserId, setManagerUserId] = useState('');
+  const [description, setDescription] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  // Reset when the target parent changes
+  const [lastParent, setLastParent] = useState(parent?.id ?? '');
+  if ((parent?.id ?? '') !== lastParent) {
+    setLastParent(parent?.id ?? '');
+    setParentId(parent?.id ?? '');
+    setType(parent ? (parent.type === 'company' ? 'department' : parent.type === 'department' ? 'team' : 'subteam') : 'company');
+    setName(''); setManagerUserId(''); setDescription('');
+  } else if (open && type === 'department' && !parent && nodes.some((n) => n.type === 'company') && parentId === '' && lastParent === '') {
+    // first open on an existing tree: default parent = company node
+    const company = nodes.find((n) => n.type === 'company');
+    if (company) setParentId(company.id);
+  }
+
+  const activeParentChoices = nodes.filter((n) => n.status === 'active');
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      const res = await apiFetch('/api/organization', {
+        method: 'POST',
+        body: JSON.stringify({
+          name, type,
+          parentId: type === 'company' ? null : (parentId || null),
+          managerUserId: managerUserId || null,
+          description: description || null,
+        }),
+      });
+      if (res) {
+        toast.success('تم إنشاء العقدة');
+        setName(''); setDescription(''); setManagerUserId('');
+        onDone(); onClose();
+      }
+    } catch {
+      toast.error('تعذر إنشاء العقدة');
+    } finally { setSaving(false); }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
+      <DialogContent dir="rtl" className="max-w-md bg-slate-900 border-slate-700/50">
+        <DialogHeader>
+          <DialogTitle className="text-white">إضافة عقدة تنظيمية</DialogTitle>
+          <DialogDescription>
+            {parent ? `إضافة فرع تحت "${parent.name}"` : 'إضافة عقدة جديدة للهيكل'}
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-3">
+          <div className="space-y-1.5">
+            <Label className="text-slate-300 text-xs">الاسم</Label>
+            <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="مثال: فريق المبيعات" className="bg-slate-800/50 border-slate-700" />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label className="text-slate-300 text-xs">النوع</Label>
+              <Select value={type} onValueChange={(v) => setType(v as OrgNodeType)}>
+                <SelectTrigger className="bg-slate-800/50 border-slate-700 text-slate-200" dir="rtl"><SelectValue /></SelectTrigger>
+                <SelectContent className="bg-slate-800 border-slate-600/60">
+                  {TYPE_OPTIONS.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-slate-300 text-xs">العقدة الأصل</Label>
+              {type === 'company' ? (
+                <div className="h-9 flex items-center text-[11px] text-slate-500">جذر الهيكل (بدون أب)</div>
+              ) : (
+                <Select value={parentId} onValueChange={setParentId}>
+                  <SelectTrigger className="bg-slate-800/50 border-slate-700 text-slate-200" dir="rtl"><SelectValue placeholder="اختر الأب" /></SelectTrigger>
+                  <SelectContent className="bg-slate-800 border-slate-600/60 max-h-56">
+                    {activeParentChoices.map((n) => (
+                      <SelectItem key={n.id} value={n.id}>{n.name} ({ORG_NODE_TYPE_LABELS_AR[n.type]})</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+            </div>
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-slate-300 text-xs">المدير المسؤول (اختياري)</Label>
+            <Select value={managerUserId} onValueChange={setManagerUserId}>
+              <SelectTrigger className="bg-slate-800/50 border-slate-700 text-slate-200" dir="rtl"><SelectValue placeholder="بدون مدير" /></SelectTrigger>
+              <SelectContent className="bg-slate-800 border-slate-600/60 max-h-56">
+                {users.map((u) => <SelectItem key={u.id} value={u.id}>{u.name}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            <p className="text-[10px] text-slate-500">المدير هو مستخدم نظام — يُستخدم في توجيه الإشعارات وحل النطاقات، ولا يُنشئ أي حسابات.</p>
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-slate-300 text-xs">الوصف (اختياري)</Label>
+            <Input value={description} onChange={(e) => setDescription(e.target.value)} className="bg-slate-800/50 border-slate-700" />
+          </div>
+        </div>
+        <div className="flex justify-end gap-2 pt-2">
+          <Button variant="outline" size="sm" className="border-slate-700 text-slate-300" onClick={onClose}>إلغاء</Button>
+          <Button size="sm" className="bg-violet-600 hover:bg-violet-700 gap-1.5" disabled={saving || !name.trim()} onClick={() => void save()}>
+            {saving ? <Loader2 className="size-3.5 animate-spin" /> : <Save className="size-3.5" />} إنشاء
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ─── Edit node ───
+function NodeEditDialog({ node, onClose, users, onDone, canArchive }: {
+  node: OrgNode | null; onClose: () => void; users: OrgUserDto[]; onDone: () => void; canArchive: boolean;
+}) {
+  const [name, setName] = useState('');
+  const [type, setType] = useState<OrgNodeType>('department');
+  const [managerUserId, setManagerUserId] = useState('');
+  const [status, setStatus] = useState<'active' | 'archived'>('active');
+  const [order, setOrder] = useState('0');
+  const [description, setDescription] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  const [lastNode, setLastNode] = useState<string | null>(null);
+  if (node && node.id !== lastNode) {
+    setLastNode(node.id);
+    setName(node.name); setType(node.type); setManagerUserId(node.managerUserId ?? '');
+    setStatus(node.status); setOrder(String(node.order ?? 0)); setDescription(node.description ?? '');
+  }
+
+  const save = async () => {
+    if (!node) return;
+    setSaving(true);
+    try {
+      await apiFetch(`/api/organization/${node.id}`, {
+        method: 'PUT',
+        body: JSON.stringify({
+          name, type, status: canArchive ? status : undefined,
+          managerUserId: managerUserId || null,
+          order: Number(order) || 0,
+          description: description || null,
+        }),
+      });
+      toast.success('تم حفظ التعديلات');
+      onDone(); onClose();
+    } catch {
+      toast.error('تعذر حفظ التعديلات');
+    } finally { setSaving(false); }
+  };
+
+  return (
+    <Dialog open={Boolean(node)} onOpenChange={(v) => !v && onClose()}>
+      <DialogContent dir="rtl" className="max-w-md bg-slate-900 border-slate-700/50">
+        <DialogHeader>
+          <DialogTitle className="text-white">تعديل العقدة</DialogTitle>
+          <DialogDescription>تغيير الاسم أو النوع أو المدير أو الأرشفة — النقل الهيكلي يتم من زر النقل</DialogDescription>
+        </DialogHeader>
+        <div className="space-y-3">
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label className="text-slate-300 text-xs">الاسم</Label>
+              <Input value={name} onChange={(e) => setName(e.target.value)} className="bg-slate-800/50 border-slate-700" />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-slate-300 text-xs">النوع</Label>
+              <Select value={type} onValueChange={(v) => setType(v as OrgNodeType)}>
+                <SelectTrigger className="bg-slate-800/50 border-slate-700 text-slate-200" dir="rtl"><SelectValue /></SelectTrigger>
+                <SelectContent className="bg-slate-800 border-slate-600/60">
+                  {TYPE_OPTIONS.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label className="text-slate-300 text-xs">المدير</Label>
+              <Select value={managerUserId} onValueChange={setManagerUserId}>
+                <SelectTrigger className="bg-slate-800/50 border-slate-700 text-slate-200" dir="rtl"><SelectValue placeholder="بدون مدير" /></SelectTrigger>
+                <SelectContent className="bg-slate-800 border-slate-600/60 max-h-56">
+                  {users.map((u) => <SelectItem key={u.id} value={u.id}>{u.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-slate-300 text-xs">الترتيب</Label>
+              <Input value={order} onChange={(e) => setOrder(e.target.value)} type="number" className="bg-slate-800/50 border-slate-700" />
+            </div>
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-slate-300 text-xs">الحالة</Label>
+            <Select value={status} onValueChange={(v) => setStatus(v as 'active' | 'archived')} disabled={!canArchive}>
+              <SelectTrigger className="bg-slate-800/50 border-slate-700 text-slate-200" dir="rtl"><SelectValue /></SelectTrigger>
+              <SelectContent className="bg-slate-800 border-slate-600/60">
+                <SelectItem value="active">{ORG_NODE_STATUS_LABELS_AR.active}</SelectItem>
+                <SelectItem value="archived">{ORG_NODE_STATUS_LABELS_AR.archived}</SelectItem>
+              </SelectContent>
+            </Select>
+            <p className="text-[10px] text-slate-500">الأرشفة توقف الإسناد الجديد ولا تحذف أي بيانات تاريخية.</p>
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-slate-300 text-xs">الوصف</Label>
+            <Input value={description} onChange={(e) => setDescription(e.target.value)} className="bg-slate-800/50 border-slate-700" />
+          </div>
+        </div>
+        <div className="flex justify-end gap-2 pt-2">
+          <Button variant="outline" size="sm" className="border-slate-700 text-slate-300" onClick={onClose}>إلغاء</Button>
+          <Button size="sm" className="bg-violet-600 hover:bg-violet-700 gap-1.5" disabled={saving || !name.trim()} onClick={() => void save()}>
+            {saving ? <Loader2 className="size-3.5 animate-spin" /> : <Save className="size-3.5" />} حفظ
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ─── Move node (with impact preview) ───
+function NodeMoveDialog({ node, nodes, onClose, onDone }: {
+  node: OrgNode | null; nodes: OrgNode[]; onClose: () => void; onDone: () => void;
+}) {
+  const [targetId, setTargetId] = useState('');
+  const [preview, setPreview] = useState<ImpactPreview | null>(null);
+  const [moving, setMoving] = useState(false);
+
+  const [lastNode, setLastNode] = useState<string | null>(null);
+  if (node && node.id !== lastNode) {
+    setLastNode(node.id); setTargetId(''); setPreview(null);
+  }
+
+  // Candidate parents exclude the node itself and its own subtree
+  // (cycle prevention mirrors the server-side validateMoveNode).
+  const subtreeIds = useMemo(() => {
+    if (!node) return new Set<string>();
+    const ids = new Set<string>([node.id]);
+    let changed = true;
+    while (changed) {
+      changed = false;
+      for (const n of nodes) {
+        if (n.parentId && ids.has(n.parentId) && !ids.has(n.id)) { ids.add(n.id); changed = true; }
+      }
+    }
+    return ids;
+  }, [node, nodes]);
+  const candidates = nodes.filter((n) => n.status === 'active' && !subtreeIds.has(n.id));
+
+  const runPreview = async (value: string) => {
+    setTargetId(value);
+    setPreview(null);
+    if (!node || !value) return;
+    try {
+      const res = await apiFetch<ImpactPreview>('/api/organization/impact', {
+        method: 'POST',
+        body: JSON.stringify({ nodeId: node.id, newParentId: value }),
+      });
+      setPreview(res);
+    } catch { /* preview failures surface at move time */ }
+  };
+
+  const move = async () => {
+    if (!node || !targetId) return;
+    setMoving(true);
+    try {
+      await apiFetch('/api/organization/move', {
+        method: 'POST',
+        body: JSON.stringify({ nodeId: node.id, newParentId: targetId }),
+      });
+      toast.success('تم نقل العقدة');
+      onDone(); onClose();
+    } catch {
+      toast.error('تعذر نقل العقدة');
+    } finally { setMoving(false); }
+  };
+
+  return (
+    <Dialog open={Boolean(node)} onOpenChange={(v) => !v && onClose()}>
+      <DialogContent dir="rtl" className="max-w-md bg-slate-900 border-slate-700/50">
+        <DialogHeader>
+          <DialogTitle className="text-white">نقل "{node?.name}"</DialogTitle>
+          <DialogDescription>معاينة التأثير قبل التنفيذ — لا يتم تعديل أي بيانات تاريخية</DialogDescription>
+        </DialogHeader>
+        <div className="space-y-3">
+          <div className="space-y-1.5">
+            <Label className="text-slate-300 text-xs">العقدة الأصل الجديدة</Label>
+            <Select value={targetId} onValueChange={(v) => void runPreview(v)}>
+              <SelectTrigger className="bg-slate-800/50 border-slate-700 text-slate-200" dir="rtl"><SelectValue placeholder="اختر الوجهة" /></SelectTrigger>
+              <SelectContent className="bg-slate-800 border-slate-600/60 max-h-56">
+                <SelectItem value="__root__">— جذر الهيكل —</SelectItem>
+                {candidates.map((n) => (
+                  <SelectItem key={n.id} value={n.id}>{n.name} ({ORG_NODE_TYPE_LABELS_AR[n.type]})</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {preview && (
+            <div className={`rounded-xl border p-3 space-y-1.5 ${preview.moveValidation && !preview.moveValidation.ok ? 'border-red-500/30 bg-red-500/5' : 'border-amber-500/30 bg-amber-500/5'}`}>
+              <p className="text-xs font-semibold text-slate-200 flex items-center gap-1.5">
+                <ShieldAlert className="size-3.5 text-amber-400" /> معاينة التأثير
+              </p>
+              {preview.moveValidation && !preview.moveValidation.ok ? (
+                <p className="text-[11px] text-red-400">{preview.moveValidation.reason}</p>
+              ) : (
+                <ul className="text-[11px] text-slate-400 space-y-0.5">
+                  <li>• {preview.impact.subtreeNodeCount} عقدة داخل الفرع المنقول</li>
+                  <li>• {preview.impact.employeeCount} موظف سيرثون نطاقاً مختلفاً تلقائياً</li>
+                  {preview.impact.managerUserIds.length > 0 && (
+                    <li>• {preview.impact.managerUserIds.length} مدير سيتم إشعاره بالتغيير</li>
+                  )}
+                </ul>
+              )}
+            </div>
+          )}
+        </div>
+        <div className="flex justify-end gap-2 pt-2">
+          <Button variant="outline" size="sm" className="border-slate-700 text-slate-300" onClick={onClose}>إلغاء</Button>
+          <Button size="sm" className="bg-amber-600 hover:bg-amber-700 gap-1.5" disabled={moving || !targetId || (preview?.moveValidation ? !preview.moveValidation.ok : false)} onClick={() => void move()}>
+            {moving ? <Loader2 className="size-3.5 animate-spin" /> : <ArrowRightLeft className="size-3.5" />} نقل مؤكد
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ─── Node members (employee assignment) ───
+function NodeMembersDialog({ node, org, onClose, onDone }: {
+  node: OrgTreeNode | null; org: OrganizationData; onClose: () => void; onDone: () => void;
+}) {
+  const [search, setSearch] = useState('');
+  const [pickEmployeeId, setPickEmployeeId] = useState('');
+  const [moving, setMoving] = useState(false);
+
+  const members = useMemo(() => {
+    if (!node) return [];
+    return org.employees.filter((e) => e.orgNodeId === node.id);
+  }, [node, org.employees]);
+
+  const assignable = useMemo(() => {
+    if (!node) return [];
+    const q = search.trim();
+    return org.employees
+      .filter((e) => e.orgNodeId !== node.id)
+      .filter((e) => !q || (e.name ?? '').includes(q) || (e.code ?? '').includes(q))
+      .slice(0, 30);
+  }, [node, org.employees, search]);
+
+  const moveEmployee = async (employeeId: string, targetNodeId: string | null) => {
+    setMoving(true);
+    try {
+      await apiFetch('/api/organization/employees/move', {
+        method: 'POST',
+        body: JSON.stringify({ employeeId, orgNodeId: targetNodeId }),
+      });
+      toast.success('تم نقل الموظف — نطاق بياناته يتحدث تلقائياً');
+      onDone();
+    } catch {
+      toast.error('تعذر نقل الموظف');
+    } finally { setMoving(false); }
+  };
+
+  return (
+    <Dialog open={Boolean(node)} onOpenChange={(v) => !v && onClose()}>
+      <DialogContent dir="rtl" className="max-w-lg max-h-[85vh] flex flex-col bg-slate-900 border-slate-700/50">
+        <DialogHeader>
+          <DialogTitle className="text-white">أعضاء "{node?.name}"</DialogTitle>
+          <DialogDescription>
+            الموظفون بيانات وليسوا مستخدمي نظام — النقل يغير علاقة العقدة فقط ولا يمس أي سجل تاريخي.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="flex-1 overflow-hidden space-y-3">
+          <div className="space-y-1.5">
+            <p className="text-xs text-slate-400 font-semibold">الأعضاء الحاليون ({members.length})</p>
+            <ScrollArea className="max-h-40">
+              <div className="space-y-1 pl-2">
+                {members.length === 0 && <p className="text-[11px] text-slate-500 py-2">لا يوجد أعضاء مباشرون</p>}
+                {members.map((m) => (
+                  <div key={m.id} className="flex items-center justify-between gap-2 p-2 rounded-lg bg-slate-800/40 border border-slate-700/30">
+                    <span className="text-xs text-slate-200 truncate">{m.name} {m.code ? <span className="text-slate-500">({m.code})</span> : null}</span>
+                    <Button variant="ghost" size="sm" className="h-7 text-[10px] text-red-400 hover:text-red-300 hover:bg-red-500/10 gap-1" disabled={moving} onClick={() => void moveEmployee(m.id, null)}>
+                      <Trash2 className="size-3" /> إزالة
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            </ScrollArea>
+          </div>
+
+          <div className="space-y-1.5 pt-2 border-t border-slate-700/40">
+            <p className="text-xs text-slate-400 font-semibold">إسناد موظف لهذه العقدة</p>
+            <div className="relative">
+              <Search className="absolute right-2.5 top-2.5 size-3.5 text-slate-500" />
+              <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="ابحث بالاسم أو الكود..." className="pr-8 bg-slate-800/50 border-slate-700 text-xs h-9" />
+            </div>
+            <ScrollArea className="max-h-40">
+              <div className="space-y-1 pl-2">
+                {assignable.length === 0 && <p className="text-[11px] text-slate-500 py-2">لا توجد نتائج</p>}
+                {assignable.map((e) => (
+                  <div key={e.id} className="flex items-center justify-between gap-2 p-2 rounded-lg bg-slate-800/40 border border-slate-700/30">
+                    <div className="min-w-0">
+                      <p className="text-xs text-slate-200 truncate">{e.name} {e.code ? <span className="text-slate-500">({e.code})</span> : null}</p>
+                      <p className="text-[10px] text-slate-500 truncate">
+                        {e.orgNodeId ? org.nodes.find((n) => n.id === e.orgNodeId)?.name ?? '—' : 'بدون عقدة'}
+                      </p>
+                    </div>
+                    <Button variant="ghost" size="sm" className="h-7 text-[10px] text-emerald-400 hover:text-emerald-300 hover:bg-emerald-500/10 gap-1 shrink-0"
+                      disabled={moving || pickEmployeeId === e.id} onClick={() => void moveEmployee(e.id, node?.id ?? null)}>
+                      {pickEmployeeId === e.id ? <Loader2 className="size-3 animate-spin" /> : <Plus className="size-3" />} إسناد
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            </ScrollArea>
+          </div>
+        </div>
+
+        <div className="flex justify-end pt-2 border-t border-slate-700/40">
+          <Button variant="outline" size="sm" className="border-slate-700 text-slate-300" onClick={onClose}>إغلاق</Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════
+//  TAB 2 — Positions
+// ══════════════════════════════════════════════════════════════
+
+interface PositionsTabProps {
+  positions: Position[]; loading: boolean;
+  canCreate: boolean; canUpdate: boolean; canDelete: boolean;
+  onDone: () => void;
+}
+
+function PositionsTab({ positions, loading, canCreate, canUpdate, canDelete, onDone }: PositionsTabProps) {
+  const [editing, setEditing] = useState<Position | 'new' | null>(null);
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <p className="text-slate-500 text-xs">
+          الوظيفة قالب صلاحيات قابل لإعادة الاستخدام — تُطبق كطبقة بين الدور والتجاوزات الفردية عند إسنادها لمستخدم
+        </p>
+        {canCreate && (
+          <Button size="sm" className="bg-violet-600 hover:bg-violet-700 gap-1.5" onClick={() => setEditing('new')}>
+            <Plus className="size-3.5" /> وظيفة جديدة
+          </Button>
+        )}
+      </div>
+
+      {loading ? (
+        <Skeleton className="h-40 rounded-2xl bg-slate-800/40" />
+      ) : positions.length === 0 ? (
+        <Card className="border-slate-700/50 bg-slate-800/50">
+          <CardContent className="py-10 text-center">
+            <Briefcase className="size-10 mx-auto mb-3 text-slate-600" />
+            <p className="text-slate-400 text-sm">لا توجد وظائف معرّفة بعد</p>
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="grid gap-3 md:grid-cols-2">
+          {positions.map((position) => (
+            <Card key={position.id} className="border-slate-700/30 bg-slate-800/40">
+              <CardContent className="pt-4 space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold text-white truncate">{position.title}</p>
+                    {position.description && <p className="text-[11px] text-slate-500 truncate">{position.description}</p>}
+                  </div>
+                  <Badge variant="outline" className={`text-[9px] shrink-0 ${position.status === 'active' ? 'border-emerald-500/30 text-emerald-300' : 'border-slate-600 text-slate-400'}`}>
+                    {position.status === 'active' ? 'نشطة' : 'مؤرشفة'}
+                  </Badge>
+                </div>
+                <p className="text-[10px] text-slate-500">
+                  {position.permissions ? `${Object.keys(typeof position.permissions === 'string' ? JSON.parse(position.permissions || '{}') : position.permissions).length} صفحة في القالب` : 'بدون قالب صلاحيات'}
+                </p>
+                <div className="flex items-center gap-1.5">
+                  {canUpdate && (
+                    <Button variant="outline" size="sm" className="h-7 text-[10px] border-slate-700 text-slate-300 hover:bg-slate-800 gap-1" onClick={() => setEditing(position)}>
+                      <Pencil className="size-3" /> تعديل
+                    </Button>
+                  )}
+                  {canDelete && (
+                    <Button variant="ghost" size="sm" className="h-7 text-[10px] text-red-400 hover:text-red-300 hover:bg-red-500/10 gap-1"
+                      onClick={async () => {
+                        try {
+                          await apiFetch(`/api/positions/${position.id}`, { method: 'DELETE' });
+                          toast.success('تم حذف الوظيفة'); onDone();
+                        } catch (e) {
+                          toast.error(e instanceof Error ? e.message : 'تعذر الحذف — قد تكون مستخدمة');
+                        }
+                      }}>
+                      <Trash2 className="size-3" /> حذف
+                    </Button>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
+
+      <PositionDialog position={editing} onClose={() => setEditing(null)} onDone={onDone} />
+    </div>
+  );
+}
+
+function PositionDialog({ position, onClose, onDone }: {
+  position: Position | 'new' | null; onClose: () => void; onDone: () => void;
+}) {
+  const isNew = position === 'new';
+  const existing = position && position !== 'new' ? position : null;
+
+  const [title, setTitle] = useState('');
+  const [description, setDescription] = useState('');
+  const [status, setStatus] = useState<'active' | 'archived'>('active');
+  // template: pageKey → level ('' = inherit/not in template)
+  const [template, setTemplate] = useState<Record<string, string>>({});
+  const [saving, setSaving] = useState(false);
+
+  const [lastId, setLastId] = useState<string | null>(null);
+  const currentId = existing?.id ?? (isNew ? 'new' : null);
+  if (currentId && currentId !== lastId) {
+    setLastId(currentId);
+    if (existing) {
+      setTitle(existing.title); setDescription(existing.description ?? ''); setStatus(existing.status);
+      let parsed: Record<string, unknown> = {};
+      try {
+        parsed = typeof existing.permissions === 'string' ? JSON.parse(existing.permissions || '{}') : (existing.permissions as Record<string, unknown>) ?? {};
+      } catch { parsed = {}; }
+      const t: Record<string, string> = {};
+      for (const [k, v] of Object.entries(parsed)) {
+        const level = typeof v === 'string' ? v : ((v as Record<string, unknown>)?.level as string);
+        if (level === 'none' || level === 'read' || level === 'edit') t[k] = level;
+      }
+      setTemplate(t);
+    } else {
+      setTitle(''); setDescription(''); setStatus('active'); setTemplate({});
+    }
+  }
+
+  const setEntry = (pageKey: string, level: string) => {
+    setTemplate((prev) => {
+      const next = { ...prev };
+      if (!level) delete next[pageKey];
+      else next[pageKey] = level;
+      return next;
+    });
+  };
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      const body = {
+        title, description: description || null, status,
+        permissions: Object.keys(template).length > 0
+          ? Object.fromEntries(Object.entries(template).map(([k, v]) => [k, { level: v }]))
+          : null,
+      };
+      if (existing) {
+        await apiFetch(`/api/positions/${existing.id}`, { method: 'PUT', body: JSON.stringify(body) });
+      } else {
+        await apiFetch('/api/positions', { method: 'POST', body: JSON.stringify(body) });
+      }
+      toast.success('تم حفظ الوظيفة');
+      onDone(); onClose();
+    } catch {
+      toast.error('تعذر حفظ الوظيفة');
+    } finally { setSaving(false); }
+  };
+
+  return (
+    <Dialog open={Boolean(position)} onOpenChange={(v) => !v && onClose()}>
+      <DialogContent dir="rtl" className="max-w-lg max-h-[85vh] flex flex-col bg-slate-900 border-slate-700/50">
+        <DialogHeader>
+          <DialogTitle className="text-white">{isNew ? 'وظيفة جديدة' : `تعديل: ${existing?.title}`}</DialogTitle>
+          <DialogDescription>
+            القالب طبقة وسطى: الدور أولاً ثم هذا القالب ثم تجاوزات المستخدم المخزنة — الفهم دائماً من نفس محلل الصلاحيات
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="flex-1 overflow-y-auto space-y-3 pr-1 arm-scroll">
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label className="text-slate-300 text-xs">المسمى الوظيفي</Label>
+              <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="مثال: أخصائي جودة" className="bg-slate-800/50 border-slate-700" />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-slate-300 text-xs">الحالة</Label>
+              <Select value={status} onValueChange={(v) => setStatus(v as 'active' | 'archived')}>
+                <SelectTrigger className="bg-slate-800/50 border-slate-700 text-slate-200" dir="rtl"><SelectValue /></SelectTrigger>
+                <SelectContent className="bg-slate-800 border-slate-600/60">
+                  <SelectItem value="active">نشطة</SelectItem>
+                  <SelectItem value="archived">مؤرشفة</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-slate-300 text-xs">الوصف</Label>
+            <Input value={description} onChange={(e) => setDescription(e.target.value)} className="bg-slate-800/50 border-slate-700" />
+          </div>
+
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between">
+              <Label className="text-slate-300 text-xs">قالب الصلاحيات</Label>
+              <span className="text-[10px] text-slate-500">اتركه فارغاً ليرث المستخدم صلاحيات دوره فقط</span>
+            </div>
+            <div className="rounded-xl border border-slate-700/40 divide-y divide-slate-700/20">
+              {EDITABLE_PAGES.map((page) => {
+                const value = template[page.id] ?? '';
+                return (
+                  <div key={page.id} className="flex items-center justify-between gap-2 px-3 py-2">
+                    <span className="text-[11px] text-slate-300 truncate">{page.title}</span>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      {[
+                        { v: '', label: 'افتراضي', cls: 'text-slate-500' },
+                        { v: 'none', label: 'مخفي', cls: 'text-red-400' },
+                        { v: 'read', label: 'قراءة', cls: 'text-amber-400' },
+                        { v: 'edit', label: 'تعديل', cls: 'text-blue-400' },
+                      ].map((opt) => (
+                        <button
+                          key={opt.v || 'default'}
+                          onClick={() => setEntry(page.id, opt.v)}
+                          className={`px-2 py-0.5 rounded-md text-[10px] transition-colors ${value === opt.v ? `bg-slate-700/80 font-semibold ${opt.cls}` : 'text-slate-500 hover:bg-slate-800'}`}
+                        >
+                          {opt.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+
+        <div className="flex justify-end gap-2 pt-3 border-t border-slate-700/40">
+          <Button variant="outline" size="sm" className="border-slate-700 text-slate-300" onClick={onClose}>إلغاء</Button>
+          <Button size="sm" className="bg-violet-600 hover:bg-violet-700 gap-1.5" disabled={saving || !title.trim()} onClick={() => void save()}>
+            {saving ? <Loader2 className="size-3.5 animate-spin" /> : <Save className="size-3.5" />} حفظ
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════
+//  TAB 3 — User access (position + employee linkage)
+// ══════════════════════════════════════════════════════════════
+
+function UserAccessTab({ org, positions, onDone }: {
+  org: OrganizationData; positions: Position[]; onDone: () => void;
+}) {
+  const [savingId, setSavingId] = useState<string | null>(null);
+  const [search, setSearch] = useState('');
+
+  const users = useMemo(() => {
+    const q = search.trim();
+    return org.users.filter((u) => !q || u.name.includes(q));
+  }, [org.users, search]);
+
+  const employeesById = useMemo(() => new Map(org.employees.map((e) => [e.id, e])), [org.employees]);
+  const activePositions = positions.filter((p) => p.status === 'active');
+
+  const updateUser = async (userId: string, patch: Record<string, unknown>) => {
+    setSavingId(userId);
+    try {
+      await apiFetch(`/api/dashboard/users/${userId}`, { method: 'PUT', body: JSON.stringify(patch) });
+      toast.success('تم تحديث بيانات الوصول');
+      onDone();
+    } catch {
+      toast.error('تعذر تحديث بيانات الوصول');
+    } finally { setSavingId(null); }
+  };
+
+  return (
+    <div className="space-y-4">
+      <Card className="border-slate-700/30 bg-slate-800/30">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-white text-sm flex items-center gap-2">
+            <UserRound className="size-4 text-violet-400" /> ربط المستخدمين
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="pt-0 space-y-3">
+          <p className="text-[11px] text-slate-500 leading-relaxed">
+            ربط الموظف بالمستخدم علاقة اختيارية يديرها المدير فقط — لا يتم إنشاء حسابات موظفين أبداً.
+            الربط يفعّل نطاق "سجله فقط" وتوجيه إشعارات الموظف لصاحب الحساب المرتبط.
+          </p>
+          <div className="relative max-w-sm">
+            <Search className="absolute right-2.5 top-2.5 size-3.5 text-slate-500" />
+            <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="ابحث عن مستخدم..." className="pr-8 bg-slate-800/50 border-slate-700 text-xs h-9" />
+          </div>
+        </CardContent>
+      </Card>
+
+      <div className="space-y-2">
+        {users.map((u) => {
+          const linked = u.linkedEmployeeId ? employeesById.get(u.linkedEmployeeId) : null;
+          return (
+            <Card key={u.id} className="border-slate-700/30 bg-slate-800/40">
+              <CardContent className="pt-4">
+                <div className="grid gap-3 md:grid-cols-3">
+                  <div className="min-w-0">
+                    <p className="text-sm text-white truncate">{u.name}</p>
+                    <Badge variant="outline" className="mt-1 text-[9px] border-slate-600 text-slate-400">{u.role}</Badge>
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-slate-400 text-[10px]">الوظيفة (قالب الصلاحيات)</Label>
+                    <Select
+                      value={u.positionId ?? '__none__'}
+                      onValueChange={(v) => void updateUser(u.id, { positionId: v === '__none__' ? null : v })}
+                      disabled={savingId === u.id}
+                    >
+                      <SelectTrigger className="h-8 text-[11px] bg-slate-800/50 border-slate-700 text-slate-200" dir="rtl">
+                        <SelectValue placeholder="بدون وظيفة" />
+                      </SelectTrigger>
+                      <SelectContent className="bg-slate-800 border-slate-600/60 max-h-56">
+                        <SelectItem value="__none__">— بدون وظيفة —</SelectItem>
+                        {activePositions.map((p) => <SelectItem key={p.id} value={p.id}>{p.title}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                    {u.positionTitle && <p className="text-[9px] text-slate-500">الحالية: {u.positionTitle}</p>}
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-slate-400 text-[10px]">الموظف المرتبط (اختياري)</Label>
+                    <Select
+                      value={u.linkedEmployeeId ?? '__none__'}
+                      onValueChange={(v) => void updateUser(u.id, { linkedEmployeeId: v === '__none__' ? null : v })}
+                      disabled={savingId === u.id}
+                    >
+                      <SelectTrigger className="h-8 text-[11px] bg-slate-800/50 border-slate-700 text-slate-200" dir="rtl">
+                        <SelectValue placeholder="بدون ربط" />
+                      </SelectTrigger>
+                      <SelectContent className="bg-slate-800 border-slate-600/60 max-h-56">
+                        <SelectItem value="__none__">— بدون ربط —</SelectItem>
+                        {org.employees.slice(0, 500).map((e) => (
+                          <SelectItem key={e.id} value={e.id}>{e.name}{e.code ? ` (${e.code})` : ''}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    {linked && <p className="text-[9px] text-slate-500">الحالي: {linked.name}</p>}
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          );
+        })}
+        {users.length === 0 && (
+          <p className="text-slate-500 text-sm text-center py-6">لا توجد نتائج</p>
+        )}
+      </div>
+    </div>
+  );
+}

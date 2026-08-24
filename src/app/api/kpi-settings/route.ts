@@ -1,7 +1,7 @@
 // ══════════════════════════════════════════════════════════════
 //  /api/kpi-settings
 //
-//  GET — fetch the singleton KPI settings (requireAuth)
+//  GET — fetch the singleton KPI settings (kpiSettings view)
 //  PUT — update KPI settings (manager edit)
 //
 //  The engine reads its behavior from this config — no hardcoded
@@ -33,6 +33,11 @@ export async function GET(request: NextRequest) {
   try {
     const auth = await requireAuth(request);
     if (!auth) return unauthorizedError();
+
+    // M0.2.1: gated by the existing 'kpiSettings' view permission —
+    // the same key the PUT gate and the settings page use.
+    const permCheck = await verifyPermission(request, 'kpiSettings', 'view');
+    if (!permCheck.allowed) return forbiddenError(permCheck.error);
 
     const settings = await getKpiSettings();
     return Response.json(settings);

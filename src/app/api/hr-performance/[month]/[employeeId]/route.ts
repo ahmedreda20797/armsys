@@ -25,6 +25,7 @@ import {
   validationError,
 } from '@/lib/api-error';
 import { validateMonthKey } from '@/lib/month-utils';
+import { asScopeViewer, employeeInScope } from '@/lib/scope/server';
 import { getHrPerformanceFactor } from '@/lib/hr-performance';
 
 export async function GET(
@@ -42,6 +43,22 @@ export async function GET(
     const monthError = validateMonthKey(monthKey);
     if (monthError) return validationError(monthError);
     if (!employeeId) return validationError('معرّف الموظف مطلوب');
+
+    // ── DATA SCOPE (M0.4 read adoption) ──
+    // Employee-specific HR factor: an out-of-scope id resolves like
+    // a no-data employee (404 with the route's not-found semantics)
+    // — nothing is revealed about out-of-scope employees.
+    const inScope = await employeeInScope(
+      asScopeViewer(permCheck.user!),
+      permCheck.user!.permissions,
+      employeeId,
+    );
+    if (!inScope) {
+      return Response.json(
+        { status: 'not_generated', month: monthKey, employeeId },
+        { status: 404 },
+      );
+    }
 
     // ── 3. Read stored HR deduction data only — no cross-domain access ──
     const factor = await getHrPerformanceFactor(monthKey, employeeId);

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import ExcelJS from 'exceljs';
 import { verifyPermission } from '@/lib/verify-permission';
+import { asScopeViewer, filterRowsByEmployeeScope, resolveEmployeeScopeFromDb } from '@/lib/scope/server';
 
 export async function POST(request: Request) {
   try {
@@ -11,11 +12,28 @@ export async function POST(request: Request) {
     }
 
     const body = await request.json();
-    const { month, data, meta, summary } = body;
+    const { month, data: postedData, meta } = body;
 
-    if (!data || !Array.isArray(data)) {
+    if (!postedData || !Array.isArray(postedData)) {
       return NextResponse.json({ error: 'No data provided' }, { status: 400 });
     }
+
+    // ── READ SCOPE (M0.5) ──
+    // An exported file is a list response: the SERVER, not the client,
+    // decides which employees may appear. The posted rows are
+    // intersected with the caller's authorized employee scope (rows
+    // without a resolvable employeeId are dropped fail-closed), and
+    // every total in the file is recomputed from the surviving rows —
+    // client-posted summary figures are never trusted.
+    const scopeCtx = await resolveEmployeeScopeFromDb(
+      asScopeViewer(permCheck.user!),
+      undefined,
+      permCheck.user!.permissions,
+    );
+    const data = filterRowsByEmployeeScope(
+      postedData as Array<Record<string, unknown> & { employeeId?: string | null }>,
+      scopeCtx,
+    );
 
     const workbook = new ExcelJS.Workbook();
     workbook.creator = 'ARM ERP System';
@@ -261,20 +279,22 @@ export async function POST(request: Request) {
     sumLabel.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: '1F4E79' } };
     sumLabel.alignment = { horizontal: 'center', vertical: 'middle' };
 
+    // Summary totals are recomputed from the SCOPE-FILTERED rows above
+    // (M0.5) — the posted summary object is intentionally ignored.
     const summaryValues = [
-      (summary?.totalPresentDays || data.reduce((s: number, r: any) => s + (r.totalPresent || 0), 0)),
-      (summary?.totalLateDays || data.reduce((s: number, r: any) => s + (r.totalLate || 0), 0)),
-      (summary?.totalMinutesLateAll || data.reduce((s: number, r: any) => s + (r.totalMinutesLate || 0), 0)),
-      (summary?.totalAbsentDays || data.reduce((s: number, r: any) => s + (r.totalAbsent || 0), 0)),
-      (summary?.totalExemptDays || data.reduce((s: number, r: any) => s + (r.totalExempt || 0), 0)),
-      (summary?.totalAutoExemptDays || data.reduce((s: number, r: any) => s + (r.autoExemptDays || 0), 0)),
-      (summary?.totalBonusDays || data.reduce((s: number, r: any) => s + (r.bonusDays || 0), 0)),
-      (summary?.avgCompliance || (data.length > 0 ? Math.round(data.reduce((s: number, r: any) => s + (r.attendanceCompliance || 0), 0) / data.length) : 0)),
+      (data.reduce((s: number, r: any) => s + (r.totalPresent || 0), 0)),
+      (data.reduce((s: number, r: any) => s + (r.totalLate || 0), 0)),
+      (data.reduce((s: number, r: any) => s + (r.totalMinutesLate || 0), 0)),
+      (data.reduce((s: number, r: any) => s + (r.totalAbsent || 0), 0)),
+      (data.reduce((s: number, r: any) => s + (r.totalExempt || 0), 0)),
+      (data.reduce((s: number, r: any) => s + (r.autoExemptDays || 0), 0)),
+      (data.reduce((s: number, r: any) => s + (r.bonusDays || 0), 0)),
+      (data.length > 0 ? Math.round(data.reduce((s: number, r: any) => s + (r.attendanceCompliance || 0), 0) / data.length) : 0),
       (data.reduce((s: number, r: any) => s + (r.lateDeductionDays || 0), 0)),
       (data.reduce((s: number, r: any) => s + (r.absenceDeductionDays || 0), 0)),
       (data.reduce((s: number, r: any) => s + (r.totalAttendanceDeductionDays || 0), 0)),
-      (summary?.totalQualityDaysAll || data.reduce((s: number, r: any) => s + (r.totalQualityDays || 0), 0)),
-      (summary?.totalQualityAmountAll || data.reduce((s: number, r: any) => s + (r.totalQualityAmount || 0), 0)),
+      (data.reduce((s: number, r: any) => s + (r.totalQualityDays || 0), 0)),
+      (data.reduce((s: number, r: any) => s + (r.totalQualityAmount || 0), 0)),
       (data.reduce((s: number, r: any) => s + (r.totalDeductionDays || 0), 0)),
     ];
 

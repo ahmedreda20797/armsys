@@ -36,6 +36,7 @@ import {
 } from '@/lib/api-error';
 import { isValidMonthKey } from '@/lib/month-utils';
 import { isValidDayKey } from '@/lib/time-scope';
+import { asScopeViewer, employeeInScope } from '@/lib/scope/server';
 import { getEmployeePerformance } from '@/lib/employee-performance';
 import type { TimeScope, TimeScopeKind } from '@/lib/time-scope';
 
@@ -100,6 +101,19 @@ export async function GET(
 
     const parsed = parseScope(new URL(request.url).searchParams);
     if ('error' in parsed) return validationError(parsed.error);
+
+    // ── 2b. DATA SCOPE (M0.4 read adoption) ──
+    // Gated on the 'employees' page (same as employee-360), so the
+    // SAME entry's scope governs: an out-of-scope id resolves exactly
+    // like an unknown employee (404, anti-enumeration).
+    const inScope = await employeeInScope(
+      asScopeViewer(permCheck.user!),
+      permCheck.user!.permissions,
+      employeeId,
+    );
+    if (!inScope) {
+      return Response.json({ error: 'الموظف غير موجود' }, { status: 404 });
+    }
 
     // ── 3. Assemble stored results into the contract layers ──
     const performance = await getEmployeePerformance({ employeeId, scope: parsed.scope });

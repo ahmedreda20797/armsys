@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAll, getById, findWhere, findWhereContains } from '@/lib/db';
 import { verifyPermission } from '@/lib/verify-permission';
+import { resolveFieldAccess, resolvePageScope } from '@/config/permissions';
+import { resolveEmployeeScope } from '@/lib/scope';
+import { ORG_NODES_TABLE, type OrgNode } from '@/lib/organization';
 // Canonical metric layer — single source of truth for risk + CAPA overdue.
 import {
   computeRisk,
@@ -49,6 +52,37 @@ export async function GET(
     const employee = await getById('employees', employeeId);
     if (!employee) {
       return NextResponse.json({ error: 'الموظف غير موجود' }, { status: 404 });
+    }
+
+    // ═══ DATA SCOPE (M0.3 — employee detail IDOR guard) ═══
+    // This route is gated by the 'employees' page permission, so the
+    // SAME entry's scope governs the detail view. The canonical
+    // engine (resolveEmployeeScope) decides; an out-of-scope id
+    // resolves as NOT FOUND — identical body to the missing-employee
+    // path above, so enumeration learns nothing. The check runs
+    // BEFORE any aggregation; the org graph is only loaded when the
+    // viewer's scope is not already 'all' (admin/HR/quality fast
+    // path).
+    const viewer = permCheck.user!;
+    const scope = resolvePageScope(viewer.permissions, 'employees', viewer.role);
+    if (scope !== 'all') {
+      const [orgNodes, employees] = await Promise.all([
+        getAll<OrgNode>(ORG_NODES_TABLE),
+        getAll<{ id: string; orgNodeId?: string | null }>('employees'),
+      ]);
+      const scopeContext = resolveEmployeeScope(
+        {
+          userId: viewer.id,
+          role: viewer.role,
+          linkedEmployeeId: viewer.linkedEmployeeId ?? null,
+        },
+        'employees',
+        viewer.permissions,
+        { orgNodes, employees },
+      );
+      if (!scopeContext.includes(employeeId)) {
+        return NextResponse.json({ error: 'الموظف غير موجود' }, { status: 404 });
+      }
     }
 
     const now = new Date();
@@ -308,7 +342,12 @@ export async function GET(
         shiftStart: employee.shiftStart || null,
         shiftEnd: employee.shiftEnd || null,
         hireDate: employee.hireDate || null,
-        mobile: employee.mobile || null,
+        // Field-level access (Part J): sensitive personal data is
+        // omitted server-side for viewers without edit access.
+        mobile:
+          resolveFieldAccess(permCheck.user!.permissions, 'employees', 'mobile') === 'hidden'
+            ? null
+            : employee.mobile || null,
         createdById: employee.createdById || null,
       },
       stats: {

@@ -1,16 +1,25 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getAll, createRecord, TTL } from '@/lib/db';
-import { requireAuth } from '@/lib/verify-permission';
+import { getAll, createRecord, getById, TTL } from '@/lib/db';
+import { requireAuth, verifyPermission } from '@/lib/verify-permission';
 import type { AutomationRule } from '@/types';
 
 // ══════════════════════════════════════════════════════════════
 //  GET /api/rules — Fetch automation rules with filtering
+//
+//  M0.2: gated by the existing 'rulesEngine' view permission (the
+//  same key PageRouter checks for the automation page). Admin bypass
+//  unchanged.
 // ══════════════════════════════════════════════════════════════
 export async function GET(request: NextRequest) {
   try {
     const auth = await requireAuth(request);
     if (!auth) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const permCheck = await verifyPermission(request, 'rulesEngine', 'view');
+    if (!permCheck.allowed) {
+      return NextResponse.json({ error: permCheck.error }, { status: 403 });
     }
 
     const { searchParams } = new URL(request.url);
@@ -72,6 +81,20 @@ export async function GET(request: NextRequest) {
 // ══════════════════════════════════════════════════════════════
 export async function POST(request: NextRequest) {
   try {
+    // M0.1: creating automation rules requires the rulesEngine 'create'
+    // action. The actor identity is derived from the authenticated
+    // caller — body-supplied createdById/createdByName are NEVER trusted.
+    const auth = await requireAuth(request);
+    if (!auth) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+    const permCheck = await verifyPermission(request, 'rulesEngine', 'create');
+    if (!permCheck.allowed || !permCheck.user) {
+      return NextResponse.json({ error: permCheck.error || 'Forbidden' }, { status: 403 });
+    }
+
+    const actorUser = await getById('users', permCheck.user.id);
+
     const body = await request.json();
 
     const {
@@ -86,8 +109,6 @@ export async function POST(request: NextRequest) {
       actions,
       escalationConfig,
       throttleMinutes,
-      createdById,
-      createdByName,
     } = body;
 
     // Validation
@@ -136,8 +157,8 @@ export async function POST(request: NextRequest) {
       totalExecutions: 0,
       successCount: 0,
       failCount: 0,
-      createdById: createdById || 'system',
-      createdByName: createdByName || 'النظام',
+      createdById: permCheck.user.id,
+      createdByName: actorUser?.name || actorUser?.email || permCheck.user.id,
     });
 
     return NextResponse.json(rule, { status: 201 });

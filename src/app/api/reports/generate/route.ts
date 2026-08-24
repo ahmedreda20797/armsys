@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getAll, findWhereContains, findWhere } from '@/lib/db';
 import { verifyPermission } from '@/lib/verify-permission';
 import { validateMonthKey } from '@/lib/month-utils';
+import { asScopeViewer, filterEmployeesInScope, resolveEmployeeScopeFromDb } from '@/lib/scope/server';
 import {
   buildReportRow,
   computeMonthlyAttendance,
@@ -39,7 +40,7 @@ export async function POST(request: NextRequest) {
     const actualWorkDays = workingDays.length;
     const datePattern = `/${monStr.padStart(2, '0')}/${yearStr}`;
 
-    const [employees, deductionRules, biometricRecords, attendanceRecords, allRequests, qualityDeductions, waivedDeductions, hrDeductions] = await Promise.all([
+    const [allEmployees, deductionRules, biometricRecords, attendanceRecords, allRequests, qualityDeductions, waivedDeductions, hrDeductions] = await Promise.all([
       getAll('employees'),
       getAll('deductionRules'),
       findWhereContains('biometrics', 'date', datePattern),
@@ -49,6 +50,24 @@ export async function POST(request: NextRequest) {
       findWhere('waivedDeductions', { month }),
       findWhere('hrDeductions', { month, status: 'approved' }),
     ]);
+
+    // ── READ SCOPE (M0.5) ──
+    // Report rows exist only for employees inside the caller's
+    // authorized scope: the employees array is intersected with the
+    // canonical scope BEFORE any row is built, so rows, the global
+    // summary and meta totals all describe authorized employees only.
+    // Per-employee factor maps are keyed lookups — out-of-scope
+    // entries are simply never read. The row formulas (canonical
+    // engine, quality/HR composition) are untouched.
+    const scopeCtx = await resolveEmployeeScopeFromDb(
+      asScopeViewer(permCheck.user!),
+      undefined,
+      permCheck.user!.permissions,
+    );
+    const employees = filterEmployeesInScope(
+      allEmployees as Array<{ id: string }>,
+      scopeCtx,
+    ) as typeof allEmployees;
 
     // Policy from the deductionRules collection (canonical defaults for
     // missing rows). No write-on-read sync — Milestone 2 §27.

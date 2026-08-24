@@ -27,6 +27,7 @@ import {
   unauthorizedError,
   validationError,
 } from '@/lib/api-error';
+import { asScopeViewer, resolveEmployeeScopeFromDb } from '@/lib/scope/server';
 import { validateMonthKey } from '@/lib/month-utils';
 import { getAttendanceResultsForMonth } from '@/lib/attendance';
 import type { StoredAttendanceResult } from '@/lib/attendance';
@@ -48,6 +49,21 @@ export async function GET(
 
     // ── 3. Stored results only — no recalculation, no regeneration ──
     let results: StoredAttendanceResult[] = await getAttendanceResultsForMonth(monthKey);
+
+    // ── 3b. DATA SCOPE (M0.4 read adoption) ──
+    // Per-employee rows: a scoped viewer receives ONLY the rows of
+    // employees inside their employee scope (row filtering — the
+    // stored values and meta computation are unchanged).
+    // Unrestricted viewers (admin + configured 'all') take the fast
+    // path with no org-graph load.
+    const scopeContext = await resolveEmployeeScopeFromDb(
+      asScopeViewer(permCheck.user!),
+      undefined,
+      permCheck.user!.permissions,
+    );
+    if (!scopeContext.isUnrestricted) {
+      results = results.filter((r) => scopeContext.includes(r.employeeId));
+    }
 
     const { searchParams } = new URL(request.url);
     const employeeId = searchParams.get('employeeId');

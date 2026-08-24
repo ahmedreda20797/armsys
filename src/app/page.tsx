@@ -47,6 +47,8 @@ const ReportsPage          = dynamic(() => import('@/components/pages/ReportsPag
 // ── Unified Reporting Architecture (Milestone 8) — reference report ──
 const QualityDeductionsReportPage = dynamic(() => import('@/components/pages/reports/QualityDeductionsReport'), { loading: () => <PageSkeleton />, ssr: false });
 const ControlPanelPage     = dynamic(() => import('@/components/pages/ControlPanelPage'),     { loading: () => <PageSkeleton />, ssr: false });
+// ── Organization & Positions (Milestone 10) ──
+const OrganizationPage     = dynamic(() => import('@/components/pages/organization/OrganizationPage'), { loading: () => <PageSkeleton />, ssr: false });
 const FirebaseSettingsPage = dynamic(() => import('@/components/pages/FirebaseSettingsPage'), { loading: () => <PageSkeleton />, ssr: false });
 const FollowUpsPage        = dynamic(() => import('@/components/pages/FollowUpsPage'),        { loading: () => <PageSkeleton />, ssr: false });
 const CAPAPage             = dynamic(() => import('@/components/pages/CAPAPage'),             { loading: () => <PageSkeleton />, ssr: false });
@@ -127,6 +129,7 @@ function PageRouter() {
     // ── Unified Reporting Architecture (Milestone 8) ──
     case 'qualityDeductionsReport': return <QualityDeductionsReportPage key="qualityDeductionsReport" />;
     case 'controlPanel':     return <ControlPanelPage     key="controlPanel" />;
+    case 'organization':     return <OrganizationPage     key="organization" />;
     case 'firebase':         return <FirebaseSettingsPage key="firebase" />;
     case 'followUps':        return <FollowUpsPage        key="followUps" />;
     case 'capa':             return <CAPAPage             key="capa" />;

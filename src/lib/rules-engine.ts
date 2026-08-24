@@ -8,6 +8,7 @@ import {
   getEmployeeMap,
   TTL,
 } from '@/lib/db';
+import { findDuplicateByEntityKey } from '@/lib/notifications/dedup';
 import type {
   AutomationRule,
   RuleConditionGroup,
@@ -643,25 +644,32 @@ export async function runAllActiveRules(
 
 /**
  * Create a notification with duplicate detection.
- * Checks for notifications with the same title + employeeId within the last hour
- * to avoid spam from rapidly re-evaluating rules.
+ * Dedup key: title + employeeId + sourceRecordId (nulls normalized) —
+ * a matching notification within the last hour returns the existing
+ * record instead of creating a duplicate. This covers broadcast
+ * notifications (employeeId null) that carry a sourceRecordId, which
+ * previously bypassed dedup entirely (page refreshes and polling
+ * retries could duplicate them).
  */
 export async function createSmartNotification(
   data: Partial<AppNotification>
 ): Promise<AppNotification> {
   const title = data.title || '';
   const employeeId = data.employeeId;
+  const sourceRecordId = data.sourceRecordId;
 
-  // Duplicate check: same title + employeeId within the last hour
-  if (title && employeeId) {
-    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+  // Duplicate check: same title + employeeId + sourceRecordId within the last hour
+  if (title && (employeeId || sourceRecordId)) {
+    const now = Date.now();
     const existing = await findWhere<AppNotification>('notifications', {
       title,
-      employeeId,
     } as Record<string, any>);
 
-    const recentDuplicate = existing.find(
-      (n) => n.createdAt && n.createdAt >= oneHourAgo
+    const recentDuplicate = findDuplicateByEntityKey(
+      existing,
+      { title, employeeId, sourceRecordId },
+      now,
+      60 * 60 * 1000
     );
 
     if (recentDuplicate) {

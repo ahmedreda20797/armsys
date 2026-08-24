@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { findWhereContains, deleteByIds } from '@/lib/db';
 import { verifyPermission } from '@/lib/verify-permission';
+import { asScopeViewer, resolveEmployeeScopeFromDb } from '@/lib/scope/server';
 
 export async function POST(request: NextRequest) {
   try {
@@ -19,7 +20,22 @@ export async function POST(request: NextRequest) {
 
     const [year, mon] = month.split('-');
     const datePattern = `/${mon.padStart(2, '0')}/${year}`;
-    const records = await findWhereContains('biometrics', 'date', datePattern);
+    let records = await findWhereContains('biometrics', 'date', datePattern);
+
+    // ── BULK WRITE-SCOPE (M0.4) ──
+    // The clear is a bulk delete over MANY employees' records. A
+    // scoped viewer may clear ONLY the records of employees inside
+    // their employee scope — records of out-of-scope employees are
+    // left untouched (intersection, never expansion). Unrestricted
+    // viewers (admin/HR) keep the previous whole-month behavior.
+    const scopeContext = await resolveEmployeeScopeFromDb(
+      asScopeViewer(permCheck.user!),
+      undefined,
+      permCheck.user!.permissions,
+    );
+    if (!scopeContext.isUnrestricted) {
+      records = records.filter((r) => scopeContext.includes(r.employeeId));
+    }
 
     const ids = records.map((r) => r.id);
 

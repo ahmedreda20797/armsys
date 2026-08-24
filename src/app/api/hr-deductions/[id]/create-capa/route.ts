@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getById, createRecord, getAll, getEmployeeMap, updateRecord, invalidateCache } from '@/lib/db';
 import { verifyPermission } from '@/lib/verify-permission';
+import { asScopeViewer, employeeInScope } from '@/lib/scope/server';
 import { createSmartNotification } from '@/lib/rules-engine';
 
 // ══════════════════════════════════════════════════════════════
@@ -23,6 +24,21 @@ export async function POST(
     const { id } = await params;
     const hrDeduction = await getById('hrDeductions', id);
     if (!hrDeduction) {
+      return NextResponse.json({ error: 'HR deduction not found' }, { status: 404 });
+    }
+
+    // ── TARGET-EMPLOYEE SCOPE (M0.4) ──
+    // The created CAPA carries the deduction's STORED employeeId — the
+    // target employee must be inside the caller's authorized scope
+    // (HR deductions are employee-mandatory: an absent link fails
+    // closed). Out-of-scope resolves as the same NOT FOUND body as an
+    // unknown record (anti-enumeration).
+    const storedOk = await employeeInScope(
+      asScopeViewer(permCheck.user!),
+      permCheck.user!.permissions,
+      (hrDeduction as any).employeeId,
+    );
+    if (!storedOk) {
       return NextResponse.json({ error: 'HR deduction not found' }, { status: 404 });
     }
 

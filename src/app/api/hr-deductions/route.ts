@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAll, createRecord, sortByDateField, withEmployee } from '@/lib/db';
 import { verifyPermission, requireAuth } from '@/lib/verify-permission';
+import { asScopeViewer, employeeInScope, authScopeViewer, filterRowsByEmployeeScope, resolveEmployeeScopeFromDb } from '@/lib/scope/server';
 
 export async function GET(request: NextRequest) {
   try {
@@ -13,6 +14,14 @@ export async function GET(request: NextRequest) {
     const status = searchParams.get('status') || '';
 
     let records = await getAll('hrDeductions');
+
+    // ── READ SCOPE (M0.5) ──
+    // HR deductions are employee-linked; scope runs at the retrieval
+    // boundary, BEFORE the status filter (filters only narrow). HR
+    // deduction business rules and their separation from attendance
+    // deductions are untouched.
+    const scopeCtx = await resolveEmployeeScopeFromDb(authScopeViewer(auth), undefined, auth.permissions);
+    records = filterRowsByEmployeeScope(records as Array<{ employeeId?: string | null }>, scopeCtx);
 
     if (status) {
       records = records.filter((r: any) => r.status === status);
@@ -43,6 +52,20 @@ export async function POST(request: NextRequest) {
         { error: 'employeeId, type, amount, unit, and month are required' },
         { status: 400 }
       );
+    }
+
+    // ── TARGET-EMPLOYEE SCOPE (M0.4) ──
+    // HR deductions are employee-linked records: the target employee
+    // (body.employeeId) must be inside the caller's employee scope
+    // BEFORE validation and create. The HR deduction BUSINESS RULES
+    // are unchanged — this is authorization only.
+    const inScope = await employeeInScope(
+      asScopeViewer(permCheck.user!),
+      permCheck.user!.permissions,
+      employeeId,
+    );
+    if (!inScope) {
+      return NextResponse.json({ error: 'صلاحية غير كافية' }, { status: 403 });
     }
 
     // Validate employee exists and is active

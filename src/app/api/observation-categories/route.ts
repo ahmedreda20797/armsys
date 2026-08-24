@@ -1,7 +1,7 @@
 // ══════════════════════════════════════════════════════════════
 //  /api/observation-categories
 //
-//  GET  — list all categories (requireAuth)
+//  GET  — list all categories (observationCategories view)
 //  POST — create a category (manager create)
 //
 //  Categories carry both defaultPointValue AND weight.
@@ -33,6 +33,12 @@ export async function GET(request: NextRequest) {
   try {
     const auth = await requireAuth(request);
     if (!auth) return unauthorizedError();
+
+    // M0.2.1: gated by the existing 'observationCategories' view
+    // permission — the same key the POST gate and the categories
+    // management page use.
+    const permCheck = await verifyPermission(request, 'observationCategories', 'view');
+    if (!permCheck.allowed) return forbiddenError(permCheck.error);
 
     // Seed defaults on first read (idempotent).
     await seedCategoriesIfEmpty();

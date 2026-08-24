@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAll } from '@/lib/db';
 import { requireAuth } from '@/lib/verify-permission';
+import { isCronRequest } from '@/lib/cron-auth';
 import { createSmartNotification } from '@/lib/rules-engine';
 import { isOverdueCAPA, capaDueDateMs, isTerminalCAPA, CAPA_SLA_DAYS } from '@/lib/metrics';
 
@@ -24,11 +25,15 @@ const ESCALATION_THRESHOLD = 2; // Escalate when 2 days past due
  */
 export async function GET(request: NextRequest) {
   try {
-    // Allow internal scheduler calls (bypass auth for x-internal-scheduler header)
-    const isInternalScheduler = request.headers.get('x-internal-scheduler') === 'true';
-    const auth = isInternalScheduler || await requireAuth(request);
-    if (!auth) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    // M0.1: the x-internal-scheduler header is no longer trusted (it is
+    // client-settable and provided no authentication). Access requires
+    // either the server-side CRON_SECRET (scheduler) or an
+    // authenticated user token.
+    if (!isCronRequest(request)) {
+      const auth = await requireAuth(request);
+      if (!auth) {
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      }
     }
 
     const now = Date.now();

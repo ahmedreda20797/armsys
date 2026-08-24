@@ -65,7 +65,7 @@ const emptyForm: EmployeeFormData = {
 };
 
 export default function EmployeesPage() {
-  const { canEdit, canCreate, canUpdate, canDelete, canExport, canUpload } = usePermissions('employees');
+  const { canEdit, canCreate, canUpdate, canDelete, canExport, canUpload, canSeeField } = usePermissions('employees');
   const { canViewPage } = usePermissions('employee360');
   const canOpenEmployee360 = canViewPage('employee360');
   const { highlightId, setHighlightId, openEmployee360 } = useAppStore();
@@ -471,7 +471,7 @@ export default function EmployeesPage() {
                         {emp.shiftStart && emp.shiftEnd ? `${emp.shiftStart} - ${emp.shiftEnd}` : '—'}
                       </TableCell>
                       <TableCell className="text-slate-300 hidden lg:table-cell" dir="ltr">
-                        {emp.mobile || '—'}
+                        {canSeeField('employees', 'mobile') ? emp.mobile || '—' : '—'}
                       </TableCell>
                       {(canOpenEmployee360 || canUpdate || canDelete) && (
                         <TableCell>

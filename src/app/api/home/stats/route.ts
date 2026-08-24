@@ -6,6 +6,7 @@ import {
 } from '@/lib/db';
 import { requireAuth } from '@/lib/verify-permission';
 import { isOverdueFollowUp } from '@/lib/metrics';
+import { filterEmployeesInScope, authScopeViewer, filterRowsByEmployeeScope, resolveEmployeeScopeFromDb } from '@/lib/scope/server';
 
 function getTodayStr(): string {
   const now = new Date();
@@ -231,14 +232,25 @@ export async function GET(request: NextRequest) {
       getEmployeeMap(),
     ]);
 
-    const employees = batch.get('employees') || [];
-    const attendanceRecords = batch.get('attendance') || [];
-    const allRequests = batch.get('requests') || [];
-    const travelDeals = batch.get('travelDeals') || [];
-    const allQualityDeductions = batch.get('qualityDeductions') || [];
+    // ═══════════════════════════════════════════════════
+    // READ SCOPE (M0.5) — the dashboard's single scope
+    // boundary. Every employee-linked table is intersected
+    // with the caller's authorized employee scope BEFORE
+    // any aggregation, ranking, count or rate is computed,
+    // so all reported metrics describe authorized rows
+    // only. deductionRules carries no employee link and is
+    // never filtered. Admin/HR/Quality ('all') take the
+    // engine's zero-read fast path.
+    // ═══════════════════════════════════════════════════
+    const scopeCtx = await resolveEmployeeScopeFromDb(authScopeViewer(auth), undefined, auth.permissions);
+    const employees = filterEmployeesInScope(batch.get('employees') || [], scopeCtx);
+    const attendanceRecords = filterRowsByEmployeeScope(batch.get('attendance') || [], scopeCtx);
+    const allRequests = filterRowsByEmployeeScope(batch.get('requests') || [], scopeCtx);
+    const travelDeals = filterRowsByEmployeeScope(batch.get('travelDeals') || [], scopeCtx);
+    const allQualityDeductions = filterRowsByEmployeeScope(batch.get('qualityDeductions') || [], scopeCtx);
     const deductionRules = batch.get('deductionRules') || [];
-    const allBiometrics = batch.get('biometrics') || [];
-    const allFollowUps = batch.get('followUps') || [];
+    const allBiometrics = filterRowsByEmployeeScope(batch.get('biometrics') || [], scopeCtx);
+    const allFollowUps = filterRowsByEmployeeScope(batch.get('followUps') || [], scopeCtx);
 
     const totalEmployees = employees.length;
 

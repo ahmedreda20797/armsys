@@ -4,8 +4,8 @@
 //  GET  — list observations (filtered by month/status/dept/employee/category)
 //  POST — create a new quality observation (idempotent via clientRequestId)
 //
-//  Permission: quality create for POST; requireAuth for GET.
-//  All sensitive values (employeeName, department) are resolved
+//  Permission: quality observations view for GET; quality create for
+//  POST. All sensitive values (employeeName, department) are resolved
 //  server-side — the client can never submit them as trusted values.
 // ══════════════════════════════════════════════════════════════
 
@@ -18,6 +18,7 @@ import { dedupByClientRequest } from '@/lib/idempotency';
 import { validateEmployeeActive, validateForeignKeys } from '@/lib/db-validation';
 import { isMonthClosed } from '@/lib/month-lock';
 import { resolveActor } from '@/lib/auth/actor-resolver';
+import { asScopeViewer, employeeInScope, authScopeViewer, filterRowsByEmployeeScope, resolveEmployeeScopeFromDb } from '@/lib/scope/server';
 import { makeApprovalEvent, appendApprovalEvent, projectLatestApprovalStatus } from '@/lib/approvals';
 import { makeAuditEvent, writeAudit } from '@/lib/audit';
 import { AUDIT_LOG_TABLE } from '@/app/api/quality-audit-log/route';
@@ -43,6 +44,11 @@ export async function GET(request: NextRequest) {
     const auth = await requireAuth(request);
     if (!auth) return unauthorizedError();
 
+    // M0.2.1: gated by the existing 'observations' view permission —
+    // the same key the POST gate and the observations page use.
+    const permCheck = await verifyPermission(request, 'observations', 'view');
+    if (!permCheck.allowed) return forbiddenError(permCheck.error);
+
     const { searchParams } = new URL(request.url);
     const month = searchParams.get('month');
     const status = searchParams.get('status');
@@ -53,6 +59,14 @@ export async function GET(request: NextRequest) {
     const isBonusParam = searchParams.get('isBonus');
 
     let records = await getAll<QualityObservation>(OBSERVATIONS_TABLE, TTL.MEDIUM);
+
+    // ── READ SCOPE (M0.5) ──
+    // Observations are employee-mandatory records: intersect the
+    // authorized employee scope BEFORE month/status/department/employee
+    // filters so every downstream filter, count and sort operates only
+    // on authorized rows (AUTHORIZED_SCOPE ∩ FILTER, never filter-then-scope).
+    const scopeCtx = await resolveEmployeeScopeFromDb(authScopeViewer(auth), undefined, auth.permissions);
+    records = filterRowsByEmployeeScope(records as Array<{ employeeId?: string | null }>, scopeCtx) as typeof records;
 
     // Apply filters (server-side, linear pass per filter — combined where possible).
     if (month) records = records.filter((r) => r.month === month);
@@ -101,6 +115,18 @@ export async function POST(request: NextRequest) {
     if (!employeeId || !observationDate || !type || !categoryId) {
       return validationError('الموظف والتاريخ والنوع والتصنيف مطلوبة');
     }
+
+    // ── TARGET-EMPLOYEE SCOPE (M0.4) ──
+    // Observations are employee-linked Quality records: the target
+    // employee must be inside the caller's employee scope BEFORE any
+    // validation or create. The observation workflow, evidence,
+    // points and category logic are unchanged — authorization only.
+    const inScope = await employeeInScope(
+      asScopeViewer(permCheck.user!),
+      permCheck.user!.permissions,
+      employeeId,
+    );
+    if (!inScope) return forbiddenError('صلاحية غير كافية');
 
     // ── Guard: cannot create observations in a closed month (Milestone 5 §10) ──
     // Reuses the existing month-lock mechanism from Milestone 4.

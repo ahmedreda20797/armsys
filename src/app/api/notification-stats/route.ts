@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAll, countWhere, TTL } from '@/lib/db';
 import { verifyPermission } from '@/lib/verify-permission';
+import { filterVisibleNotifications } from '@/lib/notifications/recipient-visibility';
 
 // ══════════════════════════════════════════════════════════════
 //  GET /api/notification-stats — Aggregated notification stats
-//  SECURITY: Admin/Manager/Quality/HR only. Regular users get personal stats.
+//  SECURITY: Recipient + permission visibility (same rule as the
+//  list route — see lib/notifications/recipient-visibility)
 // ══════════════════════════════════════════════════════════════
 export async function GET(request: NextRequest) {
   try {
@@ -21,13 +23,13 @@ export async function GET(request: NextRequest) {
       getAll<any>('ruleExecutionLogs', TTL.DEFAULT),
     ]);
 
-    // Non-admin users only see their own notification stats
-    const isAdmin = user.role === 'admin';
-    const notifications = isAdmin
-      ? allNotifications
-      : allNotifications.filter(
-          (n) => n.employeeId === user.id || n.assignedTo === user.id
-        );
+    // Recipient + permission visibility (same rule as the list route)
+    const notifications = filterVisibleNotifications(allNotifications, {
+      userId: user.id,
+      role: user.role,
+      permissions: user.permissions,
+      linkedEmployeeId: user.linkedEmployeeId ?? null,
+    });
 
     const now = new Date();
     const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
@@ -72,7 +74,7 @@ export async function GET(request: NextRequest) {
     ).length;
 
     // Rules triggered today (successful executions today) — only for admin
-    const rulesTriggeredToday = isAdmin
+    const rulesTriggeredToday = user.role === 'admin'
       ? ruleLogs.filter(
           (l) => l.result === 'success' && l.createdAt && l.createdAt >= todayStart
         ).length

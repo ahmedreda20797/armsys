@@ -574,7 +574,10 @@ export default function CAPADetailPage({ capaId, onBack }: CAPADetailPageProps) 
               </div>
               <InlineField label="تاريخ التحقق" value={capa.verificationDate} type="date" onSave={(v) => saveField({ verificationDate: v }, 'تاريخ التحقق')} />
             </div>
-            <InlineSelect label="نتيجة التحقق" value={capa.verificationResult || ''} options={[{ value: '', label: '— لم يتم التحديد —' }, ...VERIFICATION_RESULTS]} onSave={(v) => saveField({ verificationResult: v }, 'نتيجة التحقق')} />
+            {/* Radix Select forbids '' as a SelectItem value (reserved for the
+                cleared/placeholder state), so the "not specified" entry uses a
+                sentinel that is translated back to '' when saving. */}
+            <InlineSelect label="نتيجة التحقق" value={capa.verificationResult || '__unset__'} options={[{ value: '__unset__', label: '— لم يتم التحديد —' }, ...VERIFICATION_RESULTS]} onSave={(v) => saveField({ verificationResult: v === '__unset__' ? '' : v }, 'نتيجة التحقق')} />
             <InlineField label="ملاحظات التحقق" value={capa.verificationNotes} type="textarea" onSave={(v) => saveField({ verificationNotes: v }, 'ملاحظات التحقق')} rows={2} />
             {capa.verificationResult && (
               <div className={`rounded-lg p-2.5 text-xs border ${

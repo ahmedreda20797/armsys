@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getAll, createRecord, sortByDateField, getEmployeeMap, invalidateCache } from '@/lib/db';
+import { getAll, createRecord, sortByDateField, getEmployeeMap, getById, invalidateCache } from '@/lib/db';
 import { requireAuth } from '@/lib/verify-permission';
+import { asScopeViewer, employeeInScope, authScopeViewer, filterRowsByEmployeeScope, resolveEmployeeScopeFromDb } from '@/lib/scope/server';
 import { createSmartNotification } from '@/lib/rules-engine';
 import { isOverdueCAPA, capaOverdueDays, capaDueDateMs, isClosedCAPA, CAPA_SLA_DAYS } from '@/lib/metrics';
 import type { CAPACase } from '@/types';
@@ -30,6 +31,20 @@ export async function GET(request: NextRequest) {
 
     let records = await getAll<CAPACase>('capaCases');
 
+    // ── READ SCOPE (M0.5, optional-link rule) ──
+    // CAPA cases are OPTIONALLY employee-linked: an unlinked case is
+    // organizational and stays visible; a linked one requires the
+    // STORED employeeId — AND every relatedEmployeeIds entry —
+    // inside the caller's scope (mirrors the M0.4 write rule).
+    // Scope runs BEFORE filters/sort/search and BEFORE pagination:
+    // the total count and every page derive from the authorized set.
+    const scopeCtx = await resolveEmployeeScopeFromDb(authScopeViewer(auth), undefined, auth.permissions);
+    records = filterRowsByEmployeeScope(
+      records as Array<{ employeeId?: string | null; relatedEmployeeIds?: string[] }>,
+      scopeCtx,
+      { optionalLink: true, relatedEmployeeIdsField: 'relatedEmployeeIds' },
+    ) as typeof records;
+
     // Server-side filters
     if (status) records = records.filter((r) => r.status === status);
     if (priority) records = records.filter((r) => r.priority === priority);
@@ -43,7 +58,7 @@ export async function GET(request: NextRequest) {
         (r) =>
           r.title.toLowerCase().includes(lowerSearch) ||
           r.capaId.toLowerCase().includes(lowerSearch) ||
-          r.problemDescription.toLowerCase().includes(lowerSearch)
+          (r.problemDescription || '').toLowerCase().includes(lowerSearch)
       );
     }
 
@@ -90,11 +105,39 @@ export async function POST(request: NextRequest) {
     if (!permCheck.allowed) {
       return NextResponse.json({ error: permCheck.error }, { status: 403 });
     }
+    // M0.2.1: creation actor identity comes from the authenticated
+    // caller, never from body-supplied createdBy/createdByName (same
+    // rule the M0.1 PUT fix established for timeline actors).
+    const actorUser = permCheck.user ? await getById('users', permCheck.user.id) : null;
+    const actorId = permCheck.user?.id || 'system';
+    const actorName = actorUser?.name || actorUser?.email || 'النظام';
 
     const body = await request.json();
 
     if (!body.title) {
       return NextResponse.json({ error: 'title is required' }, { status: 400 });
+    }
+
+    // ── TARGET-EMPLOYEE SCOPE (M0.4) ──
+    // The CAPA employee link is optional, but when present the
+    // referenced employee(s) — primary employeeId AND every
+    // relatedEmployeeIds entry — must be inside the caller's employee
+    // scope, checked before any existence validation. The CAPA
+    // workflow itself is unchanged.
+    {
+      const viewer = asScopeViewer(permCheck.user!);
+      const targets: string[] = [];
+      if (typeof body.employeeId === 'string' && body.employeeId) targets.push(body.employeeId);
+      if (Array.isArray(body.relatedEmployeeIds)) {
+        for (const rid of body.relatedEmployeeIds) {
+          if (typeof rid === 'string' && rid) targets.push(rid);
+        }
+      }
+      for (const target of targets) {
+        if (!(await employeeInScope(viewer, permCheck.user!.permissions, target))) {
+          return NextResponse.json({ error: 'صلاحية غير كافية' }, { status: 403 });
+        }
+      }
     }
 
     // Validate employee exists if provided (optional field)
@@ -120,18 +163,37 @@ export async function POST(request: NextRequest) {
 
     const empMap = await getEmployeeMap();
 
-    const assignedToName = body.assignedTo ? empMap.get(body.assignedTo)?.name : null;
-    const employeeName = body.employeeId ? empMap.get(body.employeeId)?.name : null;
-    const correctiveName = body.correctiveAssignedTo ? empMap.get(body.correctiveAssignedTo)?.name : null;
-    const preventiveName = body.preventiveAssignedTo ? empMap.get(body.preventiveAssignedTo)?.name : null;
+    // ── ASSIGNEE NAME RESOLUTION (CASE: user id, employee fallback) ──
+    // The CAPA UIs (quick create + detail page assignment) select
+    // assignees via UserSearchInput: assignedTo / correctiveAssignedTo
+    // / preventiveAssignedTo carry USER ids. Legacy records (complaint
+    // escalation) may still carry employee ids, so the employee map
+    // remains the fallback. An id found in neither directory resolves
+    // to null — the same "unresolved" value the PUT route stores —
+    // never undefined (Firebase .set() rejects it) and never a
+    // fabricated name.
+    const resolveAssigneeName = async (id: unknown): Promise<string | null> => {
+      if (typeof id !== 'string' || !id) return null;
+      const user = await getById('users', id);
+      if (user) return user.name || user.email || null;
+      return empMap.get(id)?.name ?? null;
+    };
+
+    const assignedToName = await resolveAssigneeName(body.assignedTo);
+    // employeeId is existence-validated above via a direct read; the
+    // employee map can still be a stale cache snapshot, so a miss
+    // normalizes to null — never undefined.
+    const employeeName = body.employeeId ? empMap.get(body.employeeId)?.name ?? null : null;
+    const correctiveName = await resolveAssigneeName(body.correctiveAssignedTo);
+    const preventiveName = await resolveAssigneeName(body.preventiveAssignedTo);
 
     const initialTimeline = [
       {
         id: `tl-${Date.now()}`,
         action: 'case_created',
         description: 'تم إنشاء حالة كابا',
-        performedBy: body.createdBy || 'system',
-        performedByName: body.createdByName || 'النظام',
+        performedBy: actorId,
+        performedByName: actorName,
         timestamp: new Date().toISOString(),
       },
     ];
@@ -147,8 +209,8 @@ export async function POST(request: NextRequest) {
       relatedComplaintId: body.relatedComplaintId || null,
       relatedQualityDeductionId: body.relatedQualityDeductionId || null,
       relatedHrDeductionId: body.relatedHrDeductionId || null,
-      createdBy: body.createdBy || 'system',
-      createdByName: body.createdByName || 'النظام',
+      createdBy: actorId,
+      createdByName: actorName,
       issueCategory: body.issueCategory || 'other',
       problemDescription: body.problemDescription || '',
       impactLevel: validPriorities.includes(body.impactLevel) ? body.impactLevel : 'medium',

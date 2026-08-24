@@ -15,6 +15,7 @@
 // ══════════════════════════════════════════════════════════════
 
 import { createRecord, findWhere } from '@/lib/db';
+import { findDuplicateByTitleOrRecord } from '@/lib/notifications/dedup';
 
 /**
  * Notification priority levels — defined locally to avoid coupling to
@@ -68,12 +69,18 @@ export async function fireQualityNotification(input: QualityNotificationInput): 
   if (!title) return;
 
   try {
-    // Dedup: check for recent duplicate within the window.
-    if (sourceRecordId) {
-      const cutoff = new Date(Date.now() - DEDUP_WINDOW_MS).toISOString();
-      const existing = await findWhere('notifications', { title, sourceRecordId } as Record<string, string>);
-      const recent = existing.find(
-        (n: Record<string, string>) => n.createdAt && n.createdAt >= cutoff,
+    // Dedup: check for a recent duplicate within the window.
+    // Key: title + sourceRecordId when the notification is entity-bound;
+    // title only for entity-less broadcasts (e.g. month close/reopen —
+    // their titles embed the month key, so a repeat within the window
+    // is a retry of the same event, not a distinct one).
+    if (title) {
+      const existing = await findWhere('notifications', { title });
+      const recent = findDuplicateByTitleOrRecord(
+        existing as Record<string, string>[],
+        { title, sourceRecordId },
+        Date.now(),
+        DEDUP_WINDOW_MS
       );
       if (recent) return; // Skip duplicate.
     }

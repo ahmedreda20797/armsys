@@ -3,7 +3,7 @@
 
 import { useMemo } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
-import { PermissionLevel, APP_PAGES, migratePermission, type ActionKey, type PermissionsMap, type PagePermission } from '@/config/permissions';
+import { PermissionLevel, APP_PAGES, migratePermission, resolveFieldAccess, resolvePageScope, resolveSectionAccess, FAIL_CLOSED_SCOPE, type ActionKey, type DataScope, type PermissionsMap, type PagePermission, type FieldAccess } from '@/config/permissions';
 import { PageId } from '@/types';
 
 export function usePermissions(pageId?: PageId) {
@@ -73,6 +73,40 @@ export function usePermissions(pageId?: PageId) {
   const canViewPage = (pid: string) => canView(pid);
   const canEditPage = (pid: string) => canEdit(pid);
 
+  // Field-level access (Part J): hidden / read-only / editable for a
+  // field within a page. Uses the same effective permission map —
+  // sensitive fields (see SENSITIVE_FIELDS) additionally require
+  // page-level edit to be visible at all.
+  const getFieldAccess = (pid: string, field: string): FieldAccess => {
+    if (!user) return 'hidden';
+    if (isAdmin) return 'editable';
+    return resolveFieldAccess(user.permissions, pid, field);
+  };
+  const canSeeField = (pid: string, field: string): boolean =>
+    getFieldAccess(pid, field) !== 'hidden';
+  const canEditField = (pid: string, field: string): boolean =>
+    getFieldAccess(pid, field) === 'editable';
+
+  // Data scope (M0.3): delegates to the SAME canonical resolver the
+  // API routes use (resolvePageScope) — client and server can never
+  // disagree. Admin is always 'all'; an unconfigured non-admin entry
+  // fails closed to 'own' (empty without the employee linkage).
+  const getScope = (pid: string): DataScope => {
+    if (!user) return FAIL_CLOSED_SCOPE; // fail-closed for anonymous
+    return resolvePageScope(user.permissions, pid, user.role);
+  };
+
+  // Section access (Milestone 10 foundation): same level vocabulary;
+  // sections inherit the page level unless an override is stored and
+  // can never exceed the page gate.
+  const getSectionAccess = (pid: string, sectionId: string): PermissionLevel => {
+    if (!user) return 'none';
+    if (isAdmin) return 'edit';
+    return resolveSectionAccess(user.permissions, pid, sectionId);
+  };
+  const canViewSection = (pid: string, sectionId: string): boolean =>
+    getSectionAccess(pid, sectionId) !== 'none';
+
   // Visible pages for sidebar (excludes overlayOnly pages)
   const visiblePages = useMemo(() => {
     if (!user) return [];
@@ -102,6 +136,12 @@ export function usePermissions(pageId?: PageId) {
     canViewPage,
     canEditPage,
     canDoAction,
+    getFieldAccess,
+    canSeeField,
+    canEditField,
+    getScope,
+    getSectionAccess,
+    canViewSection,
     getPermission,
     visiblePages,
     currentPermission,

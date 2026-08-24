@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { updateRecord, deleteRecord } from '@/lib/db';
+import { getById, updateRecord, deleteRecord } from '@/lib/db';
 import { verifyPermission } from '@/lib/verify-permission';
+import { asScopeViewer, employeeInScope } from '@/lib/scope/server';
 
 export async function PUT(
   request: NextRequest,
@@ -15,6 +16,24 @@ export async function PUT(
 
     const { id } = await params;
     const body = await request.json();
+
+    // ── TARGET RESOURCE + DATA SCOPE (M0.4) ──
+    // The stored deduction's employeeId governs (this route cannot
+    // reassign it); out-of-scope → 404 identical to the missing
+    // record path (anti-enumeration).
+    const existing = await getById('qualityDeductions', id);
+    if (!existing) {
+      return NextResponse.json({ error: 'Quality deduction not found' }, { status: 404 });
+    }
+    const inScope = await employeeInScope(
+      asScopeViewer(permCheck.user!),
+      permCheck.user!.permissions,
+      existing.employeeId,
+    );
+    if (!inScope) {
+      return NextResponse.json({ error: 'Quality deduction not found' }, { status: 404 });
+    }
+
     const { date, type, description, deductionDays, deductionAmount, evidence, month, relatedCapaId } = body;
 
     const qualityDeduction = await updateRecord('qualityDeductions', id, {
@@ -47,6 +66,23 @@ export async function DELETE(
     }
 
     const { id } = await params;
+
+    // ── TARGET RESOURCE + DATA SCOPE (M0.4) ──
+    // Resolve the stored deduction's employee BEFORE deleting;
+    // out-of-scope → 404 identical to the missing path.
+    const existing = await getById('qualityDeductions', id);
+    if (!existing) {
+      return NextResponse.json({ error: 'Quality deduction not found' }, { status: 404 });
+    }
+    const inScope = await employeeInScope(
+      asScopeViewer(permCheck.user!),
+      permCheck.user!.permissions,
+      existing.employeeId,
+    );
+    if (!inScope) {
+      return NextResponse.json({ error: 'Quality deduction not found' }, { status: 404 });
+    }
+
     await deleteRecord('qualityDeductions', id);
     return NextResponse.json({ message: 'Quality deduction deleted successfully' });
   } catch (error) {

@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { updateRecord, deleteRecord, getById, getEmployeeMap, invalidateCache } from '@/lib/db';
+import { requireAuth, verifyPermission } from '@/lib/verify-permission';
+import { asScopeViewer, employeeInScope, authScopeViewer, linkedRecordInScope, resolveEmployeeScopeFromDb } from '@/lib/scope/server';
 import { createSmartNotification } from '@/lib/rules-engine';
 import type { CAPACase } from '@/types';
 
@@ -7,15 +9,42 @@ import type { CAPACase } from '@/types';
 //  GET /api/capa-cases/[id] — Fetch single CAPA case
 // ══════════════════════════════════════════════════════════════
 export async function GET(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    // M0.1: knowing a case id is not authorization — require a valid
+    // token and the capa page view permission.
+    const auth = await requireAuth(request);
+    if (!auth) {
+      return NextResponse.json({ error: 'مطلوب تسجيل الدخول' }, { status: 401 });
+    }
+    const permCheck = await verifyPermission(request, 'capa', 'view');
+    if (!permCheck.allowed) {
+      return NextResponse.json({ error: permCheck.error }, { status: 403 });
+    }
+
     const { id } = await params;
     const capaCase = await getById<CAPACase>('capaCases', id);
     if (!capaCase) {
       return NextResponse.json({ error: 'CAPA case not found' }, { status: 404 });
     }
+
+    // ── READ SCOPE (M0.5, optional-link rule) ──
+    // Out-of-scope case resolves as NOT FOUND — identical body to
+    // the missing-record path (anti-enumeration). Unlinked
+    // organizational cases pass on permission alone; linked ones
+    // require the stored employeeId AND every relatedEmployeeIds
+    // entry inside the caller's scope.
+    const scopeCtx = await resolveEmployeeScopeFromDb(authScopeViewer(auth), undefined, auth.permissions);
+    if (!linkedRecordInScope(
+      capaCase as unknown as { employeeId?: string | null; relatedEmployeeIds?: string[] },
+      scopeCtx,
+      { optionalLink: true, relatedEmployeeIdsField: 'relatedEmployeeIds' },
+    )) {
+      return NextResponse.json({ error: 'CAPA case not found' }, { status: 404 });
+    }
+
     return NextResponse.json(capaCase);
   } catch (error) {
     console.error('[GET /api/capa-cases/:id] Error:', error);
@@ -31,11 +60,15 @@ export async function PUT(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { verifyPermission } = await import('@/lib/verify-permission');
     const permCheck = await verifyPermission(request, 'capa', 'update');
     if (!permCheck.allowed) {
       return NextResponse.json({ error: permCheck.error }, { status: 403 });
     }
+    // M0.1: timeline actor identity comes from the authenticated caller,
+    // never from body-supplied updatedBy/updatedByName.
+    const actorUser = permCheck.user ? await getById('users', permCheck.user.id) : null;
+    const actorId = permCheck.user?.id || 'system';
+    const actorName = actorUser?.name || actorUser?.email || 'النظام';
 
     const { id } = await params;
     const body = await request.json();
@@ -43,6 +76,34 @@ export async function PUT(
     const existing = await getById<CAPACase>('capaCases', id);
     if (!existing) {
       return NextResponse.json({ error: 'CAPA case not found' }, { status: 404 });
+    }
+
+    // ── DATA SCOPE (M0.4) ──
+    // The STORED primary employee link governs; any INCOMING change
+    // to employeeId / relatedEmployeeIds must additionally reference
+    // only in-scope employees. Unlinked CAPA cases pass on permission
+    // alone (the link is optional). Out-of-scope → 404 identical to
+    // the missing path (anti-enumeration).
+    {
+      const viewer = asScopeViewer(permCheck.user!);
+      if (existing.employeeId) {
+        const ok = await employeeInScope(viewer, permCheck.user!.permissions, existing.employeeId);
+        if (!ok) return NextResponse.json({ error: 'CAPA case not found' }, { status: 404 });
+      }
+      const incomingTargets: string[] = [];
+      if (typeof body.employeeId === 'string' && body.employeeId && body.employeeId !== existing.employeeId) {
+        incomingTargets.push(body.employeeId);
+      }
+      if (Array.isArray(body.relatedEmployeeIds)) {
+        for (const rid of body.relatedEmployeeIds) {
+          if (typeof rid === 'string' && rid) incomingTargets.push(rid);
+        }
+      }
+      for (const target of incomingTargets) {
+        if (!(await employeeInScope(viewer, permCheck.user!.permissions, target))) {
+          return NextResponse.json({ error: 'CAPA case not found' }, { status: 404 });
+        }
+      }
     }
 
     // Build update data
@@ -95,8 +156,8 @@ export async function PUT(
         id: `tl-${Date.now()}`,
         action: 'status_changed',
         description: `تم تغيير الحالة من "${existing.status}" إلى "${body.status}"`,
-        performedBy: body.updatedBy || 'system',
-        performedByName: body.updatedByName || 'النظام',
+        performedBy: actorId,
+        performedByName: actorName,
         timestamp: new Date().toISOString(),
       };
       updateData.timeline = [...existingTimeline, newEvent];
@@ -255,6 +316,25 @@ export async function DELETE(
     }
 
     const { id } = await params;
+
+    // ── TARGET RESOURCE + DATA SCOPE (M0.4) ──
+    // Resolve the stored CAPA (and its primary employee link) BEFORE
+    // deleting; out-of-scope → 404 identical to the missing path.
+    const existing = await getById<CAPACase>('capaCases', id);
+    if (!existing) {
+      return NextResponse.json({ error: 'CAPA case not found' }, { status: 404 });
+    }
+    if (existing.employeeId) {
+      const inScope = await employeeInScope(
+        asScopeViewer(permCheck.user!),
+        permCheck.user!.permissions,
+        existing.employeeId,
+      );
+      if (!inScope) {
+        return NextResponse.json({ error: 'CAPA case not found' }, { status: 404 });
+      }
+    }
+
     await deleteRecord('capaCases', id);
     invalidateCache('capaCases');
     return NextResponse.json({ message: 'CAPA case deleted successfully' });

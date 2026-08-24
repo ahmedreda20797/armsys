@@ -1,22 +1,23 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getById, updateRecord, deleteRecord } from '@/lib/db';
 import { verifyPermission, requireAuth } from '@/lib/verify-permission';
+import { canSeeNotification } from '@/lib/notifications/recipient-visibility';
 import type { AppNotification } from '@/types';
 
 /**
- * Check if a user owns a notification or has admin-level access.
- * Ownership: notification.employeeId === userId OR notification.assignedTo === userId
+ * Check if a user may access a notification.
+ * Delegates to the single recipient-visibility rule (admin bypass;
+ * directed exact-match; broadcast staff audience + content
+ * permission gate) — same rule as the list route and stats route.
  */
 function canAccessNotification(
   notification: AppNotification,
   userId: string,
-  role: string
+  role: string,
+  permissions: Record<string, any>,
+  linkedEmployeeId?: string | null
 ): boolean {
-  if (role === 'admin') return true;
-  return (
-    notification.employeeId === userId ||
-    notification.assignedTo === userId
-  );
+  return canSeeNotification(notification, { userId, role, permissions, linkedEmployeeId });
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -44,7 +45,7 @@ export async function GET(
     }
 
     // Ownership check
-    if (!canAccessNotification(notification, auth.userId, auth.role)) {
+    if (!canAccessNotification(notification, auth.userId, auth.role, auth.permissions, auth.linkedEmployeeId)) {
       console.warn(
         `[SECURITY] Unauthorized notification access attempt. ` +
         `User: ${auth.userId}, Notification: ${id}, Time: ${new Date().toISOString()}`
@@ -92,7 +93,7 @@ export async function PATCH(
     }
 
     // Ownership check
-    if (!canAccessNotification(existing, permCheck.user!.id, permCheck.user!.role)) {
+    if (!canAccessNotification(existing, permCheck.user!.id, permCheck.user!.role, permCheck.user!.permissions, permCheck.user!.linkedEmployeeId)) {
       console.warn(
         `[SECURITY] Unauthorized notification update attempt. ` +
         `User: ${permCheck.user!.id}, Notification: ${id}, Time: ${new Date().toISOString()}`
@@ -192,7 +193,7 @@ export async function DELETE(
     }
 
     // Ownership check
-    if (!canAccessNotification(existing, permCheck.user!.id, permCheck.user!.role)) {
+    if (!canAccessNotification(existing, permCheck.user!.id, permCheck.user!.role, permCheck.user!.permissions, permCheck.user!.linkedEmployeeId)) {
       console.warn(
         `[SECURITY] Unauthorized notification delete attempt. ` +
         `User: ${permCheck.user!.id}, Notification: ${id}, Time: ${new Date().toISOString()}`

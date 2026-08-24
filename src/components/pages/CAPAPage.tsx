@@ -41,15 +41,39 @@ import {
 } from '@/lib/capa-helpers';
 
 // ═══════════════════════════════════════════════════════════════
-//  COMPONENT
+//  ROUTING WRAPPER
+// ═══════════════════════════════════════════════════════════════
+// CAPA has two modes — list and detail — selected by navParams.id.
+// They must be SEPARATE components: returning <CAPADetailPage/>
+// early from inside the list component skipped its remaining
+// useEffect/useMemo calls on the next render and crashed React with
+// "Rendered fewer hooks than expected". Swapping child component
+// types keeps each one's hook count stable.
+export default function CAPAPage() {
+  const navParams = useAppStore((s) => s.navParams);
+  const navigateTo = useAppStore((s) => s.navigateTo);
+
+  if (navParams?.id) {
+    return (
+      <CAPADetailPage
+        capaId={navParams.id}
+        onBack={() => navigateTo('capa')}
+      />
+    );
+  }
+
+  return <CAPAListPage />;
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  LIST COMPONENT
 // ═══════════════════════════════════════════════════════════════
 
-export default function CAPAPage() {
+function CAPAListPage() {
   const { canView, canCreate, canUpdate, canDelete } = usePermissions('capa');
   const { user } = useAuth();
   const navParams = useAppStore((s) => s.navParams);
   const navigateTo = useAppStore((s) => s.navigateTo);
-  const detailId = navParams?.id;
 
   // ═══ State ═══
   const [cases, setCases] = useState<CAPACase[]>([]);
@@ -76,16 +100,6 @@ export default function CAPAPage() {
   const [reportData, setReportData] = useState<any>(null);
   const [reportLoading, setReportLoading] = useState(false);
   const [exporting, setExporting] = useState(false);
-
-  // ═══ If detail ID is present, show detail page ═══
-  if (detailId) {
-    return (
-      <CAPADetailPage
-        capaId={detailId}
-        onBack={() => navigateTo('capa')}
-      />
-    );
-  }
 
   // ═══ Fetch ═══
   useEffect(() => {

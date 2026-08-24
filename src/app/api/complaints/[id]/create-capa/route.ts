@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getById, createRecord, getAll, getEmployeeMap, updateRecord, invalidateCache } from '@/lib/db';
 import { verifyPermission } from '@/lib/verify-permission';
+import { asScopeViewer, employeeInScope } from '@/lib/scope/server';
 import { createSmartNotification } from '@/lib/rules-engine';
 
 // ══════════════════════════════════════════════════════════════
@@ -24,6 +25,23 @@ export async function POST(
     const complaint = await getById('complaints', id);
     if (!complaint) {
       return NextResponse.json({ error: 'Complaint not found' }, { status: 404 });
+    }
+
+    // ── TARGET-EMPLOYEE SCOPE (M0.4, optional-link rule) ──
+    // Complaints are optionally employee-linked. An unlinked complaint
+    // is organizational and passes on permission alone; a PRESENT link
+    // must be inside the caller's authorized scope before a CAPA is
+    // created from it — out-of-scope resolves as the same NOT FOUND
+    // body as an unknown record (anti-enumeration).
+    if ((complaint as any).employeeId) {
+      const storedOk = await employeeInScope(
+        asScopeViewer(permCheck.user!),
+        permCheck.user!.permissions,
+        (complaint as any).employeeId,
+      );
+      if (!storedOk) {
+        return NextResponse.json({ error: 'Complaint not found' }, { status: 404 });
+      }
     }
 
     const body = await request.json().catch(() => ({}));

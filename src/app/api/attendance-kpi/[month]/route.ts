@@ -29,6 +29,7 @@ import {
   validationError,
 } from '@/lib/api-error';
 import { validateMonthKey } from '@/lib/month-utils';
+import { asScopeViewer, resolveEmployeeScopeFromDb } from '@/lib/scope/server';
 import { getAttendanceKpisForMonth } from '@/lib/attendance';
 import type { AttendanceKpiResult } from '@/lib/attendance';
 
@@ -49,6 +50,20 @@ export async function GET(
 
     // ── 3. Stored results only — no recalculation, no regeneration ──
     let kpis: AttendanceKpiResult[] = await getAttendanceKpisForMonth(monthKey);
+
+    // ── 3b. DATA SCOPE (M0.4 read adoption) ──
+    // Per-employee KPI rows: a scoped viewer receives ONLY rows of
+    // employees inside their employee scope (row filtering only —
+    // stored values and pagination math are unchanged). Unrestricted
+    // viewers take the 'all' fast path (no org-graph load).
+    const scopeContext = await resolveEmployeeScopeFromDb(
+      asScopeViewer(permCheck.user!),
+      undefined,
+      permCheck.user!.permissions,
+    );
+    if (!scopeContext.isUnrestricted) {
+      kpis = kpis.filter((k) => scopeContext.includes(k.employeeId));
+    }
 
     const { searchParams } = new URL(request.url);
     const employeeId = searchParams.get('employeeId');

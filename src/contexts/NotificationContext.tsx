@@ -14,6 +14,12 @@ import type { AppNotification } from '@/types';
 import { playNotificationSound } from '@/lib/sounds';
 import { authFetch } from '@/lib/api-fetch';
 import { toast } from 'sonner';
+import {
+  NOTIFICATION_POLL_INTERVAL_MS,
+  FOREGROUND_STALE_THRESHOLD_MS,
+  shouldPollNow,
+  shouldRefreshOnForeground,
+} from '@/lib/polling-policy';
 
 // ══════════════════════════════════════════════════════════════
 //  Types
@@ -158,8 +164,11 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
   }, [!!user]); // Stable boolean — doesn't re-fire on user object recreation
 
   // ── Fetch notifications and detect new ones (used for both initial + polling) ──
+  const lastFetchAtRef = useRef<number>(0);
+
   const refresh = useCallback(async () => {
     try {
+      lastFetchAtRef.current = Date.now();
       // Fetch unread + recent (last 24h) to keep bell populated even after reading
       const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
       const res = await authFetch(`/api/notifications?limit=50&status=unread&dateFrom=${encodeURIComponent(yesterday)}`);
@@ -240,7 +249,12 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
         const db = getFirebaseDb();
         if (!db) return;
 
-        const notifRef = dbRef(db, 'arm_erp/notifications');
+        // Subscribe to the SAME path the broadcast API writes to
+        // (erp/notifications — see /api/firebase/notifications). The
+        // previous subscription path (arm_erp/notifications) never
+        // matched any writes, which made polling the only working
+        // delivery mechanism.
+        const notifRef = dbRef(db, 'erp/notifications');
 
         // Query: ordered by createdAt, limitToLast(1) for new ones
         // We use onChildAdded which fires for existing children first, then new ones
@@ -293,10 +307,39 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
 
     setupListener();
 
-    // Polling fallback every 45 seconds (Firebase listener is primary)
-    const pollInterval = setInterval(() => {
-      if (!cancelled) refresh();
-    }, 45000);
+    // Polling fallback (Firebase listener is primary) — 45s cadence
+    // preserved for reliability, but it no longer fires while the
+    // tab is hidden, and returning to the foreground refreshes once
+    // when the last fetch is stale (polling-policy).
+    const tick = () => {
+      if (
+        !cancelled &&
+        shouldPollNow({
+          isVisible: !document.hidden,
+          lastPollAt: lastFetchAtRef.current || null,
+          now: Date.now(),
+          intervalMs: NOTIFICATION_POLL_INTERVAL_MS,
+        })
+      ) {
+        refresh();
+      }
+    };
+    const pollInterval = setInterval(tick, NOTIFICATION_POLL_INTERVAL_MS);
+
+    // Foreground recovery: one refresh on tab return when stale
+    const onVisibilityChange = () => {
+      if (cancelled || document.hidden) return;
+      if (
+        shouldRefreshOnForeground({
+          lastFetchAt: lastFetchAtRef.current || null,
+          now: Date.now(),
+          staleThresholdMs: FOREGROUND_STALE_THRESHOLD_MS,
+        })
+      ) {
+        refresh();
+      }
+    };
+    document.addEventListener('visibilitychange', onVisibilityChange);
 
     return () => {
       cancelled = true;
@@ -305,6 +348,7 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
         listenerRef.current = null;
       }
       clearInterval(pollInterval);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
     };
   }, [!!user, refresh]); // !!user prevents listener recreation churn
 

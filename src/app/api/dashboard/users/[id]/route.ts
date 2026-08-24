@@ -1,7 +1,10 @@
-import { getById, countWhere, deleteRecord, updateRecord } from '@/lib/db';
+import { getById, countWhere, deleteRecord, updateRecord, findWhere } from '@/lib/db';
 import { NextResponse } from 'next/server';
 import { verifyPermission } from '@/lib/verify-permission';
 import { hashPassword } from '@/lib/auth';
+import { resolveActor } from '@/lib/auth/actor-resolver';
+import { writeConfigAudit } from '@/lib/audit/config-audit';
+import { POSITIONS_TABLE } from '@/lib/organization';
 
 export async function PUT(
   request: Request,
@@ -47,7 +50,71 @@ export async function PUT(
       updates.suspendedAt = body.isSuspended ? new Date().toISOString() : null;
     }
 
+    // ── Milestone 10: Position assignment (permission template tier).
+    // Security-relevant → validated + audited.
+    if (body.positionId !== undefined && body.positionId !== (user.positionId || null)) {
+      if (body.positionId === null || body.positionId === '') {
+        updates.positionId = null;
+      } else {
+        const position = await getById(POSITIONS_TABLE, body.positionId);
+        if (!position) {
+          return NextResponse.json({ error: 'الوظيفة غير موجودة' }, { status: 400 });
+        }
+        updates.positionId = body.positionId;
+      }
+    }
+
+    // ── Milestone 10: optional user ↔ employee LINKAGE.
+    // Links an EXISTING user to an EXISTING employee record — no
+    // accounts are created. One employee may be linked to at most
+    // one user (uniqueness enforced). Security-relevant → audited.
+    if (body.linkedEmployeeId !== undefined && body.linkedEmployeeId !== (user.linkedEmployeeId || null)) {
+      if (body.linkedEmployeeId === null || body.linkedEmployeeId === '') {
+        updates.linkedEmployeeId = null;
+      } else {
+        const employee = await getById('employees', body.linkedEmployeeId);
+        if (!employee) {
+          return NextResponse.json({ error: 'الموظف غير موجود' }, { status: 400 });
+        }
+        const otherHolder = await findWhere('users', { linkedEmployeeId: body.linkedEmployeeId });
+        if (otherHolder.some((u: any) => u.id !== id)) {
+          return NextResponse.json(
+            { error: 'هذا الموظف مرتبط بمستخدم آخر بالفعل' },
+            { status: 409 }
+          );
+        }
+        updates.linkedEmployeeId = body.linkedEmployeeId;
+      }
+    }
+
+    if (Object.keys(updates).length === 0) {
+      return NextResponse.json({ success: true, unchanged: true });
+    }
+
     await updateRecord('users', id, updates);
+
+    // Audit the security-relevant slices only (position/scope affect
+    // access; name/email changes stay in the activity log as before).
+    if (updates.positionId !== undefined || updates.linkedEmployeeId !== undefined) {
+      const actor = await resolveActor(check.user?.id);
+      await writeConfigAudit({
+        actorId: actor.id,
+        actorName: actor.name,
+        action: 'update',
+        entityType: 'userAccess',
+        entityId: id,
+        monthKey: null,
+        before: {
+          ...(updates.positionId !== undefined ? { positionId: user.positionId || null } : {}),
+          ...(updates.linkedEmployeeId !== undefined ? { linkedEmployeeId: user.linkedEmployeeId || null } : {}),
+        },
+        after: {
+          ...(updates.positionId !== undefined ? { positionId: updates.positionId } : {}),
+          ...(updates.linkedEmployeeId !== undefined ? { linkedEmployeeId: updates.linkedEmployeeId } : {}),
+        },
+        details: `تعديل بيانات وصول المستخدم ${user.name ?? id}`,
+      });
+    }
 
     return NextResponse.json({ success: true });
   } catch (error) {

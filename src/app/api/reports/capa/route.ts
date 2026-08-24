@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAll } from '@/lib/db';
-import { requireAuth } from '@/lib/verify-permission';
+import { requireAuth, verifyPermission } from '@/lib/verify-permission';
 import { isOverdueCAPA, isClosedCAPA, isTerminalCAPA, calcCAPAEffectiveness } from '@/lib/metrics';
+import { authScopeViewer, filterRowsByEmployeeScope, resolveEmployeeScopeFromDb } from '@/lib/scope/server';
 
 /* ── Types ────────────────────────────────────────────────────── */
 
@@ -140,11 +141,22 @@ function buildGroupMetrics(cases: CAPACase[]): GroupMetrics {
 export async function GET(
   request: NextRequest
 ): Promise<NextResponse<CAPAReportResponse | { error: string }>> {
-  const auth = requireAuth(request);
+  // M0.1: authentication must be fully resolved (awaited) before the
+  // report runs — the previous un-awaited requireAuth treated the
+  // Promise as truthy and let every caller through. The report is also
+  // gated on the capa page (its sole consumer), matching capa-export.
+  const auth = await requireAuth(request);
   if (!auth) {
     return NextResponse.json(
       { error: 'غير مصرح بالوصول' },
       { status: 401 }
+    );
+  }
+  const permCheck = await verifyPermission(request, 'capa', 'view');
+  if (!permCheck.allowed) {
+    return NextResponse.json(
+      { error: permCheck.error || 'صلاحية غير كافية' },
+      { status: 403 }
     );
   }
 
@@ -158,9 +170,24 @@ export async function GET(
   try {
     const allCases: CAPACase[] = await getAll('capaCases');
 
+    /* ── READ SCOPE (M0.5) ──────────────────────────────────────
+       The report aggregates only CAPA cases the caller could see
+       in the CAPA list itself (M0.4 optional-link rule: unlinked =
+       organizational; any present link, incl. relatedEmployeeIds,
+       must be in scope). Applied BEFORE the query-param filters so
+       every section — summary, byDepartment, byEmployee, trends,
+       status/priority/category/source counts — describes
+       authorized cases only (AUTHORIZED_SCOPE ∩ FILTER). */
+    const scopeCtx = await resolveEmployeeScopeFromDb(authScopeViewer(auth), undefined, auth.permissions);
+    const scopedCases = filterRowsByEmployeeScope(
+      allCases as Array<{ employeeId?: string | null; relatedEmployeeIds?: string[] }>,
+      scopeCtx,
+      { optionalLink: true, relatedEmployeeIdsField: 'relatedEmployeeIds' },
+    ) as typeof allCases;
+
     /* ── Apply query-param filters ─────────────────────────────── */
 
-    let cases = allCases.filter((c) => {
+    let cases = scopedCases.filter((c) => {
       if (filterDepartment && c.department !== filterDepartment) return false;
       if (filterStatus && c.status !== filterStatus) return false;
       if (filterPriority && c.priority !== filterPriority) return false;

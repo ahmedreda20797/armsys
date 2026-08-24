@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAll, findWhereContains, findWhere, getById } from '@/lib/db';
 import { verifyPermission } from '@/lib/verify-permission';
+import { asScopeViewer, employeeInScope } from '@/lib/scope/server';
 import { validateMonthKey } from '@/lib/month-utils';
 import {
   buildDailyBreakdown,
@@ -49,6 +50,20 @@ export async function POST(request: NextRequest) {
     const monthError = validateMonthKey(month);
     if (monthError) {
       return NextResponse.json({ error: monthError }, { status: 400 });
+    }
+
+    // ── DATA SCOPE (M0.4 read adoption) ──
+    // The employee detail report exposes ONE employee's full monthly
+    // data. The target employee must be inside the caller's employee
+    // scope — checked BEFORE the employee lookup so an out-of-scope
+    // id resolves exactly like an unknown one (404, anti-enumeration).
+    const inScope = await employeeInScope(
+      asScopeViewer(permCheck.user!),
+      permCheck.user!.permissions,
+      employeeId,
+    );
+    if (!inScope) {
+      return NextResponse.json({ error: 'الموظف غير موجود' }, { status: 404 });
     }
 
     const [yearStr, monStr] = month.split('-');

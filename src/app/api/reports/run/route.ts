@@ -26,6 +26,7 @@ import { buildReportExcel } from '@/lib/reports/excel';
 import { getRegisteredReport } from '@/lib/reports/registry';
 import { resolveReportRequest } from '@/lib/reports/scope';
 import { buildReportRunResponse } from '@/lib/reports/response';
+import { asScopeViewer, resolveEmployeeScopeFromDb } from '@/lib/scope/server';
 import type { ReportRunRequest } from '@/lib/reports/types';
 
 export async function POST(request: NextRequest) {
@@ -47,6 +48,52 @@ export async function POST(request: NextRequest) {
     const permCheck = await verifyPermission(request, definition.permission.pageId, action);
     if (!permCheck.allowed || !permCheck.user) {
       return apiError(403, ErrorCode.FORBIDDEN, permCheck.error ?? 'صلاحية غير كافية');
+    }
+
+    // ── 2b. AUTHORIZED employee scope — BEFORE request resolution (M0.4) ──
+    // The report-request employee selection (lib/reports/scope) is a
+    // REQUEST-SHAPE mechanism, never an authorization authority.
+    // Authorization comes FIRST from the canonical employee scope
+    // engine (the 'employees' permission entry). The request may
+    // then only NARROW it:
+    //     final = AUTHORIZED_SCOPE ∩ REQUESTED_SELECTION
+    // An 'all' request from a scoped viewer is rewritten to the
+    // authorized set; an explicit single/multiple request must be a
+    // subset of the authorized set. A fail-closed viewer with an
+    // empty authorized set cannot run employee reports at all.
+    const authScope = await resolveEmployeeScopeFromDb(
+      asScopeViewer(permCheck.user),
+      undefined,
+      permCheck.user.permissions,
+    );
+    if (!authScope.isUnrestricted) {
+      const authorizedIds = [...authScope.employeeIds];
+      if (authorizedIds.length === 0) {
+        return apiError(403, ErrorCode.FORBIDDEN, 'صلاحية غير كافية');
+      }
+      const requestedSingle =
+        typeof body.employeeId === 'string' && body.employeeId.length > 0 ? body.employeeId : null;
+      const requestedMultiple = Array.isArray(body.employeeIds)
+        ? body.employeeIds.filter((id): id is string => typeof id === 'string' && id.length > 0)
+        : [];
+      // Mirror the request resolver's precedence: employeeScope
+      // 'all' wins, then employeeIds, then employeeId, else 'all'.
+      const asksAll = body.employeeScope === 'all' || (!requestedSingle && requestedMultiple.length === 0);
+      if (asksAll) {
+        body.employeeScope = undefined;
+        body.employeeId = undefined;
+        body.employeeIds = authorizedIds;
+      } else if (requestedSingle) {
+        if (!authScope.includes(requestedSingle)) {
+          return apiError(403, ErrorCode.FORBIDDEN, 'صلاحية غير كافية');
+        }
+      } else {
+        const intersection = requestedMultiple.filter((id) => authScope.includes(id));
+        if (intersection.length === 0) {
+          return apiError(403, ErrorCode.FORBIDDEN, 'صلاحية غير كافية');
+        }
+        body.employeeIds = intersection;
+      }
     }
 
     // 3. Request resolution (scope modes, department, period, filters).

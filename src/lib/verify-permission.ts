@@ -3,6 +3,7 @@
 // Now uses JWT Bearer token authentication instead of x-user-id header
 
 import { getById } from '@/lib/db';
+import { parsePositionTemplate, POSITIONS_TABLE } from '@/lib/organization';
 import type { ActionKey, PagePermission, PermissionLevel, PermissionsMap } from '@/config/permissions';
 import { migratePermission, resolveEffectivePermissions } from '@/config/permissions';
 import { authenticateRequestAsync } from '@/lib/auth';
@@ -14,6 +15,7 @@ export interface VerifyResult {
     id: string;
     role: string;
     permissions: PermissionsMap;
+    linkedEmployeeId?: string | null;
   };
 }
 
@@ -27,14 +29,29 @@ function safeParsePerms(permissions: any): Record<string, any> {
 }
 
 /**
- * Authenticate a request from its Bearer token and return user info.
- * This is the foundational auth check — used by verifyPermission and requireAuth.
+ * The authenticated caller identity resolved by authenticateFromRequest.
+ *
+ * Milestone 10 additions (all optional, absent for legacy users):
+ *   • linkedEmployeeId — the optional user ↔ employee linkage,
+ *     consumed by the data-scope engine ('own' scope) and by
+ *     notification directed matching.
+ *   • positionId — the user's optional Position; its permission
+ *     template is overlaid INSIDE resolveEffectivePermissions (the
+ *     single resolver — role < position < stored override).
  */
-export async function authenticateFromRequest(request: Request): Promise<{
+export interface AuthenticatedCaller {
   userId: string;
   role: string;
   permissions: PermissionsMap;
-} | null> {
+  linkedEmployeeId?: string | null;
+  positionId?: string | null;
+}
+
+/**
+ * Authenticate a request from its Bearer token and return user info.
+ * This is the foundational auth check — used by verifyPermission and requireAuth.
+ */
+export async function authenticateFromRequest(request: Request): Promise<AuthenticatedCaller | null> {
   // 1. Verify JWT token
   const payload = await authenticateRequestAsync(request);
   if (!payload) return null;
@@ -46,18 +63,28 @@ export async function authenticateFromRequest(request: Request): Promise<{
   // 3. Check if suspended
   if (user.isSuspended) return null;
 
-  // 4. Resolve EFFECTIVE permissions: role preset overridden by the user's
-  //    stored per-user map (same rule the client AuthContext uses). Without
+  // 4. Resolve EFFECTIVE permissions: role preset overridden by the
+  //    optional POSITION template, overridden by the user's stored
+  //    per-user map (same rule the client AuthContext uses). Without
   //    this, users whose stored map predates a page key would be denied
   //    pages their role grants — the stored map is an OVERRIDE, not a
   //    replacement for the role preset.
+  //    The position lookup only runs when the user actually holds a
+  //    position — no legacy user does, so nothing changes for them.
   const stored = safeParsePerms(user.permissions) as PermissionsMap;
-  const permissions = resolveEffectivePermissions(user.role, stored);
+  let positionTemplate: Record<string, unknown> | null = null;
+  if (user.positionId) {
+    const position = await getById(POSITIONS_TABLE, user.positionId);
+    positionTemplate = position ? parsePositionTemplate(position.permissions) : null;
+  }
+  const permissions = resolveEffectivePermissions(user.role, stored, positionTemplate ?? undefined);
 
   return {
     userId: user.id,
     role: user.role,
     permissions,
+    linkedEmployeeId: user.linkedEmployeeId ?? null,
+    positionId: user.positionId ?? null,
   };
 }
 
@@ -81,7 +108,7 @@ export async function verifyPermission(
   if (auth.role === 'admin') {
     return {
       allowed: true,
-      user: { id: auth.userId, role: auth.role, permissions: auth.permissions },
+      user: { id: auth.userId, role: auth.role, permissions: auth.permissions, linkedEmployeeId: auth.linkedEmployeeId ?? null },
     };
   }
 
@@ -96,7 +123,7 @@ export async function verifyPermission(
     }
     return {
       allowed: true,
-      user: { id: auth.userId, role: auth.role, permissions: auth.permissions },
+      user: { id: auth.userId, role: auth.role, permissions: auth.permissions, linkedEmployeeId: auth.linkedEmployeeId ?? null },
     };
   }
 
@@ -107,7 +134,7 @@ export async function verifyPermission(
     }
     return {
       allowed: true,
-      user: { id: auth.userId, role: auth.role, permissions: auth.permissions },
+      user: { id: auth.userId, role: auth.role, permissions: auth.permissions, linkedEmployeeId: auth.linkedEmployeeId ?? null },
     };
   }
 
@@ -123,7 +150,7 @@ export async function verifyPermission(
 
   return {
     allowed: true,
-    user: { id: auth.userId, role: auth.role, permissions: auth.permissions },
+    user: { id: auth.userId, role: auth.role, permissions: auth.permissions, linkedEmployeeId: auth.linkedEmployeeId ?? null },
   };
 }
 
@@ -131,6 +158,6 @@ export async function verifyPermission(
  * Simple authentication check — ensures a valid JWT is present.
  * Use this for routes that require login but no specific permission.
  */
-export async function requireAuth(request: Request): Promise<{ userId: string; role: string; permissions: PermissionsMap } | null> {
+export async function requireAuth(request: Request): Promise<AuthenticatedCaller | null> {
   return authenticateFromRequest(request);
 }

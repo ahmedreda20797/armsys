@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAll, withEmployee, sortByDateField, createRecord, getById } from '@/lib/db';
 import { requireAuth } from '@/lib/verify-permission';
+import { asScopeViewer, employeeInScope, authScopeViewer, filterRowsByEmployeeScope, resolveEmployeeScopeFromDb } from '@/lib/scope/server';
 import { computeRisk, isOverdueFollowUp } from '@/lib/metrics';
+import { createSmartNotification } from '@/lib/rules-engine';
 
 const SCORE_MAP: Record<string, number> = { low: 1, medium: 3, high: 5, critical: 10 };
 const ACTIVE_FOLLOWUP_STATUSES = ['open', 'under_review', 'under_follow_up'] as const;
@@ -30,6 +32,15 @@ export async function GET(request: NextRequest) {
     const followedBy = searchParams.get('followedBy');
 
     let records = await getAll('followUps');
+
+    // ── READ SCOPE (M0.5) ──
+    // Follow-ups are employee-linked through their STORED employeeId
+    // — the authoritative relationship. Scope runs BEFORE all filters
+    // (employeeId/status/date/department/…), so no filter, deal id
+    // or date window can widen visibility. The per-employee risk
+    // aggregate below then derives from the authorized dataset only.
+    const scopeCtx = await resolveEmployeeScopeFromDb(authScopeViewer(auth), undefined, auth.permissions);
+    records = filterRowsByEmployeeScope(records as Array<{ employeeId?: string | null }>, scopeCtx);
 
     if (employeeId) records = records.filter((r: any) => r.employeeId === employeeId);
     if (status) records = records.filter((r: any) => r.status === status);
@@ -120,6 +131,20 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // ── TARGET-EMPLOYEE SCOPE (M0.4) ──
+    // Follow-ups are employee-linked records: the target employee
+    // (body.employeeId) must be inside the caller's employee scope
+    // BEFORE validation and create; out-of-scope is denied without
+    // revealing existence.
+    const inScope = await employeeInScope(
+      asScopeViewer(permCheck.user!),
+      permCheck.user!.permissions,
+      employeeId,
+    );
+    if (!inScope) {
+      return NextResponse.json({ error: 'صلاحية غير كافية' }, { status: 403 });
+    }
+
     // Validate employee exists and is active
     const { validateEmployeeId } = await import('@/lib/validate-employee');
     const empValidation = await validateEmployeeId(employeeId, true);
@@ -175,11 +200,10 @@ export async function POST(request: NextRequest) {
       const respRecord = employees.find((e: any) => e.id === responsiblePerson);
       const respName = respRecord?.name || 'مسؤول';
 
-      await createRecord('notifications', {
+      await createSmartNotification({
         title: 'متابعة جديدة مُسندة إليك',
         description: `تم تعيين متابعة جديدة للموظف "${empName}" - الموضوع: ${subject || 'بدون موضوع'}. تاريخ المتابعة القادمة: ${nextFollowUpDate || 'غير محدد'}.`,
         priority: priorityLevel === 'critical' ? 'critical' : priorityLevel === 'high' ? 'high' : 'medium',
-        status: 'unread',
         category: 'followUp',
         sourceModule: 'followUps',
         sourceRecordId: (followUp as any).id,
@@ -188,30 +212,21 @@ export async function POST(request: NextRequest) {
         employeeName: empName,
         assignedTo: responsiblePerson,
         assignedToName: respName,
-        ruleId: null,
-        ruleName: null,
-        actionUrl: null,
         sourceType: 'manual',
       });
 
       // Critical case notification to admin
       if (priorityLevel === 'critical') {
-        await createRecord('notifications', {
+        await createSmartNotification({
           title: 'حالة حرجة - متابعة جديدة',
           description: `تم إنشاء حالة حرجة للموظف "${empName}" - الموضوع: ${subject}. الأولوية: حرجة.`,
           priority: 'critical',
-          status: 'unread',
           category: 'risk',
           sourceModule: 'followUps',
           sourceRecordId: (followUp as any).id,
           targetPage: 'followUps',
           employeeId: employeeId,
           employeeName: empName,
-          assignedTo: null,
-          assignedToName: null,
-          ruleId: null,
-          ruleName: null,
-          actionUrl: null,
           sourceType: 'manual',
         });
       }
@@ -225,22 +240,16 @@ export async function POST(request: NextRequest) {
         (f: any) => f.employeeId === employeeId && f.date >= thirtyDaysAgoStr && f.id !== (followUp as any).id
       );
       if (recentCases.length >= 2) { // 2 existing + 1 new = 3
-        await createRecord('notifications', {
+        await createSmartNotification({
           title: 'تنبيه مخاطر - 3 حالات للموظف',
           description: `الموظف "${empName}" لديه ${recentCases.length + 1} حالات متابعة خلال آخر 30 يوم. يرجى المراجعة.`,
           priority: 'high',
-          status: 'unread',
           category: 'risk',
           sourceModule: 'riskCenter',
           sourceRecordId: employeeId,
           targetPage: 'riskCenter',
           employeeId: employeeId,
           employeeName: empName,
-          assignedTo: null,
-          assignedToName: null,
-          ruleId: null,
-          ruleName: null,
-          actionUrl: null,
           sourceType: 'manual',
         });
       }

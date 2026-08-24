@@ -46,6 +46,9 @@ import type {
   KpiRangePreset,
   KpiSettings,
   MonthSnapshot,
+  DepartmentScoreEntry,
+  EmployeeScoreEntry,
+  MonthApprovalStats,
   PerformanceFactor,
   RankedEmployee,
   TrendResult,
@@ -169,6 +172,16 @@ export interface CollectedMonth {
 export interface DashboardFilters {
   department?: string | null;
   employeeId?: string | null;
+  /**
+   * M0.5 read scope: the caller's authorized employee set, resolved by
+   * the canonical scope engine. `null`/`undefined` = unrestricted (Admin,
+   * HR, Quality — zero-cost fast path). A present set (even empty —
+   * fail-closed) intersects `employeeScores` with it BEFORE any
+   * aggregation, and every employee-derived aggregate (department
+   * scores, category totals, approval stats) is REBUILT from the
+   * authorized entries only, so no out-of-scope statistic survives.
+   */
+  authorizedEmployeeIds?: ReadonlySet<string> | null;
 }
 
 /** Neutral aggregate approval stats (used when no data is available). */
@@ -180,38 +193,181 @@ const NEUTRAL_APPROVAL_STATS: DashboardApprovalStats = {
   avgApprovalHours: 0,
 };
 
+/** Keep only the employee-score entries whose employee is authorized. */
+function restrictEmployeeScores(
+  employeeScores: Record<string, EmployeeScoreEntry>,
+  authorized: ReadonlySet<string>,
+): Record<string, EmployeeScoreEntry> {
+  return Object.fromEntries(
+    Object.entries(employeeScores).filter(([key, entry]) =>
+      // The map is keyed by employeeId; entries written before the
+      // employeeSnapshot field existed may carry only the key.
+      authorized.has(entry?.employeeSnapshot?.employeeId ?? key),
+    ),
+  );
+}
+
+/**
+ * Rebuild every employee-derived aggregate from the given (already
+ * restricted) employee-score entries. The frozen per-employee entries
+ * carry all inputs the rebuild needs (score, points, observationCount,
+ * per-category totals, approval counts), so no recomputation and no
+ * out-of-scope statistic leaks through `departmentScores`,
+ * `categoryTotals` or `approvalStats`.
+ *
+ * `avgApprovalHours` is a month-wide timestamp average that cannot be
+ * attributed per employee; the scoped response reports the neutral 0
+ * (the same value `aggregateApprovalStats` uses) rather than an
+ * unscoped figure.
+ */
+function rebuildAggregatesFromEntries(
+  employeeScores: Record<string, EmployeeScoreEntry>,
+): {
+  departmentScores: Record<string, DepartmentScoreEntry>;
+  categoryTotals: Record<string, number>;
+  approvalStats: MonthApprovalStats;
+} {
+  const departmentScores: Record<string, DepartmentScoreEntry> = {};
+  const categoryTotals: Record<string, number> = {};
+  let pending = 0;
+  let approved = 0;
+  let rejected = 0;
+
+  for (const entry of Object.values(employeeScores)) {
+    const dept = departmentScores[entry?.dept ?? ''] ?? {
+      avgScore: 0,
+      totalEmployees: 0,
+      totalDeductionPoints: 0,
+      totalBonusPoints: 0,
+      totalObservations: 0,
+    };
+    dept.avgScore += entry?.score ?? 0; // summed, divided below
+    dept.totalEmployees += 1;
+    dept.totalDeductionPoints += entry?.deductionPoints ?? 0;
+    dept.totalBonusPoints += entry?.bonusPoints ?? 0;
+    dept.totalObservations += entry?.observationCount ?? 0;
+    departmentScores[entry?.dept ?? ''] = dept;
+
+    for (const [categoryId, points] of Object.entries(entry?.categoryTotals || {})) {
+      categoryTotals[categoryId] = (categoryTotals[categoryId] || 0) + points;
+    }
+    pending += entry?.pendingCount ?? 0;
+    approved += entry?.approvedCount ?? 0;
+    rejected += entry?.rejectedCount ?? 0;
+  }
+  for (const dept of Object.values(departmentScores)) {
+    dept.avgScore = dept.totalEmployees > 0 ? Math.round(dept.avgScore / dept.totalEmployees) : 0;
+  }
+
+  return {
+    departmentScores,
+    categoryTotals,
+    approvalStats: {
+      total: approved + pending + rejected,
+      pending,
+      approved,
+      rejected,
+      avgApprovalHours: 0,
+    },
+  };
+}
+
+/**
+ * M0.5 read scope: restrict a snapshot to the authorized employees and
+ * rebuild its employee-derived aggregates.
+ */
+function restrictSnapshotToEmployees(
+  snapshot: MonthSnapshot,
+  authorized: ReadonlySet<string>,
+): MonthSnapshot {
+  const employeeScores = restrictEmployeeScores(snapshot.employeeScores, authorized);
+  const { departmentScores, categoryTotals, approvalStats } =
+    rebuildAggregatesFromEntries(employeeScores);
+  return { ...snapshot, employeeScores, departmentScores, categoryTotals, approvalStats };
+}
+
+/**
+ * M0.5 read scope for FULL snapshot responses (month-snapshot detail):
+ * restricts `employeeScores`, rebuilds every employee-derived aggregate
+ * (department scores, category totals, approval stats), filters the
+ * frozen top/bottom leaderboards, and applies the same restriction to
+ * every archived history version. Stored per-employee values on
+ * surviving rows (including their month-wide rank) are shown AS STORED
+ * — the same row-filter precedent M0.4 set for attendance KPI rows.
+ */
+export function scopeMonthSnapshotToEmployees(
+  snapshot: MonthSnapshot,
+  authorized: ReadonlySet<string>,
+): MonthSnapshot {
+  const restricted = restrictSnapshotToEmployees(snapshot, authorized);
+  const keepRanked = (e: RankedEmployee) => authorized.has(e.employeeId);
+
+  return {
+    ...restricted,
+    topEmployees: restricted.topEmployees?.filter(keepRanked) ?? [],
+    bottomEmployees: restricted.bottomEmployees?.filter(keepRanked) ?? [],
+    snapshotHistory: restricted.snapshotHistory?.map((h) => {
+      const employeeScores = restrictEmployeeScores(h.employeeScores, authorized);
+      const { departmentScores, categoryTotals, approvalStats } =
+        rebuildAggregatesFromEntries(employeeScores);
+      return {
+        ...h,
+        employeeScores,
+        departmentScores,
+        categoryTotals,
+        approvalStats,
+        topEmployees: h.topEmployees?.filter(keepRanked) ?? [],
+        bottomEmployees: h.bottomEmployees?.filter(keepRanked) ?? [],
+      };
+    }),
+  };
+}
+
 /**
  * Return a shallow copy of a snapshot with its `employeeScores` and
  * `departmentScores` restricted to the requested department/employee.
  *
- * Month-wide `categoryTotals` and `approvalStats` are intentionally left
- * untouched (the frozen snapshot does not store per-department category
- * totals, and per-department approval stats would require rescanning
- * every observation — which the snapshot exists to avoid). This matches
- * the established Milestone 1–5 filter behavior.
+ * M0.5: the authorization scope (`authorizedEmployeeIds`) is applied
+ * FIRST and rebuilds all employee-derived aggregates; the cosmetic
+ * department/employeeId filters then NARROW the already-authorized
+ * snapshot (AUTHORIZED_SCOPE ∩ FILTER, never filter-then-scope).
+ *
+ * For the cosmetic filters, month-wide `categoryTotals` and
+ * `approvalStats` are intentionally left untouched when no
+ * authorization restriction is present (the frozen snapshot does not
+ * store per-department category totals, and per-department approval
+ * stats would require rescanning every observation — which the snapshot
+ * exists to avoid). This matches the established Milestone 1–5 filter
+ * behavior.
  */
 function filterSnapshot(
   snapshot: MonthSnapshot,
   filters: DashboardFilters,
 ): MonthSnapshot {
-  const { department, employeeId } = filters;
-  if (!department && !employeeId) return snapshot;
+  const { department, employeeId, authorizedEmployeeIds } = filters;
+
+  // ── M0.5 read scope (authorization) — applied before cosmetic filters ──
+  const scoped = authorizedEmployeeIds
+    ? restrictSnapshotToEmployees(snapshot, authorizedEmployeeIds)
+    : snapshot;
+
+  if (!department && !employeeId) return scoped;
 
   const employeeScores = Object.fromEntries(
-    Object.entries(snapshot.employeeScores).filter(([, entry]) => {
-      if (employeeId && entry.employeeSnapshot.employeeId !== employeeId) return false;
-      if (department && entry.dept !== department) return false;
+    Object.entries(scoped.employeeScores).filter(([key, entry]) => {
+      if (employeeId && (entry?.employeeSnapshot?.employeeId ?? key) !== employeeId) return false;
+      if (department && entry?.dept !== department) return false;
       return true;
     }),
   );
 
   const departmentScores = department
     ? Object.fromEntries(
-        Object.entries(snapshot.departmentScores).filter(([dept]) => dept === department),
+        Object.entries(scoped.departmentScores).filter(([dept]) => dept === department),
       )
-    : snapshot.departmentScores;
+    : scoped.departmentScores;
 
-  return { ...snapshot, employeeScores, departmentScores };
+  return { ...scoped, employeeScores, departmentScores };
 }
 
 /**

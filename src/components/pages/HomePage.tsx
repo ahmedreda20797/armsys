@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef, useCallback, useMemo, memo } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo, memo, Fragment } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { usePermissions } from '@/hooks/usePermissions';
 import { useAppStore } from '@/lib/store';
@@ -20,9 +20,14 @@ import {
   Activity, Users, Zap, ArrowUpRight, ArrowDownRight, Shield, Scale,
   Award, Fingerprint, Database, FileSpreadsheet, Target, Gauge,
   ChevronLeft, ChevronRight, AlertCircle, CircleCheck, CircleX,
-  Lock, Wifi, WifiOff, Download, ExternalLink, ClipboardList, Globe,
+  Lock, Wifi, WifiOff, Download, ExternalLink, ClipboardList, Globe, SlidersHorizontal,
 } from 'lucide-react';
 import { playNotificationSound } from '@/lib/sounds';
+import { DASHBOARD_WIDGETS } from '@/config/dashboard-widgets';
+import { resolveWidgetLayout } from '@/lib/personalization';
+import { useUserPreferences } from '@/hooks/use-user-preferences';
+import { DashboardCustomizeDialog } from '@/components/shared/DashboardCustomizeDialog';
+import type { ReactNode } from 'react';
 
 /* ═══════════════════════════════════════════════════════════
    TYPES
@@ -442,6 +447,21 @@ export default function HomePage() {
     } catch { toast.error('خطأ في الاتصال'); playNotificationSound('error'); setActionLoading(null); }
   }, [updateRequestMutation]);
 
+  // ── Milestone 10: personal dashboard layout (permission-first) ──
+  // Hooks run BEFORE any early return (rules of hooks) — the layout
+  // resolves permission-first and only then applies the user's saved
+  // order/visibility.
+  const { data: userPreferences } = useUserPreferences();
+  const [dashboardCustomizeOpen, setDashboardCustomizeOpen] = useState(false);
+  const widgetLayout = useMemo(
+    () => resolveWidgetLayout(
+      DASHBOARD_WIDGETS,
+      userPreferences,
+      (w) => w.permissionKey === 'home' || canViewPage(w.permissionKey),
+    ),
+    [userPreferences, canViewPage],
+  );
+
   // ── Loading Skeleton ──
   if (loading) {
     return (
@@ -466,6 +486,193 @@ export default function HomePage() {
   const lastPerf = stats.lastMonthPerformance;
   const delayChange = lastPerf.totalDelays > 0 ? ((perf.totalDelays - lastPerf.totalDelays) / lastPerf.totalDelays * 100).toFixed(0) : '—';
   const dedChange = lastPerf.totalDeductionAmount > 0 ? ((perf.totalDeductionAmount - lastPerf.totalDeductionAmount) / lastPerf.totalDeductionAmount * 100).toFixed(0) : '—';
+
+  const overviewWidgets: Record<string, ReactNode> = {
+      pendingRequests: canViewPage('requests') ? (
+        
+                <motion.div variants={scaleIn} initial="hidden" animate="visible">
+                  <SectionCard title="الطلبات المعلقة" icon={<FileText className="size-4" />} iconBg="bg-amber-500/10" iconColor="text-amber-400" borderClr="border-amber-500/10"
+                    size="medium"
+                    badge={stats.pendingRequestsDetails.length || undefined}
+                    onOpenFull={() => navigateTo('requests')}
+                    empty={stats.pendingRequestsDetails.length === 0}
+                    emptyIcon={<CheckCircle2 className="size-10" />}
+                    emptyMessage="لا توجد طلبات معلقة - كل شيء على ما يرام!"
+                    footer={stats.pendingRequestsDetails.length > 0 ? (
+                      <div className="flex items-center justify-between">
+                        <span className="text-slate-500 text-[10px]">{stats.pendingRequestsDetails.length} طلب معلق</span>
+                        <button onClick={() => navigateTo('requests')} className="text-amber-400 text-[10px] font-medium hover:text-amber-300 transition-colors flex items-center gap-1">عرض الكل <ExternalLink className="size-3" /></button>
+                      </div>
+                    ) : undefined}
+                    >
+                    <div className="space-y-2.5">
+                      {stats.pendingRequestsDetails.map((req, idx) => (
+                        <div key={req.id} className="p-4 rounded-xl border border-slate-700/20 bg-slate-700/10 hover:bg-slate-700/20 transition-all duration-200 hover:border-slate-600/20">
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="text-white text-sm font-semibold">{req.employeeName}</span>
+                                <span className={`px-2 py-0.5 rounded-lg text-[10px] font-semibold shrink-0 whitespace-nowrap ${getRequestTypeColor(req.type)}`}>{getRequestTypeLabel(req.type)}</span>
+                              </div>
+                              <p className="text-slate-500 text-[10px] mt-1">{req.date}</p>
+                              <p className="text-slate-300 text-xs mt-2">{req.reason}</p>
+                            </div>
+                          </div>
+                          {canEditPage('requests') && (
+                            <div className="flex items-center gap-2 mt-3 pt-3 border-t border-slate-700/15">
+                              <Button size="sm" className="bg-emerald-600/70 text-white text-[10px] gap-1.5 px-3 h-8 rounded-xl"
+                                disabled={actionLoading === req.id}
+                                onClick={(e) => { e.stopPropagation(); handleRequestAction(req.id, 'approved'); }}>
+                                {actionLoading === req.id ? 'جاري...' : 'موافقة'}
+                              </Button>
+                              <Button size="sm" variant="outline" className="border-red-500/15 text-red-400 hover:bg-red-500/10 text-[10px] gap-1.5 px-3 h-8 rounded-xl"
+                                disabled={actionLoading === req.id}
+                                onClick={(e) => { e.stopPropagation(); handleRequestAction(req.id, 'rejected'); }}>
+                                {actionLoading === req.id ? 'جاري...' : 'رفض'}
+                              </Button>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </SectionCard>
+                </motion.div>
+              
+      ) : null,
+      attendanceToday: canViewPage('attendance') ? (
+        
+                <motion.div variants={scaleIn} initial="hidden" animate="visible">
+                  <SectionCard title="الحضور اليوم" icon={<Clock className="size-4" />} iconBg="bg-cyan-500/10" iconColor="text-cyan-400" borderClr="border-cyan-500/10"
+                    onOpenFull={() => navigateTo('attendance')}
+                    size="medium">
+                    <div className="flex flex-wrap gap-2 mb-4">
+                      <Pill icon={<UserCheck className="size-3.5" />} label="حاضر" value={stats.presentCount} color="text-violet-400" bg="bg-emerald-500/8 border-violet-500/30" />
+                      <Pill icon={<AlertTriangle className="size-3.5" />} label="متأخر" value={stats.lateCount} color="text-amber-400" bg="bg-amber-500/8 border-amber-500/12" />
+                      <Pill icon={<UserX className="size-3.5" />} label="غائب" value={stats.absentCount} color="text-red-400" bg="bg-red-500/8 border-red-500/12" />
+                      <Pill icon={<Activity className="size-3.5" />} label="نسبة الحضور" value={`${stats.attendanceRate}%`} color="text-cyan-400" bg="bg-cyan-500/8 border-cyan-500/12" />
+                    </div>
+                    {stats.totalEmployees > 0 && <ProgressBar value={stats.presentCount} max={stats.totalEmployees} colorClass="bg-gradient-to-l from-emerald-500 to-cyan-500" label="نسبة الحضور الإجمالية" />}
+                    {stats.lateEmployees.length > 0 ? (
+                      <div className="mt-4">
+                        <p className="text-slate-500 text-[10px] font-semibold mb-2.5 flex items-center gap-1.5"><AlertTriangle className="size-3" /> المتأخرون:</p>
+                        <div className="space-y-2">
+                          {stats.lateEmployees.map((late, idx) => (
+                            <motion.div key={late.id} initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: idx * 0.03 }}
+                              className="flex items-center justify-between p-3 rounded-xl bg-slate-700/10 hover:bg-slate-700/20 transition-all duration-200 border border-transparent hover:border-slate-600/10">
+                              <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                                <div className="w-7 h-7 rounded-lg bg-amber-500/10 flex items-center justify-center shrink-0"><Clock className="size-3 text-amber-400" /></div>
+                                <span className="text-white text-xs font-medium">{late.employeeName}</span>
+                              </div>
+                              <Badge className="bg-amber-500/10 text-amber-400 border-amber-500/12 text-[10px] shrink-0 rounded-lg px-2">{late.minutesLate} د</Badge>
+                            </motion.div>
+                          ))}
+                        </div>
+                      </div>
+                    ) : <EmptyState icon={<CheckCircle2 className="size-8" />} message="لا يوجد متأخرون - ممتاز!" color="text-emerald-500/30" />}
+                  </SectionCard>
+                </motion.div>
+              
+      ) : null,
+      quickAccess: (
+        <motion.div variants={scaleIn} initial="hidden" animate="visible">
+                <SectionCard title="الوصول السريع" icon={<Zap className="size-4" />} iconBg="bg-violet-500/10" iconColor="text-violet-400" borderClr="border-violet-500/10"
+                  size="medium">
+                  <div className="grid grid-cols-2 gap-2.5">
+                    {canViewPage('employees') && <QuickLink icon={<Users className="size-4" />} label="الموظفين" sub={`${stats.totalEmployees} موظف`} color="from-violet-500/10 to-purple-600/5" onClick={() => navigateTo('employees')} />}
+                    {canViewPage('biometric') && <QuickLink icon={<Fingerprint className="size-4" />} label="البصمة" sub={`${stats.biometricRecordCount} سجل`} color="from-purple-500/10 to-fuchsia-600/5" onClick={() => navigateTo('biometric')} />}
+                    {canViewPage('attendance') && <QuickLink icon={<Clock className="size-4" />} label="الحضور" sub={`${stats.attendanceRate}% حضور`} color="from-cyan-500/10 to-teal-600/5" onClick={() => navigateTo('attendance')} />}
+                    {canViewPage('requests') && <QuickLink icon={<FileText className="size-4" />} label="الطلبات" sub={`${stats.pendingRequests} معلق`} color="from-amber-500/10 to-orange-600/5" onClick={() => navigateTo('requests')} />}
+                    {canViewPage('rules') && <QuickLink icon={<Scale className="size-4" />} label="قواعد الخصم" sub={`${stats.rulesSummary.length} قاعدة`} color="from-rose-500/10 to-pink-600/5" onClick={() => navigateTo('rules')} />}
+                    {canViewPage('quality') && <QuickLink icon={<Award className="size-4" />} label="الجودة" sub={`${stats.qualitySummary.totalCases} حالة`} color="from-orange-500/10 to-amber-600/5" onClick={() => navigateTo('quality')} />}
+                    {canViewPage('travel') && <QuickLink icon={<Plane className="size-4" />} label="السفر" sub={`${stats.activeTravel} نشط`} color="from-rose-500/10 to-pink-600/5" onClick={() => navigateTo('travel')} />}
+                    {canViewPage('reports') && <QuickLink icon={<FileSpreadsheet className="size-4" />} label="التقارير" sub="تصدير Excel" color="from-emerald-500/10 to-green-600/5" onClick={() => navigateTo('reports')} />}
+                  </div>
+                  {/* System Status */}
+                  <div className="mt-4 pt-4 border-t border-slate-700/15">
+                    <p className="text-slate-500 text-[10px] font-semibold mb-2.5 flex items-center gap-1.5"><Activity className="size-3" /> حالة النظام</p>
+                    <div className="space-y-2">
+                      <StatusRow icon={<Fingerprint className="size-3.5" />} label="آخر مزامنة بصمة" value={stats.biometricLastSync ? new Date(stats.biometricLastSync).toLocaleDateString('ar-EG') : 'لم يتم بعد'} ok={!!stats.biometricLastSync} />
+                      <StatusRow icon={<Users className="size-3.5" />} label="إجمالي السجلات" value={`${stats.biometricRecordCount.toLocaleString()} سجل`} ok={stats.biometricRecordCount > 0} />
+                    </div>
+                  </div>
+                </SectionCard>
+              </motion.div>
+      ),
+      requestTypeAnalytics: canViewPage('requests') && stats.requestTypeSummary.length > 0 ? (
+        
+                <motion.div variants={scaleIn} initial="hidden" animate="visible">
+                  <SectionCard title="تحليل الطلبات حسب النوع" icon={<BarChart3 className="size-4" />} iconBg="bg-violet-500/10" iconColor="text-violet-400" borderClr="border-violet-500/10"
+                    extra={<NavBtn onClick={() => navigateTo('requests')} label="التفاصيل" icon={<ExternalLink className="size-3" />} color="text-violet-400" />}
+                    size="medium">
+                    <div className="space-y-3">
+                      {stats.requestTypeSummary.map((rt) => {
+                        const total = rt.pending + rt.approved + rt.rejected;
+                        const pPct = total > 0 ? (rt.pending / total * 100) : 0;
+                        const aPct = total > 0 ? (rt.approved / total * 100) : 0;
+                        const rPct = total > 0 ? (rt.rejected / total * 100) : 0;
+                        const colors: Record<string, string> = { leave: 'bg-cyan-500', permission: 'bg-violet-500', excuse: 'bg-rose-500', tardiness: 'bg-amber-500', remote: 'bg-emerald-500' };
+                        return (
+                          <div key={rt.type} className="p-4 rounded-xl bg-slate-700/10 border border-slate-700/10">
+                            <div className="flex items-center justify-between mb-2.5">
+                              <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                                <div className={`w-3 h-3 rounded-full shrink-0 ${colors[rt.type] || 'bg-slate-400'}`} />
+                                <span className="text-white text-sm font-medium">{rt.label}</span>
+                                <span className="px-2 py-0.5 rounded-lg text-[10px] bg-slate-600/20 text-slate-300 font-semibold shrink-0">{total} طلب</span>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-0.5 h-3 rounded-full overflow-hidden bg-slate-700/30">
+                              {aPct > 0 && <motion.div className="h-full bg-emerald-500 first:rounded-l-full last:rounded-r-full" initial={{ width: 0 }} animate={{ width: `${aPct}%` }} transition={{ duration: 0.8 }} />}
+                              {pPct > 0 && <motion.div className="h-full bg-amber-500 first:rounded-l-full last:rounded-r-full" initial={{ width: 0 }} animate={{ width: `${pPct}%` }} transition={{ duration: 0.8 }} />}
+                              {rPct > 0 && <motion.div className="h-full bg-red-500 first:rounded-l-full last:rounded-r-full" initial={{ width: 0 }} animate={{ width: `${rPct}%` }} transition={{ duration: 0.8 }} />}
+                            </div>
+                            <div className="flex items-center justify-between mt-2 text-[10px] font-medium">
+                              <span className="text-violet-400 flex items-center gap-1"><CheckCircle2 className="size-2.5" />موافق: {rt.approved}</span>
+                              <span className="text-amber-400 flex items-center gap-1"><AlertTriangle className="size-2.5" />معلق: {rt.pending}</span>
+                              <span className="text-red-400 flex items-center gap-1"><XCircle className="size-2.5" />مرفوض: {rt.rejected}</span>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </SectionCard>
+                </motion.div>
+              
+      ) : null,
+      departmentsOverview: canViewPage('employees') && stats.deptTodayStats.length > 0 ? (
+        
+                <motion.div variants={scaleIn} initial="hidden" animate="visible">
+                  <SectionCard title="أقسام الشركة" icon={<Users className="size-4" />} iconBg="bg-violet-500/10" iconColor="text-violet-400" borderClr="border-violet-500/10"
+                    extra={<NavBtn onClick={() => navigateTo('employees')} label="عرض الموظفين" icon={<ExternalLink className="size-3" />} color="text-violet-400" />}
+                    size="medium">
+                    <div className="space-y-2.5">
+                      {stats.deptTodayStats.map((dept, idx) => (
+                        <motion.div key={dept.name} initial={{ opacity: 0, x: -6 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: idx * 0.03 }}
+                          className="p-4 rounded-xl bg-slate-700/10 hover:bg-slate-700/20 transition-all duration-200 border border-transparent hover:border-slate-600/15">
+                          <div className="flex items-center justify-between mb-3 gap-3">
+                            <div className="flex items-center gap-3 min-w-0 flex-1">
+                              <div className={`w-9 h-9 rounded-xl bg-gradient-to-br ${DEPT_GRADIENTS[idx % DEPT_GRADIENTS.length]} flex items-center justify-center shrink-0 shadow-sm`}>
+                                <span className="text-white text-[11px] font-bold">{dept.name[0]}</span>
+                              </div>
+                              <div className="min-w-0">
+                                <p className="text-white text-sm font-semibold">{dept.name}</p>
+                                <p className="text-slate-500 text-[10px]">{dept.employeeCount} موظف</p>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-1.5 flex-wrap justify-end">
+                              <span className="px-2 py-1 rounded-lg text-[10px] bg-violet-500/10 text-violet-400 font-semibold">{dept.presentToday} حاضر</span>
+                              <span className="px-2 py-1 rounded-lg text-[10px] bg-amber-500/10 text-amber-400 font-semibold">{dept.lateToday} متأخر</span>
+                              <span className="px-2 py-1 rounded-lg text-[10px] bg-red-500/10 text-red-400 font-semibold">{dept.absentToday} غائب</span>
+                            </div>
+                          </div>
+                          {dept.employeeCount > 0 && <ProgressBar value={dept.presentToday} max={dept.employeeCount} colorClass="bg-gradient-to-l from-emerald-500 to-cyan-500" />}
+                        </motion.div>
+                      ))}
+                  </div>
+                </SectionCard>
+                </motion.div>
+              
+      ) : null,
+  };
 
   return (
     <div dir="rtl" className="space-y-6 pb-8">
@@ -505,6 +712,12 @@ export default function HomePage() {
                 <Clock className="size-3.5 text-violet-400" />{clock}
               </span>
             </div>
+            <motion.div whileHover={{ scale: 1.06 }} whileTap={{ scale: 0.94 }}>
+              <Button variant="outline" size="sm" className="border-white/[0.08] bg-white/[0.04] hover:bg-white/[0.08] text-slate-200 gap-2 text-xs h-10 px-4 rounded-xl backdrop-blur-sm" onClick={() => setDashboardCustomizeOpen(true)} aria-label="تخصيص لوحة القيادة">
+                <SlidersHorizontal className="size-4" />
+                تخصيص
+              </Button>
+            </motion.div>
             <motion.div whileHover={{ scale: 1.06 }} whileTap={{ scale: 0.94 }}>
               <Button variant="outline" size="sm" className="border-white/[0.08] bg-white/[0.04] hover:bg-white/[0.08] text-slate-200 gap-2 text-xs h-10 px-4 rounded-xl backdrop-blur-sm" onClick={() => refetch()} disabled={refreshing}>
                 <motion.div animate={refreshing ? { rotate: 360 } : {}} transition={{ duration: 1, repeat: refreshing ? Infinity : 0, ease: 'linear' }}><RefreshCw className="size-4" /></motion.div>
@@ -607,197 +820,16 @@ export default function HomePage() {
 
             {/* Row 1: Requests + Attendance + Quick Links */}
             <DashboardGrid columns={3}>
-
-              {/* Pending Requests */}
-              {canViewPage('requests') && (
-                <motion.div variants={scaleIn} initial="hidden" animate="visible">
-                  <SectionCard title="الطلبات المعلقة" icon={<FileText className="size-4" />} iconBg="bg-amber-500/10" iconColor="text-amber-400" borderClr="border-amber-500/10"
-                    size="medium"
-                    badge={stats.pendingRequestsDetails.length || undefined}
-                    onOpenFull={() => navigateTo('requests')}
-                    empty={stats.pendingRequestsDetails.length === 0}
-                    emptyIcon={<CheckCircle2 className="size-10" />}
-                    emptyMessage="لا توجد طلبات معلقة - كل شيء على ما يرام!"
-                    footer={stats.pendingRequestsDetails.length > 0 ? (
-                      <div className="flex items-center justify-between">
-                        <span className="text-slate-500 text-[10px]">{stats.pendingRequestsDetails.length} طلب معلق</span>
-                        <button onClick={() => navigateTo('requests')} className="text-amber-400 text-[10px] font-medium hover:text-amber-300 transition-colors flex items-center gap-1">عرض الكل <ExternalLink className="size-3" /></button>
-                      </div>
-                    ) : undefined}
-                    >
-                    <div className="space-y-2.5">
-                      {stats.pendingRequestsDetails.map((req, idx) => (
-                        <div key={req.id} className="p-4 rounded-xl border border-slate-700/20 bg-slate-700/10 hover:bg-slate-700/20 transition-all duration-200 hover:border-slate-600/20">
-                          <div className="flex items-center justify-between gap-2">
-                            <div className="min-w-0 flex-1">
-                              <div className="flex items-center gap-2 flex-wrap">
-                                <span className="text-white text-sm font-semibold">{req.employeeName}</span>
-                                <span className={`px-2 py-0.5 rounded-lg text-[10px] font-semibold shrink-0 whitespace-nowrap ${getRequestTypeColor(req.type)}`}>{getRequestTypeLabel(req.type)}</span>
-                              </div>
-                              <p className="text-slate-500 text-[10px] mt-1">{req.date}</p>
-                              <p className="text-slate-300 text-xs mt-2">{req.reason}</p>
-                            </div>
-                          </div>
-                          {canEditPage('requests') && (
-                            <div className="flex items-center gap-2 mt-3 pt-3 border-t border-slate-700/15">
-                              <Button size="sm" className="bg-emerald-600/70 text-white text-[10px] gap-1.5 px-3 h-8 rounded-xl"
-                                disabled={actionLoading === req.id}
-                                onClick={(e) => { e.stopPropagation(); handleRequestAction(req.id, 'approved'); }}>
-                                {actionLoading === req.id ? 'جاري...' : 'موافقة'}
-                              </Button>
-                              <Button size="sm" variant="outline" className="border-red-500/15 text-red-400 hover:bg-red-500/10 text-[10px] gap-1.5 px-3 h-8 rounded-xl"
-                                disabled={actionLoading === req.id}
-                                onClick={(e) => { e.stopPropagation(); handleRequestAction(req.id, 'rejected'); }}>
-                                {actionLoading === req.id ? 'جاري...' : 'رفض'}
-                              </Button>
-                            </div>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  </SectionCard>
-                </motion.div>
-              )}
-
-              {/* Today's Attendance */}
-              {canViewPage('attendance') && (
-                <motion.div variants={scaleIn} initial="hidden" animate="visible">
-                  <SectionCard title="الحضور اليوم" icon={<Clock className="size-4" />} iconBg="bg-cyan-500/10" iconColor="text-cyan-400" borderClr="border-cyan-500/10"
-                    onOpenFull={() => navigateTo('attendance')}
-                    size="medium">
-                    <div className="flex flex-wrap gap-2 mb-4">
-                      <Pill icon={<UserCheck className="size-3.5" />} label="حاضر" value={stats.presentCount} color="text-violet-400" bg="bg-emerald-500/8 border-violet-500/30" />
-                      <Pill icon={<AlertTriangle className="size-3.5" />} label="متأخر" value={stats.lateCount} color="text-amber-400" bg="bg-amber-500/8 border-amber-500/12" />
-                      <Pill icon={<UserX className="size-3.5" />} label="غائب" value={stats.absentCount} color="text-red-400" bg="bg-red-500/8 border-red-500/12" />
-                      <Pill icon={<Activity className="size-3.5" />} label="نسبة الحضور" value={`${stats.attendanceRate}%`} color="text-cyan-400" bg="bg-cyan-500/8 border-cyan-500/12" />
-                    </div>
-                    {stats.totalEmployees > 0 && <ProgressBar value={stats.presentCount} max={stats.totalEmployees} colorClass="bg-gradient-to-l from-emerald-500 to-cyan-500" label="نسبة الحضور الإجمالية" />}
-                    {stats.lateEmployees.length > 0 ? (
-                      <div className="mt-4">
-                        <p className="text-slate-500 text-[10px] font-semibold mb-2.5 flex items-center gap-1.5"><AlertTriangle className="size-3" /> المتأخرون:</p>
-                        <div className="space-y-2">
-                          {stats.lateEmployees.map((late, idx) => (
-                            <motion.div key={late.id} initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: idx * 0.03 }}
-                              className="flex items-center justify-between p-3 rounded-xl bg-slate-700/10 hover:bg-slate-700/20 transition-all duration-200 border border-transparent hover:border-slate-600/10">
-                              <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                                <div className="w-7 h-7 rounded-lg bg-amber-500/10 flex items-center justify-center shrink-0"><Clock className="size-3 text-amber-400" /></div>
-                                <span className="text-white text-xs font-medium">{late.employeeName}</span>
-                              </div>
-                              <Badge className="bg-amber-500/10 text-amber-400 border-amber-500/12 text-[10px] shrink-0 rounded-lg px-2">{late.minutesLate} د</Badge>
-                            </motion.div>
-                          ))}
-                        </div>
-                      </div>
-                    ) : <EmptyState icon={<CheckCircle2 className="size-8" />} message="لا يوجد متأخرون - ممتاز!" color="text-emerald-500/30" />}
-                  </SectionCard>
-                </motion.div>
-              )}
-
-              {/* Quick Access + System Status */}
-              <motion.div variants={scaleIn} initial="hidden" animate="visible">
-                <SectionCard title="الوصول السريع" icon={<Zap className="size-4" />} iconBg="bg-violet-500/10" iconColor="text-violet-400" borderClr="border-violet-500/10"
-                  size="medium">
-                  <div className="grid grid-cols-2 gap-2.5">
-                    {canViewPage('employees') && <QuickLink icon={<Users className="size-4" />} label="الموظفين" sub={`${stats.totalEmployees} موظف`} color="from-violet-500/10 to-purple-600/5" onClick={() => navigateTo('employees')} />}
-                    {canViewPage('biometric') && <QuickLink icon={<Fingerprint className="size-4" />} label="البصمة" sub={`${stats.biometricRecordCount} سجل`} color="from-purple-500/10 to-fuchsia-600/5" onClick={() => navigateTo('biometric')} />}
-                    {canViewPage('attendance') && <QuickLink icon={<Clock className="size-4" />} label="الحضور" sub={`${stats.attendanceRate}% حضور`} color="from-cyan-500/10 to-teal-600/5" onClick={() => navigateTo('attendance')} />}
-                    {canViewPage('requests') && <QuickLink icon={<FileText className="size-4" />} label="الطلبات" sub={`${stats.pendingRequests} معلق`} color="from-amber-500/10 to-orange-600/5" onClick={() => navigateTo('requests')} />}
-                    {canViewPage('rules') && <QuickLink icon={<Scale className="size-4" />} label="قواعد الخصم" sub={`${stats.rulesSummary.length} قاعدة`} color="from-rose-500/10 to-pink-600/5" onClick={() => navigateTo('rules')} />}
-                    {canViewPage('quality') && <QuickLink icon={<Award className="size-4" />} label="الجودة" sub={`${stats.qualitySummary.totalCases} حالة`} color="from-orange-500/10 to-amber-600/5" onClick={() => navigateTo('quality')} />}
-                    {canViewPage('travel') && <QuickLink icon={<Plane className="size-4" />} label="السفر" sub={`${stats.activeTravel} نشط`} color="from-rose-500/10 to-pink-600/5" onClick={() => navigateTo('travel')} />}
-                    {canViewPage('reports') && <QuickLink icon={<FileSpreadsheet className="size-4" />} label="التقارير" sub="تصدير Excel" color="from-emerald-500/10 to-green-600/5" onClick={() => navigateTo('reports')} />}
-                  </div>
-                  {/* System Status */}
-                  <div className="mt-4 pt-4 border-t border-slate-700/15">
-                    <p className="text-slate-500 text-[10px] font-semibold mb-2.5 flex items-center gap-1.5"><Activity className="size-3" /> حالة النظام</p>
-                    <div className="space-y-2">
-                      <StatusRow icon={<Fingerprint className="size-3.5" />} label="آخر مزامنة بصمة" value={stats.biometricLastSync ? new Date(stats.biometricLastSync).toLocaleDateString('ar-EG') : 'لم يتم بعد'} ok={!!stats.biometricLastSync} />
-                      <StatusRow icon={<Users className="size-3.5" />} label="إجمالي السجلات" value={`${stats.biometricRecordCount.toLocaleString()} سجل`} ok={stats.biometricRecordCount > 0} />
-                    </div>
-                  </div>
-                </SectionCard>
-              </motion.div>
+              {/* Milestone 10 — personal widget layout: permission
+                  first (resolveWidgetLayout), then the user's saved
+                  order/visibility. Cards render in layout order. */}
+              {widgetLayout.map((widget) => (
+                <Fragment key={widget.id}>
+                  {overviewWidgets[widget.id] ?? null}
+                </Fragment>
+              ))}
             </DashboardGrid>
-
-            <GradientDivider />
-
-            {/* Row 2: Request Types + Departments */}
-            <DashboardGrid>
-
-              {/* Request Type Analytics */}
-              {canViewPage('requests') && stats.requestTypeSummary.length > 0 && (
-                <motion.div variants={scaleIn} initial="hidden" animate="visible">
-                  <SectionCard title="تحليل الطلبات حسب النوع" icon={<BarChart3 className="size-4" />} iconBg="bg-violet-500/10" iconColor="text-violet-400" borderClr="border-violet-500/10"
-                    extra={<NavBtn onClick={() => navigateTo('requests')} label="التفاصيل" icon={<ExternalLink className="size-3" />} color="text-violet-400" />}
-                    size="medium">
-                    <div className="space-y-3">
-                      {stats.requestTypeSummary.map((rt) => {
-                        const total = rt.pending + rt.approved + rt.rejected;
-                        const pPct = total > 0 ? (rt.pending / total * 100) : 0;
-                        const aPct = total > 0 ? (rt.approved / total * 100) : 0;
-                        const rPct = total > 0 ? (rt.rejected / total * 100) : 0;
-                        const colors: Record<string, string> = { leave: 'bg-cyan-500', permission: 'bg-violet-500', excuse: 'bg-rose-500', tardiness: 'bg-amber-500', remote: 'bg-emerald-500' };
-                        return (
-                          <div key={rt.type} className="p-4 rounded-xl bg-slate-700/10 border border-slate-700/10">
-                            <div className="flex items-center justify-between mb-2.5">
-                              <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                                <div className={`w-3 h-3 rounded-full shrink-0 ${colors[rt.type] || 'bg-slate-400'}`} />
-                                <span className="text-white text-sm font-medium">{rt.label}</span>
-                                <span className="px-2 py-0.5 rounded-lg text-[10px] bg-slate-600/20 text-slate-300 font-semibold shrink-0">{total} طلب</span>
-                              </div>
-                            </div>
-                            <div className="flex items-center gap-0.5 h-3 rounded-full overflow-hidden bg-slate-700/30">
-                              {aPct > 0 && <motion.div className="h-full bg-emerald-500 first:rounded-l-full last:rounded-r-full" initial={{ width: 0 }} animate={{ width: `${aPct}%` }} transition={{ duration: 0.8 }} />}
-                              {pPct > 0 && <motion.div className="h-full bg-amber-500 first:rounded-l-full last:rounded-r-full" initial={{ width: 0 }} animate={{ width: `${pPct}%` }} transition={{ duration: 0.8 }} />}
-                              {rPct > 0 && <motion.div className="h-full bg-red-500 first:rounded-l-full last:rounded-r-full" initial={{ width: 0 }} animate={{ width: `${rPct}%` }} transition={{ duration: 0.8 }} />}
-                            </div>
-                            <div className="flex items-center justify-between mt-2 text-[10px] font-medium">
-                              <span className="text-violet-400 flex items-center gap-1"><CheckCircle2 className="size-2.5" />موافق: {rt.approved}</span>
-                              <span className="text-amber-400 flex items-center gap-1"><AlertTriangle className="size-2.5" />معلق: {rt.pending}</span>
-                              <span className="text-red-400 flex items-center gap-1"><XCircle className="size-2.5" />مرفوض: {rt.rejected}</span>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </SectionCard>
-                </motion.div>
-              )}
-
-              {/* Departments Overview */}
-              {canViewPage('employees') && stats.deptTodayStats.length > 0 && (
-                <motion.div variants={scaleIn} initial="hidden" animate="visible">
-                  <SectionCard title="أقسام الشركة" icon={<Users className="size-4" />} iconBg="bg-violet-500/10" iconColor="text-violet-400" borderClr="border-violet-500/10"
-                    extra={<NavBtn onClick={() => navigateTo('employees')} label="عرض الموظفين" icon={<ExternalLink className="size-3" />} color="text-violet-400" />}
-                    size="medium">
-                    <div className="space-y-2.5">
-                      {stats.deptTodayStats.map((dept, idx) => (
-                        <motion.div key={dept.name} initial={{ opacity: 0, x: -6 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: idx * 0.03 }}
-                          className="p-4 rounded-xl bg-slate-700/10 hover:bg-slate-700/20 transition-all duration-200 border border-transparent hover:border-slate-600/15">
-                          <div className="flex items-center justify-between mb-3 gap-3">
-                            <div className="flex items-center gap-3 min-w-0 flex-1">
-                              <div className={`w-9 h-9 rounded-xl bg-gradient-to-br ${DEPT_GRADIENTS[idx % DEPT_GRADIENTS.length]} flex items-center justify-center shrink-0 shadow-sm`}>
-                                <span className="text-white text-[11px] font-bold">{dept.name[0]}</span>
-                              </div>
-                              <div className="min-w-0">
-                                <p className="text-white text-sm font-semibold">{dept.name}</p>
-                                <p className="text-slate-500 text-[10px]">{dept.employeeCount} موظف</p>
-                              </div>
-                            </div>
-                            <div className="flex items-center gap-1.5 flex-wrap justify-end">
-                              <span className="px-2 py-1 rounded-lg text-[10px] bg-violet-500/10 text-violet-400 font-semibold">{dept.presentToday} حاضر</span>
-                              <span className="px-2 py-1 rounded-lg text-[10px] bg-amber-500/10 text-amber-400 font-semibold">{dept.lateToday} متأخر</span>
-                              <span className="px-2 py-1 rounded-lg text-[10px] bg-red-500/10 text-red-400 font-semibold">{dept.absentToday} غائب</span>
-                            </div>
-                          </div>
-                          {dept.employeeCount > 0 && <ProgressBar value={dept.presentToday} max={dept.employeeCount} colorClass="bg-gradient-to-l from-emerald-500 to-cyan-500" />}
-                        </motion.div>
-                      ))}
-                  </div>
-                </SectionCard>
-                </motion.div>
-              )}
-            </DashboardGrid>
+            
 
             {/* Today's Follow-ups Alert */}
             {canViewPage('followUps') && stats.todaysFollowUps.length > 0 && (
@@ -1108,6 +1140,7 @@ export default function HomePage() {
           </motion.div>
         )}
       </AnimatePresence>
+      <DashboardCustomizeDialog open={dashboardCustomizeOpen} onClose={() => setDashboardCustomizeOpen(false)} />
     </div>
   );
 }

@@ -2,13 +2,23 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getAll } from '@/lib/db';
 import { isFirebaseConfigured, getFirebaseAdmin } from '@/lib/firebase-server';
 import { getDatabase } from 'firebase-admin/database';
-import { requireAuth } from '@/lib/verify-permission';
+import { requireAuth, verifyPermission } from '@/lib/verify-permission';
 
 export async function POST(request: NextRequest) {
   try {
     const auth = await requireAuth(request);
     if (!auth) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    // M0.2: triggering a full-database sync is a privileged Firebase
+    // settings action — gated by the existing 'firebase' page
+    // permission (every non-admin role preset has firebase: 'none').
+    // A valid token alone must not trigger synchronization.
+    // Admin bypass unchanged (inside verifyPermission).
+    const permCheck = await verifyPermission(request, 'firebase', 'view');
+    if (!permCheck.allowed) {
+      return NextResponse.json({ error: permCheck.error }, { status: 403 });
     }
 
     if (!isFirebaseConfigured()) {
