@@ -1,5 +1,7 @@
 // src/types/index.ts
 
+import type { EmployeeStatus } from '@/lib/organization/employee-status';
+
 export interface AuthUser {
   id: string;
   email: string;
@@ -32,6 +34,14 @@ export interface Employee {
    * organization moves (historical integrity).
    */
   orgNodeId?: string | null;
+  /**
+   * M0.6-A lifecycle. OPTIONAL — legacy employees have no field and
+   * read as 'active' everywhere (normalizeEmployeeStatus), so no
+   * migration is required. The canonical scope engine intentionally
+   * does NOT consume this field yet (access evolution is its own
+   * reviewed step); nothing in M0.6-A deletes on deactivation.
+   */
+  status?: EmployeeStatus;
 }
 
 export interface BiometricRecord {

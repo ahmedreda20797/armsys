@@ -64,7 +64,9 @@ export async function PUT(
       before.status = node.status; updates.status = body.status as OrgNodeStatus;
     }
     if (body.description !== undefined && body.description !== node.description) {
-      before.description = node.description;
+      // Null-coalesce: legacy nodes may lack the field entirely, and
+      // Firebase rejects audit payloads containing undefined values.
+      before.description = node.description ?? null;
       updates.description = typeof body.description === 'string' && body.description.trim()
         ? body.description.trim()
         : null;
@@ -84,7 +86,7 @@ export async function PUT(
           if (!manager) return validationError('المدير المحدد غير موجود');
           managerUserName = manager.name;
         }
-        before.managerUserId = node.managerUserId;
+        before.managerUserId = node.managerUserId ?? null;
         updates.managerUserId = nextManagerId;
         updates.managerUserName = managerUserName;
       }
@@ -153,7 +155,7 @@ export async function DELETE(
       entityType: 'orgNode',
       entityId: id,
       monthKey: null,
-      before: { name: node.name, type: node.type, parentId: node.parentId },
+      before: { name: node.name, type: node.type, parentId: node.parentId ?? null },
       details: `حذف عقدة تنظيمية: ${node.name}`,
     });
 

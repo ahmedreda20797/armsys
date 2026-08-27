@@ -38,6 +38,13 @@ import {
   X,
   Loader2,
 } from 'lucide-react';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import {
+  EMPLOYEE_STATUSES,
+  EMPLOYEE_STATUS_LABELS_AR,
+  normalizeEmployeeStatus,
+  type EmployeeStatus,
+} from '@/lib/organization';
 import type { Employee } from '@/types';
 import { logCreate, logUpdate, logDelete } from '@/lib/activity-logger';
 import { authFetch } from '@/lib/api-fetch';
@@ -51,6 +58,7 @@ interface EmployeeFormData {
   shiftEnd: string;
   hireDate: string;
   mobile: string;
+  status: string;
 }
 
 const emptyForm: EmployeeFormData = {
@@ -62,6 +70,14 @@ const emptyForm: EmployeeFormData = {
   shiftEnd: '',
   hireDate: '',
   mobile: '',
+  status: 'active',
+};
+
+// M0.6-A lifecycle badges (display only)
+const STATUS_BADGE_CLASS: Record<EmployeeStatus, string> = {
+  active: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30',
+  inactive: 'bg-amber-500/15 text-amber-400 border-amber-500/30',
+  archived: 'bg-slate-500/15 text-slate-400 border-slate-500/30',
 };
 
 export default function EmployeesPage() {
@@ -77,6 +93,11 @@ export default function EmployeesPage() {
   const deleteEmployee = useDeleteEmployee();
   
   const [search, setSearch] = useState('');
+  // M0.6-A addendum §2/§20: the management list defaults to the
+  // CURRENT (active) workforce — archived employees "disappear" from
+  // the default list and remain reachable through this filter (the
+  // archive search view). Nothing is deleted.
+  const [statusFilter, setStatusFilter] = useState<'all' | EmployeeStatus>('active');
   const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [form, setForm] = useState<EmployeeFormData>(emptyForm);
@@ -178,6 +199,7 @@ export default function EmployeesPage() {
       shiftEnd: emp.shiftEnd || '',
       hireDate: emp.hireDate || '',
       mobile: emp.mobile || '',
+      status: normalizeEmployeeStatus(emp.status),
     });
   };
 
@@ -188,6 +210,8 @@ export default function EmployeesPage() {
       (emp.department || '').toLowerCase().includes(search.toLowerCase()) ||
       (emp.position || '').toLowerCase().includes(search.toLowerCase()) ||
       (emp.mobile || '').toLowerCase().includes(search.toLowerCase())
+  ).filter((emp: any) =>
+    statusFilter === 'all' || normalizeEmployeeStatus(emp.status) === statusFilter
   );
 
   // Touch handlers for swipe-to-delete (RTL: swipe left means swipe right visually)
@@ -302,6 +326,24 @@ export default function EmployeesPage() {
               dir="ltr"
             />
           </div>
+          {editingEmployee && (
+            <div className="space-y-2">
+              <Label className="text-slate-300">حالة الموظف</Label>
+              {/* M0.6-A lifecycle: deactivation preserves the employee and all history */}
+              <Select value={form.status} onValueChange={(v) => updateForm('status', v)}>
+                <SelectTrigger className="bg-slate-800 border-slate-600 text-white">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {EMPLOYEE_STATUSES.map((s) => (
+                    <SelectItem key={s} value={s} className="text-white">
+                      {EMPLOYEE_STATUS_LABELS_AR[s]}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
         </div>
         <DialogFooter>
           <Button
@@ -389,8 +431,9 @@ export default function EmployeesPage() {
         </div>
       </motion.div>
 
-      {/* Search */}
-      <div className="relative max-w-md">
+      {/* Search + M0.6-A lifecycle filter */}
+      <div className="flex items-center gap-3 flex-wrap">
+        <div className="relative max-w-md flex-1 min-w-[240px]">
         <Search className="absolute right-3 top-1/2 -translate-y-1/2 size-4 text-slate-400" />
         <Input
           placeholder="بحث بالاسم، الكود، القسم، الوظيفة، أو الموبايل..."
@@ -406,6 +449,20 @@ export default function EmployeesPage() {
             <X className="size-4" />
           </button>
         )}
+        </div>
+        <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as 'all' | EmployeeStatus)}>
+          <SelectTrigger className="bg-slate-800/70 border-slate-700/70 text-white w-32 h-10 text-sm">
+            <SelectValue placeholder="الحالة" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all" className="text-white">كل الحالات</SelectItem>
+            {EMPLOYEE_STATUSES.map((s) => (
+              <SelectItem key={s} value={s} className="text-white">
+                {EMPLOYEE_STATUS_LABELS_AR[s]}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
 
       {/* Loading */}
@@ -463,7 +520,19 @@ export default function EmployeesPage() {
                         <EmployeeLink employeeId={emp.id} code={emp.code || '—'} compact hideAvatar textClassName="text-blue-400" />
                       </TableCell>
                       <TableCell>
-                        <EmployeeLink employeeId={emp.id} name={emp.name} department={emp.department} />
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <EmployeeLink employeeId={emp.id} name={emp.name} department={emp.department} />
+                          {(() => {
+                            const st = normalizeEmployeeStatus(emp.status);
+                            return (
+                              <span
+                                className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] leading-none ${STATUS_BADGE_CLASS[st]}`}
+                              >
+                                {EMPLOYEE_STATUS_LABELS_AR[st]}
+                              </span>
+                            );
+                          })()}
+                        </div>
                       </TableCell>
                       <TableCell className="text-slate-300 hidden sm:table-cell">{emp.department || '—'}</TableCell>
                       <TableCell className="text-slate-300 hidden md:table-cell">{emp.position || '—'}</TableCell>

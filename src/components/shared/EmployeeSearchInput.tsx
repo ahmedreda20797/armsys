@@ -4,6 +4,7 @@ import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Input } from '@/components/ui/input';
 import { UserCheck, X } from 'lucide-react';
+import { normalizeEmployeeStatus } from '@/lib/organization';
 
 // ══════════════════════════════════════════════════════════════
 //  EmployeeSearchInput — Reusable searchable employee dropdown
@@ -133,6 +134,14 @@ interface EmployeeSearchInputProps {
   colSpan?: string;
   /** If true, the input is read-only (shows selected name, no dropdown) */
   readOnly?: boolean;
+  /**
+   * M0.6-A addendum §19-§20: CURRENT assignment eligibility. By
+   * default archived/inactive employees are not offered as NEW
+   * assignees — they remain fully resolvable in historical viewers.
+   * Consumers that need the full population (archive/history views)
+   * pass includeInactive.
+   */
+  includeInactive?: boolean;
 }
 
 // ─── Component ───────────────────────────────────────────────
@@ -154,6 +163,7 @@ export function EmployeeSearchInput({
   className = '',
   colSpan,
   readOnly = false,
+  includeInactive = false,
 }: EmployeeSearchInputProps) {
   const [localInput, setLocalInput] = useState('');
   const [showDropdown, setShowDropdown] = useState(false);
@@ -178,11 +188,21 @@ export function EmployeeSearchInput({
   // Filter query: only active when no value is selected (user is searching).
   const filterQuery = !value ? localInput.trim() : '';
 
-  // Filter employees by search text against all candidate fields
+  // Filter employees by search text against all candidate fields.
+  // Default population = CURRENT employees only (addendum §19-§20);
+  // an already-selected non-active employee still renders (historical
+  // reference), they just can't be picked as a NEW assignee.
+  const searchableEmployees = useMemo(
+    () =>
+      includeInactive
+        ? employees
+        : employees.filter((emp) => normalizeEmployeeStatus(emp.status) === 'active'),
+    [employees, includeInactive],
+  );
   const filteredEmployees = useMemo(() => {
     if (!filterQuery) return [];
-    return employees.filter((emp) => matchesQuery(emp, filterQuery));
-  }, [employees, filterQuery]);
+    return searchableEmployees.filter((emp) => matchesQuery(emp, filterQuery));
+  }, [searchableEmployees, filterQuery]);
 
   // Visible results for render AND keyboard navigation
   const limit = MAX_RESULTS[variant];

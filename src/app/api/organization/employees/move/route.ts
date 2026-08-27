@@ -22,9 +22,12 @@ import { writeConfigAudit } from '@/lib/audit/config-audit';
 import { fireRoutedNotification } from '@/lib/notifications/routing';
 import {
   ORG_NODES_TABLE,
+  MEMBERSHIP_EVENTS_TABLE,
   buildEmployeeMovePatch,
+  buildMembershipEvent,
   type OrgNode,
 } from '@/lib/organization';
+import { createRecordWithId } from '@/lib/db';
 
 export async function POST(request: NextRequest) {
   try {
@@ -61,6 +64,24 @@ export async function POST(request: NextRequest) {
     await updateRecord('employees', employeeId, buildEmployeeMovePatch(orgNodeId ?? null));
 
     const actor = await resolveActor(permCheck.user?.id);
+
+    // ── M0.6-A APPEND-ONLY MEMBERSHIP LEDGER ──
+    // One immutable event per ACTUAL assignment change (joined /
+    // transferred / unassigned). This is historical bookkeeping ONLY:
+    // nothing in scope, permissions or reports reads it in M0.6-A,
+    // and a ledger failure must never undo the committed move.
+    try {
+      const event = buildMembershipEvent({
+        employeeId,
+        employeeName: employee.name ?? null,
+        previousNodeId,
+        nextNodeId: orgNodeId ?? null,
+        actorUserId: actor.id,
+      });
+      await createRecordWithId(MEMBERSHIP_EVENTS_TABLE, event.id, event);
+    } catch (ledgerError) {
+      console.error('membershipEvents append failed:', ledgerError);
+    }
     await writeConfigAudit({
       actorId: actor.id,
       actorName: actor.name,

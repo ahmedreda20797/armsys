@@ -7,7 +7,8 @@
     "build": "next build && cp -r .next/static .next/standalone/.next/ && cp -r public .next/standalone/",
     "start": "next start",
     "lint": "eslint .",
-    "test": "tsx --test src/lib/**/__tests__/*.test.ts"
+    "test": "tsx --test src/lib/**/__tests__/*.test.ts",
+    "integrity:organization": "tsx scripts/organization-integrity.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.1.1",

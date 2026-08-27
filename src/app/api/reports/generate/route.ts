@@ -3,6 +3,7 @@ import { getAll, findWhereContains, findWhere } from '@/lib/db';
 import { verifyPermission } from '@/lib/verify-permission';
 import { validateMonthKey } from '@/lib/month-utils';
 import { asScopeViewer, filterEmployeesInScope, resolveEmployeeScopeFromDb } from '@/lib/scope/server';
+import { filterCurrentEmployees } from '@/lib/organization';
 import {
   buildReportRow,
   computeMonthlyAttendance,
@@ -64,10 +65,19 @@ export async function POST(request: NextRequest) {
       undefined,
       permCheck.user!.permissions,
     );
-    const employees = filterEmployeesInScope(
-      allEmployees as Array<{ id: string }>,
-      scopeCtx,
+    const employees = filterCurrentEmployees(
+      filterEmployeesInScope(
+        allEmployees as Array<{ id: string }>,
+        scopeCtx,
+      ) as typeof allEmployees,
     ) as typeof allEmployees;
+    // ── CURRENT REPORTING RULE (M0.6-A addendum §9) ──
+    // On top of the scope intersection, current reports describe the
+    // ACTIVE workforce only: archived/inactive employees never appear
+    // as zero-filled rows in current reports. Their historical records
+    // stay intact and remain queryable (addendum §7-§11); date-aware
+    // historical visibility is the future reporting engine's
+    // responsibility (employment-period foundation already in place).
 
     // Policy from the deductionRules collection (canonical defaults for
     // missing rows). No write-on-read sync — Milestone 2 §27.

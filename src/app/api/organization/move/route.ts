@@ -67,7 +67,7 @@ export async function POST(request: NextRequest) {
       entityType: 'orgNode',
       entityId: nodeId,
       monthKey: null,
-      before: { parentId: node.parentId },
+      before: { parentId: node.parentId ?? null },
       after: { parentId: newParentId ?? null },
       details: `نقل عقدة "${node.name}"${impact ? ` — التأثير: ${impact.employeeCount} موظف، ${impact.subtreeNodeCount} عقدة` : ''}`,
     });

@@ -4,7 +4,7 @@ import { verifyPermission, requireAuth } from '@/lib/verify-permission';
 import { resolvePageScope, stripRestrictedFields } from '@/config/permissions';
 import { resolveEmployeeScope, filterEmployeesByScope } from '@/lib/scope';
 import { asScopeViewer, hasUnrestrictedEmployeeScope } from '@/lib/scope/server';
-import { ORG_NODES_TABLE, type OrgNode } from '@/lib/organization';
+import { ORG_NODES_TABLE, DEFAULT_EMPLOYEE_STATUS, type OrgNode } from '@/lib/organization';
 
 export async function GET(request: NextRequest) {
   try {
@@ -169,6 +169,9 @@ export async function POST(request: NextRequest) {
       hireDate: hireDate || null,
       mobile: mobile || null,
       createdById: createdById || null,
+      // M0.6-A: lifecycle default. Legacy employees (no field) keep
+      // reading as active via normalizeEmployeeStatus.
+      status: DEFAULT_EMPLOYEE_STATUS,
     });
 
     return NextResponse.json(employee, { status: 201 });
