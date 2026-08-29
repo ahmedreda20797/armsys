@@ -15,7 +15,7 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
 } from '@/components/ui/dialog';
 import {
-  CalendarLock, Lock, Unlock, FileSpreadsheet, Clock, CheckCircle2,
+  CalendarClock, Lock, Unlock, FileSpreadsheet, Clock, CheckCircle2,
   AlertTriangle, Eye, History, Users,
 } from 'lucide-react';
 import { ScoreBadge, KpiSchemeSummaryCard } from '@/components/shared/kpi';
@@ -425,7 +425,7 @@ export default function MonthClosePage() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold text-slate-100 flex items-center gap-2">
-            <CalendarLock className="size-6 text-blue-400" />
+            <CalendarClock className="size-6 text-blue-400" />
             إغلاق وإعادة فتح الأشهر
           </h1>
           <p className="text-sm text-slate-400 mt-1">
@@ -475,7 +475,7 @@ export default function MonthClosePage() {
         </div>
       ) : (
         <div className="flex flex-col items-center justify-center py-24 text-slate-400">
-          <CalendarLock className="size-12 mb-3 opacity-50" />
+          <CalendarClock className="size-12 mb-3 opacity-50" />
           <p className="text-sm">لا توجد أشهر بعد. تظهر الأشهر تلقائياً عند إنشاء أول ملاحظة جودة.</p>
         </div>
       )}
