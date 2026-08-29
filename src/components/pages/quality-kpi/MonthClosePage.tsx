@@ -15,14 +15,15 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
 } from '@/components/ui/dialog';
 import {
-  CalendarCog, Lock, Unlock, FileSpreadsheet, Clock, CheckCircle2,
+  CalendarLock, Lock, Unlock, FileSpreadsheet, Clock, CheckCircle2,
   AlertTriangle, Eye, History, Users,
 } from 'lucide-react';
-import { ScoreBadge } from '@/components/shared/kpi';
+import { ScoreBadge, KpiSchemeSummaryCard } from '@/components/shared/kpi';
 import {
   useMonthSnapshots, useMonthSnapshot, useCloseMonth, useReopenMonth,
 } from '@/hooks/use-kpi-queries';
 import type { MonthSnapshot, EmployeeScoreEntry } from '@/types/quality-kpi';
+import type { EmployeeKpiResult, KpiScheme } from '@/lib/kpi-framework';
 
 // ─── Helpers ──────────────────────────────────────────────────
 const MONTH_LABELS_AR = ['يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو', 'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر'];
@@ -186,6 +187,43 @@ function SnapshotPreviewDialog({
       .sort((a, b) => a.rank - b.rank);
   }, [snapshot]);
 
+  // KPI Framework (Phase 1): when the snapshot carries frozen framework
+  // results, project the FIRST frozen result into a display scheme so
+  // the dialog shows exactly the scheme/version/weights that were
+  // frozen — never the current live scheme.
+  const frozenKpiDisplay = useMemo(() => {
+    const first: EmployeeKpiResult | null = snapshot?.kpiResults
+      ? Object.values(snapshot.kpiResults)[0] ?? null
+      : null;
+    if (!first) return null;
+    const displayScheme: KpiScheme = {
+      id: first.schemeId,
+      schemaVersion: 1,
+      name: first.schemeName,
+      description: null,
+      status: 'ACTIVE',
+      version: first.schemeVersion,
+      effectiveFrom: '',
+      effectiveTo: null,
+      isDefault: false,
+      applicableDepartments: null,
+      components: first.components.map((c) => ({
+        componentId: c.componentId,
+        name: c.name,
+        weight: c.weight,
+        owner: c.owner,
+        calculationType: 'none' as const,
+        status: 'ACTIVE' as const,
+        configuration: null,
+      })),
+      previousSchemeId: null,
+      createdBy: null,
+      createdAt: '',
+      updatedAt: '',
+    };
+    return { scheme: displayScheme, result: first };
+  }, [snapshot]);
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-3xl max-h-[85vh] bg-slate-900 border-slate-700">
@@ -224,6 +262,14 @@ function SnapshotPreviewDialog({
                 <p className="text-slate-500">معلق</p>
               </div>
             </div>
+
+            {/* KPI Framework (Phase 1): frozen scheme results (when present) */}
+            {frozenKpiDisplay && (
+              <KpiSchemeSummaryCard
+                scheme={frozenKpiDisplay.scheme}
+                result={frozenKpiDisplay.result}
+              />
+            )}
 
             {/* Frozen employees list */}
             <ScrollArea className="h-[50vh] rounded-md border border-slate-700/40">
@@ -379,7 +425,7 @@ export default function MonthClosePage() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold text-slate-100 flex items-center gap-2">
-            <CalendarCog className="size-6 text-blue-400" />
+            <CalendarLock className="size-6 text-blue-400" />
             إغلاق وإعادة فتح الأشهر
           </h1>
           <p className="text-sm text-slate-400 mt-1">
@@ -429,7 +475,7 @@ export default function MonthClosePage() {
         </div>
       ) : (
         <div className="flex flex-col items-center justify-center py-24 text-slate-400">
-          <CalendarCog className="size-12 mb-3 opacity-50" />
+          <CalendarLock className="size-12 mb-3 opacity-50" />
           <p className="text-sm">لا توجد أشهر بعد. تظهر الأشهر تلقائياً عند إنشاء أول ملاحظة جودة.</p>
         </div>
       )}

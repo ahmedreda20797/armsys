@@ -34,6 +34,7 @@ import type {
   ScoreInput,
   ScoreResult,
 } from '@/lib/kpi-scoring/types';
+import type { EmployeeKpiResult } from '@/lib/kpi-framework/types';
 
 // Re-export so existing Quality consumers keep compiling unchanged.
 export type {
@@ -309,6 +310,8 @@ export interface SnapshotHistoryEntry {
   bottomEmployees: RankedEmployee[];
   categoryTotals: Record<string, number>;
   approvalStats: MonthApprovalStats;
+  /** Framework results frozen with this version (same contract as MonthSnapshot.kpiResults). */
+  kpiResults?: Record<string, EmployeeKpiResult>;
 }
 
 /**
@@ -351,6 +354,15 @@ export interface MonthSnapshot {
    * Milestone 5; newly created/closed snapshots always populate it.
    */
   snapshotHistory?: SnapshotHistoryEntry[];
+  /**
+   * KPI Framework (Phase 1) — per-employee company-KPI results under
+   * the resolved scheme version (raw score, weight, weighted
+   * contribution per component). Optional for forward-compatibility
+   * with snapshots written before the framework; snapshots computed
+   * after Phase 1 populate it (empty when no scheme resolves).
+   * Frozen at close — later scheme changes never alter it.
+   */
+  kpiResults?: Record<string, EmployeeKpiResult>;
 }
 
 // ─────────────────────────────────────────────────────────────

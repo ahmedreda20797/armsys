@@ -36,6 +36,7 @@ import { getKpiSettings } from '@/lib/kpi-settings';
 import { computeMonthSnapshot } from '@/lib/metrics/kpiMetrics';
 import type { EmployeeLike, ObservationLike } from '@/lib/metrics/kpiMetrics';
 import { getMonthSnapshot, MONTH_SNAPSHOTS_TABLE } from '@/lib/month-lock';
+import { buildMonthKpiResults, withFinalizedAt } from '@/lib/kpi-framework';
 import { makeAuditEvent } from '@/lib/audit';
 import type { AuditEvent } from '@/lib/audit/types';
 import type {
@@ -87,6 +88,9 @@ function toHistoryEntry(snap: MonthSnapshot): SnapshotHistoryEntry {
     bottomEmployees: snap.bottomEmployees,
     categoryTotals: snap.categoryTotals,
     approvalStats: snap.approvalStats,
+    // KPI Framework (Phase 1): archive the frozen framework results
+    // with the version they belong to (absent on legacy snapshots).
+    ...(snap.kpiResults ? { kpiResults: snap.kpiResults } : {}),
   };
 }
 
@@ -137,6 +141,9 @@ export function buildClosedSnapshot(
     bottomEmployees: computed.bottomEmployees,
     categoryTotals: computed.categoryTotals,
     approvalStats: computed.approvalStats,
+    // KPI Framework (Phase 1): carried through when the fresh payload
+    // includes framework results (absent on legacy test payloads).
+    ...(computed.kpiResults ? { kpiResults: computed.kpiResults } : {}),
     snapshotHistory: previous?.snapshotHistory ?? [],
   };
 }
@@ -191,6 +198,9 @@ export function buildReclosedSnapshot(
     bottomEmployees: computed.bottomEmployees,
     categoryTotals: computed.categoryTotals,
     approvalStats: computed.approvalStats,
+    // KPI Framework (Phase 1): carried through when the fresh payload
+    // includes framework results (absent on legacy test payloads).
+    ...(computed.kpiResults ? { kpiResults: computed.kpiResults } : {}),
     snapshotHistory: archivedHistory,
   };
 }
@@ -290,7 +300,15 @@ export async function computeFreshMonthSnapshot(
   // accepts null entries, which is the documented current behavior.
   const supervisorMap = new Map<string, string | null>();
 
-  return computeMonthSnapshot(monthObs, monthKey, empMap, supervisorMap, settings);
+  const computed = computeMonthSnapshot(monthObs, monthKey, empMap, supervisorMap, settings);
+
+  // KPI Framework (Phase 1): wrap the ALREADY-COMPUTED quality scores
+  // into configurable scheme results (override ▸ department ▸ default
+  // resolution; batched cached reads; no quality recalculation). The
+  // results stay live (finalizedAt: null) until the month is closed.
+  const kpiResults = await buildMonthKpiResults(monthKey, computed.employeeScores);
+
+  return { ...computed, kpiResults };
 }
 
 /**
@@ -336,6 +354,13 @@ export async function closeMonth(
     previous && (previous.snapshotHistory?.length || previous.reopenCount > 0)
       ? buildReclosedSnapshot(computed, previous, actor, now)
       : buildClosedSnapshot(computed, monthKey, previous, actor, now);
+
+  // KPI Framework (Phase 1): freeze the framework results with the
+  // close timestamp. Once persisted, later scheme changes can never
+  // alter these finalized results.
+  if (snapshot.kpiResults) {
+    snapshot.kpiResults = withFinalizedAt(snapshot.kpiResults, snapshot.closedAt);
+  }
 
   await createRecordWithId(MONTH_SNAPSHOTS_TABLE, monthKey, snapshot as unknown as Record<string, unknown>);
   invalidateCache(MONTH_SNAPSHOTS_TABLE);

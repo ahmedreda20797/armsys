@@ -18,14 +18,16 @@ import {
 } from 'lucide-react';
 import {
   ScoreRing, ScoreBadge, TrendArrow, RangeSelector, Leaderboard,
+  KpiSchemeSummaryCard,
 } from '@/components/shared/kpi';
 import {
-  useKpiDashboard, useObservationCategories,
+  useKpiDashboard, useObservationCategories, useKpiSchemes,
 } from '@/hooks/use-kpi-queries';
 import { useEmployees } from '@/hooks/use-queries';
 import type {
   KpiRangePreset, TrendResult, PerformanceFactor,
 } from '@/types/quality-kpi';
+import type { KpiScheme } from '@/lib/kpi-framework';
 import type {
   KpiDashboardResponse,
   DashboardDepartmentRankEntry,
@@ -208,6 +210,13 @@ export default function KpiDashboardPage() {
   const { data: categoriesData } = useObservationCategories();
   const { data: employeesData } = useEmployees();
 
+  // KPI Framework (Phase 1): the active company scheme + component weights.
+  const { data: schemesData, isLoading: schemesLoading } = useKpiSchemes('ACTIVE');
+  const activeScheme = useMemo<KpiScheme | null>(() => {
+    const list = Array.isArray(schemesData) ? schemesData : [];
+    return list.find((s) => s.isDefault) ?? list[0] ?? null;
+  }, [schemesData]);
+
   // Derive department list from employees for the filter dropdown.
   const departments = useMemo(() => {
     const list = Array.isArray(employeesData) ? employeesData : [];
@@ -372,6 +381,9 @@ export default function KpiDashboardPage() {
           hint="ملاحظة"
         />
       </div>
+
+      {/* KPI Framework (Phase 1): active scheme & component weights */}
+      <KpiSchemeSummaryCard scheme={activeScheme} loading={schemesLoading} />
 
       {/* Score + Trend + Performance factor row */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">

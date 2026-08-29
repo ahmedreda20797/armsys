@@ -18,6 +18,8 @@ export const kpiQueryKeys = {
   snapshot: (monthKey: string) => ['kpi', 'snapshots', monthKey] as const,
   dashboard: (range: string, extra?: string) => ['kpi', 'dashboard', range, extra ?? ''] as const,
   auditLog: (filters?: string) => ['kpi', 'auditLog', filters ?? 'all'] as const,
+  schemes: ['kpi', 'schemes'] as const,
+  employeeResult: (employeeId: string) => ['kpi', 'employeeResult', employeeId] as const,
 };
 
 // ═══════════════════════════════════════════════════
@@ -353,5 +355,43 @@ export function useQualityAuditLog(params: AuditLogParams = {}) {
     queryKey: [...kpiQueryKeys.auditLog(), qs],
     queryFn: () => apiFetch(`/api/quality-audit-log${qs}`),
     staleTime: 15_000,
+  });
+}
+
+// ═══════════════════════════════════════════════════
+//  KPI Framework (Phase 1) — schemes & company-KPI results
+// ═══════════════════════════════════════════════════
+
+export function useKpiSchemes(status?: string) {
+  const qs = status ? `?status=${status}` : '';
+  return useQuery({
+    queryKey: [...kpiQueryKeys.schemes, qs],
+    queryFn: () => apiFetch(`/api/kpi-schemes${qs}`),
+    staleTime: 60_000,
+  });
+}
+
+export function useEmployeeKpiResult(employeeId: string | null, month: string | null) {
+  const qs = buildQueryString({ employeeId: employeeId ?? undefined, month: month ?? undefined });
+  return useQuery({
+    queryKey: [...kpiQueryKeys.employeeResult(employeeId ?? 'none'), month],
+    queryFn: () => apiFetch(`/api/kpi-framework/employee-result${qs}`),
+    enabled: !!employeeId && !!month,
+    staleTime: 30_000,
+  });
+}
+
+export function useSetEmployeeKpiScheme() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ employeeId, schemeId }: { employeeId: string; schemeId: string | null }) =>
+      apiFetch('/api/kpi-framework/employee-scheme', {
+        method: 'PUT',
+        body: JSON.stringify({ employeeId, schemeId }),
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: kpiQueryKeys.schemes });
+      qc.invalidateQueries({ queryKey: ['kpi', 'employeeResult'] });
+    },
   });
 }

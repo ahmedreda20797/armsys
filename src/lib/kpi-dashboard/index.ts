@@ -42,6 +42,7 @@ import {
   resolveMonthsInRange,
 } from '@/lib/metrics/kpiMetrics';
 import { isValidMonthKey } from '@/lib/month-utils';
+import type { EmployeeKpiResult } from '@/lib/kpi-framework/types';
 import type {
   KpiRangePreset,
   KpiSettings,
@@ -208,6 +209,27 @@ function restrictEmployeeScores(
 }
 
 /**
+ * Keep only the KPI Framework (Phase 1) results whose employee is
+ * authorized — `kpiResults` is keyed by employeeId and carries
+ * per-employee company-KPI values, so it obeys the exact same row
+ * scope as `employeeScores`.
+ */
+function restrictKpiResults(
+  kpiResults: Record<string, EmployeeKpiResult> | undefined,
+  authorized: ReadonlySet<string> | null,
+  employeeId?: string | null,
+): Record<string, EmployeeKpiResult> | undefined {
+  if (!kpiResults) return undefined;
+  return Object.fromEntries(
+    Object.entries(kpiResults).filter(([key, result]) => {
+      if (authorized && !authorized.has(result?.employeeId ?? key)) return false;
+      if (employeeId && (result?.employeeId ?? key) !== employeeId) return false;
+      return true;
+    }),
+  );
+}
+
+/**
  * Rebuild every employee-derived aggregate from the given (already
  * restricted) employee-score entries. The frozen per-employee entries
  * carry all inputs the rebuild needs (score, points, observationCount,
@@ -283,7 +305,16 @@ function restrictSnapshotToEmployees(
   const employeeScores = restrictEmployeeScores(snapshot.employeeScores, authorized);
   const { departmentScores, categoryTotals, approvalStats } =
     rebuildAggregatesFromEntries(employeeScores);
-  return { ...snapshot, employeeScores, departmentScores, categoryTotals, approvalStats };
+  return {
+    ...snapshot,
+    employeeScores,
+    departmentScores,
+    categoryTotals,
+    approvalStats,
+    ...(snapshot.kpiResults
+      ? { kpiResults: restrictKpiResults(snapshot.kpiResults, authorized) ?? {} }
+      : {}),
+  };
 }
 
 /**
@@ -316,6 +347,9 @@ export function scopeMonthSnapshotToEmployees(
         departmentScores,
         categoryTotals,
         approvalStats,
+        ...(h.kpiResults
+          ? { kpiResults: restrictKpiResults(h.kpiResults, authorized) ?? {} }
+          : {}),
         topEmployees: h.topEmployees?.filter(keepRanked) ?? [],
         bottomEmployees: h.bottomEmployees?.filter(keepRanked) ?? [],
       };
@@ -367,7 +401,18 @@ function filterSnapshot(
       )
     : scoped.departmentScores;
 
-  return { ...scoped, employeeScores, departmentScores };
+  // Narrow the framework results with the same cosmetic employeeId
+  // filter (privacy scope was already applied above; a department
+  // filter cannot narrow kpiResults — the stored result carries no
+  // department — so the already-authorized set is kept as-is).
+  const narrowedKpiResults = restrictKpiResults(scoped.kpiResults, null, employeeId);
+
+  return {
+    ...scoped,
+    employeeScores,
+    departmentScores,
+    ...(narrowedKpiResults ? { kpiResults: narrowedKpiResults } : {}),
+  };
 }
 
 /**

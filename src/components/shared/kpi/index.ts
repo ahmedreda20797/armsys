@@ -6,3 +6,5 @@ export { RangeSelector } from './RangeSelector';
 export { Leaderboard } from './Leaderboard';
 export { Rule } from './Rule';
 export type { RuleTone } from './Rule';
+export { KpiSchemeSummaryCard } from './KpiSchemeSummaryCard';
+export type { KpiSchemeSummaryCardProps } from './KpiSchemeSummaryCard';
