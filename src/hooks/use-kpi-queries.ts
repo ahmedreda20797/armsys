@@ -438,6 +438,22 @@ export function useKpiEmployeeReport(employeeId: string | null, month: string | 
   });
 }
 
+/**
+ * Employee Performance Intelligence dataset (Phase 3) — deterministic
+ * facts only (observations, repeated issues, deductions, complaints,
+ * CAPA, follow-ups, deals, attendance context, evidence references).
+ * Read-only service; no AI narrative is involved.
+ */
+export function usePerformanceIntelligence(employeeId: string | null, month: string | null) {
+  const qs = buildQueryString({ employeeId: employeeId ?? undefined, month: month ?? undefined });
+  return useQuery({
+    queryKey: [...reportsKey('performance-intelligence'), employeeId ?? 'none', month ?? 'none'],
+    queryFn: () => apiFetch(`/api/performance-intelligence${qs}`),
+    enabled: !!employeeId && !!month,
+    staleTime: 15_000,
+  });
+}
+
 /** Monthly Quality KPI report (spec §6). */
 export function useKpiMonthlyReport(month: string | null, params: KpiReportTableParams = {}) {
   const qs = kpiReportQueryString(params, month);

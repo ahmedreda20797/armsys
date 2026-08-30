@@ -21,9 +21,10 @@ import { useMonthSnapshots } from '@/hooks/use-kpi-queries';
 import KpiEmployeeReportTab from './KpiEmployeeReportTab';
 import KpiMonthlyTableTab from './KpiMonthlyTableTab';
 import KpiSummaryTab from './KpiSummaryTab';
+import PerformanceAnalysisTab from './PerformanceAnalysisTab';
 import { buildMonthOptions, currentMonthKey } from './kpi-reports-shared';
 
-type TabKey = 'employee' | 'monthly' | 'mtd' | 'historical' | 'summary';
+type TabKey = 'employee' | 'monthly' | 'mtd' | 'historical' | 'summary' | 'performance';
 
 export default function KpiReportsPage() {
   const [tab, setTab] = useState<TabKey>('monthly');
@@ -73,6 +74,7 @@ export default function KpiReportsPage() {
           <TabsTrigger value="historical">التاريخي</TabsTrigger>
           <TabsTrigger value="employee">الموظف</TabsTrigger>
           <TabsTrigger value="summary">الملخص الإداري</TabsTrigger>
+          <TabsTrigger value="performance">تحليل الأداء</TabsTrigger>
         </TabsList>
 
         <TabsContent value="monthly">
@@ -89,6 +91,9 @@ export default function KpiReportsPage() {
         </TabsContent>
         <TabsContent value="summary">
           <KpiSummaryTab month={effectiveMonth} />
+        </TabsContent>
+        <TabsContent value="performance">
+          <PerformanceAnalysisTab month={effectiveMonth} />
         </TabsContent>
       </Tabs>
 
