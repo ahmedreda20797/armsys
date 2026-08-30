@@ -79,7 +79,7 @@ function CAPAListPage() {
   const [cases, setCases] = useState<CAPACase[]>([]);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [systemUsers, setSystemUsers] = useState<{ id: string; name: string; email?: string; role?: string }[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!canView); // start settled when the user lacks view permission
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
@@ -103,12 +103,16 @@ function CAPAListPage() {
 
   // ═══ Fetch ═══
   useEffect(() => {
-    if (!canView) { setLoading(false); return; }
+    if (!canView) return; // loading initialized to false for non-viewers
     fetchData();
   }, []);
 
-  // Listen for navParams changes (e.g. from cross-module "create CAPA")
-  useEffect(() => {
+  // Listen for navParams changes (e.g. from cross-module "create CAPA").
+  // Uses the compiler-endorsed "adjust state during render" guard instead of
+  // an effect + setState (avoids cascading renders).
+  const [lastHandledNav, setLastHandledNav] = useState(navParams);
+  if (navParams !== lastHandledNav) {
+    setLastHandledNav(navParams);
     if (navParams?.source) {
       const defaults: Record<string, any> = {};
       if (navParams.title) defaults.title = navParams.title;
@@ -126,9 +130,9 @@ function CAPAListPage() {
         setIsCreateOpen(true);
       }
     }
-  }, [navParams]);
+  }
 
-  const fetchData = async () => {
+  async function fetchData() {
     setError(null);
     try {
       const [capaRes, empRes, usrRes] = await Promise.allSettled([
@@ -150,7 +154,7 @@ function CAPAListPage() {
       }
     } catch { setError('تعذّر تحميل حالات CAPA'); setCases([]); setEmployees([]); }
     finally { setLoading(false); }
-  };
+  }
 
   // ═══ Filtering ═══
   const filtered = useMemo(() => {

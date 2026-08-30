@@ -325,17 +325,9 @@ function WorkflowDesignerInner() {
 
   // Phase 5 — explicit feedback after creating a node: if it landed with
   // validation errors, surface a toast so the author knows to check the panel.
-  useEffect(() => {
-    const id = lastCreatedNodeRef.current;
-    if (!id) return;
-    const errs = getNodeValidationErrors(id, validation);
-    if (errs.length > 0) {
-      toast.warning(`أُضيفت العقدة — ${errs.length} تحذير/خطأ. راجع لوحة الفحص`);
-    } else {
-      toast.success('تمت إضافة العقدة بنجاح');
-    }
-    lastCreatedNodeRef.current = null;
-  }, [validation]);
+  // Computed synchronously at creation time from the projected graph state
+  // (validation is a pure function of nodes/edges/variables), so no effect
+  // + ref relay is needed.
 
   // Apply simulation highlight to nodes (renders active node differently).
   const nodesForCanvas = useMemo(() => {
@@ -355,11 +347,11 @@ function WorkflowDesignerInner() {
   }
   const pastRef = useRef<HistorySnapshot[]>([]);
   const futureRef = useRef<HistorySnapshot[]>([]);
-  const [, setHistVer] = useState(0);
+  // Undo/redo availability mirrored into state (refs must not be read during
+  // render); updated at each mutation site with the post-mutation values.
+  const [canUndo, setCanUndo] = useState(false);
+  const [canRedo, setCanRedo] = useState(false);
   const MAX_HISTORY = 100;
-  // Tracks the most recently created node id so the validation effect can toast
-  // feedback specifically for that node (Phase 5 — explicit drop feedback).
-  const lastCreatedNodeRef = useRef<string | null>(null);
 
   const captureSnapshot = useCallback((): HistorySnapshot => ({
     nodes: nodes.map((n) => ({ ...n, data: { ...n.data } })),
@@ -375,7 +367,8 @@ function WorkflowDesignerInner() {
     const snap = captureSnapshot();
     pastRef.current = [...pastRef.current.slice(-MAX_HISTORY + 1), snap];
     futureRef.current = [];
-    setHistVer((v) => v + 1);
+    setCanUndo(true);
+    setCanRedo(false);
   }, [captureSnapshot]);
 
   const restoreSnapshot = useCallback((snap: HistorySnapshot) => {
@@ -387,7 +380,6 @@ function WorkflowDesignerInner() {
     setSelectedEdges(snap.edges.filter((e) => selEdgeIds.has(e.id)));
     // Restore viewport non-destructively.
     try { rf.setViewport({ x: snap.viewport.x, y: snap.viewport.y, zoom: snap.viewport.zoom }); } catch { /* noop */ }
-    setHistVer((v) => v + 1);
   }, [rf]);
 
   const undo = useCallback(() => {
@@ -396,6 +388,8 @@ function WorkflowDesignerInner() {
     pastRef.current = pastRef.current.slice(0, -1);
     futureRef.current = [captureSnapshot(), ...futureRef.current];
     restoreSnapshot(prev);
+    setCanUndo(pastRef.current.length > 0);
+    setCanRedo(futureRef.current.length > 0);
     toast.info('تم التراجع');
   }, [captureSnapshot, restoreSnapshot]);
 
@@ -405,6 +399,8 @@ function WorkflowDesignerInner() {
     futureRef.current = futureRef.current.slice(1);
     pastRef.current = [...pastRef.current, captureSnapshot()];
     restoreSnapshot(next);
+    setCanUndo(pastRef.current.length > 0);
+    setCanRedo(futureRef.current.length > 0);
     toast.info('تمت الإعادة');
   }, [captureSnapshot, restoreSnapshot]);
 
@@ -438,7 +434,15 @@ function WorkflowDesignerInner() {
       },
     };
     debugDnd('nodeCreated', { id: newNode.id, type: def.type, position: newNode.position });
-    lastCreatedNodeRef.current = newNode.id;
+    // Phase 5 feedback — evaluate validation against the projected graph so
+    // the toast fires exactly once, synchronously (no effect/ref relay).
+    const projectedValidation = validateGraphV2([...nodes, newNode], edges, variables);
+    const createdErrs = getNodeValidationErrors(newNode.id, projectedValidation);
+    if (createdErrs.length > 0) {
+      toast.warning(`أُضيفت العقدة — ${createdErrs.length} تحذير/خطأ. راجع لوحة الفحص`);
+    } else {
+      toast.success('تمت إضافة العقدة بنجاح');
+    }
     setNodes((nds) => {
       const next = [...nds, newNode];
       // Auto-select & focus the freshly-created node (Phase 2).
@@ -465,7 +469,7 @@ function WorkflowDesignerInner() {
       return next;
     });
     return true;
-  }, [nodes, canvasConfig, pushHistory, rf, rightMode]);
+  }, [nodes, edges, variables, canvasConfig, pushHistory, rf, rightMode]);
 
   // ── Pointer-driven node creation ───────────────────────────────────────
   const startPointerDrag = useCallback((event: React.PointerEvent, definition: VBNodeDefinition) => {
@@ -777,7 +781,7 @@ function WorkflowDesignerInner() {
       toast.success(`تم حفظ "${doc.name}" (${nodes.length} عقدة، ${edges.length} اتصال)`);
     } catch (err) {
       toast.error('تعذّر الحفظ في الذاكرة المحلية');
-      // eslint-disable-next-line no-console
+       
       console.error('[Save]', err);
     } finally {
       setIsSaving(false);
@@ -805,20 +809,13 @@ function WorkflowDesignerInner() {
       toast.success('تم تصدير المسار (JSON)');
     } catch (err) {
       toast.error('تعذّر التصدير');
-      // eslint-disable-next-line no-console
+       
       console.error('[Export]', err);
     }
   }, [nodes, edges, viewport, variables, documentation, canvasConfig, graphName, graphId, validation.score]);
 
-  const applyDeserialized = useCallback((result: ReturnType<typeof deserializeGraphFromString>, acceptWarnings: boolean) => {
-    if (result.warnings.length > 0 && !acceptWarnings) {
-      setRecovery({
-        warnings: result.warnings,
-        name: result.name,
-        pending: () => applyDeserialized(result, true),
-      });
-      return;
-    }
+  // Apply the deserialized graph unconditionally (shared terminal path).
+  const acceptDeserialized = useCallback((result: ReturnType<typeof deserializeGraphFromString>) => {
     pushHistory();
     setNodes(result.nodes);
     setEdges(result.edges);
@@ -837,6 +834,18 @@ function WorkflowDesignerInner() {
     }, 80);
     toast.success(`تم فتح "${result.name}"`);
   }, [pushHistory, rf]);
+
+  const applyDeserialized = useCallback((result: ReturnType<typeof deserializeGraphFromString>, acceptWarnings: boolean) => {
+    if (result.warnings.length > 0 && !acceptWarnings) {
+      setRecovery({
+        warnings: result.warnings,
+        name: result.name,
+        pending: () => acceptDeserialized(result),
+      });
+      return;
+    }
+    acceptDeserialized(result);
+  }, [acceptDeserialized]);
 
   const handleImportFile = useCallback((file: File) => {
     const reader = new FileReader();
@@ -1108,6 +1117,7 @@ function WorkflowDesignerInner() {
     const cached = loadGraphFromLocalStorage(recentId);
     if (cached && cached.nodes.length > 0) {
       // Silent restore — no recovery dialog for auto-open.
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- one-time client-side hydration from localStorage: cannot run during SSR-safe lazy init; ref-guarded to run exactly once.
       setNodes(cached.nodes);
       setEdges(cached.edges);
       setDocumentation(cached.documentation);
@@ -1137,7 +1147,7 @@ function WorkflowDesignerInner() {
       'notify', 'assign', 'update_status', 'hr_action',
       'create_request', 'risk_action', 'generate_report',
     ];
-    // eslint-disable-next-line no-console
+     
     console.group('%c[debug-drops] Synthetic node creation test', 'color:#a78bfa;font-weight:bold');
     const results: { type: string; ok: boolean; reason?: string }[] = [];
     testTypes.forEach((type, i) => {
@@ -1164,18 +1174,16 @@ function WorkflowDesignerInner() {
     results.forEach((r) => {
       const tag = r.ok ? '%c✓' : '%c✗';
       const color = r.ok ? 'color:#10b981' : 'color:#ef4444';
-      // eslint-disable-next-line no-console
+       
       console.log(`${tag} ${r.type.padEnd(16)} ${r.reason ?? ''}`, color);
     });
-    // eslint-disable-next-line no-console
+     
     console.log(`%c${passed}/${results.length} node types created successfully`, 'color:#a78bfa;font-weight:bold');
-    // eslint-disable-next-line no-console
+     
     console.groupEnd();
   }, [createNodeAt]);
 
 
-  const canUndo = pastRef.current.length > 0;
-  const canRedo = futureRef.current.length > 0;
   const errorCount = validation.errors.length;
   const warningCount = validation.warnings.length;
   const canPaste = hasClipboard();
@@ -1516,13 +1524,16 @@ function WorkflowDesignerInner() {
             onRename={() => { setSelectedNodes([target]); setRightMode('inspector'); }}
             onDuplicate={() => { setSelectedNodes([target]); duplicateSelected(); }}
             onDelete={() => { setSelectedNodes([target]); deleteSelected(); }}
-            onDisable={() => toggleNodeEnabled(target.id)}
+            onDisable={() => {
+              // eslint-disable-next-line react-hooks/refs -- click handler invoked on user action; the compiler mis-resolves the `enabled` property alias as a ref read during render.
+              onUpdateNode(target.id, { enabled: !(target.data.enabled ?? true) });
+            }}
             onCopy={() => { setSelectedNodes([target]); copySelected(); }}
             onCut={() => { setSelectedNodes([target]); cutSelected(); }}
             onColor={() => {
               setColorPalette({ x: contextMenu.position.x + 20, y: contextMenu.position.y + 20, nodeId: target.id });
             }}
-            onCollapse={() => toggleNodeCollapsed(target.id)}
+            onCollapse={() => onUpdateNode(target.id, { collapsed: !(target.data.collapsed ?? false) })}
             isCollapsed={target.data.collapsed ?? false}
             isDisabled={target.data.enabled === false}
             onCenterView={() => { setSelectedNodes([target]); centerView(); }}

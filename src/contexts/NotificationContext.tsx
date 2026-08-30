@@ -152,7 +152,10 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
   const lastFetchCountRef = useRef<number>(0);
   // Ref to avoid re-running effects when user object reference changes
   const userRef = useRef(user);
-  userRef.current = user;
+
+  useEffect(() => {
+    userRef.current = user;
+  }, [user]);
 
   // ── Request desktop notification permission once ──
   useEffect(() => {
@@ -353,6 +356,12 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
   }, [!!user, refresh]); // !!user prevents listener recreation churn
 
   // ── Mark read (server + local) ──
+  const markReadLocal = useCallback((id: string) => {
+    setNotifications((prev) =>
+      prev.map((n) => (n.id === id ? { ...n, status: 'read' as const, readAt: n.readAt || new Date().toISOString() } : n))
+    );
+  }, []);
+
   const markRead = useCallback(async (id: string) => {
     try {
       await authFetch(`/api/notifications/${id}`, {
@@ -364,13 +373,7 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
       // Silently fail
     }
     markReadLocal(id);
-  }, []);
-
-  const markReadLocal = useCallback((id: string) => {
-    setNotifications((prev) =>
-      prev.map((n) => (n.id === id ? { ...n, status: 'read' as const, readAt: n.readAt || new Date().toISOString() } : n))
-    );
-  }, []);
+  }, [markReadLocal]);
 
   // ── Mark all read ──
   const markAllRead = useCallback(async () => {

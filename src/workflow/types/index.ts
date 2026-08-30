@@ -421,7 +421,11 @@ export interface IWorkflowEventSubscriber {
 // ─────────────────────────────────────────────────────────────
 
 export interface IWorkflowEngine {
-  start(workflowId: string, context: Partial<WorkflowContext>): Promise<WorkflowInstance>;
+  start(
+    workflowId: string,
+    context: Partial<WorkflowContext>,
+    version: WorkflowVersion
+  ): Promise<WorkflowInstance>;
   pause(instanceId: string): Promise<void>;
   resume(instanceId: string): Promise<void>;
   cancel(instanceId: string, reason: string): Promise<void>;

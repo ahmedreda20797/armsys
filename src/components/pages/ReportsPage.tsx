@@ -193,6 +193,26 @@ interface EmployeeDetail {
 type SortField = 'employeeName' | 'attendanceCompliance' | 'totalMinutesLate' | 'totalDeductionDays' | 'totalAbsent' | 'totalPresent' | 'totalLate';
 type FilterMode = 'all' | 'committed' | 'delayed' | 'absent' | 'quality' | 'problematic';
 
+/** Static table-header sort button (hoisted out of the component so it is
+ *  never re-created during render — keeps identity stable across renders). */
+function SortButton({ field, label, activeField, desc, onToggle }: {
+  field: SortField;
+  label: string;
+  activeField: SortField;
+  desc: boolean;
+  onToggle: (field: SortField) => void;
+}) {
+  return (
+    <button
+      onClick={() => onToggle(field)}
+      className="flex items-center justify-center gap-1 w-full text-slate-400 text-xs font-bold hover:text-violet-400 transition-colors cursor-pointer whitespace-nowrap"
+    >
+      <span>{label}</span>
+      <ArrowUpDown className={`size-3 transition-transform ${activeField === field ? (desc ? 'rotate-180' : '') : 'opacity-30'}`} />
+    </button>
+  );
+}
+
 /* ════════════════════════════════════════════════════════════════
    Component
    ════════════════════════════════════════════════════════════════ */
@@ -223,6 +243,7 @@ export default function ReportsPage() {
       const saved = sessionStorage.getItem('erp_report_data');
       if (saved) {
         const parsed = JSON.parse(saved);
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- one-time sessionStorage hydration: reading storage during render (or lazy init) would diverge from the SSR output and cause hydration mismatches.
         if (parsed.month) setMonth(parsed.month);
         if (parsed.report && parsed.report.length > 0) {
           setReport(parsed.report);
@@ -447,16 +468,6 @@ export default function ReportsPage() {
     if (val >= 50) return 'bg-orange-500/15 border-orange-500/25';
     return 'bg-red-500/15 border-red-500/25';
   };
-
-  const SortButton = ({ field, label }: { field: SortField; label: string }) => (
-    <button
-      onClick={() => toggleSort(field)}
-      className="flex items-center justify-center gap-1 w-full text-slate-400 text-xs font-bold hover:text-violet-400 transition-colors cursor-pointer whitespace-nowrap"
-    >
-      <span>{label}</span>
-      <ArrowUpDown className={`size-3 transition-transform ${sortField === field ? (sortDir === 'desc' ? 'rotate-180' : '') : 'opacity-30'}`} />
-    </button>
-  );
 
   // ── Badge helpers ──
   const getDayStatusBadge = (status: string) => {
@@ -713,17 +724,17 @@ export default function ReportsPage() {
             <Table dir="rtl">
               <TableHeader>
                 <TableRow className="border-slate-700/50 hover:bg-transparent bg-slate-900/60">
-                  <TableHead className="text-slate-400 text-xs font-bold py-3 px-3 w-50"><SortButton field="employeeName" label="الموظف" /></TableHead>
+                  <TableHead className="text-slate-400 text-xs font-bold py-3 px-3 w-50"><SortButton field="employeeName" label="الموظف" activeField={sortField} desc={sortDir === 'desc'} onToggle={toggleSort} /></TableHead>
                   <TableHead className="text-slate-400 text-xs font-bold py-3 px-3 text-center w-20">القسم</TableHead>
-                  <TableHead className="text-slate-400 text-xs font-bold py-3 px-3 text-center w-16.25"><SortButton field="totalPresent" label="حضور" /></TableHead>
-                  <TableHead className="text-slate-400 text-xs font-bold py-3 px-3 text-center w-17.5"><SortButton field="totalLate" label="تأخير" /></TableHead>
-                  <TableHead className="text-slate-400 text-xs font-bold py-3 px-3 text-center w-16.25"><SortButton field="totalAbsent" label="غياب" /></TableHead>
+                  <TableHead className="text-slate-400 text-xs font-bold py-3 px-3 text-center w-16.25"><SortButton field="totalPresent" label="حضور" activeField={sortField} desc={sortDir === 'desc'} onToggle={toggleSort} /></TableHead>
+                  <TableHead className="text-slate-400 text-xs font-bold py-3 px-3 text-center w-17.5"><SortButton field="totalLate" label="تأخير" activeField={sortField} desc={sortDir === 'desc'} onToggle={toggleSort} /></TableHead>
+                  <TableHead className="text-slate-400 text-xs font-bold py-3 px-3 text-center w-16.25"><SortButton field="totalAbsent" label="غياب" activeField={sortField} desc={sortDir === 'desc'} onToggle={toggleSort} /></TableHead>
                   <TableHead className="text-slate-400 text-xs font-bold py-3 px-3 text-center w-13.75">معفى</TableHead>
                   <TableHead className="text-slate-400 text-xs font-bold py-3 px-3 text-center w-20">خصم حضور</TableHead>
                   <TableHead className="text-slate-400 text-xs font-bold py-3 px-3 text-center w-20">خصم جودة</TableHead>
                   <TableHead className="text-slate-400 text-xs font-bold py-3 px-3 text-center w-20">خصم HR</TableHead>
-                  <TableHead className="text-slate-400 text-xs font-bold py-3 px-3 text-center w-20"><SortButton field="attendanceCompliance" label="الالتزام" /></TableHead>
-                  <TableHead className="text-slate-400 text-xs font-bold py-3 px-3 text-center w-18.75"><SortButton field="totalDeductionDays" label="الإجمالي" /></TableHead>
+                  <TableHead className="text-slate-400 text-xs font-bold py-3 px-3 text-center w-20"><SortButton field="attendanceCompliance" label="الالتزام" activeField={sortField} desc={sortDir === 'desc'} onToggle={toggleSort} /></TableHead>
+                  <TableHead className="text-slate-400 text-xs font-bold py-3 px-3 text-center w-18.75"><SortButton field="totalDeductionDays" label="الإجمالي" activeField={sortField} desc={sortDir === 'desc'} onToggle={toggleSort} /></TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>

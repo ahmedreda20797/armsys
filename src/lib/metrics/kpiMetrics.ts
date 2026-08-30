@@ -117,6 +117,47 @@ export function isRejectedObs(obs: ObservationLike): boolean {
 }
 
 /**
+ * Approval statistics for a set of observations — SHARED aggregation
+ *
+ * Extracted verbatim from `computeMonthSnapshot` so the Month Close
+ * month-discovery path (GET /api/month-snapshots) can derive REAL
+ * approval summaries for discovered (not-yet-closed) months using the
+ * EXACT same rule as the canonical engine — no duplicated selection
+ * logic, no drift. Pure function: no DB, no formulas beyond grouping.
+ *
+ * Rule (unchanged): only approval-relevant observations
+ * (`applyPointDeduction`) are counted, grouped by `approvalStatus`.
+ *
+ * Parameter type is the MINIMAL structural shape the aggregation
+ * reads (`Pick<ObservationLike, …>`) so any observation superset —
+ * engine `ObservationLike` OR lean discovery records — can be passed
+ * without casting. Existing engine callers are unaffected.
+ */
+export function computeApprovalStats(
+  observations: Array<Pick<ObservationLike, 'applyPointDeduction' | 'approvalStatus'>>,
+): MonthApprovalStats {
+  let totalApprovalRelevant = 0;
+  let pending = 0;
+  let approved = 0;
+  let rejected = 0;
+  for (const obs of observations) {
+    if (!obs.applyPointDeduction) continue;
+    totalApprovalRelevant++;
+    if (obs.approvalStatus === 'pending') pending++;
+    else if (obs.approvalStatus === 'approved') approved++;
+    else if (obs.approvalStatus === 'rejected') rejected++;
+  }
+
+  return {
+    total: totalApprovalRelevant,
+    pending,
+    approved,
+    rejected,
+    avgApprovalHours: 0, // Computed from timestamps when data available.
+  };
+}
+
+/**
  * Validate that observation points are valid for KPI scoring.
  * Points must be a finite, non-negative number.
  * Invalid points (NaN, Infinity, negative) are silently ignored.
@@ -370,26 +411,8 @@ export function computeMonthSnapshot(
     categoryTotals[cat] = (categoryTotals[cat] || 0) + obs.points;
   }
 
-  // Approval stats.
-  let totalApprovalRelevant = 0;
-  let pending = 0;
-  let approved = 0;
-  let rejected = 0;
-  for (const obs of observations) {
-    if (!obs.applyPointDeduction) continue;
-    totalApprovalRelevant++;
-    if (obs.approvalStatus === 'pending') pending++;
-    else if (obs.approvalStatus === 'approved') approved++;
-    else if (obs.approvalStatus === 'rejected') rejected++;
-  }
-
-  const approvalStats: MonthApprovalStats = {
-    total: totalApprovalRelevant,
-    pending,
-    approved,
-    rejected,
-    avgApprovalHours: 0, // Computed from timestamps when data available.
-  };
+  // Approval stats — shared aggregation (see computeApprovalStats above).
+  const approvalStats: MonthApprovalStats = computeApprovalStats(observations);
 
   return {
     schemaVersion: 1,

@@ -111,16 +111,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const refreshTimerRef = useRef<NodeJS.Timeout | null>(null);
   // Ref to read latest accessToken without causing re-renders or callback recreation
   const accessTokenRef = useRef<string | null>(null);
-  accessTokenRef.current = accessToken;
+
+  useEffect(() => {
+    accessTokenRef.current = accessToken;
+  }, [accessToken]);
 
   // ─── Token Refresh Logic (with mutex) ────────────
-  let _refreshPromise: Promise<string | null> | null = null;
+  // Mutex lives in a ref so concurrent refresh calls are deduplicated
+  // across renders (a render-scoped `let` would reset on every render).
+  const refreshMutexRef = useRef<Promise<string | null> | null>(null);
 
   const refreshAccessToken = useCallback(async (): Promise<string | null> => {
     // Deduplicate concurrent refresh calls
-    if (_refreshPromise) return _refreshPromise;
+    if (refreshMutexRef.current) return refreshMutexRef.current;
 
-    _refreshPromise = (async () => {
+    refreshMutexRef.current = (async () => {
       try {
         const refreshToken = localStorage.getItem(REFRESH_TOKEN_KEY);
         if (!refreshToken) return null;
@@ -153,11 +158,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       } catch {
         return null;
       } finally {
-        _refreshPromise = null;
+        refreshMutexRef.current = null;
       }
     })();
 
-    return _refreshPromise;
+    return refreshMutexRef.current;
   }, []);
 
   // ─── Fetch current user data from server ─────────
@@ -277,7 +282,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
 
     initAuth();
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []);  
 
   // ─── Background identity refresh (visibility-aware) ──────────
   // Picks up permission/suspension changes for UI reactivity. The

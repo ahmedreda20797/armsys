@@ -154,6 +154,18 @@ interface SessionUser {
 
 const EXCLUDED_PAGES = ['home', 'firebase'];
 
+// Grouped permissions for editing — static module-level derivation
+// (no reactive inputs, so no useMemo hook is needed; hoisted out of the
+// component to keep hook order unconditional across permission guards).
+const PERMISSION_GROUPS: Record<string, typeof APP_PAGES> = (() => {
+  const groups: Record<string, typeof APP_PAGES> = {};
+  APP_PAGES.filter(p => !EXCLUDED_PAGES.includes(p.id)).forEach(p => {
+    if (!groups[p.groupId]) groups[p.groupId] = [];
+    groups[p.groupId].push(p);
+  });
+  return groups;
+})();
+
 // Milestone 10 — data scope vocabulary for the permission editor
 const SCOPE_OPTIONS: Array<{ value: DataScope; label: string }> = [
   { value: 'all', label: 'كل البيانات' },
@@ -288,10 +300,16 @@ export default function ControlPanelPage() {
     finally { setSessionsLoading(false); }
   }, []);
 
-  useEffect(() => { fetchUsers(); }, [fetchUsers]);
-  useEffect(() => { fetchLogs(); }, [fetchLogs]);
   useEffect(() => {
-    fetchSessions();
+    // Async boundary: state updates happen after the first await, never
+    // synchronously within the effect body.
+    void (async () => { await fetchUsers(); })();
+  }, [fetchUsers]);
+  useEffect(() => {
+    void (async () => { await fetchLogs(); })();
+  }, [fetchLogs]);
+  useEffect(() => {
+    void (async () => { await fetchSessions(); })();
     const iv = setInterval(fetchSessions, 15000);
     return () => clearInterval(iv);
   }, [fetchSessions]);
@@ -557,14 +575,7 @@ export default function ControlPanelPage() {
   }
 
   // ═══ Grouped permissions for editing ═══
-  const permissionGroups = useMemo(() => {
-    const groups: Record<string, typeof APP_PAGES> = {};
-    APP_PAGES.filter(p => !EXCLUDED_PAGES.includes(p.id)).forEach(p => {
-      if (!groups[p.groupId]) groups[p.groupId] = [];
-      groups[p.groupId].push(p);
-    });
-    return groups;
-  }, []);
+  const permissionGroups = PERMISSION_GROUPS;
 
   const getGroupLabel = (gid: string) => {
     const g = { daily_ops: 'العمليات اليومية', employee_mgmt: 'إدارة الموظفين', quality_ctrl: 'الجودة والرقابة', hr: 'الموارد البشرية', travel_ops: 'السفر', reports: 'التقارير', settings: 'الإعدادات' };

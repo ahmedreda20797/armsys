@@ -14,6 +14,7 @@ export function ClientOnly({
   fallback?: ReactNode;
 }) {
   const [mounted, setMounted] = useState(false);
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- canonical one-time hydration guard for SSR-only fallback gating.
   useEffect(() => setMounted(true), []);
   return mounted ? <>{children}</> : <>{fallback}</>;
 }

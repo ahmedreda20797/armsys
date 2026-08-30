@@ -302,7 +302,6 @@ export function mapDeductionToObservation(
     actorId: context.actorId,
     actorName: context.actorName,
     details: `ترحيل خصم جودة: ${ded.description || ded.type}`,
-    now,
   });
 
   return {

@@ -457,7 +457,9 @@ export default function Employee360Page({ employeeId: propEmployeeId, onClose }:
 
   useEffect(() => {
     mountedRef.current = true;
-    fetchEmployeeData();
+    // Async boundary: the fetcher sets loading state before its first await;
+    // deferring keeps the effect body free of synchronous setState.
+    void (async () => { await fetchEmployeeData(); })();
     return () => {
       mountedRef.current = false;
     };

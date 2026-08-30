@@ -31,13 +31,13 @@ const ScrollContainerInner = forwardRef<HTMLDivElement, ScrollContainerProps & {
       if (!el) return;
       const saved = scrollMemory.get(scrollKey);
       if (saved !== undefined) el.scrollTop = saved;
-    }, [scrollKey]); // eslint-disable-line react-hooks/exhaustive-deps
+    }, [scrollKey]);  
 
     const handleScroll = useCallback(() => {
       if (!scrollKey) return;
       const el = resolvedRef.current;
       if (el) scrollMemory.set(scrollKey, el.scrollTop);
-    }, [scrollKey]); // eslint-disable-line react-hooks/exhaustive-deps
+    }, [scrollKey]);  
 
     const resolvedMaxHeight = typeof maxHeight === 'number' ? `${maxHeight}px` : maxHeight;
 

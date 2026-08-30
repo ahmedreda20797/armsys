@@ -242,7 +242,7 @@ describe('Dashboard — buildDashboardResponse assembly', () => {
     const snap1 = snapshotWithEmployee('2026-07', 'e1', 'أحمد', 'مبيعات', 90, 10, 0);
     const snap2 = snapshotWithEmployee('2026-08', 'e1', 'أحمد', 'مبيعات', 80, 20, 0);
     const response = buildDashboardResponse({
-      range: 'last_2_months',
+      range: 'custom',
       months: ['2026-08', '2026-07'],
       collected: [
         { monthKey: '2026-08', snapshot: snap2, isLive: false },
@@ -287,7 +287,7 @@ describe('Dashboard — buildDashboardResponse assembly', () => {
     const frozen = snapshotWithEmployee('2026-07', 'e1', 'أحمد', 'مبيعات', 90, 10, 0);
     const live = snapshotWithEmployee('2026-08', 'e1', 'أحمد', 'مبيعات', 95, 5, 0);
     const response = buildDashboardResponse({
-      range: 'last_2_months',
+      range: 'custom',
       months: ['2026-08', '2026-07'],
       collected: [
         { monthKey: '2026-08', snapshot: live, isLive: true },
@@ -452,7 +452,7 @@ describe('Dashboard — employee leaderboard', () => {
     const snap1 = snapshotWithEmployee('2026-07', 'e1', 'أحمد', 'مبيعات', 80, 20, 0);
     const snap2 = snapshotWithEmployee('2026-08', 'e1', 'أحمد', 'مبيعات', 100, 0, 0);
     const response = buildDashboardResponse({
-      range: 'last_2_months',
+      range: 'custom',
       months: ['2026-08', '2026-07'],
       collected: [
         { monthKey: '2026-08', snapshot: snap2, isLive: false },
@@ -510,7 +510,7 @@ describe('Dashboard — approval statistics', () => {
       approvalStats: { total: 8, pending: 2, approved: 4, rejected: 2, avgApprovalHours: 3 },
     });
     const response = buildDashboardResponse({
-      range: 'last_2_months',
+      range: 'custom',
       months: ['2026-08', '2026-07'],
       collected: [
         { monthKey: '2026-08', snapshot: snap2, isLive: false },
@@ -587,7 +587,7 @@ describe('Dashboard — category distribution', () => {
       },
     });
     const response = buildDashboardResponse({
-      range: 'last_2_months',
+      range: 'custom',
       months: ['2026-08', '2026-07'],
       collected: [
         { monthKey: '2026-08', snapshot: snap2, isLive: false },
@@ -609,7 +609,7 @@ describe('Dashboard — monthly scores', () => {
     const snap1 = snapshotWithEmployee('2026-07', 'e1', 'أحمد', 'مبيعات', 90, 10, 0);
     const liveSnap = snapshotWithEmployee('2026-08', 'e1', 'أحمد', 'مبيعات', 85, 15, 0);
     const response = buildDashboardResponse({
-      range: 'last_2_months',
+      range: 'custom',
       months: ['2026-08', '2026-07'],
       collected: [
         { monthKey: '2026-08', snapshot: liveSnap, isLive: true },
@@ -661,7 +661,7 @@ describe('Dashboard — trend delegates to canonical engine', () => {
     const snap1 = snapshotWithEmployee('2026-06', 'e1', 'أحمد', 'مبيعات', 80, 20, 0);
     const snap2 = snapshotWithEmployee('2026-07', 'e1', 'أحمد', 'مبيعات', 95, 5, 0);
     const response = buildDashboardResponse({
-      range: 'last_2_months',
+      range: 'custom',
       months: ['2026-07', '2026-06'],
       collected: [
         { monthKey: '2026-07', snapshot: snap2, isLive: false },

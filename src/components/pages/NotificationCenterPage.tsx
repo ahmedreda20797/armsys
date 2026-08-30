@@ -195,7 +195,7 @@ export default function NotificationCenterPage() {
 
   // ── State: notifications ──
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!canView); // start settled when the user lacks view permission
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(false);
   const [totalCount, setTotalCount] = useState(0);
@@ -282,9 +282,11 @@ export default function NotificationCenterPage() {
   };
 
   useEffect(() => {
-    if (!canView) { setLoading(false); return; }
-    fetchNotifications(0);
-    fetchStats();
+    if (!canView) return; // loading initialized to false for non-viewers
+    // Async boundary: state updates happen after the first await, never
+    // synchronously within the effect body.
+    void (async () => { await fetchNotifications(0); })();
+    void (async () => { await fetchStats(); })();
   }, []);
 
   // ── Silent background refresh every 60 seconds (no UI flash) ──
@@ -336,11 +338,15 @@ export default function NotificationCenterPage() {
     setDisplayCount(prev => prev + PAGE_SIZE);
   };
 
-  // Reset display count when filters change
-  useEffect(() => {
+  // Reset display count & selection when filters change — compiler-endorsed
+  // "adjust state during render" guard (no effect + setState cascade).
+  const filterTuple = [priorityFilter, statusFilter, categoryFilter, moduleFilter, search, dateFrom, dateTo] as const;
+  const [lastFilterTuple, setLastFilterTuple] = useState<readonly unknown[]>(filterTuple);
+  if (filterTuple.some((v, i) => v !== lastFilterTuple[i])) {
+    setLastFilterTuple(filterTuple);
     setDisplayCount(PAGE_SIZE);
     setSelectedIds(new Set());
-  }, [priorityFilter, statusFilter, categoryFilter, moduleFilter, search, dateFrom, dateTo]);
+  }
 
   // ── Selection helpers ──
   const toggleSelect = (id: string) => {

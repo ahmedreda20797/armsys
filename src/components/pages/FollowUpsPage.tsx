@@ -224,7 +224,7 @@ export default function FollowUpsPage() {
   const [employeeRiskScores, setEmployeeRiskScores] = useState<Record<string, number>>({});
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [systemUsers, setSystemUsers] = useState<SystemUser[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!canView); // start settled when the user lacks view permission
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
@@ -272,11 +272,11 @@ export default function FollowUpsPage() {
 
   // ═══ Fetch Data ═══
   useEffect(() => {
-    if (!canView) { setLoading(false); return; }
+    if (!canView) return; // loading initialized to false for non-viewers
     fetchData();
   }, []);
 
-  const fetchData = async () => {
+  async function fetchData() {
     setError(null);
     try {
       const [fuRes, empRes, usrRes] = await Promise.allSettled([
@@ -305,7 +305,7 @@ export default function FollowUpsPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }
 
   // ═══ Filtered Data ═══
   const filtered = useMemo(() => {

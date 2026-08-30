@@ -74,13 +74,18 @@ export function UserSearchInput({
     return users.find((u) => u.id === value) || null;
   }, [users, value]);
 
-  useEffect(() => {
+  // Sync displayed text when the external value/user changes — compiler-endorsed
+  // "adjust state during render" guard (no effect + setState cascade).
+  const syncKey = `${selectedUser?.id ?? ''}\u0000${value}\u0000${allowClear ? '1' : '0'}`;
+  const [lastSyncKey, setLastSyncKey] = useState(syncKey);
+  if (syncKey !== lastSyncKey) {
+    setLastSyncKey(syncKey);
     if (selectedUser) {
       setSearchText(selectedUser.name);
     } else if (allowClear && value === '') {
       setSearchText('');
     }
-  }, [selectedUser, value, allowClear]);
+  }
 
   const filteredUsers = useMemo(() => {
     if (!searchText) return [];

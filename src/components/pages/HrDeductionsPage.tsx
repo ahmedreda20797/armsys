@@ -118,7 +118,7 @@ export default function HrDeductionsPage() {
     fetchData();
   }, []);
 
-  const fetchData = async () => {
+  async function fetchData() {
     try {
       const [dedRes, empRes] = await Promise.all([
         authFetch('/api/hr-deductions'),
@@ -138,7 +138,7 @@ export default function HrDeductionsPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }
 
   const handleAdd = async () => {
     if (!addForm.employeeId || !addForm.type || !addForm.amount || !addForm.unit || !addForm.month) return;

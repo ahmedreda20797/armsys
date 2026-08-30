@@ -44,7 +44,23 @@ const eslintConfig = [...nextCoreWebVitals, ...nextTypescript, {
     "no-useless-escape": "off",
   },
 }, {
-  ignores: ["node_modules/**", ".next/**", "out/**", "build/**", "next-env.d.ts", "examples/**", "skills"]
+  ignores: [
+    "node_modules/**",
+    ".next/**",
+    "out/**",
+    "build/**",
+    "next-env.d.ts",
+    "examples/**",
+    "skills",
+    // Auto-generated Firebase DataConnect SDK — never hand-edited
+    "src/dataconnect-generated/**",
+  ],
+}, {
+  // Standalone CommonJS Node scripts — require() is legitimate there
+  files: ["scripts/**/*.js"],
+  rules: {
+    "@typescript-eslint/no-require-imports": "off",
+  },
 }];
 
 export default eslintConfig;

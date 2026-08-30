@@ -91,24 +91,14 @@ describe('computeRisk', () => {
 
   it('sum of all breakdown points equals score (before global cap)', () => {
     // Use moderate values that won't trigger global cap
-    const r = computeRisk({
-      ...ZERO_INPUT,
-      delayCount: 2,    // 2
-      absenceCount: 1,  // 3
-      qualityCount: 1,   // 5
-      hrCount: 1,       // 5
-      openFollowUpCount: 1, // 3
-      complaintCount: 1, // 8 — wait, the field is openComplaintCount
-    });
-    // Fix: use proper field name
     const r2 = computeRisk({
       ...ZERO_INPUT,
-      delayCount: 2,
-      absenceCount: 1,
-      qualityCount: 1,
-      hrCount: 1,
-      openFollowUpCount: 1,
-      openComplaintCount: 1,
+      delayCount: 2,        // 2 pts
+      absenceCount: 1,      // 3 pts
+      qualityCount: 1,      // 5 pts
+      hrCount: 1,           // 5 pts
+      openFollowUpCount: 1, // 3 pts
+      openComplaintCount: 1, // 8 pts
     });
     const sum = Object.values(r2.breakdown).reduce((s, e) => s + e.points, 0);
     assert.equal(r2.score, sum, `score ${r2.score} != breakdown sum ${sum}`);

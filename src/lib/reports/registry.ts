@@ -18,11 +18,15 @@
 
 import type { ResolvedReportRequest } from './scope';
 import type {
+  ReportColumnSpec,
   ReportDefinition,
+  ReportFilterSpec,
+  ReportMetricSpec,
   ReportRunRequest,
   ReportRunnerResult,
 } from './types';
 import { runQualityDeductionsReport } from './runners/quality-deductions';
+import { runKpiReport } from './runners/kpi-monthly';
 
 // ─────────────────────────────────────────────────────────────
 //  Runner contract
@@ -109,8 +113,155 @@ export const QUALITY_DEDUCTIONS_REPORT: RegisteredReport<Record<string, unknown>
   },
 };
 
+// ─────────────────────────────────────────────────────────────
+//  KPI Reporting Layer (Phase 2) — Monthly / MTD / Historical
+//
+//  Three logically separated reports over ONE shared runner core
+//  (runKpiReport) that consumes the kpi-reporting layer verbatim —
+//  no KPI value is computed here. Excel export flows through the
+//  existing definition-driven buildReportExcel; the exported rows
+//  are the SAME verified rows shown on screen (spec §22).
+// ─────────────────────────────────────────────────────────────
+
+const KPI_REPORT_COLUMNS: ReportColumnSpec[] = [
+  { key: 'employeeName', label: 'الموظف', origin: 'raw' },
+  { key: 'employeeCode', label: 'الرقم الوظيفي', origin: 'raw' },
+  { key: 'department', label: 'القسم', origin: 'raw' },
+  { key: 'team', label: 'الفريق', origin: 'raw' },
+  { key: 'qualityRawScore', label: 'درجة الجودة (خام) %', origin: 'canonical', source: 'quality' },
+  { key: 'qualityWeight', label: 'وزن الجودة %', origin: 'canonical', source: 'kpi-scheme' },
+  { key: 'qualityContribution', label: 'مساهمة الجودة', origin: 'canonical', source: 'final-kpi' },
+  { key: 'qualityStatus', label: 'حالة الجودة', origin: 'canonical', source: 'quality' },
+  { key: 'overallKpiStatus', label: 'حالة KPI الإجمالية', origin: 'canonical', source: 'final-kpi' },
+  { key: 'kpiStatus', label: 'حالة التقرير', origin: 'canonical', source: 'final-kpi' },
+  { key: 'valueBasis', label: 'أساس القيمة', origin: 'raw' },
+  { key: 'finalized', label: 'مجمّد', origin: 'raw' },
+  { key: 'schemeName', label: 'مخطط KPI', origin: 'raw' },
+  { key: 'schemeVersion', label: 'إصدار المخطط', origin: 'raw' },
+  { key: 'archived', label: 'مؤرشف (أهلية تاريخية)', origin: 'raw' },
+];
+
+const KPI_REPORT_METRICS: ReportMetricSpec[] = [
+  { metricId: 'eligibleEmployees', label: 'الموظفون المؤهلون', origin: 'canonical', source: 'final-kpi', unit: 'count' },
+  { metricId: 'availableKpi', label: 'KPI متاح', origin: 'canonical', source: 'final-kpi', unit: 'count' },
+  { metricId: 'pendingKpi', label: 'KPI معلّق', origin: 'canonical', source: 'final-kpi', unit: 'count' },
+  { metricId: 'incompleteKpi', label: 'KPI غير مكتمل', origin: 'canonical', source: 'final-kpi', unit: 'count' },
+  { metricId: 'finalizedKpi', label: 'KPI مجمّد', origin: 'canonical', source: 'final-kpi', unit: 'count' },
+  { metricId: 'zeroKpi', label: 'KPI صفر', origin: 'canonical', source: 'quality', unit: 'count' },
+  { metricId: 'avgQualityScore', label: 'متوسط درجة الجودة', origin: 'canonical', source: 'quality', unit: 'percent' },
+  { metricId: 'avgQualityContribution', label: 'متوسط مساهمة الجودة', origin: 'canonical', source: 'final-kpi', unit: 'points' },
+  { metricId: 'highestQualityScore', label: 'أعلى درجة', origin: 'canonical', source: 'quality', unit: 'percent' },
+  { metricId: 'lowestQualityScore', label: 'أدنى درجة', origin: 'canonical', source: 'quality', unit: 'percent' },
+];
+
+const KPI_REPORT_FILTERS: ReportFilterSpec[] = [
+  { key: 'monthKey', label: 'الشهر', control: 'month-select' },
+  { key: 'employeeId', label: 'الموظف', control: 'employee-single' },
+  { key: 'employeeIds', label: 'الموظفون', control: 'employee-multi' },
+  { key: 'employeeScope', label: 'نطاق الموظفين', control: 'employee-scope' },
+  { key: 'department', label: 'القسم', control: 'department' },
+  {
+    key: 'status',
+    label: 'الحالة',
+    control: 'select',
+    options: [
+      { value: 'AVAILABLE', label: 'AVAILABLE' },
+      { value: 'PENDING', label: 'PENDING' },
+      { value: 'INCOMPLETE', label: 'INCOMPLETE' },
+      { value: 'ZERO', label: 'ZERO' },
+      { value: 'FINALIZED', label: 'FINALIZED' },
+      { value: 'NOT_ELIGIBLE', label: 'NOT_ELIGIBLE' },
+      { value: 'NO_SCHEME', label: 'NO_SCHEME' },
+    ],
+  },
+  { key: 'minScore', label: 'أدنى درجة خام', control: 'text' },
+  { key: 'maxScore', label: 'أعلى درجة خام', control: 'text' },
+];
+
+const KPI_PERMISSION = {
+  // The dedicated KPI reporting page key (existing permission system —
+  // no parallel permission mechanism, spec §24).
+  pageId: 'kpiReports',
+  action: 'view' as const,
+  allowedEmployeeScopeModes: ['single', 'multiple', 'all'] as const,
+};
+
+const KPI_MONTHLY_REPORT: RegisteredReport = {
+  definition: {
+    reportId: 'kpi-monthly',
+    name: 'تقرير KPI الشهري (الجودة)',
+    description: 'الدرجة الخام ووزن الجودة ومساهمتها لكل موظف مؤهل خلال شهر محدد — قيم مجمّدة للأشهر المغلقة وحية للشهر الحالي',
+    domain: 'quality',
+    reportType: 'performance',
+    enabled: true,
+    permission: KPI_PERMISSION,
+    timeMechanism: 'month-scope',
+    allowedScopes: ['selected_month', 'current_month', 'previous_month'],
+    allowedFilters: KPI_REPORT_FILTERS,
+    visibleColumns: KPI_REPORT_COLUMNS,
+    availableMetrics: KPI_REPORT_METRICS,
+    exportFormats: ['view', 'print', 'excel'],
+    dataMode: 'hybrid',
+  },
+  run: async (ctx) => {
+    const result = await runKpiReport(ctx.resolved, { kind: 'MONTHLY' });
+    return result as unknown as ReportRunnerResult<Record<string, unknown>>;
+  },
+};
+
+const KPI_MTD_REPORT: RegisteredReport = {
+  definition: {
+    reportId: 'kpi-mtd',
+    name: 'تقرير KPI حتى تاريخه (MTD)',
+    description: 'حساب الجودة حتى تاريخه (Month-To-Date) من بيانات الجودة الحية بقواعد الحساب الحالية — لا يُعرض كنهائي ما لم يُغلق الشهر',
+    domain: 'quality',
+    reportType: 'performance',
+    enabled: true,
+    permission: KPI_PERMISSION,
+    timeMechanism: 'month-scope',
+    allowedScopes: ['current_month', 'selected_month'],
+    allowedFilters: KPI_REPORT_FILTERS,
+    visibleColumns: KPI_REPORT_COLUMNS,
+    availableMetrics: KPI_REPORT_METRICS,
+    exportFormats: ['view', 'print', 'excel'],
+    dataMode: 'live',
+  },
+  run: async (ctx) => {
+    const result = await runKpiReport(ctx.resolved, { kind: 'MTD' });
+    return result as unknown as ReportRunnerResult<Record<string, unknown>>;
+  },
+};
+
+const KPI_HISTORICAL_REPORT: RegisteredReport = {
+  definition: {
+    reportId: 'kpi-historical',
+    name: 'تقرير KPI التاريخي (الجودة)',
+    description: 'نتائج الأشهر المغلقة من اللقطات المجمّدة حرفيًا — مع هوية المخطط والإصدار ووزن الجودة المجمّد لأغراض التدقيق',
+    domain: 'quality',
+    reportType: 'performance',
+    enabled: true,
+    permission: KPI_PERMISSION,
+    timeMechanism: 'month-scope',
+    allowedScopes: ['selected_month', 'previous_month'],
+    allowedFilters: KPI_REPORT_FILTERS,
+    visibleColumns: KPI_REPORT_COLUMNS,
+    availableMetrics: KPI_REPORT_METRICS,
+    exportFormats: ['view', 'print', 'excel'],
+    dataMode: 'snapshot',
+  },
+  run: async (ctx) => {
+    const result = await runKpiReport(ctx.resolved, { kind: 'HISTORICAL' });
+    return result as unknown as ReportRunnerResult<Record<string, unknown>>;
+  },
+};
+
 /** The registry. Future reports append here — nothing else changes. */
-const REGISTRY: RegisteredReport[] = [QUALITY_DEDUCTIONS_REPORT as RegisteredReport];
+const REGISTRY: RegisteredReport[] = [
+  QUALITY_DEDUCTIONS_REPORT as RegisteredReport,
+  KPI_MONTHLY_REPORT as RegisteredReport,
+  KPI_MTD_REPORT as RegisteredReport,
+  KPI_HISTORICAL_REPORT as RegisteredReport,
+];
 
 // ─────────────────────────────────────────────────────────────
 //  Resolution

@@ -12,6 +12,7 @@ import { toast } from 'sonner';
 // ── Deterministic year — rendered only on client to avoid mismatch ──
 function CopyrightYear() {
   const [year, setYear] = useState<number | null>(null);
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- hydration-safe client-only value: reading the clock during render would cause an SSR mismatch.
   useEffect(() => setYear(new Date().getFullYear()), []);
   return <>{year ?? '2024'}</>;
 }
@@ -95,7 +96,7 @@ export default function LoginPage() {
 
   useEffect(() => {
     if (error) clearError();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [email, password]);
 
   const handleLogin = async (e: React.FormEvent) => {

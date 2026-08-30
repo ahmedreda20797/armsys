@@ -195,7 +195,7 @@ export default function QualityPage() {
     fetchData();
   }, []);
 
-  const fetchData = async () => {
+  async function fetchData() {
     setError(null);
     try {
       const [qRes, empRes] = await Promise.all([
@@ -217,7 +217,7 @@ export default function QualityPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }
 
   const handleDateChange = (date: string) => {
     const month = parseDateToMonth(date);

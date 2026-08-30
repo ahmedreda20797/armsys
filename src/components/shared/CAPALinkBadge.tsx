@@ -164,13 +164,19 @@ export function useCAPASummary(capaId: string | null | undefined) {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    if (!capaId) { setSummary(null); return; }
-    setLoading(true);
-    fetchCAPASummary(capaId).then((data) => {
-      setSummary(data);
-      setLoading(false);
-    });
+    if (!capaId) return; // summary stays null — derived below for the null case
+    let cancelled = false;
+    void (async () => {
+      setLoading(true);
+      const data = await fetchCAPASummary(capaId);
+      if (!cancelled) {
+        setSummary(data);
+        setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
   }, [capaId]);
 
-  return { summary, loading };
+  // Derived: no CAPA id → no summary (preserves the previous reset semantics).
+  return { summary: capaId ? summary : null, loading };
 }

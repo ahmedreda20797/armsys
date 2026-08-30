@@ -109,7 +109,7 @@ export default function RequestsPage() {
     fetchData();
   }, []);
 
-  const fetchData = async () => {
+  async function fetchData() {
     try {
       const [reqRes, empRes] = await Promise.all([
         authFetch('/api/requests'),
@@ -129,7 +129,7 @@ export default function RequestsPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }
 
   // ═══ Excel Upload Handler ═══
   const handleUploadExcel = async (e: React.ChangeEvent<HTMLInputElement>) => {

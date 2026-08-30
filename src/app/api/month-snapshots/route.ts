@@ -1,7 +1,8 @@
 // ══════════════════════════════════════════════════════════════
 //  /api/month-snapshots
 //
-//  GET — list available monthly snapshots (most recent first).
+//  GET — list available months for the Month Close page
+//  (most recent first).
 //
 //  Milestone 5 (spec §6):
 //    • Authentication required (requireAuth).
@@ -14,6 +15,20 @@
 //    • Returns a compact summary (employeeScores stripped) so the
 //      list payload stays small; full detail lives on the [month]
 //      detail endpoint.
+//
+//  HOTFIX — month DISCOVERY/AVAILABILITY (spec §1/§5):
+//    • Stored MonthSnapshot documents are created ONLY by the explicit
+//      close action, so active months (e.g. the current month with
+//      observations recorded Aug 1–20) never appeared. Discovery now
+//      ALSO surfaces months that have real Quality KPI activity in
+//      `qualityObservations` (the canonical source the engine and the
+//      MTD path already filter by) but no snapshot document yet.
+//    • Discovered months are status 'open' with real derived counts —
+//      NEVER finalized, never fabricated for empty months, never
+//      duplicated against a stored document (the stored doc wins).
+//    • Close/reopen/freeze behavior is UNCHANGED: closing still goes
+//      through POST /[month]/close → closeMonth() → frozen snapshot
+//      with scheme/version + history preservation.
 // ══════════════════════════════════════════════════════════════
 
 import { NextRequest } from 'next/server';
@@ -21,7 +36,25 @@ import { getAll, sortByField, TTL } from '@/lib/db';
 import { requireAuth, verifyPermission } from '@/lib/verify-permission';
 import { unauthorizedError, forbiddenError, internalError, logServerFailure } from '@/lib/api-error';
 import { MONTH_SNAPSHOTS_TABLE } from '@/lib/month-lock';
-import type { MonthSnapshot } from '@/types/quality-kpi';
+import { buildDiscoveredMonthRows } from '@/lib/month-snapshots/discovery';
+import type { MonthSnapshot, QualityObservation } from '@/types/quality-kpi';
+
+/** Compact list row — stored snapshot OR discovered active month. */
+interface MonthSummaryRow {
+  id: string;
+  monthKey: string;
+  status: 'open' | 'closed';
+  closedAt: string | null;
+  closedBy: string | null;
+  closedByName: string | null;
+  reopenCount: number;
+  reopenReason?: string;
+  generatedAt: string | null;
+  employeeCount: number;
+  departmentCount: number;
+  approvalStats: MonthSnapshot['approvalStats'] | null;
+  historyCount: number;
+}
 
 export async function GET(request: NextRequest) {
   try {
@@ -36,16 +69,12 @@ export async function GET(request: NextRequest) {
     const status = searchParams.get('status'); // 'open' | 'closed' | undefined
 
     // Real Firebase data only — no generated/demo months.
-    let snapshots = await getAll<MonthSnapshot>(MONTH_SNAPSHOTS_TABLE, TTL.STATIC);
-    if (status === 'open' || status === 'closed') {
-      snapshots = snapshots.filter((s) => s.status === status);
-    }
+    const snapshots = await getAll<MonthSnapshot>(MONTH_SNAPSHOTS_TABLE, TTL.STATIC);
 
-    // Most recent month first.
-    const sorted = sortByField(snapshots, 'monthKey', 'desc');
-
-    // Summary view — strip the large employeeScores map for the list.
-    const summary = sorted.map((s) => ({
+    // Stored documents (closed OR reopened-open) — the authority for
+    // any month that already has one. Summary view strips the large
+    // employeeScores map; full detail lives on the [month] endpoint.
+    const snapshotRows: MonthSummaryRow[] = snapshots.map((s) => ({
       id: s.id,
       monthKey: s.monthKey,
       status: s.status,
@@ -62,7 +91,27 @@ export async function GET(request: NextRequest) {
       historyCount: (s.snapshotHistory?.length ?? 0),
     }));
 
-    return Response.json(summary);
+    // ── Month discovery (hotfix) ──────────────────────────────────
+    // Months with real Quality KPI activity but no snapshot document.
+    // One cached read of the SAME collection the canonical engine
+    // consumes (computeFreshMonthSnapshot uses TTL.MEDIUM too).
+    // The pure builder enforces: strict month-key validation, one row
+    // per month, no duplication against stored docs, open-only status,
+    // real derived counts (no fabricated zeros, no empty months).
+    const observations = await getAll<QualityObservation>('qualityObservations', TTL.MEDIUM);
+    const existingMonths = new Set(snapshots.map((s) => s.monthKey));
+    const discoveredRows = buildDiscoveredMonthRows(observations, existingMonths);
+
+    // Merge, then apply the optional status filter, then sort.
+    let merged: MonthSummaryRow[] = [...snapshotRows, ...discoveredRows];
+    if (status === 'open' || status === 'closed') {
+      merged = merged.filter((s) => s.status === status);
+    }
+
+    // Most recent month first.
+    const sorted = sortByField(merged, 'monthKey', 'desc');
+
+    return Response.json(sorted);
   } catch (error) {
     logServerFailure('month-snapshots', 'GET', error);
     return internalError();

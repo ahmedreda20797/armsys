@@ -39,6 +39,7 @@ import {
   ScrollText,
   FileWarning,
   Network,
+  FileBarChart,
   SlidersHorizontal,
 } from 'lucide-react';
 import { usePermissions } from '@/hooks/usePermissions';
@@ -82,6 +83,7 @@ const ICON_MAP: Record<string, LucideIcon> = {
   ScrollText,
   FileWarning,
   Network,
+  FileBarChart,
 };
 
 interface SidebarProps {
@@ -103,6 +105,7 @@ function SidebarTooltip({ label, children }: { label: string; children: React.Re
   const triggerRef = useRef<HTMLDivElement>(null);
   const [mounted, setMounted] = useState(false);
 
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- canonical one-time hydration guard: state must flip after SSR completes; there is no render-safe alternative for mount-only flags.
   useEffect(() => { setMounted(true); }, []);
 
   const handleMouseEnter = useCallback(() => {
@@ -143,7 +146,7 @@ function SidebarTooltip({ label, children }: { label: string; children: React.Re
         document.body
       )
     : null;
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+   
 
   return (
     <div

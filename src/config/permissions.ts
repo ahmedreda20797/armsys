@@ -115,6 +115,11 @@ export const APP_PAGES: PageConfig[] = [
   { id: 'observationCategories', title: 'تصنيفات الملاحظات', icon: 'Tags', permissionKey: 'observationCategories', availableActions: ['create', 'update', 'delete'], groupId: 'quality_ctrl', overlayOnly: true },
   { id: 'observationTemplates', title: 'قوالب الملاحظات', icon: 'FilePlus2', permissionKey: 'observationTemplates', availableActions: ['create', 'update', 'delete'], groupId: 'quality_ctrl', overlayOnly: true },
   { id: 'kpiDashboard', title: 'لوحة مؤشرات الجودة', icon: 'Gauge', permissionKey: 'kpiDashboard', availableActions: [], groupId: 'quality_ctrl' },
+  // ── KPI Reporting Layer (Phase 2): read-only reporting over the
+  //    existing KPI Framework; 'export' gates the Excel path. Safe
+  //    default: explicitly granted per role preset below, 'none' for
+  //    the generic role (see the organization-page doctrine).
+  { id: 'kpiReports', title: 'تقارير KPI', icon: 'FileBarChart', permissionKey: 'kpiReports', availableActions: ['export'], groupId: 'quality_ctrl' },
   { id: 'qualityAuditLog', title: 'سجل مراجعة الجودة', icon: 'ScrollText', permissionKey: 'qualityAuditLog', availableActions: [], groupId: 'quality_ctrl' },
   // ═══ 🏢 الموارد البشرية ═══
   { id: 'hrDeductions', title: 'خصومات الموارد البشرية', icon: 'Banknote', permissionKey: 'hrDeductions', availableActions: ['create', 'update', 'delete', 'approve'], groupId: 'hr' },
@@ -194,6 +199,8 @@ export const HR_PERMISSIONS: PermissionsMap = {
   observationTemplates: 'none',
   // HR may view the KPI dashboard (read-only); no management/approval authority
   kpiDashboard: 'read',
+  // KPI reports (Phase 2) — read-only for HR (view + print, no export)
+  kpiReports: 'read',
   qualityAuditLog: 'none',
   monthClose: 'none',
   kpiSettings: 'none',
@@ -235,6 +242,8 @@ export const MANAGER_PERMISSIONS: PermissionsMap = {
   observationCategories: makeEditWithActions(['create', 'update', 'delete']),
   observationTemplates: makeEditWithActions(['create', 'update', 'delete']),
   kpiDashboard: 'read',
+  // KPI reports (Phase 2) — management visibility + Excel export
+  kpiReports: makeEditWithActions(['export']),
   qualityAuditLog: 'read',
   monthClose: makeEditWithActions(['approve']),
   // Manager may view and update KPI settings (level 'edit' grants read + update)
@@ -277,6 +286,10 @@ export const QUALITY_PERMISSIONS: PermissionsMap = {
   observationCategories: 'read',
   observationTemplates: makeEditWithActions(['create', 'update', 'delete']),
   kpiDashboard: 'read',
+  // KPI reports (Phase 2) — the Quality Department generates the
+  // employee/monthly/MTD/historical reports (spec: quality users get
+  // Quality KPI reporting incl. export)
+  kpiReports: makeEditWithActions(['export']),
   qualityAuditLog: 'read',
   monthClose: 'none',
   kpiSettings: 'none',
@@ -320,6 +333,8 @@ export const DEFAULT_PERMISSIONS: PermissionsMap = {
   observationCategories: 'none',
   observationTemplates: 'none',
   kpiDashboard: 'none',
+  // KPI reports (Phase 2) — not part of the generic default role
+  kpiReports: 'none',
   qualityAuditLog: 'none',
   monthClose: 'none',
   kpiSettings: 'none',

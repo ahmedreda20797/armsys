@@ -2,6 +2,8 @@
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/query-provider';
+import { parseAuditLogPayload } from '@/app/api/quality-audit-log/payload';
+import type { MonthSnapshot } from '@/types/quality-kpi';
 
 // ═══════════════════════════════════════════════════
 //  Query Key Factory — Quality KPI (Phase 1)
@@ -266,10 +268,10 @@ export function useMonthSnapshots(status?: string) {
   });
 }
 
-export function useMonthSnapshot(monthKey: string | null) {
+export function useMonthSnapshot<T = MonthSnapshot>(monthKey: string | null) {
   return useQuery({
     queryKey: monthKey ? kpiQueryKeys.snapshot(monthKey) : ['kpi', 'snapshots', 'none'],
-    queryFn: () => apiFetch(`/api/month-snapshots/${monthKey}`),
+    queryFn: () => apiFetch<T>(`/api/month-snapshots/${monthKey}`),
     enabled: !!monthKey,
   });
 }
@@ -353,7 +355,12 @@ export function useQualityAuditLog(params: AuditLogParams = {}) {
   });
   return useQuery({
     queryKey: [...kpiQueryKeys.auditLog(), qs],
-    queryFn: () => apiFetch(`/api/quality-audit-log${qs}`),
+    // The endpoint answers with the documented envelope
+    // { data, total, limit, offset } — normalize it to the entries
+    // array here (single contract module, unit-tested). Passing the
+    // raw envelope through made the page's Array.isArray(data) guard
+    // discard every record and render a permanently empty audit log.
+    queryFn: async () => parseAuditLogPayload(await apiFetch<unknown>(`/api/quality-audit-log${qs}`)),
     staleTime: 15_000,
   });
 }
@@ -393,5 +400,105 @@ export function useSetEmployeeKpiScheme() {
       qc.invalidateQueries({ queryKey: kpiQueryKeys.schemes });
       qc.invalidateQueries({ queryKey: ['kpi', 'employeeResult'] });
     },
+  });
+}
+
+// ═══════════════════════════════════════════════════
+//  KPI Reports (Phase 2) — reporting layer
+// ═══════════════════════════════════════════════════
+
+const reportsKey = (kind: string) => ['kpi', 'reports', kind] as const;
+
+export interface KpiReportTableParams {
+  employeeQuery?: string;
+  department?: string;
+  team?: string;
+  status?: string;
+  minScore?: string;
+  maxScore?: string;
+  sortBy?: string;
+  sortDir?: string;
+}
+
+function kpiReportQueryString(params: KpiReportTableParams, month?: string | null): string {
+  return buildQueryString({
+    ...(params as Record<string, string | undefined>),
+    month: month ?? undefined,
+  });
+}
+
+/** Employee KPI report (spec §4/§5) — summary, components, evidence, trend. */
+export function useKpiEmployeeReport(employeeId: string | null, month: string | null) {
+  const qs = buildQueryString({ employeeId: employeeId ?? undefined, month: month ?? undefined });
+  return useQuery({
+    queryKey: [...reportsKey('employee'), employeeId ?? 'none', month ?? 'none'],
+    queryFn: () => apiFetch(`/api/kpi-reports/employee${qs}`),
+    enabled: !!employeeId && !!month,
+    staleTime: 15_000,
+  });
+}
+
+/** Monthly Quality KPI report (spec §6). */
+export function useKpiMonthlyReport(month: string | null, params: KpiReportTableParams = {}) {
+  const qs = kpiReportQueryString(params, month);
+  return useQuery({
+    queryKey: [...reportsKey('monthly'), month ?? 'none', qs],
+    queryFn: () => apiFetch(`/api/kpi-reports/monthly?${qs.startsWith('?') ? qs.slice(1) : qs}`),
+    enabled: !!month,
+    staleTime: 15_000,
+  });
+}
+
+/** MTD report (spec §7/§8) — month optional (defaults server-side). */
+export function useKpiMtdReport(month: string | null, params: KpiReportTableParams = {}) {
+  const qs = kpiReportQueryString(params, month);
+  return useQuery({
+    queryKey: [...reportsKey('mtd'), month ?? 'current', qs],
+    queryFn: () => apiFetch(`/api/kpi-reports/mtd${qs ? `?${qs.startsWith('?') ? qs.slice(1) : qs}` : ''}`),
+    staleTime: 15_000,
+  });
+}
+
+/** Historical report (spec §9) — frozen snapshots for closed months. */
+export function useKpiHistoricalReport(month: string | null, params: KpiReportTableParams = {}) {
+  const qs = kpiReportQueryString(params, month);
+  return useQuery({
+    queryKey: [...reportsKey('historical'), month ?? 'none', qs],
+    queryFn: () => apiFetch(`/api/kpi-reports/historical?${qs.startsWith('?') ? qs.slice(1) : qs}`),
+    enabled: !!month,
+    staleTime: 30_000,
+  });
+}
+
+/** Management summary (spec §15) — QUALITY KPI statistics. */
+export function useKpiManagementSummary(month: string | null) {
+  return useQuery({
+    queryKey: [...reportsKey('summary'), month ?? 'none'],
+    queryFn: () => apiFetch(`/api/kpi-reports/summary?month=${month}`),
+    enabled: !!month,
+    staleTime: 15_000,
+  });
+}
+
+export type KpiReportTableKind = 'monthly' | 'mtd' | 'historical';
+
+/** Kind-switching table report hook (one active query per tab). */
+export function useKpiReportTable(
+  kind: KpiReportTableKind,
+  month: string | null,
+  params: KpiReportTableParams = {},
+) {
+  const qs = kpiReportQueryString(params, month);
+  const clean = qs.startsWith('?') ? qs.slice(1) : qs;
+  return useQuery({
+    queryKey: [...reportsKey(kind), month ?? (kind === 'mtd' ? 'current' : 'none'), clean],
+    queryFn: () => {
+      if (kind === 'mtd') {
+        return apiFetch(`/api/kpi-reports/mtd${clean ? `?${clean}` : ''}`);
+      }
+      return apiFetch(`/api/kpi-reports/${kind}?${clean}`);
+    },
+    enabled: !!month || kind === 'mtd',
+    staleTime: 15_000,
   });
 }

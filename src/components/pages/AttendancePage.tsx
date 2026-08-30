@@ -132,7 +132,7 @@ export default function AttendancePage() {
     fetchData();
   }, []);
 
-  const fetchData = useCallback(async () => {
+  async function fetchData() {
     try {
       const [attRes, empRes] = await Promise.all([
         authFetch('/api/attendance'),
@@ -152,7 +152,7 @@ export default function AttendancePage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }
 
   // ═══ Excel Upload Handler ═══
   const handleUploadExcel = async (e: React.ChangeEvent<HTMLInputElement>) => {

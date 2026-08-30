@@ -239,7 +239,7 @@ export function EmployeeQualityKpiPanel({ employeeId }: { employeeId: string }) 
               مجمّد
             </Badge>
           )}
-          {!isCurrentMonth && !isFrozen && monthDetail && (
+          {!isCurrentMonth && !isFrozen && monthDetail != null && (
             <Badge variant="outline" className="shrink-0 text-amber-400 border-amber-500/30 text-[10px]">
               مباشر
             </Badge>

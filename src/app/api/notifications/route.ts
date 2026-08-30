@@ -22,7 +22,7 @@ export async function GET(request: NextRequest) {
     const priority = searchParams.get('priority');
     const status = searchParams.get('status');
     const category = searchParams.get('category');
-    const module = searchParams.get('module');
+    const moduleName = searchParams.get('module');
     const employeeId = searchParams.get('employeeId');
     const assignedTo = searchParams.get('assignedTo');
     const search = searchParams.get('search');
@@ -47,7 +47,7 @@ export async function GET(request: NextRequest) {
     if (priority) records = records.filter((r) => r.priority === priority);
     if (status) records = records.filter((r) => r.status === status);
     if (category) records = records.filter((r) => r.category === category);
-    if (module) records = records.filter((r) => r.sourceModule === module);
+    if (moduleName) records = records.filter((r) => r.sourceModule === moduleName);
     if (employeeId) records = records.filter((r) => r.employeeId === employeeId);
     if (assignedTo) records = records.filter((r) => r.assignedTo === assignedTo);
     if (search) {

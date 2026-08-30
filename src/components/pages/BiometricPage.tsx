@@ -94,7 +94,7 @@ export default function BiometricPage() {
     fetchData();
   }, []);
 
-  const fetchData = async () => {
+  async function fetchData() {
     try {
       const [bioRes, empRes] = await Promise.all([
         authFetch('/api/biometric'),
@@ -114,7 +114,7 @@ export default function BiometricPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }
 
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];

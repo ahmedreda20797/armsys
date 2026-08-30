@@ -35,7 +35,7 @@ export class DesignerErrorBoundary extends Component<BoundaryProps, BoundaryStat
   }
 
   componentDidCatch(error: Error, info: React.ErrorInfo): void {
-    // eslint-disable-next-line no-console
+     
     console.error('[Workflow Designer] Recovered from crash:', error, info);
     this.setState({ info: { componentStack: info.componentStack ?? undefined } });
   }

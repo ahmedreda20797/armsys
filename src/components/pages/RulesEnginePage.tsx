@@ -223,7 +223,7 @@ export default function RulesEnginePage() {
   // ── State ──
   const [rules, setRules] = useState<AutomationRule[]>([]);
   const [logs, setLogs] = useState<RuleExecutionLog[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!canView); // start settled when the user lacks view permission
   const [logsLoading, setLogsLoading] = useState(false);
 
   // Filters
@@ -285,8 +285,10 @@ export default function RulesEnginePage() {
   }, []);
 
   useEffect(() => {
-    if (!canView) { setLoading(false); return; }
-    fetchRules();
+    if (!canView) return; // loading initialized to false for non-viewers
+    // Async boundary: state updates happen after the first await, never
+    // synchronously within the effect body.
+    void (async () => { await fetchRules(); })();
   }, [canView, fetchRules]);
 
   // ── Stats ──

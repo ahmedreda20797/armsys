@@ -51,7 +51,13 @@ function InlineField({ label, value, type = 'text', onSave, editable = true, row
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(value);
 
-  useEffect(() => { setDraft(value); }, [value]);
+  // Reset draft when the underlying value changes — compiler-endorsed
+  // "adjust state during render" guard (no effect + setState cascade).
+  const [lastExternalValue, setLastExternalValue] = useState(value);
+  if (value !== lastExternalValue) {
+    setLastExternalValue(value);
+    setDraft(value);
+  }
 
   const handleSave = () => {
     if (draft !== value) onSave(draft);
@@ -293,7 +299,9 @@ export default function CAPADetailPage({ capaId, onBack }: CAPADetailPageProps) 
 
   // Fetch employees & users
   useEffect(() => {
-    fetchCapa();
+    // Async boundary: state updates happen after the first await, never
+    // synchronously within the effect body.
+    void (async () => { await fetchCapa(); })();
     Promise.allSettled([
       authFetch('/api/employees').then((r) => r.ok ? r.json() : []),
       authFetch('/api/dashboard/users').then((r) => r.ok ? r.json() : []),

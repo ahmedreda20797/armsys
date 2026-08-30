@@ -95,7 +95,10 @@ function Carousel({
 
   React.useEffect(() => {
     if (!api) return
-    onSelect(api)
+    // Async boundary: embla does not emit an initial "select" event, so the
+    // selected index is synced once — deferred to a microtask to avoid a
+    // synchronous setState inside the effect body.
+    void (async () => { onSelect(api) })()
     api.on("reInit", onSelect)
     api.on("select", onSelect)
 

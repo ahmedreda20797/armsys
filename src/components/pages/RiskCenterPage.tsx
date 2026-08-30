@@ -105,7 +105,7 @@ export default function RiskCenterPage() {
   const [employees, setEmployees] = useState<EmployeeRisk[]>([]);
   const [summary, setSummary] = useState<SummaryStats | null>(null);
   const [deptAnalysis, setDeptAnalysis] = useState<Record<string, any>>({});
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!canView); // start settled when the user lacks view permission
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [levelFilter, setLevelFilter] = useState('all');
@@ -113,11 +113,11 @@ export default function RiskCenterPage() {
   const [selectedEmployee, setSelectedEmployee] = useState<EmployeeRisk | null>(null);
 
   useEffect(() => {
-    if (!canView) { setLoading(false); return; }
+    if (!canView) return; // loading initialized to false for non-viewers
     fetchRiskData();
   }, []);
 
-  const fetchRiskData = async () => {
+  async function fetchRiskData() {
     setLoading(true);
     setError(null);
     try {
@@ -141,7 +141,7 @@ export default function RiskCenterPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }
 
   // ── Department list for filters ──
   const departmentList = useMemo(() => {

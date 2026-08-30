@@ -1015,8 +1015,14 @@ export default function TravelPage() {
     }
   }, [highlightId, setHighlightId]);
 
-  // ── Reset page when filters change ──
-  useEffect(() => { setPage(1); }, [activeTab, filterEmployee, filterMonth, deferredSearch]);
+  // ── Reset page when filters change — compiler-endorsed "adjust state during render"
+  // guard (no effect + setState cascade) ──
+  const pageFilterTuple = [activeTab, filterEmployee, filterMonth, deferredSearch] as const;
+  const [lastPageFilterTuple, setLastPageFilterTuple] = useState<readonly unknown[]>(pageFilterTuple);
+  if (pageFilterTuple.some((v, i) => v !== lastPageFilterTuple[i])) {
+    setLastPageFilterTuple(pageFilterTuple);
+    setPage(1);
+  }
 
   // ── Stable callbacks (don't depend on trips array) ──
   const quickChangeStatus = useCallback((tripId: string, newStatus: string) => {

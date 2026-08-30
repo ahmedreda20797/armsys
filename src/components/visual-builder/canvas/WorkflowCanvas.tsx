@@ -150,9 +150,9 @@ function WorkflowCanvasInner({
   // page's useReactFlow() there. This reflector is kept for back-compat with
   // callers that used the legacy canvas wrapper.
   const viewportRef = React.useRef<VBViewport>({ x: 0, y: 0, zoom: 1 });
-  viewportRef.current = { x: transform[0], y: transform[1], zoom: transform[2] };
 
   React.useEffect(() => {
+    viewportRef.current = { x: transform[0], y: transform[1], zoom: transform[2] };
     onViewportChange?.(viewportRef.current);
   }, [transform, onViewportChange]);
 
@@ -198,7 +198,7 @@ function WorkflowCanvasInner({
         const t = e.type ?? 'default';
         if (!BUILT_IN.has(t) && !edgeTypeWarningFired.current.has(t)) {
           edgeTypeWarningFired.current.add(t);
-          // eslint-disable-next-line no-console
+           
           console.warn(
             `[VB Edge Guard] Edge "${e.id}" uses unsupported type "${t}". ` +
             `Built-in types: ${[...BUILT_IN].join(', ')}.`,
@@ -309,7 +309,7 @@ function ZoomIndicator() {
    silently break zoom/fit/center (they bind to the empty outer instance).
  */
 
-interface WorkflowCanvasProps extends WorkflowCanvasInnerProps {}
+type WorkflowCanvasProps = WorkflowCanvasInnerProps;
 
 export function WorkflowCanvas(props: WorkflowCanvasProps) {
   return <WorkflowCanvasInner {...props} />;

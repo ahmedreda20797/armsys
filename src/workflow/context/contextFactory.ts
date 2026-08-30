@@ -68,6 +68,6 @@ export function resolveValue(raw: unknown, ctx: WorkflowContext): unknown {
   if (!match) return raw;
   const key = match[1].trim();
   if (key in ctx.variables) return ctx.variables[key];
-  if (key in ctx) return (ctx as Record<string, unknown>)[key];
+  if (key in ctx) return (ctx as unknown as Record<string, unknown>)[key];
   return undefined;
 }

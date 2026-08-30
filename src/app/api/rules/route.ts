@@ -25,7 +25,7 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
 
     const status = searchParams.get('status');
-    const module = searchParams.get('module');
+    const moduleName = searchParams.get('module');
     const priority = searchParams.get('priority');
     const triggerType = searchParams.get('triggerType');
     const search = searchParams.get('search');
@@ -38,7 +38,7 @@ export async function GET(request: NextRequest) {
 
     // Server-side filters
     if (status) records = records.filter((r) => r.status === status);
-    if (module) records = records.filter((r) => r.module === module);
+    if (moduleName) records = records.filter((r) => r.module === moduleName);
     if (priority) records = records.filter((r) => r.priority === priority);
     if (triggerType) records = records.filter((r) => r.triggerType === triggerType);
     if (isTemplate !== null) records = records.filter((r) => ((r as any).isTemplate === true) === (isTemplate === 'true'));

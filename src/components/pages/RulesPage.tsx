@@ -91,7 +91,7 @@ export default function RulesPage() {
     fetchRules();
   }, []);
 
-  const fetchRules = async () => {
+  async function fetchRules() {
     try {
       const res = await authFetch('/api/deduction-rules');
       if (res.ok) {
@@ -103,7 +103,7 @@ export default function RulesPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }
 
   const handleSave = async () => {
     setSaving(true);

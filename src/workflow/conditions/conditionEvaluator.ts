@@ -62,7 +62,7 @@ function evalOperator(
 
 function getFieldValue(field: string, ctx: WorkflowContext): unknown {
   if (field in ctx.variables) return ctx.variables[field];
-  if (field in ctx) return (ctx as Record<string, unknown>)[field];
+  if (field in ctx) return (ctx as unknown as Record<string, unknown>)[field];
   return undefined;
 }
 

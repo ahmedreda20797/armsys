@@ -155,6 +155,7 @@ export default function FirebaseSettingsPage() {
       const saved = localStorage.getItem('firebase_config');
       if (saved) {
         const parsed = JSON.parse(saved);
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- one-time localStorage hydration: reading storage during render (or lazy init) would diverge from the SSR output and cause hydration mismatches.
         setConfig((prev) => ({ ...prev, ...parsed }));
       }
     } catch {
