@@ -40,6 +40,7 @@ import {
   FileWarning,
   Network,
   FileBarChart,
+  FileSearch,
   SlidersHorizontal,
 } from 'lucide-react';
 import { usePermissions } from '@/hooks/usePermissions';
@@ -84,6 +85,7 @@ const ICON_MAP: Record<string, LucideIcon> = {
   FileWarning,
   Network,
   FileBarChart,
+  FileSearch,
 };
 
 interface SidebarProps {

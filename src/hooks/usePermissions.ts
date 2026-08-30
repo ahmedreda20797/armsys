@@ -11,6 +11,18 @@ export function usePermissions(pageId?: PageId) {
 
   const isAdmin = user?.role === 'admin';
 
+  // ── Canonical permission-key resolution ─────────────────────────
+  // A page's stored permission entries are keyed by PERMISSION KEY
+  // (APP_PAGES.permissionKey), while callers may pass either the page
+  // id or the key itself (most pages share one value). Pages that
+  // reuse another page's permission key (e.g. qualityDeductionsReport
+  // → 'reports', smartQualityReport → 'kpiReports') must resolve to
+  // that canonical key BEFORE any lookup — otherwise the lookup reads
+  // a key that can never exist in the map and fails closed even for
+  // granted roles.
+  const resolvePermissionKey = (pid: string): string =>
+    APP_PAGES.find((p) => p.id === pid || p.permissionKey === pid)?.permissionKey ?? pid;
+
   // Parse permission for a specific page
   const getPermission = (pid: string): PagePermission => {
     if (!user) return { level: 'none', actions: {} };
@@ -21,7 +33,7 @@ export function usePermissions(pageId?: PageId) {
       page?.availableActions.forEach(a => { actions[a] = true; });
       return { level: 'edit', actions };
     }
-    const raw = user.permissions?.[pid];
+    const raw = user.permissions?.[resolvePermissionKey(pid)];
     return migratePermission(raw);
   };
 
@@ -93,7 +105,7 @@ export function usePermissions(pageId?: PageId) {
   // fails closed to 'own' (empty without the employee linkage).
   const getScope = (pid: string): DataScope => {
     if (!user) return FAIL_CLOSED_SCOPE; // fail-closed for anonymous
-    return resolvePageScope(user.permissions, pid, user.role);
+    return resolvePageScope(user.permissions, resolvePermissionKey(pid), user.role);
   };
 
   // Section access (Milestone 10 foundation): same level vocabulary;

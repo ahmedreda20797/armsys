@@ -1,0 +1,53 @@
+================================================================
+ARM ERP — Smart Quality Report / Phase 4
+Employee Performance Report UI — ملاحظات التسليم
+================================================================
+
+ما تم تنفيذه في هذه النسخة (Phase 4):
+--------------------------------------------------
+تقرير جودة الموظف الذكي (Smart Quality Report) كطبقة عرض فقط،
+مبني بالكامل على بيانات Performance Intelligence الموجودة،
+بدون أي ذكاء اصطناعي أو Python أو حسابات KPI جديدة.
+
+الملفات المضافة:
+- src/components/pages/quality-kpi/smart-report/view-model.ts
+  (منظّمات العرض — عرض فقط، بدون أي إعادة حساب)
+- src/components/pages/quality-kpi/smart-report/report-sections.tsx
+  (أقسام التقرير: Hero، حالة المكونات، الاتجاه، الملاحظات،
+   المشكلات المتكررة، الاستقطاعات، الشكاوى، CAPA، المتابعات،
+   سياق الصفقات، سياق الحضور، الأدلة، جودة البيانات)
+- src/components/pages/quality-kpi/smart-report/SmartQualityReportPage.tsx
+  (اختيار الموظف + المدة MTD/الشهر السابق/الشهور السابقة)
+- src/lib/__tests__/smart-quality-report-ui.test.ts
+  (45 اختبار: اختبارات view-model + اختبارات تعاقد المصدر)
+
+الملفات المعدلة:
+- src/config/permissions.ts   (تسجيل صفحة smartQualityReport
+  بنفس مفتاح صلاحية kpiReports)
+- src/types/index.ts          (إضافة PageId)
+- src/app/page.tsx            (استيراد ديناميكي + حالة راوتر)
+- src/components/layout/Sidebar.tsx  (أيقونة القائمة)
+- src/hooks/usePermissions.ts (حل page id → permissionKey
+  للصفحات ذات المفتاح المشترك)
+- src/components/layout/AppLayout.tsx (class للطباعة)
+- src/app/globals.css         (CSS الطباعة/PDF)
+
+نتائج التحقق:
+- npx tsc --noEmit  : 0 أخطاء
+- npm run lint      : نظيف
+- npm test          : 1012/1012 ناجح
+- npm run build     : نجاح
+- next dev          : يعمل، صفحة الدخول تُحمّل بدون أخطاء
+
+طريقة التشغيل بعد فك الضغط:
+--------------------------------------------------
+1) npm install
+2) npm run dev
+3) افتح التقرير من القائمة الجانبية: Smart Quality Report
+   (يتطلب نفس صلاحية KPI Reports + بيانات Firebase الحية)
+
+ملاحظات:
+- لا توجد أي محتويات مولّدة بالذكاء الاصطناعي في التقرير؛
+  قسم "Smart Analysis" معروض كعنصر مستقبلي فقط.
+- لم تُمس الوحدات الحالية: Quality Notes، Quality Audit Log،
+  Month Close، KPI Reports، تقارير الموظفين المؤرشفين.

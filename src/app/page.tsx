@@ -67,6 +67,9 @@ const KpiSettingsPage          = dynamic(() => import('@/components/pages/qualit
 const QualityAuditLogPage      = dynamic(() => import('@/components/pages/quality-kpi/QualityAuditLogPage'),      { loading: () => <PageSkeleton />, ssr: false });
 // ── KPI Reporting Layer (Phase 2) ──
 const KpiReportsPage           = dynamic(() => import('@/components/pages/quality-kpi/KpiReportsPage'),           { loading: () => <PageSkeleton />, ssr: false });
+// ── Smart Quality Report (Phase 4): presentation-only UI over the
+//    existing Performance Intelligence dataset (no new calculations).
+const SmartQualityReportPage   = dynamic(() => import('@/components/pages/quality-kpi/smart-report/SmartQualityReportPage'), { loading: () => <PageSkeleton />, ssr: false });
 
 // ─── Background preload ───────────────────────────────────────────────────────
 function PreloadPages() {
@@ -145,6 +148,7 @@ function PageRouter() {
     case 'observationTemplates':  return <ObservationTemplatesPage  key="observationTemplates" />;
     case 'kpiDashboard':          return <KpiDashboardPage          key="kpiDashboard" />;
     case 'kpiReports':            return <KpiReportsPage            key="kpiReports" />;
+    case 'smartQualityReport':    return <SmartQualityReportPage    key="smartQualityReport" />;
     case 'monthClose':            return <MonthClosePage            key="monthClose" />;
     case 'kpiSettings':           return <KpiSettingsPage           key="kpiSettings" />;
     case 'qualityAuditLog':       return <QualityAuditLogPage       key="qualityAuditLog" />;

@@ -149,7 +149,7 @@ export function AppLayout({ children }: AppLayoutProps) {
       {/* Main content area — CSS transition on margin, no motion (prevents CLS).
           On mobile (<lg) the sidebar is an overlay so margin is 0 via CSS. */}
       <div
-        className="lg:block"
+        className="lg:block app-main-offset"
         style={{
           marginRight: isMobile ? 0 : sidebarMargin,
           transition: 'margin-right 0.3s cubic-bezier(0.4, 0, 0.2, 1)',

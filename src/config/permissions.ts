@@ -121,6 +121,13 @@ export const APP_PAGES: PageConfig[] = [
   //    the generic role (see the organization-page doctrine).
   { id: 'kpiReports', title: 'تقارير KPI', icon: 'FileBarChart', permissionKey: 'kpiReports', availableActions: ['export'], groupId: 'quality_ctrl' },
   { id: 'qualityAuditLog', title: 'سجل مراجعة الجودة', icon: 'ScrollText', permissionKey: 'qualityAuditLog', availableActions: [], groupId: 'quality_ctrl' },
+  // ── Smart Quality Report (Phase 4): a READ-ONLY presentation layer
+  //    over the existing Performance Intelligence dataset. Mounts
+  //    under the SAME 'kpiReports' permission key — existing role
+  //    grants apply unchanged (same doctrine as
+  //    qualityDeductionsReport / 'reports' above). No new permission
+  //    system, no server-side changes.
+  { id: 'smartQualityReport', title: 'تقرير الجودة الذكي', icon: 'FileSearch', permissionKey: 'kpiReports', availableActions: ['export'], groupId: 'quality_ctrl' },
   // ═══ 🏢 الموارد البشرية ═══
   { id: 'hrDeductions', title: 'خصومات الموارد البشرية', icon: 'Banknote', permissionKey: 'hrDeductions', availableActions: ['create', 'update', 'delete', 'approve'], groupId: 'hr' },
   { id: 'rules', title: 'قواعد الخصم', icon: 'Scale', permissionKey: 'rules', availableActions: ['create', 'update', 'delete'], groupId: 'hr' },

@@ -134,3 +134,20 @@ Work Log:
 
 Stage Summary:
 - Project is fully green; runtime env vars still required: FIREBASE_PROJECT_ID, FIREBASE_PRIVATE_KEY, FIREBASE_CLIENT_EMAIL, FIREBASE_DATABASE_URL, JWT_SECRET, CRON_SECRET
+
+---
+Task ID: phase-4-smart-quality-report
+Agent: Super Z (main agent)
+Task: Phase 4 — Smart Quality Report UI (presentation layer over Performance Intelligence)
+
+Work Log:
+- New page 'smartQualityReport' (تقرير الجودة الذكي) under quality_ctrl; reuses 'kpiReports' permissionKey — no new permission system
+- smart-report/view-model.ts: pure view models (type-only dataset imports, no React) — report header, KPI hero, component status, trend, quality observations, repeated issues, deductions, complaints, CAPA, follow-ups, deals, attendance context, evidence groups, data quality
+- smart-report/report-sections.tsx + SmartQualityReportPage.tsx: compact enterprise report UI, one dataset via usePerformanceIntelligence, MTD/previous/historical selector with MTD/LIVE/FINALIZED badges (server-driven), loading/empty/error/unauthorized states, evidence navigation honoring page permissions, print/PDF support, VERIFIED FACTS labeling, Smart Analysis placeholder (clearly labeled future phase)
+- usePermissions.ts: canonical page-id → permissionKey resolution (fixes shared-key PageRouter gating, e.g. qualityDeductionsReport)
+- Print CSS extensions (§24) + app-main-offset on AppLayout wrapper
+- Tests: smart-quality-report-ui.test.ts — 45 tests (view models + static contracts incl. no-AI, single data source, permission reuse, regression pins)
+
+Stage Summary:
+- tsc 0 errors · eslint 0/0 · tests 1012/1012 (JWT_SECRET env needed for quality-migration file) · build OK (JWT_SECRET/Firebase env needed at page-data collection)
+- Existing Phase 1-3 modules untouched; PerformanceAnalysisTab, KPI reports tabs, Month Close, Quality Audit Log unchanged

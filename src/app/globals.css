@@ -920,4 +920,19 @@ textarea:focus {
     backdrop-filter: none !important;
     border: 1px solid #e5e7eb !important;
   }
+  /* Phase 4 (§24): the Smart Quality Report prints report content
+     only — shell navigation and header chrome never print. */
+  nav, header { display: none !important; }
+  .app-main-offset { margin-right: 0 !important; margin-left: 0 !important; }
+  /* Report cards print on white with light borders; text colors
+     (incl. status accent colors) pass through untouched. */
+  [data-report-card] {
+    background: white !important;
+    border: 1px solid #d1d5db !important;
+    box-shadow: none !important;
+  }
+  [data-report-card] [class*="bg-slate-9"],
+  [data-report-card] [class*="bg-slate-8"] {
+    background: transparent !important;
+  }
 }
