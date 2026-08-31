@@ -455,10 +455,11 @@ export function usePerformanceIntelligence(employeeId: string | null, month: str
 }
 
 /**
- * Python statistical analytics for one employee + period (Phase 5).
+ * Deterministic analytics for one employee + period (Phase 5.3 —
+ * TypeScript engine, in-process on the server).
  * Analytics layer ONLY — never a KPI source. The server responds
  * 200 with explicit ANALYTICS_UNAVAILABLE / ANALYTICS_ERROR
- * statuses when Python is absent or fails, so this query never
+ * statuses when the analytics run fails, so this query never
  * breaks the report (spec §27/§28). Long staleTime: results are
  * content-keyed and cached server-side as well.
  */

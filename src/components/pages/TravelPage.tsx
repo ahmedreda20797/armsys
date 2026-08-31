@@ -4,6 +4,7 @@ import React, { useState, useEffect, useRef, useMemo, useCallback, useDeferredVa
 import { motion, AnimatePresence } from 'framer-motion';
 import { usePermissions } from '@/hooks/usePermissions';
 import { useAppStore } from '@/lib/store';
+import { useRecordHighlight } from '@/hooks/use-record-highlight';
 import { getDaysRemaining } from '@/lib/date-utils';
 import { useTravel, useEmployees, useCreateTravel, useUpdateTravel, useDeleteTravel } from '@/hooks/use-queries';
 import { useQueryClient } from '@tanstack/react-query';
@@ -417,6 +418,7 @@ const TripCard = memo(function TripCard({
       open={isExpanded}
       onOpenChange={(open) => onToggleExpand(open ? trip.id : null)}
       id={`trip-card-${trip.id}`}
+      data-record-id={trip.id}
       ref={isHighlighted ? highlightRef : undefined}
     >
       <motion.div
@@ -956,7 +958,14 @@ export default function TravelPage() {
   // ── Local UI state ──
   const [activeTab, setActiveTab] = useState<CategoryTab>('all');
   const [filterEmployee, setFilterEmployee] = useState<string>('all');
-  const [filterMonth, setFilterMonth] = useState<string>('all');
+  // Phase 5.3 (spec §27): an evidence deep-link seeds the month filter
+  // with the RECORD's own month (server-derived meta.month), so the
+  // target deal becomes reachable inside the month-filtered list.
+  const navMonth = useAppStore((s) => {
+    const m = s.navParams.month;
+    return typeof m === 'string' && m.length === 7 && m[4] === '-' ? m : null;
+  });
+  const [filterMonth, setFilterMonth] = useState<string>(navMonth ?? 'all');
   const [searchQuery, setSearchQuery] = useState('');
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(50);
@@ -1001,23 +1010,21 @@ export default function TravelPage() {
   const deleteTravel = useDeleteTravel();
   const queryClient = useQueryClient();
 
-  // ── Scroll to highlighted trip ──
+  // ── Scroll to highlighted trip (Phase 5.3 unified) ──
+  // The shared hook polls until the card is rendered (data loaded),
+  // then scrolls + temporary highlight. Auto-EXPAND stays page-side:
+  // the target card is expanded only once its data actually arrived.
+  useRecordHighlight({ ready: !loading });
+
   useEffect(() => {
-    if (highlightId) {
-      requestAnimationFrame(() => {
-        setTimeout(() => {
-          // Phase 5.2 (§35): deep-linked evidence auto-EXPANDS the
-          // target trip card, then scrolls it into view (highlight
-          // is temporary).
-          setExpandedCardId(highlightId);
-          const el = document.getElementById(`trip-card-${highlightId}`);
-          if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-          const timer = setTimeout(() => setHighlightId(null), 2500);
-          return () => clearTimeout(timer);
-        }, 100);
-      });
-    }
-  }, [highlightId, setHighlightId]);
+    if (!highlightId || loading) return;
+    const exists = trips.some((t) => t.id === highlightId);
+    if (!exists) return;
+    // Deferred one frame (react-hooks/set-state-in-effect): expand is a
+    // one-shot reaction to the deep-link, not a render-phase adjustment.
+    const raf = requestAnimationFrame(() => setExpandedCardId(highlightId));
+    return () => cancelAnimationFrame(raf);
+  }, [highlightId, loading, trips]);
 
   // ── Reset page when filters change — compiler-endorsed "adjust state during render"
   // guard (no effect + setState cascade) ──

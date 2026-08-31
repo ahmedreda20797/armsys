@@ -1,0 +1,30 @@
+PHASE 5.3 DELIVERY NOTE
+========================
+
+1) TypeScript Analytics Migration + Python Removal
+   - Canonical engine: src/lib/analytics/engine.ts (in-process, no Python).
+   - python-bridge.ts, python-service/, PYTHON_* env vars, Docker python3: REMOVED.
+   - python-analytics/ kept as REFERENCE ONLY (parity tests; not required at runtime).
+   - Parity: 9 fixtures, 15/15 parity tests BIT-EXACT (zero tolerance verified).
+
+2) Employee Archive Regression - FIXED
+   - Root cause: PUT /api/employees/[id] stripped 'status' before the lifecycle
+     branch could run (dead code). Status capture now precedes sanitization.
+   - 15/15 route-level regression tests (12 spec scenarios + guard rails).
+
+3) Evidence Exact-Record Navigation - FIXED
+   - useRecordHighlight polls until the record renders (was one-shot 250ms probe).
+   - Quality Notes/Travel seed their month filter from server-derived record month;
+     Travel auto-expands the deal card; Follow-ups auto-expand the employee group;
+     CAPA detail mode unchanged. Honest labels per spec section 30.
+
+Verification (this machine):
+- npx tsc --noEmit : 0 errors
+- npm run lint : clean
+- npm test : 1108/1108 (JWT_SECRET set)
+- npm run build : success, standalone has NO python-analytics
+- python -m unittest (reference engine) : 52/52 (optional, reference only)
+- Engine tests pass with NO python on PATH (no Python dependency)
+- Standalone smoke: / 200; analytics + evidence routes 401 unauthenticated
+
+Run: npm install; copy .env.example; set JWT_SECRET (32+ chars) + Firebase creds.

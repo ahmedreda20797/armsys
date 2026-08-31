@@ -59,8 +59,15 @@ const STATUS_LABELS: Record<string, string> = {
 export default function ObservationsPage() {
   const { canView, canCreate, canUpdate, canDelete, canApprove, isAdmin } = usePermissions('observations');
 
-  // Filters
-  const [filters, setFilters] = useState<ObservationsParams>({ month: CURRENT_MONTH });
+  // Filters — Phase 5.3 (spec §27/§28): an evidence deep-link seeds the
+  // month filter with the RECORD's own month (server-derived meta.month).
+  // The Quality Notes list is server-filtered by month, so without this
+  // the exact observation was unreachable from a previous-month report.
+  const navMonth = useAppStore((s) => {
+    const m = s.navParams.month;
+    return typeof m === 'string' && m.length === 7 && m[4] === '-' ? m : null;
+  });
+  const [filters, setFilters] = useState<ObservationsParams>({ month: navMonth ?? CURRENT_MONTH });
   const [search, setSearch] = useState('');
   const [showFilters, setShowFilters] = useState(false);
 

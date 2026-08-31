@@ -8,9 +8,8 @@
     "start": "next start",
     "lint": "eslint .",
     "test": "tsx --test src/lib/**/__tests__/*.test.ts",
-    "test:python": "python3 -m unittest discover -s python-analytics/tests -v",
-    "integrity:organization": "tsx scripts/organization-integrity.ts",
-    "test:python-service": "python3 -m unittest discover -s python-service/tests -v"
+    "test:python-reference": "python3 -m unittest discover -s python-analytics/tests -v",
+    "integrity:organization": "tsx scripts/organization-integrity.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.1.1",

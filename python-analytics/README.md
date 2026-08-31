@@ -1,5 +1,18 @@
 # ARM ERP — Python Analytics Engine (Phase 5)
 
+> ⚠️ **PHASE 5.3 — MIGRATION / REFERENCE ONLY. NOT REQUIRED FOR ARM RUNTIME.**
+>
+> As of Phase 5.3 the CANONICAL production analytics engine is the
+> TypeScript implementation in `src/lib/analytics/engine.ts` — it runs
+> in-process and the application builds, deploys and runs WITHOUT
+> Python. This directory is retained ONLY as the verified reference
+> implementation used by the Python↔TypeScript parity tests
+> (`src/lib/analytics/__tests__/python-parity.test.ts`) and its own
+> unit tests (`npm run test:python-reference`).
+>
+> Do NOT wire this engine into the production request path again.
+
+
 Deterministic **statistical and pattern analysis** over the verified
 `EmployeePerformanceDataset` produced by the existing Performance
 Intelligence layer (TypeScript). This is an **analytics layer only** —

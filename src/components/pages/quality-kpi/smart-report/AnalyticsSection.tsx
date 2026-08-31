@@ -3,13 +3,14 @@
 // ══════════════════════════════════════════════════════════════
 //  Smart Quality Report — Statistical Insights section (Phase 5)
 //
-//  MINIMAL UI integration for the Python analytics layer
+//  MINIMAL UI integration for the analytics layer
 //  (spec §31): one extra section mounted after Data Quality and
 //  before the future-AI placeholder. The facts-only sections of
 //  the report are UNCHANGED.
 //
 //  Presentation only — every number arrives pre-computed from the
-//  deterministic Python engine. UNAVAILABLE / ERROR are first-class
+//  deterministic TypeScript engine (in-process — no Python, no
+//  remote service). ERROR is a first-class explicit state
 //  explicit states (spec §27/§28): the section degrades alone and
 //  the rest of the report keeps working. No AI, no narratives,
 //  no recommendations (spec §33).
@@ -48,7 +49,7 @@ export function AnalyticsSection({ employeeId, month }: { employeeId: string; mo
   const analyticsQuery = useEmployeeAnalytics(employeeId || null, month || null);
 
   // Explicit state machine (spec §27/§28): loading, network error,
-  // UNAVAILABLE (no Python) and ERROR (failed analytics) all degrade
+  // ERROR (failed analytics) degrades
   // this section alone — the rest of the report is untouched.
   let view = buildAnalyticsView(analyticsQuery.data as AnalyticsApiResponse | undefined);
   if (analyticsQuery.isLoading) view = { kind: 'LOADING' };
@@ -63,7 +64,7 @@ export function AnalyticsSection({ employeeId, month }: { employeeId: string; mo
   return (
     <SectionCard
       icon={Sigma}
-      title="التحليل الإحصائي (Python)"
+      title="التحليل الإحصائي"
       subtitle="نتائج تحليلية حتمية فوق مجموعة البيانات المتحقق منها — طبقة تحليل فقط، بلا أحكام أو تفسير"
       actions={<OverallConfidenceBadge view={view} />}
     >
@@ -86,8 +87,6 @@ export function AnalyticsSection({ employeeId, month }: { employeeId: string; mo
             <p className="text-sm text-sky-200">{view.message}</p>
             <p className="text-[11px] text-slate-500">
               سبب الحالة: <span className="font-mono" dir="ltr">{view.reason}</span>
-              {' '}— إن كان هذا خادم إنتاج فيُرجى تثبيت Python 3 أو ضبط
-              <span className="font-mono" dir="ltr"> PYTHON_ANALYTICS_BIN</span>
             </p>
           </div>
         </div>
@@ -387,8 +386,8 @@ function ReadyBlocks({ view }: { view: AnalyticsReadyView }) {
         <CardContent className="p-3">
           <p className="text-[10px] leading-5 text-slate-500">
             هذه النتائج طبقة تحليل إحصائي حتمية (FACT + ANALYSIS) فوق بيانات ذكاء الأداء المتحقق منها —
-            لا تتضمن أي حكم على الموظف، ولا سرداً توليدياً، ولا توصيات. القيم المعروضة منسوخة كما أنتجها محرك
-            Python ولا تمثل إعادة حساب لأي مؤشر KPI.
+            لا تتضمن أي حكم على الموظف، ولا سرداً توليدياً، ولا توصيات. القيم المعروضة منسوخة كما أنتجها
+            محرك التحليل ولا تمثل إعادة حساب لأي مؤشر KPI.
           </p>
         </CardContent>
       </Card>

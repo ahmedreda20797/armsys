@@ -30,14 +30,8 @@ RUN addgroup --system --gid 1001 nodejs && \
 
 # Copy standalone output from builder
 COPY --from=builder /app/.next/standalone ./
-# Python 3 runtime for the analytics subprocess (Phase 5) —
-# stdlib-only engine, no pip dependencies, no persistent service.
-# If this layer is removed, the app still works: analytics
-# degrade to an explicit UNAVAILABLE state (spec §27).
-RUN apk add --no-cache python3
-
-# Copy the Python analytics engine into the standalone output
-COPY --from=builder /app/python-analytics ./python-analytics
+# Phase 5.3: the analytics engine is TypeScript and runs
+# in-process - NO Python runtime is required to build or run.
 
 # Set correct permissions
 RUN chown -R nextjs:nodejs /app

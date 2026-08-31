@@ -9,12 +9,15 @@
 //  exist on the record are shown (the server projection guarantees
 //  it), and the raw record id is ALWAYS secondary (§29).
 //
-//  Navigation (§33/§36):
+//  Navigation (§33/§36 + Phase 5.3 §30 honest labels):
 //    • exact strategies (highlight / detailParam) show
-//      "الانتقال إلى المصدر" → navigateTo(page, recordId, params)
-//    • generic strategy shows "فتح صفحة المصدر" → navigateTo(page)
+//      "فتح السجل في المصدر" → navigateTo(page, recordId, params) —
+//      the target page locates/opens/scrolls/highlights the record
+//    • generic strategy shows "الانتقال إلى الصفحة" → navigateTo(page)
 //    The two are visually labeled differently so the user always
-//    knows whether exact-record navigation will happen.
+//    knows whether exact-record navigation will happen, and the
+//    navigation buttons only render when the preview access is
+//    granted (§32 — no pretending when the source is inaccessible).
 //
 //  Permission handling (§37): forbidden / not-found states render
 //  an explicit message with NO record contents.
@@ -139,7 +142,7 @@ export function EvidencePreviewModal({
           >
             {state?.recordId}
           </span>
-          {descriptor && state && (
+          {descriptor && state && access === 'granted' && (
             descriptor.navStrategy === 'generic' ? (
               <Button
                 size="sm"
@@ -149,7 +152,8 @@ export function EvidencePreviewModal({
                 onClick={() => onNavigate(state.collection, state.recordId)}
               >
                 <ExternalLink className="h-3.5 w-3.5 ml-1" />
-                فتح صفحة المصدر
+                {/* §30: honest label — this page supports page navigation only */}
+                الانتقال إلى الصفحة
               </Button>
             ) : (
               <Button
@@ -159,7 +163,8 @@ export function EvidencePreviewModal({
                 onClick={() => onNavigate(state.collection, state.recordId)}
               >
                 <ExternalLink className="h-3.5 w-3.5 ml-1" />
-                الانتقال إلى المصدر
+                {/* §30: exact record navigation — locate/scroll/highlight */}
+                فتح السجل في المصدر
               </Button>
             )
           )}

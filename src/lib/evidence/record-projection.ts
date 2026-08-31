@@ -23,10 +23,22 @@ export interface ProjectedField {
   value: string;
 }
 
+export interface ProjectedRecordMeta {
+  /**
+   * The record's OWN month ('YYYY-MM'), derived server-side from the
+   * canonical stored date — Phase 5.3 (spec §27): lets month-filtered
+   * target pages (Quality Notes, Travel) make the exact record
+   * reachable. Metadata only — never rendered as primary content.
+   */
+  month?: string | null;
+}
+
 export interface ProjectedRecord {
   /** Human-readable headline (spec §32) — Arabic record title. */
   title: string;
   fields: ProjectedField[];
+  /** Secondary technical metadata (never the primary display, §31). */
+  meta?: ProjectedRecordMeta;
 }
 
 type Rec = Record<string, unknown>;
@@ -280,6 +292,35 @@ const PROJECTORS: Record<EvidenceCollection, (r: Rec) => ProjectedRecord> = {
   monthSnapshots: projectMonthSnapshot,
   kpiSchemes: projectKpiScheme,
 };
+
+/**
+ * Derive the record's own month ('YYYY-MM') from the stored date of
+ * the collections whose target pages are month-filtered (Phase 5.3).
+ * Returns null when the collection or the stored date does not carry
+ * a deterministically parseable month — never guesses.
+ */
+export function evidenceRecordMonth(
+  collection: EvidenceCollection,
+  record: unknown,
+): string | null {
+  if (typeof record !== 'object' || record === null) return null;
+  const r = record as Rec;
+  const raw =
+    collection === 'qualityObservations'
+      ? r.observationDate
+      : collection === 'travelDeals'
+        ? r.departureDate
+        : null;
+  if (typeof raw !== 'string') return null;
+  const parts = raw.trim().split('/');
+  if (parts.length !== 3) return null;
+  const day = Number(parts[0]);
+  const month = Number(parts[1]);
+  const year = Number(parts[2]);
+  if (!Number.isInteger(day) || !Number.isInteger(month) || !Number.isInteger(year)) return null;
+  if (month < 1 || month > 12 || year < 1 || year > 9999) return null;
+  return `${year}-${String(month).padStart(2, '0')}`;
+}
 
 /**
  * Project ONE canonical record for evidence display. Returns null

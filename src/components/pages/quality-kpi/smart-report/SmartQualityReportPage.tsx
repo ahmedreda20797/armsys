@@ -154,9 +154,16 @@ function ReportBody() {
     // Respect source-page permissions (§37) — a page the viewer
     // cannot see is simply not opened.
     if (!visibleSet.has(intent.page)) return;
+    // Phase 5.3 (spec §27): carry the record's OWN month (server-derived
+    // meta.month) so month-filtered target pages (Quality Notes, Travel)
+    // can make the exact record reachable — not just open the page.
+    const recordMonth = evidencePreview?.projected?.meta?.month ?? null;
+    const navParams = intent.exact && recordMonth
+      ? { ...intent.navParams, month: recordMonth }
+      : intent.navParams;
     setEvidencePreview(null); // close the preview — the target takes over (§33)
-    navigateTo(intent.page, intent.highlightId ?? undefined, intent.navParams);
-  }, [navigateTo, visibleSet]);
+    navigateTo(intent.page, intent.highlightId ?? undefined, navParams);
+  }, [navigateTo, visibleSet, evidencePreview]);
 
   // All view models derive from the ONE dataset — no second source.
   const views = useMemo(() => {
@@ -353,7 +360,7 @@ function ReportBody() {
           {/* §18 Data quality — limitations never hidden */}
           <DataQualitySection view={views.dataQuality} />
 
-          {/* Phase 5 — Python statistical insights (deterministic
+          {/* Phase 5.3 — deterministic statistical insights (TypeScript engine,
               FACT + ANALYSIS layer; degrades independently without
               touching the facts-only sections above) */}
           <AnalyticsSection employeeId={employeeId} month={month} />

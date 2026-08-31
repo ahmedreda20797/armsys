@@ -261,6 +261,29 @@ export default function FollowUpsPage() {
     });
   };
 
+  // Phase 5.3 (spec §27): a deep-linked follow-up must be reachable in
+  // the CARDS view too — auto-expand the employee group that owns the
+  // highlighted record once data is loaded (the shared highlight hook
+  // handles locate/scroll/highlight in both views).
+  const highlightId = useAppStore((s) => s.highlightId);
+  useEffect(() => {
+    if (!highlightId || loading) return;
+    const target = followUps.find((item) => item.id === highlightId);
+    const ownerId = target?.employeeId;
+    if (!ownerId) return;
+    // Deferred one frame (react-hooks/set-state-in-effect): expand is a
+    // one-shot reaction to the deep-link, not a render-phase adjustment.
+    const raf = requestAnimationFrame(() => {
+      setCollapsedEmployees((prev) => {
+        if (!prev.has(ownerId)) return prev;
+        const next = new Set(prev);
+        next.delete(ownerId);
+        return next;
+      });
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [highlightId, loading, followUps]);
+
   const todayStr = getTodayStr();
   const todaysFollowUps = useMemo(() =>
     followUps.filter(f => f.nextFollowUpDate === todayStr && (f.status === 'open' || f.status === 'under_follow_up')),

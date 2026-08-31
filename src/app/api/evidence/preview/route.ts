@@ -39,7 +39,7 @@ import {
   EVIDENCE_COLLECTIONS,
   evidenceTableOf,
 } from '@/lib/evidence/evidence-collections';
-import { projectEvidenceRecord, type ProjectedRecord } from '@/lib/evidence/record-projection';
+import { projectEvidenceRecord, evidenceRecordMonth, type ProjectedRecord } from '@/lib/evidence/record-projection';
 import { EVIDENCE_FORBIDDEN_MESSAGE } from '@/lib/evidence/evidence-summaries';
 import {
   parseEvidencePreviewBody,
@@ -118,7 +118,16 @@ export async function POST(request: NextRequest) {
         records.push({ recordId, access: 'not_found' });
         continue;
       }
-      records.push({ recordId, access: 'granted', record: projected });
+      // Phase 5.3 (spec §27): secondary technical metadata — the
+      // record's own month, used by month-filtered target pages to
+      // make the exact record reachable. Never part of the primary
+      // display content.
+      const month = evidenceRecordMonth(collection, raw);
+      records.push({
+        recordId,
+        access: 'granted',
+        record: { ...projected, meta: { month } },
+      });
     }
 
     return Response.json({ collection, records });

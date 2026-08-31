@@ -1,5 +1,5 @@
 // ══════════════════════════════════════════════════════════════
-//  GET /api/analytics/employee-performance — Python Analytics (Phase 5)
+//  GET /api/analytics/employee-performance — Analytics (Phase 5.3)
 //
 //  Deterministic statistical analysis over the VERIFIED
 //  EmployeePerformanceDataset. This route is a thin, read-only
@@ -7,17 +7,19 @@
 //    1. getEmployeePerformanceDataset — the SINGLE source of the
 //       analytical dataset (no second query path, no
 //       reconstruction — spec §1/§3).
-//    2. runPythonAnalytics — the subprocess bridge (spec §26).
+//    2. runEmployeeAnalytics — the in-process TypeScript engine
+//       (Phase 5.3: NO Python runtime, no subprocess, no remote
+//       service — the analytics engine lives in this deployment).
 //
 //  SECURITY (spec §30): authorization happens BEFORE any employee
-//  data is fetched or passed to Python — same JWT + kpiReports
+//  data is fetched or analyzed — same JWT + kpiReports
 //  permission + employee-scope doctrine as the Performance
 //  Intelligence route (404 anti-enumeration for out-of-scope ids).
 //
-//  FAILURE ISOLATION (spec §27/§28): an unavailable or failing
-//  Python runtime is an explicit 200 response with an
-//  ANALYTICS_UNAVAILABLE / ANALYTICS_ERROR status — never a crash,
-//  never a silent zero, and never a dependency for any other page.
+//  FAILURE ISOLATION (spec §27/§28): a failing analytics run is an
+//  explicit 200 response with an ANALYTICS_ERROR status — never a
+//  crash, never a silent zero, and never a dependency for any
+//  other page.
 //
 //  READ-ONLY (spec §4): this route performs no writes anywhere.
 // ══════════════════════════════════════════════════════════════
@@ -43,8 +45,9 @@ import {
 } from '@/lib/performance-intelligence';
 import {
   analyticsApiResponseBody,
-  runPythonAnalytics,
-} from '@/lib/analytics/python-bridge';
+  runEmployeeAnalytics,
+  type AnalyticsServiceOutcome,
+} from '@/lib/analytics/service';
 
 export async function GET(request: NextRequest) {
   try {
@@ -103,14 +106,13 @@ export async function GET(request: NextRequest) {
     });
     if (!dataset) return notFoundError('الموظف غير موجود');
 
-    // ── Authorized data → Python subprocess (never throws) ──
-    const outcome = await runPythonAnalytics(dataset);
-    if (!outcome.ok && outcome.reason !== 'DISABLED' &&
-        outcome.reason !== 'PYTHON_UNAVAILABLE' && outcome.reason !== 'SCRIPT_MISSING') {
-      // Timeout/script failures are logged for observability without
-      // leaking payload data; unavailable states are expected and quiet.
+    // ── Authorized data → in-process TypeScript engine (never throws) ──
+    const outcome: AnalyticsServiceOutcome = await runEmployeeAnalytics(dataset);
+    if (!outcome.ok) {
+      // Contract/engine failures are logged for observability without
+      // leaking payload data; the client still gets an explicit 200.
       logServerFailure('analytics-employee-performance', 'GET',
-        new Error(`python analytics: ${outcome.reason}`),
+        new Error(`analytics: ${outcome.reason}`),
         { reason: outcome.reason });
     }
     return Response.json(analyticsApiResponseBody(outcome));

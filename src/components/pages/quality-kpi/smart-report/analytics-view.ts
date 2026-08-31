@@ -1,7 +1,7 @@
 // ══════════════════════════════════════════════════════════════
 //  Smart Quality Report — Statistical Insights view (Phase 5)
 //
-//  Pure, client-safe mapping from the Python analytics OUTPUT
+//  Pure, client-safe mapping from the analytics OUTPUT
 //  contract to display-ready labels/tones. Presentation only:
 //  NOTHING here recalculates, aggregates or infers — every number
 //  is rendered verbatim from the analytics result (spec §31:

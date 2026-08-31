@@ -278,11 +278,13 @@ describe('Phase 5.2 — evidence navigation (§33-§36)', () => {
       assert.equal(intent.highlightId, null);
       assert.equal(intent.page, EVIDENCE_COLLECTIONS[collection].page);
     }
-    // The UI distinguishes the two cases by label.
+    // The UI distinguishes the two cases by label (Phase 5.3 §30).
     const modal = srcOf(
       'src/components/pages/quality-kpi/smart-report/EvidencePreviewModal.tsx');
-    assert.match(modal, /الانتقال إلى المصدر/);
-    assert.match(modal, /فتح صفحة المصدر/);
+    assert.match(modal, /فتح السجل في المصدر/);
+    assert.match(modal, /الانتقال إلى الصفحة/);
+    // §30/§32: the navigation buttons render ONLY for granted access.
+    assert.match(modal, /access === 'granted'/);
   });
 
   it('31/32/33. target pages locate + scroll + auto-expand + temporary highlight', () => {

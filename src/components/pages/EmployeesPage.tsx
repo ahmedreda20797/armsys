@@ -47,6 +47,7 @@ import {
 } from '@/lib/organization';
 import type { Employee } from '@/types';
 import { logCreate, logUpdate, logDelete } from '@/lib/activity-logger';
+import { toast } from 'sonner';
 import { authFetch } from '@/lib/api-fetch';
 
 interface EmployeeFormData {
@@ -164,6 +165,14 @@ export default function EmployeesPage() {
             setIsAddOpen(false);
             setForm(emptyForm);
           },
+          // Phase 5.3 (spec §19): a failed lifecycle update (archive/
+          // restore) must never masquerade as success — the old silent
+          // no-op made the archive regression invisible in the UI.
+          onError: (error: Error) => {
+            toast.error('فشل حفظ بيانات الموظف', {
+              description: error?.message || 'لم يتم حفظ التغييرات — حاول مرة أخرى',
+            });
+          },
         }
       );
     } else {
@@ -172,6 +181,11 @@ export default function EmployeesPage() {
           logCreate('employees', 'موظف', form.name);
           setIsAddOpen(false);
           setForm(emptyForm);
+        },
+        onError: (error: Error) => {
+          toast.error('فشل إنشاء الموظف', {
+            description: error?.message || 'لم يتم إنشاء الموظف — حاول مرة أخرى',
+          });
         },
       });
     }

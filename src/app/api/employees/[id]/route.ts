@@ -71,19 +71,33 @@ export async function PUT(
     }
 
     // ── M0.6-A + ADDENDUM LIFECYCLE ──
-    // Reserved lifecycle fields are STRIPPED from the request body —
+    // Reserved lifecycle metadata is STRIPPED from the request body —
     // archivedAt/archivedBy/previousStatus/restoredAt/restoredBy are
     // server-derived only, so a client can never spoof archive
     // metadata. archiveReason is read as INPUT, then stripped too.
+    //
+    // Phase 5.3 REGRESSION FIX (spec §15/§16): the requested lifecycle
+    // TRANSITION (`status`) must be captured BEFORE sanitizing —
+    // stripEmployeeLifecycleFields deletes `status` by design (anti-
+    // spoofing), which used to make the `'status' in body` transition
+    // detector below DEAD CODE: archive/restore returned 200 with only
+    // profile fields written and the employee silently stayed active.
+    // The captured value is re-attached as the route's OWN transition
+    // input (exactly like archiveReason); all lifecycle METADATA
+    // (archivedAt/archivedBy/…) remains server-derived below, so the
+    // anti-spoofing doctrine is fully preserved.
     if (body && typeof body === 'object') {
+      const raw = body as Record<string, unknown>;
       const requestedArchiveReason =
-        typeof (body as Record<string, unknown>).archiveReason === 'string'
-          ? ((body as Record<string, unknown>).archiveReason as string)
-          : undefined;
-      const sanitized = stripEmployeeLifecycleFields(body as Record<string, unknown>);
+        typeof raw.archiveReason === 'string' ? raw.archiveReason : undefined;
+      const requestedStatus = raw.status;
+      const sanitized = stripEmployeeLifecycleFields(raw);
       body = { ...sanitized } as Record<string, unknown>;
       if (requestedArchiveReason !== undefined) {
         (body as Record<string, unknown>).archiveReason = requestedArchiveReason;
+      }
+      if (requestedStatus !== undefined) {
+        (body as Record<string, unknown>).status = requestedStatus;
       }
     }
 
