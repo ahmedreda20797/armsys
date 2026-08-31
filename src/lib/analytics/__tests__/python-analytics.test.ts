@@ -313,12 +313,33 @@ describe('Phase 5 — analytics response mapping (no Python needed)', () => {
     }
   });
 
-  it('maps TIMEOUT / SCRIPT_ERROR / INVALID_OUTPUT to ANALYTICS_ERROR', () => {
-    for (const reason of ['TIMEOUT', 'SCRIPT_ERROR', 'INVALID_OUTPUT'] as const) {
+  it('maps SCRIPT_ERROR / INVALID_OUTPUT / DATA_CONTRACT_ERROR / SERVICE_ERROR to ANALYTICS_ERROR', () => {
+    for (const reason of ['SCRIPT_ERROR', 'INVALID_OUTPUT', 'DATA_CONTRACT_ERROR', 'SERVICE_ERROR', 'SERVICE_AUTH_ERROR'] as const) {
       const body = analyticsApiResponseBody({ ok: false, reason, detail: 'x' });
       assert.equal(body.status, 'ANALYTICS_ERROR');
       assert.equal((body as { reason: string }).reason, reason);
     }
+  });
+
+  it('5.2 — TIMEOUT is a DISTINCT state (spec §10/§11), never collapsed', () => {
+    const body = analyticsApiResponseBody({ ok: false, reason: 'TIMEOUT', detail: 'x' });
+    assert.equal(body.status, 'ANALYTICS_TIMEOUT');
+    assert.equal((body as { reason: string }).reason, 'TIMEOUT');
+    assert.match((body as { message: string }).message, /مهلة/);
+  });
+
+  it('5.1A — reason-specific messages distinguish the three states (spec §6)', () => {
+    const unavailableMsgs = (['DISABLED', 'PYTHON_UNAVAILABLE', 'SCRIPT_MISSING'] as const)
+      .map((reason) => analyticsApiResponseBody({ ok: false, reason }) as { message: string });
+    // Each unavailability reason carries its OWN explanation.
+    assert.equal(new Set(unavailableMsgs.map((b) => b.message)).size, 3);
+    // Contract rejection is an ERROR and mentions the contract — it
+    // must NEVER be worded as an environment unavailability.
+    const contract = analyticsApiResponseBody({
+      ok: false, reason: 'DATA_CONTRACT_ERROR', detail: 'x',
+    }) as { message: string };
+    assert.match(contract.message, /عقد/);
+    assert.doesNotMatch(contract.message, /غير متاح على هذه البيئة/);
   });
 
   it('route enforces auth + permission + scope before data (static contract)', () => {
@@ -675,5 +696,121 @@ describe('Phase 5 — python analytics engine (requires python3)', { skip: !PY_A
       assert.equal(outcome.reason, 'TIMEOUT');
       assert.ok(Date.now() - started < 10_000, 'timeout must actually fire');
     });
+  });
+
+  // ════════════════════════════════════════════════════════════
+  //  Phase 5.1A — data availability diagnostics & state separation
+  // ════════════════════════════════════════════════════════════
+
+  it('5.1A-1. current partial MTD dataset (1 month, 2 obs, 0 complaints/capa, 3 followUps, 3 deals) → section AVAILABLE with per-method INSUFFICIENT_DATA (spec §5/§17.1/§17.2/§17.6)', async () => {
+    _resetPythonAnalyticsCacheForTests();
+    const month = '2026-08';
+    const dataset = makeDataset({
+      window: [month],
+      scores: { 1: 88 },
+      reportedBasis: 'MTD',
+      monthly: {
+        observations: [{ month, count: 2 }],
+        complaints: [{ month, count: 0 }],
+        capa: [{ month, count: 0 }],
+        followUps: [{ month, count: 3 }],
+        deals: [{ month, count: 3 }],
+      },
+      // Zero-complaint profile with CONFIRMED attribution — mirrors the
+      // real "complaints = 0" dataset from the Phase 5.1A report.
+      complaints: {
+        relationship: 'CONFIRMED', total: 0,
+        byStatus: {}, byType: {}, bySeverity: {},
+        repeatedTypes: [],
+        resolvedOrClosed: 0, stillOpen: 0, viaDealCount: 0, avgResolutionDays: null,
+        monthly: [{ month, count: 0 }],
+      },
+    });
+    // Zero the CAPA domain post-construction (the shared fixture hardcodes
+    // 1 CAPA) so the dataset mirrors the exact §5 profile: capa = 0.
+    const mutable = dataset as unknown as { capa: Record<string, unknown> };
+    mutable.capa = {
+      relationship: 'CONFIRMED', total: 0,
+      byStatus: {}, byPriority: {}, bySource: {},
+      active: 0, terminal: 0, overdue: 0, avgOverdueDays: null,
+      correctiveStatus: {}, preventiveStatus: {},
+      closedCount: 0, avgClosureDays: null, indirectCount: 0,
+      monthly: [{ month, count: 0 }],
+    };
+    const outcome = await runPythonAnalytics(dataset);
+    // §5: the SECTION stays available — Python executed successfully.
+    assertOkOutcome(outcome);
+    const r = outcome.result;
+    // §17.2: current month with limited data still returns AVAILABLE
+    assert.equal(r.status, 'OK');
+    assert.equal(r.schemaVersion, ANALYTICS_SCHEMA_VERSION);
+    // §17.3: trend independently INSUFFICIENT_DATA (1 < 3 months).
+    assert.equal(r.trendAnalysis.status, 'INSUFFICIENT_DATA');
+    assert.equal(r.trendAnalysis.availableMonths, 1);
+    assert.equal(r.trendAnalysis.stats, null);
+    // §17.4: correlations independently insufficient (n < 8 → no rows).
+    assert.equal(r.correlations.length, 0);
+    assert.ok(r.dataQuality.insufficientSamples.some((s) => s.area === 'correlation'));
+    // §17.5: anomaly detection independently insufficient (baseline < 5).
+    assert.equal(r.anomalies.length, 0);
+    assert.ok(r.dataQuality.insufficientSamples.some((s) => s.area === 'anomalyDetection'));
+    // §17.6: basic distributions still return results.
+    assert.equal(r.patternAnalysis.observations.status, 'OK');
+    assert.equal(r.patternAnalysis.observations.bySeverity.total > 0, true);
+    assert.equal(r.distributionAnalysis.followUps.status, 'OK');
+    assert.equal(r.distributionAnalysis.deals.status, 'OK');
+    assert.equal(r.distributionAnalysis.complaints.status, 'EMPTY');
+    assert.equal(r.distributionAnalysis.capa.status, 'EMPTY');
+    // MTD partial month is recorded, never hidden, never zero-filled.
+    assert.ok(r.dataQuality.insufficientSamples.some((s) => s.reason === 'MTD_PARTIAL_MONTH'));
+    // KPI echo stays verbatim (never recalculated).
+    assert.equal(r.kpiFactsEcho.rawScore, 91);
+  });
+
+  it('5.1A-2. per-method independence: 4 months → trend OK but anomalies still insufficient; 7 months → correlations still insufficient (spec §17.3/§17.4/§17.5)', async () => {
+    _resetPythonAnalyticsCacheForTests();
+    const fourMonths = WINDOW_6.slice(0, 4);
+    const m4 = await runPythonAnalytics(makeDataset({
+      window: fourMonths,
+      scores: { 1: 80, 2: 85, 3: 90, 4: 88 },
+    }));
+    assertOkOutcome(m4);
+    assert.equal(m4.result.trendAnalysis.status, 'OK', '4 months satisfy TREND_MIN_MONTHS=3');
+    assert.equal(m4.result.anomalies.length, 0, 'anomaly baseline needs 5 months');
+    assert.equal(m4.result.correlations.length, 0, 'correlation needs n>=8');
+
+    const sevenMonths = WINDOW_12.slice(0, 7);
+    const m7 = await runPythonAnalytics(makeDataset({
+      window: sevenMonths,
+      scores: Object.fromEntries(sevenMonths.map((_, i) => [i + 1, 80 + i])),
+      monthly: {
+        observations: sevenMonths.map((m, i) => ({ month: m, count: i + 1 })),
+        complaints: sevenMonths.map((m, i) => ({ month: m, count: i })),
+        capa: sevenMonths.map((m) => ({ month: m, count: 0 })),
+        followUps: sevenMonths.map((m) => ({ month: m, count: 1 })),
+        deals: sevenMonths.map((m) => ({ month: m, count: 2 })),
+      },
+      complaints: twelveMonthComplaints(true),
+    }));
+    assertOkOutcome(m7);
+    assert.equal(m7.result.trendAnalysis.status, 'OK');
+    assert.equal(m7.result.correlations.length, 0, '7 < CORRELATION_MIN_MONTHS=8');
+    assert.ok(m7.result.dataQuality.insufficientSamples.some((s) => s.area === 'correlation'));
+  });
+
+  it('5.1A-3. dataset violating the input contract → DATA_CONTRACT_ERROR, NEVER PYTHON_UNAVAILABLE (spec §17.9)', async () => {
+    _resetPythonAnalyticsCacheForTests();
+    // Missing employee/period/quality/... — the engine exits 2 with
+    // {"status":"INVALID_INPUT"} and the bridge must classify that as
+    // a DATA-CONTRACT problem (Python itself started fine).
+    const malformed = { datasetKind: 'EMPLOYEE_PERFORMANCE_INTELLIGENCE' } as unknown as EmployeePerformanceDataset;
+    const outcome = await runPythonAnalytics(malformed);
+    assert.equal(outcome.ok, false);
+    assert.equal(outcome.reason, 'DATA_CONTRACT_ERROR');
+    assert.match(outcome.detail ?? '', /MISSING_DATASET_FIELDS|UNSUPPORTED|INVALID/);
+    // API mapping: contract error is an ERROR state, not unavailability.
+    const body = analyticsApiResponseBody(outcome);
+    assert.equal(body.status, 'ANALYTICS_ERROR');
+    assert.equal((body as { reason: string }).reason, 'DATA_CONTRACT_ERROR');
   });
 });

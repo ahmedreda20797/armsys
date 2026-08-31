@@ -294,6 +294,8 @@ export interface AnalyticsKpiFactsEcho {
 export interface EmployeeAnalyticsResult {
   schemaVersion: number;
   analyticsKind: typeof ANALYTICS_KIND;
+  /** Engine build identifier (Phase 5.2 spec §26) — diagnostics only. */
+  analyticsEngineVersion: string;
   deterministic: true;
   status: 'OK';
   input: {
@@ -334,7 +336,13 @@ export interface EmployeeAnalyticsResult {
 }
 
 // ── API response shape (route → client) ───────────────────────
+// Phase 5.2 (spec §10): the four failure states stay DISTINCT —
+// UNAVAILABLE (service cannot be reached / disabled), TIMEOUT
+// (spec §11 explicit timeout verdict), ERROR (executed but failed)
+// and INSUFFICIENT_DATA (an analytical result that lives INSIDE the
+// OK analytics payload, never a transport state).
 export type AnalyticsApiResponse =
   | { status: 'OK'; analytics: EmployeeAnalyticsResult }
   | { status: 'ANALYTICS_UNAVAILABLE'; reason: string; message: string }
+  | { status: 'ANALYTICS_TIMEOUT'; reason: 'TIMEOUT'; message: string }
   | { status: 'ANALYTICS_ERROR'; reason: string; message: string };

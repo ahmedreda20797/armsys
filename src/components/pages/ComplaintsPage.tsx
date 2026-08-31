@@ -3,6 +3,7 @@
 import { useState, useMemo, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { usePermissions } from '@/hooks/usePermissions';
+import { useRecordHighlight } from '@/hooks/use-record-highlight';
 import {
   useComplaints,
   useEmployees,
@@ -209,6 +210,9 @@ export default function ComplaintsPage() {
   const createMutation = useCreateComplaint();
   const updateMutation = useUpdateComplaint();
   const deleteMutation = useDeleteComplaint();
+
+  // Deep-link highlight (Phase 5.2 §35) from Evidence Preview navigation.
+  useRecordHighlight();
   const [systemUsers, setSystemUsers] = useState<{ id: string; name: string; email?: string; role?: string }[]>([]);
 
   // Fetch system users
@@ -518,6 +522,7 @@ export default function ComplaintsPage() {
               return (
                 <motion.div
                   key={complaint.id}
+                  data-record-id={complaint.id}
                   initial={{ opacity: 0, y: 5 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: -5, transition: { duration: 0.15 } }}

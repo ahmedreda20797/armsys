@@ -18,6 +18,7 @@
 import { type ReactNode } from 'react';
 import {
   AlertTriangle,
+  Clock,
   Info,
   Network,
   Percent,
@@ -98,6 +99,27 @@ export function AnalyticsSection({ employeeId, month }: { employeeId: string; mo
             <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-400" />
             <div className="min-w-0 space-y-1">
               <p className="text-sm text-amber-200">{view.message}</p>
+              <p className="text-[11px] text-slate-500 font-mono" dir="ltr">{view.reason}</p>
+            </div>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            className="no-print border-slate-700/50 text-slate-300 hover:bg-slate-800/60"
+            onClick={() => analyticsQuery.refetch()}
+          >
+            <RefreshCw className="h-3.5 w-3.5 ml-1" />
+            إعادة المحاولة
+          </Button>
+        </div>
+      )}
+
+      {view.kind === 'TIMEOUT' && (
+        <div className="space-y-2 rounded-xl border border-orange-500/20 bg-orange-500/5 p-4">
+          <div className="flex items-start gap-3">
+            <Clock className="mt-0.5 h-5 w-5 shrink-0 text-orange-400" />
+            <div className="min-w-0 space-y-1">
+              <p className="text-sm text-orange-200">{view.message}</p>
               <p className="text-[11px] text-slate-500 font-mono" dir="ltr">{view.reason}</p>
             </div>
           </div>

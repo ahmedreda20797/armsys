@@ -135,6 +135,7 @@ export type AnalyticsViewKind =
   | 'READY'
   | 'UNAVAILABLE'
   | 'ERROR'
+  | 'TIMEOUT'
   | 'LOADING'
   | 'IDLE';
 
@@ -216,6 +217,7 @@ export type AnalyticsView =
   | { kind: 'LOADING' }
   | { kind: 'IDLE' }
   | { kind: 'UNAVAILABLE'; reason: string; message: string }
+  | { kind: 'TIMEOUT'; reason: 'TIMEOUT'; message: string }
   | { kind: 'ERROR'; reason: string; message: string };
 
 // ── Builder ───────────────────────────────────────────────────
@@ -224,6 +226,11 @@ export function buildAnalyticsView(api: AnalyticsApiResponse | undefined): Analy
   if (!api) return { kind: 'IDLE' };
   if (api.status === 'ANALYTICS_UNAVAILABLE') {
     return { kind: 'UNAVAILABLE', reason: api.reason, message: api.message };
+  }
+  if (api.status === 'ANALYTICS_TIMEOUT') {
+    // Distinct state (Phase 5.2 spec §10/§11): a timeout is rendered
+    // separately — not "unavailable", not a generic error.
+    return { kind: 'TIMEOUT', reason: 'TIMEOUT', message: api.message };
   }
   if (api.status === 'ANALYTICS_ERROR') {
     return { kind: 'ERROR', reason: api.reason, message: api.message };

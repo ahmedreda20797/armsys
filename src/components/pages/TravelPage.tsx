@@ -1006,6 +1006,10 @@ export default function TravelPage() {
     if (highlightId) {
       requestAnimationFrame(() => {
         setTimeout(() => {
+          // Phase 5.2 (§35): deep-linked evidence auto-EXPANDS the
+          // target trip card, then scrolls it into view (highlight
+          // is temporary).
+          setExpandedCardId(highlightId);
           const el = document.getElementById(`trip-card-${highlightId}`);
           if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
           const timer = setTimeout(() => setHighlightId(null), 2500);

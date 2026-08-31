@@ -1,0 +1,12 @@
+# ARM ERP — Python Analytics Service (Phase 5.2)
+#
+# INTENTIONALLY EMPTY.
+#
+# The service (app.py) uses ONLY the Python standard library
+# (http.server, json, hmac, os, sys, time) — spec §16/§47: minimal
+# image, zero supply-chain surface, deterministic startup, nothing
+# to install or resolve at build time.
+#
+# DO NOT add web frameworks, database drivers or utility libraries.
+# The analytics engine (employee_analytics.py) is likewise
+# stdlib-only by design (Phase 5 hard rule).

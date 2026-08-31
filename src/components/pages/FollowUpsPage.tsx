@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePermissions } from '@/hooks/usePermissions';
+import { useRecordHighlight } from '@/hooks/use-record-highlight';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -234,6 +235,9 @@ export default function FollowUpsPage() {
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [viewMode, setViewMode] = useState<'table' | 'cards'>('table');
+
+  // Deep-link highlight (Phase 5.2 §35) from Evidence Preview navigation.
+  useRecordHighlight();
 
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<FollowUp | null>(null);
@@ -792,6 +796,7 @@ export default function FollowUpsPage() {
                       return (
                         <motion.tr
                           key={item.id}
+                          data-record-id={item.id}
                           variants={itemVariants}
                           className={`border-b border-slate-700/20 hover:bg-slate-800/50 transition-colors ${isDueToday ? 'bg-amber-500/5' : isOverdue ? 'bg-red-500/3' : ''}`}
                         >
@@ -948,6 +953,7 @@ export default function FollowUpsPage() {
                               return (
                                 <motion.div
                                   key={item.id}
+                                  data-record-id={item.id}
                                   layout
                                   initial={{ opacity: 0, y: 5 }}
                                   animate={{ opacity: 1, y: 0 }}

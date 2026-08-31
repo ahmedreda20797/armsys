@@ -18,7 +18,7 @@
 //  labeled future placeholder (spec §31).
 // ══════════════════════════════════════════════════════════════
 
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import {
   AlertOctagon,
@@ -77,6 +77,18 @@ import {
   TrendSection,
 } from './report-sections';
 import { AnalyticsSection } from './AnalyticsSection';
+import {
+  EvidencePreviewModal,
+  type EvidencePreviewRequestState,
+} from './EvidencePreviewModal';
+import type { EvidenceDetailSelection } from './report-sections';
+import {
+  buildEvidenceNavigation,
+} from '@/lib/evidence/evidence-navigation';
+import {
+  isEvidenceCollection,
+  type EvidenceCollection,
+} from '@/lib/evidence/evidence-collections';
 
 export default function SmartQualityReportPage() {
   const { canView } = usePermissions('kpiReports');
@@ -120,6 +132,31 @@ function ReportBody() {
   const navigateTo = useAppStore((s) => s.navigateTo);
   const visiblePageIds = usePermissions().visiblePages.map((p) => p.id);
   const visibleSet = useMemo(() => new Set(visiblePageIds), [visiblePageIds]);
+
+  // ── Evidence Preview (Phase 5.2 §30) — modal state lives here so
+  // the preview + navigation work over the whole report body.
+  const [evidencePreview, setEvidencePreview] = useState<EvidencePreviewRequestState | null>(null);
+
+  const handleViewEvidence = useCallback((selection: EvidenceDetailSelection) => {
+    if (!isEvidenceCollection(selection.collection)) return;
+    setEvidencePreview({
+      collection: selection.collection,
+      recordId: selection.recordId,
+      projected: selection.projected,
+      access: selection.access,
+      isLoading: false,
+    });
+  }, []);
+
+  const handleEvidenceNavigate = useCallback((collection: EvidenceCollection, recordId: string) => {
+    if (!isEvidenceCollection(collection)) return;
+    const intent = buildEvidenceNavigation(collection, recordId);
+    // Respect source-page permissions (§37) — a page the viewer
+    // cannot see is simply not opened.
+    if (!visibleSet.has(intent.page)) return;
+    setEvidencePreview(null); // close the preview — the target takes over (§33)
+    navigateTo(intent.page, intent.highlightId ?? undefined, intent.navParams);
+  }, [navigateTo, visibleSet]);
 
   // All view models derive from the ONE dataset — no second source.
   const views = useMemo(() => {
@@ -310,6 +347,7 @@ function ReportBody() {
             groups={views.evidence}
             canOpenPage={(page) => visibleSet.has(page)}
             onOpenPage={(page) => navigateTo(page)}
+            onViewEvidence={handleViewEvidence}
           />
 
           {/* §18 Data quality — limitations never hidden */}
@@ -328,6 +366,12 @@ function ReportBody() {
           </p>
         </div>
       )}
+
+      <EvidencePreviewModal
+        state={evidencePreview}
+        onOpenChange={(open) => { if (!open) setEvidencePreview(null); }}
+        onNavigate={handleEvidenceNavigate}
+      />
     </div>
   );
 }

@@ -39,7 +39,19 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/component
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table';
+import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
+import {
+  EVIDENCE_COLLECTIONS,
+  isEvidenceCollection,
+  type EvidenceCollection,
+} from '@/lib/evidence/evidence-collections';
+import type { ProjectedRecord } from '@/lib/evidence/record-projection';
+import {
+  buildEvidenceSummary,
+  type EvidenceAccess,
+} from '@/lib/evidence/evidence-summaries';
+import { useEvidenceSummaries } from '@/hooks/use-evidence';
 import { StatusBadge, ValueBasisBadge } from '../kpi-reports-shared';
 import {
   UNAVAILABLE,
@@ -716,17 +728,127 @@ export function AttendanceSection({ view }: { view: AttendanceView }) {
 }
 
 // ─────────────────────────────────────────────────────────────
-//  §16/§17  Evidence — traceability + counts
+//  §16/§17  Evidence — traceability + counts (Phase 5.2)
+//
+//  Human-readable evidence cards (spec §32) replace the raw-ID
+//  list as the PRIMARY presentation: each row shows the Arabic
+//  record title + meta lines, with the raw id kept secondary and
+//  [عرض الدليل] opening the Evidence Preview modal (§30). Summaries
+//  load ON DEMAND — one batched request per expanded group (§38).
 // ─────────────────────────────────────────────────────────────
+
+export interface EvidenceDetailSelection {
+  collection: EvidenceCollection;
+  recordId: string;
+  projected: ProjectedRecord | null;
+  access: EvidenceAccess;
+}
+
+/**
+ * On-demand summary rows for ONE evidence group. Mounted only while
+ * the group Collapsible is open (Radix unmounts closed content), so
+ * the batched query fires exactly when the user asks for it.
+ */
+function EvidenceRecordRows({
+  collection,
+  recordIds,
+  onViewEvidence,
+}: {
+  collection: EvidenceCollection;
+  recordIds: string[];
+  onViewEvidence: (selection: EvidenceDetailSelection) => void;
+}) {
+  const collectionTitle = EVIDENCE_COLLECTIONS[collection]?.title ?? collection;
+  const summariesQuery = useEvidenceSummaries(collection, recordIds, true);
+
+  if (summariesQuery.isLoading) {
+    return (
+      <div className="space-y-1.5 py-1" aria-busy>
+        {recordIds.slice(0, 3).map((id) => (
+          <Skeleton key={id} className="h-9 w-full bg-slate-800/40" />
+        ))}
+      </div>
+    );
+  }
+
+  if (summariesQuery.isError || !summariesQuery.data) {
+    // Degrade to the functional raw-id list — never fabricated data.
+    return (
+      <div className="rounded-b-lg border border-t-0 border-slate-700/40 bg-slate-900/20 px-4 py-2 max-h-48 overflow-y-auto arm-scroll">
+        <p className="text-[10px] text-amber-300/70">تعذر تحميل ملخصات الأدلة — تُعرض المعرفات فقط.</p>
+        <ul className="space-y-1">
+          {recordIds.map((id) => (
+            <li key={id} className="font-mono text-[10px] text-slate-500 truncate" dir="ltr" title={id}>
+              {id}
+            </li>
+          ))}
+        </ul>
+      </div>
+    );
+  }
+
+  const byId = new Map(summariesQuery.data.records.map((r) => [r.recordId, r]));
+  return (
+    <div className="rounded-b-lg border border-t-0 border-slate-700/40 bg-slate-900/20 px-4 py-2 max-h-64 overflow-y-auto arm-scroll">
+      <ul className="space-y-1.5" data-testid="evidence-summary-list">
+        {recordIds.map((recordId) => {
+          const entry = byId.get(recordId);
+          const access = (entry?.access ?? 'not_found') as EvidenceAccess;
+          const summary = buildEvidenceSummary(
+            collectionTitle,
+            recordId,
+            entry?.record ?? null,
+            access,
+          );
+          return (
+            <li
+              key={recordId}
+              className="flex items-center justify-between gap-2 rounded-lg border border-slate-800/60 bg-slate-900/40 px-2.5 py-1.5"
+              data-testid="evidence-summary-row"
+            >
+              <div className="min-w-0">
+                <p className="truncate text-[12px] text-slate-200">
+                  <span className="font-medium">{summary.title}</span>
+                  {summary.metaLines.length > 0 && (
+                    <span className="text-slate-400"> — {summary.metaLines.join(' · ')}</span>
+                  )}
+                </p>
+                <p className="font-mono text-[9px] text-slate-600 truncate" dir="ltr" title={recordId}>
+                  {recordId}
+                </p>
+              </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="no-print h-6 shrink-0 px-2 text-[11px] text-emerald-300 hover:text-emerald-200 hover:bg-emerald-500/10"
+                data-testid="evidence-view-detail"
+                onClick={() => onViewEvidence({
+                  collection,
+                  recordId,
+                  projected: entry?.record ?? null,
+                  access,
+                })}
+              >
+                عرض الدليل
+              </Button>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
 
 export function EvidenceSection({
   groups,
   canOpenPage,
   onOpenPage,
+  onViewEvidence,
 }: {
   groups: EvidenceGroupView[];
   canOpenPage: (page: string) => boolean;
   onOpenPage: (page: string) => void;
+  onViewEvidence: (selection: EvidenceDetailSelection) => void;
 }) {
   const totalEvidence = groups.reduce((sum, g) => sum + g.count, 0);
   return (
@@ -770,20 +892,28 @@ export function EvidenceSection({
                     className="no-print h-7 px-2 text-[11px] text-emerald-300 hover:text-emerald-200 hover:bg-emerald-500/10"
                     onClick={() => onOpenPage(g.targetPage as string)}
                   >
-                    فتح المصدر
+                    فتح صفحة المصدر
                   </Button>
                 )}
               </div>
               <CollapsibleContent>
-                <div className="rounded-b-lg border border-t-0 border-slate-700/40 bg-slate-900/20 px-4 py-2 max-h-48 overflow-y-auto arm-scroll">
-                  <ul className="space-y-1">
-                    {g.recordIds.map((id) => (
-                      <li key={id} className="font-mono text-[10px] text-slate-500 truncate" dir="ltr" title={id}>
-                        {id}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
+                {isEvidenceCollection(g.collection) ? (
+                  <EvidenceRecordRows
+                    collection={g.collection}
+                    recordIds={g.recordIds}
+                    onViewEvidence={onViewEvidence}
+                  />
+                ) : (
+                  <div className="rounded-b-lg border border-t-0 border-slate-700/40 bg-slate-900/20 px-4 py-2 max-h-48 overflow-y-auto arm-scroll">
+                    <ul className="space-y-1">
+                      {g.recordIds.map((id) => (
+                        <li key={id} className="font-mono text-[10px] text-slate-500 truncate" dir="ltr" title={id}>
+                          {id}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
               </CollapsibleContent>
             </Collapsible>
           ))}

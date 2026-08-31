@@ -5,6 +5,7 @@ import { motion } from 'framer-motion';
 import { toast } from 'sonner';
 import { usePermissions } from '@/hooks/usePermissions';
 import { useAppStore } from '@/lib/store';
+import { useRecordHighlight } from '@/hooks/use-record-highlight';
 import { logCreate, logUpdate, logDelete, logApprove } from '@/lib/activity-logger';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -76,6 +77,10 @@ export default function ObservationsPage() {
   const { data: templates } = useObservationTemplates('recent');
   const { data: employeesData } = useEmployees();
   const { data: snapshotsData } = useMonthSnapshots();
+
+  // Deep-link highlight (Phase 5.2 §35): locate + scroll + temporary
+  // highlight when navigated with a recordId from Evidence Preview.
+  useRecordHighlight();
 
   // Closed months (frozen) — mutations are locked for every role; the UI
   // hides edit/delete and shows a locked state. The backend enforces the
@@ -308,6 +313,7 @@ export default function ObservationsPage() {
           {filtered.map((obs, i) => (
             <motion.div
               key={obs.id}
+              data-record-id={obs.id}
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: Math.min(i * 0.03, 0.3) }}
