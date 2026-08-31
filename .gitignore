@@ -1,6 +1,5 @@
 ﻿node_modules/
 .next/
-upload/
 swapfile
 *.db
 .turbo/
