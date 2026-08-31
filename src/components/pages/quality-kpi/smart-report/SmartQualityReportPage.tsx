@@ -76,6 +76,7 @@ import {
   SmartAnalysisPlaceholder,
   TrendSection,
 } from './report-sections';
+import { AnalyticsSection } from './AnalyticsSection';
 
 export default function SmartQualityReportPage() {
   const { canView } = usePermissions('kpiReports');
@@ -313,6 +314,11 @@ function ReportBody() {
 
           {/* §18 Data quality — limitations never hidden */}
           <DataQualitySection view={views.dataQuality} />
+
+          {/* Phase 5 — Python statistical insights (deterministic
+              FACT + ANALYSIS layer; degrades independently without
+              touching the facts-only sections above) */}
+          <AnalyticsSection employeeId={employeeId} month={month} />
 
           {/* §31 Future AI placeholder — hidden content, clear label */}
           <SmartAnalysisPlaceholder />

@@ -454,6 +454,25 @@ export function usePerformanceIntelligence(employeeId: string | null, month: str
   });
 }
 
+/**
+ * Python statistical analytics for one employee + period (Phase 5).
+ * Analytics layer ONLY — never a KPI source. The server responds
+ * 200 with explicit ANALYTICS_UNAVAILABLE / ANALYTICS_ERROR
+ * statuses when Python is absent or fails, so this query never
+ * breaks the report (spec §27/§28). Long staleTime: results are
+ * content-keyed and cached server-side as well.
+ */
+export function useEmployeeAnalytics(employeeId: string | null, month: string | null) {
+  const qs = buildQueryString({ employeeId: employeeId ?? undefined, month: month ?? undefined });
+  return useQuery({
+    queryKey: [...reportsKey('analytics'), employeeId ?? 'none', month ?? 'none'],
+    queryFn: () => apiFetch(`/api/analytics/employee-performance${qs}`),
+    enabled: !!employeeId && !!month,
+    staleTime: 60_000,
+    retry: 1,
+  });
+}
+
 /** Monthly Quality KPI report (spec §6). */
 export function useKpiMonthlyReport(month: string | null, params: KpiReportTableParams = {}) {
   const qs = kpiReportQueryString(params, month);
