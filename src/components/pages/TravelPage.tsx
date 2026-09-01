@@ -7,6 +7,7 @@ import { useAppStore } from '@/lib/store';
 import { useRecordHighlight } from '@/hooks/use-record-highlight';
 import { getDaysRemaining } from '@/lib/date-utils';
 import { useTravel, useEmployees, useCreateTravel, useUpdateTravel, useDeleteTravel } from '@/hooks/use-queries';
+import { usePageState } from '@/hooks/use-page-state';
 import { useQueryClient } from '@tanstack/react-query';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -956,8 +957,9 @@ export default function TravelPage() {
   const setHighlightId = useAppStore((s) => s.setHighlightId);
 
   // ── Local UI state ──
+  // Phase 6.3 (§8): filter context persists per user; an explicit
+  // navigation seed (§27) wins for that mount.
   const [activeTab, setActiveTab] = useState<CategoryTab>('all');
-  const [filterEmployee, setFilterEmployee] = useState<string>('all');
   // Phase 5.3 (spec §27): an evidence deep-link seeds the month filter
   // with the RECORD's own month (server-derived meta.month), so the
   // target deal becomes reachable inside the month-filtered list.
@@ -965,8 +967,27 @@ export default function TravelPage() {
     const m = s.navParams.month;
     return typeof m === 'string' && m.length === 7 && m[4] === '-' ? m : null;
   });
-  const [filterMonth, setFilterMonth] = useState<string>(navMonth ?? 'all');
-  const [searchQuery, setSearchQuery] = useState('');
+  const [travelView, setTravelView, resetTravelView] = usePageState<{
+    filterMonth: string;
+    filterEmployee: string;
+    searchQuery: string;
+  }>({
+    page: 'travel',
+    slot: 'filters',
+    version: 1,
+    initial: () => ({ filterMonth: navMonth ?? 'all', filterEmployee: 'all', searchQuery: '' }),
+    skipRestore: navMonth !== null,
+    validate: (raw) =>
+      raw && typeof raw === 'object' && typeof (raw as { filterMonth?: unknown }).filterMonth === 'string'
+        ? raw
+        : null,
+  });
+  const filterMonth = travelView.filterMonth;
+  const setFilterMonth = (value: string) => setTravelView((v) => ({ ...v, filterMonth: value }));
+  const searchQuery = travelView.searchQuery;
+  const setSearchQuery = (value: string) => setTravelView((v) => ({ ...v, searchQuery: value }));
+  const filterEmployee = travelView.filterEmployee;
+  const setFilterEmployee = (value: string) => setTravelView((v) => ({ ...v, filterEmployee: value }));
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(50);
   const [expandedCardId, setExpandedCardId] = useState<string | null>(null);
@@ -1110,10 +1131,10 @@ export default function TravelPage() {
   }, [setHighlightId]);
 
   const clearFilters = useCallback(() => {
-    setFilterEmployee('all');
-    setSearchQuery('');
-    setFilterMonth('all');
-  }, []);
+    // §9: clear = RESET TO PAGE DEFAULT + remove the persisted state.
+    resetTravelView();
+    setTravelView({ filterMonth: 'all', filterEmployee: 'all', searchQuery: '' });
+  }, [resetTravelView, setTravelView]);
 
   const handlePageSizeChange = useCallback((newSize: number) => {
     setPageSize(newSize);

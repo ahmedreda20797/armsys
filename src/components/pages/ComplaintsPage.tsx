@@ -3,6 +3,7 @@
 import { useState, useMemo, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { usePermissions } from '@/hooks/usePermissions';
+import { usePageState } from '@/hooks/use-page-state';
 import { useRecordHighlight } from '@/hooks/use-record-highlight';
 import {
   useComplaints,
@@ -194,11 +195,30 @@ function getStatusColor(status: string) {
 export default function ComplaintsPage() {
   const { canView, canCreate, canUpdate, canDelete } = usePermissions('complaints');
 
-  const [search, setSearch] = useState('');
-  const [employeeFilter, setEmployeeFilter] = useState('all');
-  const [statusFilter, setStatusFilter] = useState('all');
-  const [severityFilter, setSeverityFilter] = useState('all');
-  const [complaintTypeFilter, setComplaintTypeFilter] = useState('all');
+  // Phase 6.3 (§8): filter context persists per user (session-scoped).
+  const [complaintsView, setComplaintsView, resetComplaintsView] = usePageState<{
+    search: string;
+    employeeFilter: string;
+    statusFilter: string;
+    severityFilter: string;
+    complaintTypeFilter: string;
+  }>({
+    page: 'complaints',
+    slot: 'filters',
+    version: 1,
+    initial: () => ({ search: '', employeeFilter: 'all', statusFilter: 'all', severityFilter: 'all', complaintTypeFilter: 'all' }),
+    validate: (raw) => (raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : null),
+  });
+  const search = complaintsView.search;
+  const setSearch = (v: string) => setComplaintsView((s) => ({ ...s, search: v }));
+  const employeeFilter = complaintsView.employeeFilter;
+  const setEmployeeFilter = (v: string) => setComplaintsView((s) => ({ ...s, employeeFilter: v }));
+  const statusFilter = complaintsView.statusFilter;
+  const setStatusFilter = (v: string) => setComplaintsView((s) => ({ ...s, statusFilter: v }));
+  const severityFilter = complaintsView.severityFilter;
+  const setSeverityFilter = (v: string) => setComplaintsView((s) => ({ ...s, severityFilter: v }));
+  const complaintTypeFilter = complaintsView.complaintTypeFilter;
+  const setComplaintTypeFilter = (v: string) => setComplaintsView((s) => ({ ...s, complaintTypeFilter: v }));
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingComplaint, setEditingComplaint] = useState<Complaint | null>(null);
   const [form, setForm] = useState<ComplaintFormData>({ ...emptyForm });

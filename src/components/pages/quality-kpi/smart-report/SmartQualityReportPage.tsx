@@ -38,6 +38,7 @@ import {
 import { EmployeeSearchInput } from '@/components/shared/EmployeeSearchInput';
 import { useEmployees } from '@/hooks/use-queries';
 import { usePerformanceIntelligence, useMonthSnapshots } from '@/hooks/use-kpi-queries';
+import { usePageState } from '@/hooks/use-page-state';
 import { usePermissions } from '@/hooks/usePermissions';
 import { useAppStore } from '@/lib/store';
 import type { EmployeePerformanceDataset } from '@/lib/performance-intelligence';
@@ -114,8 +115,28 @@ function UnauthorizedState() {
 
 // ─── Report body ─────────────────────────────────────────────
 function ReportBody() {
-  const [employeeId, setEmployeeId] = useState<string>('');
-  const [month, setMonth] = useState<string>(() => currentMonthKey());
+  // Phase 6.3 (§8/§51): Smart Quality Report is a LIVE view — the
+  // dataset refetches for the selection; only the SELECTION
+  // (employee + period) persists per user (never a data snapshot).
+  const [reportView, setReportView] = usePageState<{
+    employeeId: string;
+    month: string;
+  }>({
+    page: 'smartQualityReport',
+    slot: 'view',
+    version: 1,
+    initial: () => ({ employeeId: '', month: currentMonthKey() }),
+    validate: (raw) =>
+      raw && typeof raw === 'object'
+      && typeof (raw as { employeeId?: unknown }).employeeId === 'string'
+      && typeof (raw as { month?: unknown }).month === 'string'
+        ? (raw as { employeeId: string; month: string })
+        : null,
+  });
+  const employeeId = reportView.employeeId;
+  const setEmployeeId = (v: string) => setReportView((s) => ({ ...s, employeeId: v }));
+  const month = reportView.month;
+  const setMonth = (v: string) => setReportView((s) => ({ ...s, month: v }));
 
   const employeesQuery = useEmployees();
   const snapshotsQuery = useMonthSnapshots();

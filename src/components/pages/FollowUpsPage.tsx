@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePermissions } from '@/hooks/usePermissions';
+import { usePageState } from '@/hooks/use-page-state';
 import { useRecordHighlight } from '@/hooks/use-record-highlight';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -227,14 +228,60 @@ export default function FollowUpsPage() {
   const [systemUsers, setSystemUsers] = useState<SystemUser[]>([]);
   const [loading, setLoading] = useState(!canView); // start settled when the user lacks view permission
   const [error, setError] = useState<string | null>(null);
-  const [search, setSearch] = useState('');
-  const [statusFilter, setStatusFilter] = useState('all');
-  const [typeFilter, setTypeFilter] = useState('all');
-  const [priorityFilter, setPriorityFilter] = useState('all');
-  const [deptFilter, setDeptFilter] = useState('all');
-  const [startDate, setStartDate] = useState('');
-  const [endDate, setEndDate] = useState('');
-  const [viewMode, setViewMode] = useState<'table' | 'cards'>('table');
+  // Phase 6.3 (§8): filter/view context persists per user (session-scoped).
+  // collapsedEmployees (§25 container state) persists as an array so a
+  // returning user finds the same groups collapsed.
+  const [followUpsView, setFollowUpsView, resetFollowUpsView] = usePageState<{
+    search: string;
+    statusFilter: string;
+    typeFilter: string;
+    priorityFilter: string;
+    deptFilter: string;
+    startDate: string;
+    endDate: string;
+    viewMode: 'table' | 'cards';
+    collapsedEmployees: string[];
+  }>({
+    page: 'followUps',
+    slot: 'filters',
+    version: 1,
+    initial: () => ({
+      search: '', statusFilter: 'all', typeFilter: 'all', priorityFilter: 'all',
+      deptFilter: 'all', startDate: '', endDate: '', viewMode: 'table',
+      collapsedEmployees: [],
+    }),
+    validate: (raw) =>
+      raw && typeof raw === 'object' && !Array.isArray(raw)
+        && typeof (raw as { viewMode?: unknown }).viewMode === 'string'
+        ? raw
+        : null,
+  });
+  const search = followUpsView.search;
+  const setSearch = (v: string) => setFollowUpsView((s) => ({ ...s, search: v }));
+  const statusFilter = followUpsView.statusFilter;
+  const setStatusFilter = (v: string) => setFollowUpsView((s) => ({ ...s, statusFilter: v }));
+  const typeFilter = followUpsView.typeFilter;
+  const setTypeFilter = (v: string) => setFollowUpsView((s) => ({ ...s, typeFilter: v }));
+  const priorityFilter = followUpsView.priorityFilter;
+  const setPriorityFilter = (v: string) => setFollowUpsView((s) => ({ ...s, priorityFilter: v }));
+  const deptFilter = followUpsView.deptFilter;
+  const setDeptFilter = (v: string) => setFollowUpsView((s) => ({ ...s, deptFilter: v }));
+  const startDate = followUpsView.startDate;
+  const setStartDate = (v: string) => setFollowUpsView((s) => ({ ...s, startDate: v }));
+  const endDate = followUpsView.endDate;
+  const setEndDate = (v: string) => setFollowUpsView((s) => ({ ...s, endDate: v }));
+  const viewMode = followUpsView.viewMode;
+  const setViewMode = (v: 'table' | 'cards') => setFollowUpsView((s) => ({ ...s, viewMode: v }));
+  const collapsedEmployees = useMemo(
+    () => new Set(followUpsView.collapsedEmployees),
+    [followUpsView.collapsedEmployees],
+  );
+  const setCollapsedEmployees = (valueOrUpdater: Set<string> | ((prev: Set<string>) => Set<string>)) =>
+    setFollowUpsView((s) => {
+      const prev = new Set(s.collapsedEmployees);
+      const next = typeof valueOrUpdater === 'function' ? valueOrUpdater(prev) : valueOrUpdater;
+      return { ...s, collapsedEmployees: [...next] };
+    });
 
   // Deep-link highlight (Phase 5.2 §35) from Evidence Preview navigation.
   useRecordHighlight();
@@ -250,8 +297,8 @@ export default function FollowUpsPage() {
   const [showEmployeeDropdown, setShowEmployeeDropdown] = useState(false);
   const employeeDropdownRef = useRef<HTMLDivElement>(null);
 
-  // Collapsed employee cards
-  const [collapsedEmployees, setCollapsedEmployees] = useState<Set<string>>(new Set());
+  // Collapsed employee cards — Phase 6.3: persisted via followUpsView
+  // (the setter below adapts the existing function-updater call sites).
   const toggleCollapse = (employeeId: string) => {
     setCollapsedEmployees((prev) => {
       const next = new Set(prev);

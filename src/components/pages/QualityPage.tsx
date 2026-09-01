@@ -3,6 +3,8 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { usePermissions } from '@/hooks/usePermissions';
+import { usePageState } from '@/hooks/use-page-state';
+import { useRecordHighlight } from '@/hooks/use-record-highlight';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -49,6 +51,7 @@ import type { QualityDeduction, Employee } from '@/types';
 import { logCreate, logUpdate, logDelete } from '@/lib/activity-logger';
 import { authFetch } from '@/lib/api-fetch';
 import { useAppStore } from '@/lib/store';
+import { formatMonthLabelAr } from '@/lib/month-label';
 import { CAPALinkBadge } from '@/components/shared/CAPALinkBadge';
 
 interface QualityWithEmployee extends QualityDeduction {
@@ -169,8 +172,21 @@ export default function QualityPage() {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [search, setSearch] = useState('');
-  const [monthFilter, setMonthFilter] = useState('all');
+  // Phase 6.3 (§8): filter context persists per user (session-scoped).
+  const [qualityView, setQualityView] = usePageState<{ search: string; monthFilter: string }>({
+    page: 'quality',
+    slot: 'filters',
+    version: 1,
+    initial: () => ({ search: '', monthFilter: 'all' }),
+    validate: (raw) =>
+      raw && typeof raw === 'object' && typeof (raw as { monthFilter?: unknown }).monthFilter === 'string'
+        ? raw
+        : null,
+  });
+  const search = qualityView.search;
+  const setSearch = (v: string) => setQualityView((s) => ({ ...s, search: v }));
+  const monthFilter = qualityView.monthFilter;
+  const setMonthFilter = (v: string) => setQualityView((s) => ({ ...s, monthFilter: v }));
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -415,6 +431,28 @@ export default function QualityPage() {
   const sortedEmployees = Object.entries(groupedByEmployee)
     .sort((a, b) => b[1].totalDays - a[1].totalDays);
 
+  // ═══ Deep-link container handling (Phase 6.3 §25) ═══
+  // A search/evidence navigation into a DEDUCTION row must open the
+  // owning employee group first — the record is otherwise unrenderable.
+  // Same doctrine as FollowUpsPage's group auto-expand (Phase 5.3).
+  const highlightId = useAppStore((s) => s.highlightId);
+  useEffect(() => {
+    if (!highlightId || loading) return;
+    const ownerId = Object.keys(groupedByEmployee).find((id) =>
+      groupedByEmployee[id].deductions.some((d) => d.id === highlightId),
+    );
+    if (!ownerId) return;
+    // Deferred one frame (react-hooks/set-state-in-effect doctrine):
+    // opening the container is a one-shot reaction to the deep-link.
+    const raf = requestAnimationFrame(() => {
+      setExpandedEmp((current) => (current === ownerId ? current : ownerId));
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [highlightId, loading, groupedByEmployee]);
+
+  // Exact-record locate/scroll/highlight over data-record-id (§30).
+  useRecordHighlight({ ready: !loading });
+
   const grandTotalDays = sortedEmployees.reduce((sum, [, e]) => sum + e.totalDays, 0);
   const grandTotalAmount = sortedEmployees.reduce((sum, [, e]) => sum + e.totalAmount, 0);
 
@@ -544,7 +582,12 @@ export default function QualityPage() {
             </div>
             <p className="text-slate-400 text-sm font-medium">لا توجد خصومات</p>
             <p className="text-slate-600 text-xs mt-1">
-              {search || (monthFilter && monthFilter !== 'all') ? 'لم يتم العثور على نتائج' : 'لم يتم تسجيل أي خصومات بعد'}
+              {/* §10/§56: the active period is NAMED in the empty state. */}
+              {search
+                ? 'لم يتم العثور على نتائج'
+                : monthFilter && monthFilter !== 'all'
+                  ? `لا توجد خصومات مسجلة في ${formatMonthLabelAr(monthFilter)}.`
+                  : 'لم يتم تسجيل أي خصومات بعد'}
             </p>
           </CardContent>
         </Card>
@@ -655,6 +698,7 @@ export default function QualityPage() {
                               transition={{ duration: 0.15 }}
                             >
                               <div
+                                data-record-id={d.id}
                                 className="flex items-center gap-2.5 px-3 py-2.5 rounded-lg border border-slate-700/30 bg-slate-800/30 cursor-pointer hover:bg-slate-800/50 transition-colors"
                                 onClick={() => setExpandedRow(isRowExpanded ? null : d.id)}
                               >

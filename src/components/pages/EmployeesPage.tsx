@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { usePermissions } from '@/hooks/usePermissions';
+import { usePageState } from '@/hooks/use-page-state';
 import { useAppStore } from '@/lib/store';
 import { useEmployees, useCreateEmployee, useUpdateEmployee, useDeleteEmployee } from '@/hooks/use-queries';
 import { Card, CardContent } from '@/components/ui/card';
@@ -93,23 +94,44 @@ export default function EmployeesPage() {
   const updateEmployee = useUpdateEmployee();
   const deleteEmployee = useDeleteEmployee();
   
-  const [search, setSearch] = useState('');
-  // M0.6-A addendum §2/§20: the management list defaults to the
-  // CURRENT (active) workforce — archived employees "disappear" from
-  // the default list and remain reachable through this filter (the
-  // archive search view). Nothing is deleted.
   // Phase 6.1 (Global Search §8/§13): a deep-linked archived/inactive
   // employee seeds this filter from navParams.status so the exact row
   // is reachable; the store's highlightId row mechanic does the rest.
   const navStatus = useAppStore((s) => s.navParams.status);
-  const [statusFilter, setStatusFilter] = useState<'all' | EmployeeStatus>(() =>
-    navStatus === 'archived' || navStatus === 'inactive' ? navStatus : 'active',
-  );
+  // Phase 6.3 (§8/§43): work context persists per user — an explicit
+  // navigation seed (navParams.status) still wins for that mount.
+  const [employeesView, setEmployeesView] = usePageState<{
+    search: string;
+    statusFilter: 'all' | EmployeeStatus;
+  }>({
+    page: 'employees',
+    slot: 'filters',
+    version: 1,
+    initial: () => ({
+      search: '',
+      statusFilter:
+        navStatus === 'archived' || navStatus === 'inactive' ? navStatus : 'active',
+    }),
+    skipRestore: navStatus === 'archived' || navStatus === 'inactive',
+    validate: (raw) =>
+      raw && typeof raw === 'object' && typeof (raw as { statusFilter?: unknown }).statusFilter === 'string'
+        ? (raw as { search: string; statusFilter: 'all' | EmployeeStatus })
+        : null,
+  });
+  const search = employeesView.search;
+  const setSearch = (v: string) => setEmployeesView((s) => ({ ...s, search: v }));
+  const statusFilter = employeesView.statusFilter;
+  const setStatusFilter = (v: 'all' | EmployeeStatus) =>
+    setEmployeesView((s) => ({ ...s, statusFilter: v }));
   const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [form, setForm] = useState<EmployeeFormData>(emptyForm);
   const [uploading, setUploading] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  // M0.6-A addendum §2/§20: the management list defaults to the
+  // CURRENT (active) workforce — archived employees "disappear" from
+  // the default list and remain reachable through this filter (the
+  // archive search view). Nothing is deleted.
   const fileInputRef = useRef<HTMLInputElement>(null);
   const highlightRowRef = useRef<HTMLTableRowElement | null>(null);
 

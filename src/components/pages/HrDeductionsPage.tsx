@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { usePermissions } from '@/hooks/usePermissions';
+import { usePageState } from '@/hooks/use-page-state';
 import { useRecordHighlight } from '@/hooks/use-record-highlight';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -105,8 +106,22 @@ export default function HrDeductionsPage() {
   const [deductions, setDeductions] = useState<HrDeductionWithEmployee[]>([]);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState('');
-  const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'approved' | 'rejected'>('all');
+  // Phase 6.3 (§8): filter context persists per user (session-scoped).
+  const [hrView, setHrView] = usePageState<{
+    search: string;
+    statusFilter: 'all' | 'pending' | 'approved' | 'rejected';
+  }>({
+    page: 'hrDeductions',
+    slot: 'filters',
+    version: 1,
+    initial: () => ({ search: '', statusFilter: 'all' }),
+    validate: (raw) => (raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : null),
+  });
+  const search = hrView.search;
+  const setSearch = (v: string) => setHrView((s) => ({ ...s, search: v }));
+  const statusFilter = hrView.statusFilter;
+  const setStatusFilter = (v: 'all' | 'pending' | 'approved' | 'rejected') =>
+    setHrView((s) => ({ ...s, statusFilter: v }));
   // Phase 6.1 (Global Search §8): exact-record deep-link highlight via
   // the shared evidence mechanism — records carry data-record-id below.
   useRecordHighlight({ ready: !loading });

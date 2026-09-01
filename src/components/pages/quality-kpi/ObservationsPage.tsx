@@ -38,6 +38,7 @@ import {
   EVIDENCE_EMPTY_LABEL,
 } from '@/lib/quality-observations/evidence';
 import { useEmployees } from '@/hooks/use-queries';
+import { usePageState } from '@/hooks/use-page-state';
 import {
   useObservations, useObservationCategories, useObservationTemplates,
   useCreateObservation, useUpdateObservation, useDeleteObservation,
@@ -65,11 +66,22 @@ export default function ObservationsPage() {
   // month filter with the RECORD's own month (server-derived meta.month).
   // The Quality Notes list is server-filtered by month, so without this
   // the exact observation was unreachable from a previous-month report.
+  // Phase 6.3 (§8/§9/§27): the work context persists per user — an
+  // explicit navigation seed wins over the remembered state for that
+  // mount, and «مسح الفلاتر» resets to the page default (all months).
   const navMonth = useAppStore((s) => {
     const m = s.navParams.month;
     return typeof m === 'string' && m.length === 7 && m[4] === '-' ? m : null;
   });
-  const [filters, setFilters] = useState<ObservationsParams>({ month: navMonth ?? CURRENT_MONTH });
+  const [filters, setFilters, resetFilters] = usePageState<ObservationsParams>({
+    page: 'observations',
+    slot: 'filters',
+    version: 1,
+    initial: () => ({ month: navMonth ?? CURRENT_MONTH }),
+    skipRestore: navMonth !== null,
+    validate: (raw) =>
+      raw && typeof raw === 'object' && !Array.isArray(raw) ? (raw as ObservationsParams) : null,
+  });
   const [search, setSearch] = useState('');
   const [showFilters, setShowFilters] = useState(false);
 
@@ -133,6 +145,10 @@ export default function ObservationsPage() {
     // Phase 6.2 (spec §68): "مسح الفلاتر" must actually CLEAR — including
     // the month. The current-month default applies only to a fresh page
     // load, and the active period is always visible in the toolbar.
+    // Phase 6.3 (§9): clearing also REMOVES the persisted state and
+    // persists the cleared (all-months) state — coming back to the page
+    // keeps the reset semantics (never resurrects the old filters).
+    resetFilters();
     setFilters({});
   }
 

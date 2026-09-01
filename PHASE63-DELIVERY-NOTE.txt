@@ -1,0 +1,103 @@
+══════════════════════════════════════════════════════════════════
+ ARM ERP — ملاحظة تسليم المرحلة 6.3 (PHASE 6.3 DELIVERY NOTE)
+ Persistent UI State + Report Continuity + Search Deep Navigation
+ + KPI Employee Visibility
+ التاريخ: 2026-09-02
+══════════════════════════════════════════════════════════════════
+
+── 1) ما الذي أُضيف في هذه المرحلة؟ ──────────────────────────────
+
+1. استمرارية حالة الصفحات (Persistent UI State — spec §4-§9)
+   • طبقة موحّدة: src/lib/page-state/persistence.ts
+     مفتاح معزول لكل مستخدم: arm-erp:page-state:{s|l}:{userId}:{page}:{slot}:v{version}
+     مغلف مُصدّر: { v, env, savedAt, state } — أي تلف أو عدم تطابق
+     إصدار يعامل كغياب كامل (لا يكسر الصفحة أبدًا — §7/§44).
+   • hook موحّد: src/hooks/use-page-state.ts
+     استعادة مرة واحدة لكل mount + كتابة مؤجلة 250ms + flush عند
+     الخروج + reset() = مسح المخزون والعودة لافتراضي الصفحة (§9) +
+     skipRestore لأولوية بذرة التنقل من البحث (§27) + validate
+     يرفض الأشكال غير الصالحة (§43).
+   • الصفحات الموصولة (15): Observations، Travel، Complaints،
+     FollowUps (بما فيها المجموعات المطوية)، CAPA، Quality،
+     Attendance، Requests، HrDeductions، Biometric، Employees،
+     KpiReports (التبويب + الفترة)، KpiMonthlyTableTab (لكل تقرير)،
+     SmartQualityReport (الاختيار فقط — عرض حي §51)، Reports.
+
+2. استمرارية التقارير (Report Continuity — §13-§20)
+   • عقد Snapshot كامل: src/lib/report-state/report-snapshot.ts
+     (reportId/reportType/period/filters/generatedAt/generatedBy/
+     stateVersion/data) — تخزين عميل معزول بالمستخدم، بلا نموذج
+     قاعدة بيانات جديد (§15/§48).
+   • ReportsPage: التقرير المولّد يعود حرفيًا مع فترته وشارات صريحة:
+     «تم التوليد الآن» / «تمت الاستعادة — لم يُعَ احتسابه» + وقت
+     التوليد + تنبيه كهرماني عند اختلاف الفترة المختارة عن فترة
+     التقرير. مسار كتابة واحد فقط: زر الإنشاء الصريح (§16/§18).
+   • إصلاح أمني: إزالة المفتاح القديم erp_report_data غير المعزول
+     (كان يتسرب بين المستخدمين وقد يقرن تقريرًا بشهر خاطئ).
+
+3. تنقل البحث العميق (Search Deep Navigation — §22-§32)
+   • qualityDeductions ترقّى من generic إلى exact: صفوف بمعرّفات
+     data-record-id ثابتة + useRecordHighlight المشترك + فتح مجموعة
+     الموظف المالكة تلقائيًا (§25) + زرع شهر السجل (§27).
+   • بقي كل ما كان يعمل: Observations/Complaints/FollowUps/Travel/
+     Attendance/HrDeductions (highlight)، CAPA (detailParam)،
+     Employees (زرع الحالة)، Requests (ميكانيك الصفوف).
+   • سقوط صادق محفوظ: knowledgeBase/monthSnapshots/orgNodes/users
+     تظل «الانتقال إلى الصفحة» دون ادعاء (§31).
+
+4. لغز اختفاء الموظفين من تقارير KPI (§33-§37)
+   • التحقيق الجنائي: المسار الشهري/MTD/التاريخي سليم بنيويًا — صف
+     لكل موظف مؤهل داخل النطاق حتى لو بلا ملاحظات (PENDING)، بلا
+     حدود قراءة، وبلا فلاتر خفيّة. الاختفاء ممكن فقط عند:
+     (أ) سجل موظف مفقود — employeeId يتيم، (ب) خارج النطاق،
+     (ج) غير مؤهل دورة التوظيف (أرشفة/تعيين).
+   • الحل (قراءة فقط — صفر تعديل على KPI logic):
+     - traceEmployeeKpiVisibility نقي يعيد استخدام محمّلات التقارير
+       نفسها ويحدد «أول طبقة يختفي فيها الموظف».
+     - GET /api/kpi-reports/diagnose (توثيق + kpiReports view +
+       نطاق؛ خارج النطاق = إجابة عامة مضادة للاستطلاع).
+     - زر «تشخيص الظهور» في تبويب تقرير الموظف يعرض الطبقات.
+   • قاعدة §36 مثبتة بالاختبارات: وجود ملاحظات لا يخلق أهلية،
+     وغياب الملاحظات لا يخفي موظفًا مؤهلًا.
+
+5. وضوح الفترة (§10/§39/§56)
+   • KpiReportsPage: سطر «الفترة الحالية: …» مع تمييز شهر مفتوح
+     من «شهر مغلق (FINALIZED)».
+   • حالات فراغ مُسمّاة بالفترة: «لا توجد خصومات مسجلة في أغسطس
+     2026.» على Quality/Attendance/Requests/Biometric
+     (Observations كانت §68 جاهزة).
+
+── 2) نتائج التحقق (كلها على هذه النسخة فعليًا) ──────────────────
+
+  • TypeScript: npx tsc --noEmit → صفر أخطاء
+  • ESLint: نظيف تمامًا (0 errors / 0 warnings)
+  • الاختبارات: 1279/1279 ناجحة
+    (خط الأساس 1223 + 56 اختبار Phase 6.3 جديد؛ 3 عقود قديمة
+    حُدّثت تعاقديًا لترقية qualityDeductions مع تعليقات موثقة)
+  • Build: ناجح — /api/kpi-reports/diagnose مسجّل ƒ
+  • Standalone smoke: GET / → 200، diagnose بدون توكن → 401
+  • Vercel: متوافق (تخزين عميل + API قياسي، لا بنية جديدة).
+    ملاحظة صادقة: لم يُنفذ نشر Production فعلي من هنا.
+
+── 3) قبل التشغيل ────────────────────────────────────────────────
+
+  1. npm install
+  2. متغيرات البيئة (كما هي، بلا جديد إلزامي):
+     JWT_SECRET (32+ حرفًا) + بيانات Firebase admin
+     + اختياري للمرحلة 6.2: AI_ENABLED/AI_PROVIDER/AI_MODEL/
+       AI_API_KEY/AI_TIMEOUT_MS/AI_PROMPT_VERSION
+       (فارغة = الذكاء معطّل والتقارير تعمل طبيعي)
+  3. npm run dev  أو  npm run build && npm start
+
+── 4) لم يُغيّر / لم يُنفذ (STOP §58/§65) ─────────────────────────
+
+  لا Chatbot، لا Search→AI، لا Manager/HR/Target KPI، لا تعلم آلي،
+  لا إجراءات تلقائية، لا نظام Router/Highlight/Search/Evidence ثانٍ،
+  ولا أي تعديل على صيغ KPI أو الأوزان أو خوارزميات التحليلات أو
+  بيانات الأدلة أو سجلات الملاحظات.
+
+  الامتدادات المستقبلية المقترحة: مزامنة cross-tab، سجل تقارير
+  على الخادم، تشخيص جماعي لكل موظفي الشهر.
+
+  التوثيق الكامل: docs/PHASE6.3-PERSISTENCE-NAVIGATION.md
+══════════════════════════════════════════════════════════════════

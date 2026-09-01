@@ -705,7 +705,14 @@ describe('Phase 6.1 — exact navigation contract (§8/§9, §30-21/22/23)', () 
     }
 
     // Honest fallback for pages without an exact-record contract.
-    for (const domain of ['qualityDeductions', 'knowledgeBase', 'monthSnapshots', 'orgNodes', 'users'] as const) {
+    // Phase 6.3 (§22-§25): qualityDeductions UPGRADED from generic to
+    // exact (the quality page renders data-record-id rows and auto-
+    // expands the owning employee group) — it moved to the exact set.
+    const quality = buildSearchNavigation({ domain: 'qualityDeductions', recordId: 'x-1' });
+    assert.equal(quality.exact, true);
+    assert.equal(quality.highlightId, 'x-1');
+    assert.equal(quality.page, SEARCH_DOMAINS.qualityDeductions.page);
+    for (const domain of ['knowledgeBase', 'monthSnapshots', 'orgNodes', 'users'] as const) {
       const intent = buildSearchNavigation({ domain, recordId: 'x-1' });
       assert.equal(intent.exact, false, domain);
       assert.equal(intent.highlightId, null, domain);

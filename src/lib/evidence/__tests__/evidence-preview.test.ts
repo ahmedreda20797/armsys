@@ -272,7 +272,10 @@ describe('Phase 5.2 — evidence navigation (§33-§36)', () => {
   });
 
   it('34. generic fallback for collections without exact navigation — labeled differently', () => {
-    for (const collection of ['qualityDeductions', 'attendanceResults', 'monthSnapshots', 'kpiSchemes'] as const) {
+    // Phase 6.3 (§22-§25): qualityDeductions UPGRADED to the highlight
+    // strategy (stable data-record-id rows + group auto-expand) — it is
+    // now exact and lives in the test above; the truly generic set:
+    for (const collection of ['attendanceResults', 'monthSnapshots', 'kpiSchemes'] as const) {
       const intent = buildEvidenceNavigation(collection, 'whatever');
       assert.equal(intent.exact, false);
       assert.equal(intent.highlightId, null);

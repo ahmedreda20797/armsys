@@ -3,6 +3,8 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { usePermissions } from '@/hooks/usePermissions';
+import { usePageState } from '@/hooks/use-page-state';
+import { formatMonthLabelAr } from '@/lib/month-label';
 import { useRecordHighlight } from '@/hooks/use-record-highlight';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -99,8 +101,21 @@ export default function AttendancePage() {
   const [records, setRecords] = useState<AttendanceRecord[]>([]);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState('');
-  const [monthFilter, setMonthFilter] = useState('all');
+  // Phase 6.3 (§8): filter context persists per user (session-scoped).
+  const [attendanceView, setAttendanceView] = usePageState<{ search: string; monthFilter: string }>({
+    page: 'attendance',
+    slot: 'filters',
+    version: 1,
+    initial: () => ({ search: '', monthFilter: 'all' }),
+    validate: (raw) =>
+      raw && typeof raw === 'object' && typeof (raw as { monthFilter?: unknown }).monthFilter === 'string'
+        ? raw
+        : null,
+  });
+  const search = attendanceView.search;
+  const setSearch = (v: string) => setAttendanceView((s) => ({ ...s, search: v }));
+  const monthFilter = attendanceView.monthFilter;
+  const setMonthFilter = (v: string) => setAttendanceView((s) => ({ ...s, monthFilter: v }));
   // Phase 6.1 (Global Search §8): exact-record deep-link highlight via
   // the shared evidence mechanism — records carry data-record-id below.
   useRecordHighlight({ ready: !loading });
@@ -541,7 +556,12 @@ export default function AttendancePage() {
             <Clock className="size-12 text-slate-600 mb-4" />
             <p className="text-slate-400 text-lg font-medium">لا توجد سجلات</p>
             <p className="text-slate-500 text-sm mt-1">
-              {search || (monthFilter && monthFilter !== 'all') ? 'لم يتم العثور على نتائج' : 'ابدأ بتسجيل الحضور'}
+              {/* §10/§56: the active period is NAMED in the empty state. */}
+              {search
+                ? 'لم يتم العثور على نتائج'
+                : monthFilter && monthFilter !== 'all'
+                  ? `لا توجد سجلات حضور في ${formatMonthLabelAr(monthFilter)}.`
+                  : 'ابدأ بتسجيل الحضور'}
             </p>
           </CardContent>
         </Card>

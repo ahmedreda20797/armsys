@@ -10,7 +10,7 @@
 //  registered unified reports (same verified rows).
 // ══════════════════════════════════════════════════════════════
 
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import { toast } from 'sonner';
 import {
   ArrowDownUp, ChevronDown, ChevronUp, FileSpreadsheet, Lock, AlertTriangle, Info,
@@ -28,6 +28,7 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table';
 import { useKpiReportTable } from '@/hooks/use-kpi-queries';
+import { usePageState } from '@/hooks/use-page-state';
 import type { KpiReportTableParams } from '@/hooks/use-kpi-queries';
 import type { KpiMonthlyReport } from '@/lib/kpi-reporting';
 import {
@@ -58,13 +59,55 @@ export default function KpiMonthlyTableTab({
   kind: TableTabKind;
   month: string;
 }) {
-  const [search, setSearch] = useState('');
-  const [department, setDepartment] = useState<string>('all');
-  const [team, setTeam] = useState<string>('all');
-  const [status, setStatus] = useState<string>('all');
-  const [minScore, setMinScore] = useState('');
-  const [maxScore, setMaxScore] = useState('');
-  const [sort, setSort] = useState<SortState>({ key: 'employeeName', dir: 'asc' });
+  // Phase 6.3 (§8/§38): the full filter/sort context persists per user;
+  // defaults are all-rows (documented table default).
+  const [tableView, setTableView] = usePageState<{
+    search: string;
+    department: string;
+    team: string;
+    status: string;
+    minScore: string;
+    maxScore: string;
+    sort: SortState;
+  }>({
+    page: 'kpiReports',
+    slot: `table-${kind}`,
+    version: 1,
+    initial: () => ({
+      search: '',
+      department: 'all',
+      team: 'all',
+      status: 'all',
+      minScore: '',
+      maxScore: '',
+      sort: { key: 'employeeName', dir: 'asc' },
+    }),
+    validate: (raw) =>
+      raw && typeof raw === 'object' && typeof (raw as { status?: unknown }).status === 'string'
+        ? raw
+        : null,
+  });
+  const search = tableView.search;
+  const setSearch = (v: string) => setTableView((s) => ({ ...s, search: v }));
+  const department = tableView.department;
+  const setDepartment = (v: string) => setTableView((s) => ({ ...s, department: v }));
+  const team = tableView.team;
+  const setTeam = (v: string) => setTableView((s) => ({ ...s, team: v }));
+  const status = tableView.status;
+  const setStatus = (v: string) => setTableView((s) => ({ ...s, status: v }));
+  const minScore = tableView.minScore;
+  const setMinScore = (v: string) => setTableView((s) => ({ ...s, minScore: v }));
+  const maxScore = tableView.maxScore;
+  const setMaxScore = (v: string) => setTableView((s) => ({ ...s, maxScore: v }));
+  const sort = tableView.sort;
+  const setSort = (v: SortState) => setTableView((s) => ({ ...s, sort: v }));
+  const toggleSort = (key: string) => {
+    setSort(
+      sort.key === key
+        ? { key, dir: sort.dir === 'asc' ? 'desc' : 'asc' }
+        : { key, dir: 'asc' },
+    );
+  };
 
   const params: KpiReportTableParams = useMemo(
     () => ({
@@ -92,14 +135,6 @@ export default function KpiMonthlyTableTab({
     () => uniqueSorted((report?.rows ?? []).map((r) => r.team)),
     [report],
   );
-
-  const toggleSort = (key: string) => {
-    setSort((prev) =>
-      prev.key === key
-        ? { key, dir: prev.dir === 'asc' ? 'desc' : 'asc' }
-        : { key, dir: 'asc' },
-    );
-  };
 
   const handleExport = async () => {
     try {

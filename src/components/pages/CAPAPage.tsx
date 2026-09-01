@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { usePermissions } from '@/hooks/usePermissions';
+import { usePageState } from '@/hooks/use-page-state';
 import { useAuth } from '@/contexts/AuthContext';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -81,12 +82,33 @@ function CAPAListPage() {
   const [systemUsers, setSystemUsers] = useState<{ id: string; name: string; email?: string; role?: string }[]>([]);
   const [loading, setLoading] = useState(!canView); // start settled when the user lacks view permission
   const [error, setError] = useState<string | null>(null);
-  const [search, setSearch] = useState('');
-  const [statusFilter, setStatusFilter] = useState('all');
-  const [priorityFilter, setPriorityFilter] = useState('all');
-  const [categoryFilter, setCategoryFilter] = useState('all');
-  const [departmentFilter, setDepartmentFilter] = useState('all');
-  const [activeTab, setActiveTab] = useState('all');
+  // Phase 6.3 (§8): filter context persists per user (session-scoped).
+  const [capaView, setCapaView] = usePageState<{
+    search: string;
+    statusFilter: string;
+    priorityFilter: string;
+    categoryFilter: string;
+    departmentFilter: string;
+    activeTab: string;
+  }>({
+    page: 'capa',
+    slot: 'filters',
+    version: 1,
+    initial: () => ({ search: '', statusFilter: 'all', priorityFilter: 'all', categoryFilter: 'all', departmentFilter: 'all', activeTab: 'all' }),
+    validate: (raw) => (raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : null),
+  });
+  const search = capaView.search;
+  const setSearch = (v: string) => setCapaView((s) => ({ ...s, search: v }));
+  const statusFilter = capaView.statusFilter;
+  const setStatusFilter = (v: string) => setCapaView((s) => ({ ...s, statusFilter: v }));
+  const priorityFilter = capaView.priorityFilter;
+  const setPriorityFilter = (v: string) => setCapaView((s) => ({ ...s, priorityFilter: v }));
+  const categoryFilter = capaView.categoryFilter;
+  const setCategoryFilter = (v: string) => setCapaView((s) => ({ ...s, categoryFilter: v }));
+  const departmentFilter = capaView.departmentFilter;
+  const setDepartmentFilter = (v: string) => setCapaView((s) => ({ ...s, departmentFilter: v }));
+  const activeTab = capaView.activeTab;
+  const setActiveTab = (v: string) => setCapaView((s) => ({ ...s, activeTab: v }));
 
   // Quick Create
   const [isCreateOpen, setIsCreateOpen] = useState(false);

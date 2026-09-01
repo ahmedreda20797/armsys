@@ -3,6 +3,8 @@
 import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { usePermissions } from '@/hooks/usePermissions';
+import { usePageState } from '@/hooks/use-page-state';
+import { formatMonthLabelAr } from '@/lib/month-label';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -70,8 +72,21 @@ export default function RequestsPage() {
   const [requests, setRequests] = useState<RequestWithEmployee[]>([]);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState('');
-  const [monthFilter, setMonthFilter] = useState('all');
+  // Phase 6.3 (§8): filter context persists per user (session-scoped).
+  const [requestsView, setRequestsView] = usePageState<{ search: string; monthFilter: string }>({
+    page: 'requests',
+    slot: 'filters',
+    version: 1,
+    initial: () => ({ search: '', monthFilter: 'all' }),
+    validate: (raw) =>
+      raw && typeof raw === 'object' && typeof (raw as { monthFilter?: unknown }).monthFilter === 'string'
+        ? raw
+        : null,
+  });
+  const search = requestsView.search;
+  const setSearch = (v: string) => setRequestsView((s) => ({ ...s, search: v }));
+  const monthFilter = requestsView.monthFilter;
+  const setMonthFilter = (v: string) => setRequestsView((s) => ({ ...s, monthFilter: v }));
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -436,7 +451,12 @@ export default function RequestsPage() {
               <FileText className="size-6 text-slate-600" />
             </div>
             <p className="text-slate-400 text-sm font-medium">لا توجد طلبات</p>
-            <p className="text-slate-600 text-xs mt-1">ابدأ بتقديم طلب جديد</p>
+            <p className="text-slate-600 text-xs mt-1">
+              {/* §10/§56: the active period is NAMED in the empty state. */}
+              {monthFilter && monthFilter !== 'all'
+                ? `لا توجد طلبات في ${formatMonthLabelAr(monthFilter)}.`
+                : 'ابدأ بتقديم طلب جديد'}
+            </p>
           </CardContent>
         </Card>
       ) : (

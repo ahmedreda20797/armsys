@@ -64,7 +64,10 @@ export const EVIDENCE_COLLECTIONS: Record<EvidenceCollection, EvidenceCollection
     label: 'خصومات الجودة',
     permissionKey: 'quality',
     page: 'quality',
-    navStrategy: 'generic',
+    // Phase 6.3 (§22-§25): the page renders stable data-record-id rows
+    // and auto-expands the owning employee group — exact navigation is
+    // now honest (was: generic page fallback).
+    navStrategy: 'highlight',
   },
   complaints: {
     title: 'شكوى عميل',

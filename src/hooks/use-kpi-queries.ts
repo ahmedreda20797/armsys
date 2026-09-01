@@ -439,6 +439,22 @@ export function useKpiEmployeeReport(employeeId: string | null, month: string | 
 }
 
 /**
+ * KPI visibility diagnose (Phase 6.3 §33-§37) — READ-ONLY trace of
+ * WHY an employee does (not) appear in the KPI reports for a month.
+ * On-demand only (enabled by an explicit user action), never cached
+ * long: the answer describes the CURRENT pipeline state.
+ */
+export function useKpiVisibilityDiagnose(employeeId: string | null, month: string | null) {
+  const qs = buildQueryString({ employeeId: employeeId ?? undefined, month: month ?? undefined });
+  return useQuery({
+    queryKey: ['kpi-reports', 'diagnose', employeeId ?? 'none', month ?? 'none'],
+    queryFn: () => apiFetch(`/api/kpi-reports/diagnose${qs}`),
+    enabled: false, // manual trigger only (refetch())
+    staleTime: 0,
+  });
+}
+
+/**
  * Employee Performance Intelligence dataset (Phase 3) — deterministic
  * facts only (observations, repeated issues, deductions, complaints,
  * CAPA, follow-ups, deals, attendance context, evidence references).

@@ -9,7 +9,7 @@
 //  shell — every number comes from the /api/kpi-reports/* services.
 // ══════════════════════════════════════════════════════════════
 
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import { FileBarChart } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
@@ -18,17 +18,37 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
 import { useMonthSnapshots } from '@/hooks/use-kpi-queries';
+import { usePageState } from '@/hooks/use-page-state';
 import KpiEmployeeReportTab from './KpiEmployeeReportTab';
 import KpiMonthlyTableTab from './KpiMonthlyTableTab';
 import KpiSummaryTab from './KpiSummaryTab';
 import PerformanceAnalysisTab from './PerformanceAnalysisTab';
-import { buildMonthOptions, currentMonthKey } from './kpi-reports-shared';
+import { buildMonthOptions, currentMonthKey, formatMonth } from './kpi-reports-shared';
 
 type TabKey = 'employee' | 'monthly' | 'mtd' | 'historical' | 'summary' | 'performance';
 
 export default function KpiReportsPage() {
-  const [tab, setTab] = useState<TabKey>('monthly');
-  const [month, setMonth] = useState<string>(() => currentMonthKey());
+  // Phase 6.3 (§8/§38/§39/§50): the reporting work context — active tab
+  // + selected period — persists per user across navigation.
+  const [kpiReportsView, setKpiReportsView] = usePageState<{
+    tab: TabKey;
+    month: string;
+  }>({
+    page: 'kpiReports',
+    slot: 'view',
+    version: 1,
+    initial: () => ({ tab: 'monthly', month: currentMonthKey() }),
+    validate: (raw) =>
+      raw && typeof raw === 'object'
+      && typeof (raw as { tab?: unknown }).tab === 'string'
+      && typeof (raw as { month?: unknown }).month === 'string'
+        ? (raw as { tab: TabKey; month: string })
+        : null,
+  });
+  const tab = kpiReportsView.tab;
+  const setTab = (v: TabKey) => setKpiReportsView((s) => ({ ...s, tab: v }));
+  const month = kpiReportsView.month;
+  const setMonth = (v: string) => setKpiReportsView((s) => ({ ...s, month: v }));
   const snapshotsQuery = useMonthSnapshots();
 
   const monthOptions = useMemo(
@@ -56,6 +76,10 @@ export default function KpiReportsPage() {
         </div>
         <div className="no-print space-y-1.5 min-w-[190px]">
           <Label className="text-xs">فترة التقرير</Label>
+          <p className="text-[11px] text-slate-500">
+            الفترة الحالية: {formatMonth(effectiveMonth)}
+            {monthOptions.find((o) => o.value === effectiveMonth)?.closed ? ' — شهر مغلق (FINALIZED)' : ' — شهر مفتوح'}
+          </p>
           <Select value={effectiveMonth} onValueChange={setMonth}>
             <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
             <SelectContent>

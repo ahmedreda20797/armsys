@@ -36,6 +36,7 @@ export interface SearchNavigationIntent {
 /** Target pages that seed the month filter from the record's month. */
 const MONTH_SEEDED_DOMAINS: ReadonlySet<SearchResult['domain']> = new Set([
   'qualityObservations',
+  'qualityDeductions', // Phase 6.3 (§27): the quality page month-filters its list
   'travelDeals',
 ]);
 

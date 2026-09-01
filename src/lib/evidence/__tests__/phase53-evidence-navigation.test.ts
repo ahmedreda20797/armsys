@@ -166,7 +166,10 @@ describe('Phase 5.3 §37 (11-13) — wrong id, unauthorized, honest fallback', (
   });
 
   it('13. unsupported exact navigation falls back HONESTLY (labeled page navigation)', () => {
-    for (const collection of ['qualityDeductions', 'attendanceResults', 'monthSnapshots', 'kpiSchemes'] as const) {
+    // Phase 6.3 (§22-§25): qualityDeductions UPGRADED to exact — removed
+    // from the honest-fallback set (covered by the exact assertions in
+    // the phase-6.3 suite).
+    for (const collection of ['attendanceResults', 'monthSnapshots', 'kpiSchemes'] as const) {
       const intent = buildEvidenceNavigation(collection, 'whatever');
       assert.equal(intent.exact, false);
       assert.equal(intent.highlightId, null);
@@ -189,7 +192,9 @@ describe('Phase 5.3 — target pages make the record REACHABLE (spec §27)', () 
 
   it('Travel: month filter seeded + record-id rendered on the card', () => {
     const travel = srcOf('components/pages/TravelPage.tsx');
-    assert.match(travel, /const \[filterMonth, setFilterMonth\] = useState<string>\(navMonth \?\? 'all'\)/);
+    // Phase 6.3: the month filter persists via usePageState — the seed
+    // contract (navMonth ?? 'all') is preserved inside the initial state.
+    assert.match(travel, /initial: \(\) => \(\{ filterMonth: navMonth \?\? 'all'/);
     assert.match(travel, /data-record-id=\{trip\.id\}/);
   });
 

@@ -18,7 +18,7 @@
 // ══════════════════════════════════════════════════════════════
 
 import { useState } from 'react';
-import { Printer, Search, FileText, Link2, Info, Archive, Users } from 'lucide-react';
+import { Printer, Search, FileText, Link2, Info, Archive, Users, Stethoscope } from 'lucide-react';
 import { toast } from 'sonner';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -33,7 +33,7 @@ import {
 } from '@/components/ui/table';
 import { EmployeeSearchInput } from '@/components/shared/EmployeeSearchInput';
 import { useEmployees } from '@/hooks/use-queries';
-import { useKpiEmployeeReport } from '@/hooks/use-kpi-queries';
+import { useKpiEmployeeReport, useKpiVisibilityDiagnose } from '@/hooks/use-kpi-queries';
 import type { EmployeeKpiReport, KpiComponentResultStatus } from '@/lib/kpi-reporting';
 import {
   StatusBadge,
@@ -62,6 +62,9 @@ const COMPONENT_STATUS_LABELS: Record<string, string> = {
 
 export default function KpiEmployeeReportTab({ month }: { month: string }) {
   const [employeeId, setEmployeeId] = useState<string>('');
+  // Phase 6.3 (§33-§37): on-demand READ-ONLY visibility diagnose.
+  const [diagnoseRequested, setDiagnoseRequested] = useState(false);
+  const diagnoseQuery = useKpiVisibilityDiagnose(diagnoseRequested ? employeeId || null : null, month);
   const employeesQuery = useEmployees();
   const reportQuery = useKpiEmployeeReport(employeeId || null, month);
 
@@ -81,6 +84,19 @@ export default function KpiEmployeeReportTab({ month }: { month: string }) {
             />
           </div>
           <div className="flex gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-1.5"
+              disabled={!employeeId}
+              onClick={() => {
+                setDiagnoseRequested(true);
+                void diagnoseQuery.refetch();
+              }}
+            >
+              <Stethoscope className="h-4 w-4" />
+              تشخيص الظهور
+            </Button>
             <Button
               variant="outline"
               size="sm"
@@ -125,7 +141,103 @@ export default function KpiEmployeeReportTab({ month }: { month: string }) {
       {employeeId !== '' && reportQuery.data ? (
         <EmployeeReportBody report={reportQuery.data as EmployeeKpiReport} month={month} />
       ) : null}
+
+      {/* ── Visibility diagnose panel (§33-§37, read-only) ── */}
+      {employeeId && diagnoseRequested && <DiagnosePanel query={diagnoseQuery} />}
     </div>
+  );
+}
+
+interface DiagnoseTrace {
+  found?: boolean;
+  monthKey?: string;
+  valueBasis?: string;
+  layers?: Array<{ key: string; ok: boolean; label: string; detail: string }>;
+  firstMissingLayer?: string | null;
+  wouldAppearInReport?: boolean;
+  rowStatus?: string | null;
+  verdict?: string;
+}
+
+function DiagnosePanel({
+  query,
+}: {
+  query: ReturnType<typeof useKpiVisibilityDiagnose>;
+}) {
+  if (query.isFetching) {
+    return (
+      <Card className="no-print bg-slate-800/30 border-slate-700/40">
+        <CardContent className="p-4 text-sm text-slate-400">جارٍ التشخيص…</CardContent>
+      </Card>
+    );
+  }
+  if (query.isError || !query.data) {
+    return (
+      <Card className="no-print bg-red-950/20 border-red-800/40">
+        <CardContent className="p-4 text-sm text-red-300">تعذر تنفيذ التشخيص — أعد المحاولة.</CardContent>
+      </Card>
+    );
+  }
+  const trace = query.data as DiagnoseTrace;
+  return (
+    <Card className="no-print bg-slate-800/30 border-slate-700/40">
+      <CardHeader className="pb-2">
+        <CardTitle className="text-base text-slate-200 flex items-center gap-2">
+          <Stethoscope className="h-4 w-4 text-sky-300" />
+          تشخيص الظهور في تقارير KPI
+          {trace.monthKey && <span className="text-xs text-slate-500">— {trace.monthKey}</span>}
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {!trace.found ? (
+          <p className="text-sm text-amber-300">{trace.verdict}</p>
+        ) : (
+          <>
+            <div className="flex flex-wrap gap-2">
+              <Badge
+                variant="outline"
+                className={
+                  trace.wouldAppearInReport
+                    ? 'border-emerald-500/40 text-emerald-300'
+                    : 'border-red-500/40 text-red-300'
+                }
+              >
+                {trace.wouldAppearInReport ? 'سيظهر في التقرير' : 'لن يظهر في التقرير'}
+              </Badge>
+              {trace.rowStatus && (
+                <Badge variant="outline" className="border-slate-600/50 text-slate-300 font-mono text-[11px]">
+                  {trace.rowStatus}
+                </Badge>
+              )}
+            </div>
+            <ol className="space-y-2">
+              {(trace.layers ?? []).map((layer) => (
+                <li key={layer.key} className="flex items-start gap-2 text-sm">
+                  <span
+                    className={`mt-1 inline-flex size-4 shrink-0 items-center justify-center rounded-full text-[10px] font-bold ${
+                      layer.ok ? 'bg-emerald-500/20 text-emerald-300' : 'bg-red-500/20 text-red-300'
+                    }`}
+                    title={layer.ok ? 'مستوٍ سليم' : 'أول مستوى يختفي فيه الموظف'}
+                  >
+                    {layer.ok ? '✓' : '✕'}
+                  </span>
+                  <div>
+                    <p className="text-slate-200 font-medium">
+                      {layer.label}
+                      {trace.firstMissingLayer === layer.key && (
+                        <span className="text-red-300 text-xs"> — أول طبقة يختفي فيها</span>
+                      )}
+                    </p>
+                    <p className="text-slate-400 text-xs leading-relaxed">{layer.detail}</p>
+                  </div>
+                </li>
+              ))}
+            </ol>
+            <p className="text-xs text-slate-400 border-t border-slate-700/40 pt-3">{trace.verdict}</p>
+          </>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 

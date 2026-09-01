@@ -3,6 +3,8 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { usePermissions } from '@/hooks/usePermissions';
+import { usePageState } from '@/hooks/use-page-state';
+import { formatMonthLabelAr } from '@/lib/month-label';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -81,13 +83,31 @@ export default function BiometricPage() {
   const [records, setRecords] = useState<BiometricWithEmployee[]>([]);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState('');
+  // Phase 6.3 (§8): filter context persists per user (session-scoped).
+  const [biometricView, setBiometricView] = usePageState<{
+    search: string;
+    selectedMonth: string;
+    selectedEmployee: string;
+  }>({
+    page: 'biometric',
+    slot: 'filters',
+    version: 1,
+    initial: () => ({ search: '', selectedMonth: 'all', selectedEmployee: 'all' }),
+    validate: (raw) =>
+      raw && typeof raw === 'object' && typeof (raw as { selectedMonth?: unknown }).selectedMonth === 'string'
+        ? raw
+        : null,
+  });
+  const search = biometricView.search;
+  const setSearch = (v: string) => setBiometricView((s) => ({ ...s, search: v }));
+  const selectedMonth = biometricView.selectedMonth;
+  const setSelectedMonth = (v: string) => setBiometricView((s) => ({ ...s, selectedMonth: v }));
+  const selectedEmployee = biometricView.selectedEmployee;
+  const setSelectedEmployee = (v: string) => setBiometricView((s) => ({ ...s, selectedEmployee: v }));
   const [uploading, setUploading] = useState(false);
   const [clearMonth, setClearMonth] = useState('');
   const [isClearOpen, setIsClearOpen] = useState(false);
   const [clearing, setClearing] = useState(false);
-  const [selectedMonth, setSelectedMonth] = useState('all');
-  const [selectedEmployee, setSelectedEmployee] = useState('all');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -361,7 +381,12 @@ export default function BiometricPage() {
             <Fingerprint className="size-12 text-slate-600 mb-4" />
             <p className="text-slate-400 text-lg font-medium">لا توجد سجلات</p>
             <p className="text-slate-500 text-sm mt-1">
-              {search ? 'لم يتم العثور على نتائج' : 'ارفع ملف Excel لإضافة البيانات'}
+              {/* §10/§56: the active period is NAMED in the empty state. */}
+              {search
+                ? 'لم يتم العثور على نتائج'
+                : selectedMonth && selectedMonth !== 'all'
+                  ? `لا توجد سجلات بصمة في ${formatMonthLabelAr(selectedMonth)}.`
+                  : 'ارفع ملف Excel لإضافة البيانات'}
             </p>
           </CardContent>
         </Card>

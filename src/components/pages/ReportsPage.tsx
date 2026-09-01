@@ -1,9 +1,18 @@
 'use client';
 
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { usePermissions } from '@/hooks/usePermissions';
+import { useAuth } from '@/contexts/AuthContext';
 import { generateMonthOptions } from '@/lib/date-utils';
+import { formatMonthLabelAr } from '@/lib/month-label';
+import { createId } from '@paralleldrive/cuid2';
+import {
+  clearReportSnapshot,
+  loadReportSnapshot,
+  saveReportSnapshot,
+  type ReportSnapshot,
+} from '@/lib/report-state/report-snapshot';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -193,6 +202,22 @@ interface EmployeeDetail {
 type SortField = 'employeeName' | 'attendanceCompliance' | 'totalMinutesLate' | 'totalDeductionDays' | 'totalAbsent' | 'totalPresent' | 'totalLate';
 type FilterMode = 'all' | 'committed' | 'delayed' | 'absent' | 'quality' | 'problematic';
 
+// ══════════════════════════════════════════════════════════════
+//  Report Continuity (Phase 6.3 §13-§20)
+//  The generated report is a versioned, user-scoped CLIENT-SIDE
+//  snapshot (§15 level B — no new database model, §48). Restoring
+//  shows it VERBATIM with an explicit status (§16/§20); regeneration
+//  is only ever the explicit Generate action, which replaces the
+//  snapshot atomically (§18).
+// ══════════════════════════════════════════════════════════════
+const REPORT_SNAPSHOT_VERSION = 1;
+
+interface ReportSnapshotData {
+  rows: ReportRow[];
+  meta: ReportMeta | null;
+  summary: ReportSummary | null;
+}
+
 /** Static table-header sort button (hoisted out of the component so it is
  *  never re-created during render — keeps identity stable across renders). */
 function SortButton({ field, label, activeField, desc, onToggle }: {
@@ -218,12 +243,17 @@ function SortButton({ field, label, activeField, desc, onToggle }: {
    ════════════════════════════════════════════════════════════════ */
 export default function ReportsPage() {
   const { canView, canEdit, canExport } = usePermissions('reports');
+  const { user } = useAuth();
   const [month, setMonth] = useState('');
   const [report, setReport] = useState<ReportRow[]>([]);
   const [meta, setMeta] = useState<ReportMeta | null>(null);
   const [summary, setSummary] = useState<ReportSummary | null>(null);
   const [generating, setGenerating] = useState(false);
   const [hasReport, setHasReport] = useState(false);
+  // Report Continuity (§20): explicit status of the CURRENT report.
+  const [reportStatus, setReportStatus] = useState<'generated' | 'restored' | null>(null);
+  const [reportGeneratedAt, setReportGeneratedAt] = useState<string | null>(null);
+  const [reportPeriod, setReportPeriod] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [sortField, setSortField] = useState<SortField>('attendanceCompliance');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
@@ -238,34 +268,50 @@ export default function ReportsPage() {
   const [detailError, setDetailError] = useState<string | null>(null);
   const [waivingDate, setWaivingDate] = useState<string | null>(null);
 
+  // ── Report Continuity restore (§13/§16/§17) ──
+  // One-shot: when the authenticated user already generated a report,
+  // restore it VERBATIM (report + context together) — never a silent
+  // regeneration. Replaces the pre-6.3 unscoped `erp_report_data`
+  // session key (which leaked across users and could pair a report
+  // with a mismatched month).
+  const reportInitRef = useRef(false);
   useEffect(() => {
+    if (reportInitRef.current) return;
+    if (!user?.id) return; // wait for the authenticated identity (§6)
+    reportInitRef.current = true;
     try {
-      const saved = sessionStorage.getItem('erp_report_data');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        // eslint-disable-next-line react-hooks/set-state-in-effect -- one-time sessionStorage hydration: reading storage during render (or lazy init) would diverge from the SSR output and cause hydration mismatches.
-        if (parsed.month) setMonth(parsed.month);
-        if (parsed.report && parsed.report.length > 0) {
-          setReport(parsed.report);
-          setMeta(parsed.meta || null);
-          setSummary(parsed.summary || null);
-          setHasReport(true);
-        }
+      // Legacy key cleanup — the snapshot layer owns persistence now.
+      sessionStorage.removeItem('erp_report_data');
+    } catch {
+      /* best-effort */
+    }
+    // Deferred one frame (react-hooks/set-state-in-effect doctrine —
+    // same pattern as the deep-link auto-expands): the restore is a
+    // one-shot hydration from user-scoped storage, not a render-phase
+    // adjustment.
+    const restored = loadReportSnapshot<ReportSnapshotData>({
+      userId: user.id,
+      page: 'reports',
+      version: REPORT_SNAPSHOT_VERSION,
+    });
+    const raf = requestAnimationFrame(() => {
+      if (restored) {
+        const snap = restored.snapshot;
+        setMonth(snap.period);
+        setReport(snap.data?.rows ?? []);
+        setMeta(snap.data?.meta ?? null);
+        setSummary(snap.data?.summary ?? null);
+        setHasReport((snap.data?.rows ?? []).length > 0);
+        setReportStatus('restored');
+        setReportGeneratedAt(snap.generatedAt);
+        setReportPeriod(snap.period);
       } else {
         const now = new Date();
         setMonth(`${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`);
       }
-    } catch {
-      const now = new Date();
-      setMonth(`${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (hasReport && report.length > 0 && month) {
-      sessionStorage.setItem('erp_report_data', JSON.stringify({ month, report, meta, summary }));
-    }
-  }, [hasReport, report, month, meta, summary]);
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [user?.id]);
 
   const handleGenerate = async () => {
     if (!month) return;
@@ -286,11 +332,35 @@ export default function ReportsPage() {
       if (res.ok) {
         const data = await res.json();
         const rows = data.rows || [];
+        const nextMeta = data.meta || null;
+        const nextSummary = data.summary || null;
         setReport(rows);
-        setMeta(data.meta || null);
-        setSummary(data.summary || null);
+        setMeta(nextMeta);
+        setSummary(nextSummary);
         setHasReport(true);
-        sessionStorage.setItem('erp_report_data', JSON.stringify({ month, report: rows, meta: data.meta, summary: data.summary }));
+        // Report Continuity (§14/§18): the generation atomically
+        // REPLACES the current report snapshot (no other write path
+        // exists — a restored snapshot is immutable, §16).
+        if (user?.id) {
+          const snapshot: ReportSnapshot<ReportSnapshotData> = {
+            reportId: createId(),
+            reportType: 'monthly-deductions-report',
+            subject: null,
+            period: month,
+            filters: {},
+            generatedAt: new Date().toISOString(),
+            generatedBy: user.id,
+            stateVersion: REPORT_SNAPSHOT_VERSION,
+            data: { rows, meta: nextMeta, summary: nextSummary },
+          };
+          saveReportSnapshot(
+            { userId: user.id, page: 'reports', version: REPORT_SNAPSHOT_VERSION },
+            snapshot,
+          );
+          setReportStatus('generated');
+          setReportGeneratedAt(snapshot.generatedAt);
+          setReportPeriod(month);
+        }
       } else {
         const data = await res.json();
         setError(data.error || 'فشل في إنشاء التقرير');
@@ -586,6 +656,42 @@ export default function ReportsPage() {
             )}
           </div>
         </div>
+        {/* ── Report Continuity status + period visibility (§10/§19/§20) ── */}
+        <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
+          {month && (
+            <Badge variant="outline" className="border-slate-600/50 text-slate-300 gap-1">
+              <CalendarDays className="size-3" />
+              الفترة المختارة: {formatMonthLabelAr(month)}
+            </Badge>
+          )}
+          {hasReport && reportPeriod && (
+            <Badge variant="outline" className="border-violet-500/40 text-violet-300 gap-1">
+              <FileText className="size-3" />
+              التقرير المعروض: {formatMonthLabelAr(reportPeriod)}
+            </Badge>
+          )}
+          {hasReport && reportStatus === 'restored' && (
+            <Badge variant="outline" className="border-sky-500/40 text-sky-300">
+              تمت الاستعادة — لم يُعَ احتسابه
+            </Badge>
+          )}
+          {hasReport && reportStatus === 'generated' && (
+            <Badge variant="outline" className="border-emerald-500/40 text-emerald-300">
+              تم التوليد الآن
+            </Badge>
+          )}
+          {hasReport && reportGeneratedAt && (
+            <span className="text-slate-500">
+              وُلّد في {new Date(reportGeneratedAt).toLocaleString('ar-EG', { dateStyle: 'medium', timeStyle: 'short' })}
+            </span>
+          )}
+        </div>
+        {hasReport && reportPeriod && month && reportPeriod !== month && (
+          <div className="mt-2 p-2.5 rounded-lg bg-amber-500/10 border border-amber-500/25 text-amber-300 text-xs flex items-center gap-2">
+            <AlertCircle className="size-3.5 shrink-0" />
+            التقرير المعروض من فترة {formatMonthLabelAr(reportPeriod)} — اضغط «إنشاء التقرير» لتوليد فترة {formatMonthLabelAr(month)}.
+          </div>
+        )}
         {error && (
           <motion.div initial={{ opacity: 0, y: -5 }} animate={{ opacity: 1, y: 0 }} className="mt-3 p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-xs flex items-center gap-2">
             <AlertCircle className="size-4 shrink-0" />{error}
