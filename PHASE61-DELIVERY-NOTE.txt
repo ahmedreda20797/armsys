@@ -1,0 +1,48 @@
+PHASE 6.1 DELIVERY NOTE
+========================
+
+1) Global Search (server-side, permission-scoped)
+   - Entry points: Header visible field (desktop) + icon (mobile), Ctrl/Cmd+K
+     command palette (src/components/search/GlobalSearch.tsx).
+   - Single data-access point: POST /api/search accepts ONLY { query, domain?, limit? }.
+     Pipeline: requireAuth -> per-domain canonical permission -> employee scope
+     (resolved once per request) -> cached db readers -> lightweight projections.
+   - Unauthorized domain = never queried at all (no names/counts/existence).
+     Out-of-scope record = not found (anti-enumeration). No raw records leave the server.
+   - 14 domains registered from real code (SYSTEM INVENTORY): employees,
+     qualityObservations, qualityDeductions, hrDeductions, complaints, capaCases,
+     followUps, travelDeals, attendance, requests, knowledgeBase, monthSnapshots,
+     orgNodes, users.
+   - Arabic-aware normalization at search time only (hamza/alef, taa marbuta,
+     alef maqsura, tashkeel/tatweel, Arabic-Indic digits, case-insensitive).
+   - Match priority: exact-id > exact > prefix > contains (+ field priority, AND terms).
+
+2) Exact-Record Navigation (reuses Phase 5.2/5.3 machinery - no parallel system)
+   - buildSearchNavigation delegates to buildEvidenceNavigation for evidence-backed
+     domains; month seeding for Observations/Travel; status seeding for archived
+     employees; CAPA detail mode; Follow-ups employee-group expand; Attendance and
+     HR Deductions wired onto the shared useRecordHighlight + data-record-id.
+   - Honest labels: "فتح السجل" (exact record) vs "الانتقال إلى الصفحة" (page only).
+
+3) AI Foundation (contracts + governance ONLY - no AI runs)
+   - src/lib/ai/types.ts: AIAnalysisInput (verifiedFacts + analytics + evidence,
+     never raw rows), AIInsight (evidence REQUIRED), AIRecommendation (starts at
+     'proposed', never auto-executed), AIAnalysisRequest/Response,
+     OrganizationalMemoryEntry (8-stage chain), RecommendationOutcome.
+   - src/lib/ai/governance.ts: AI_READ_ONLY=true, forbidden-mutations list (10
+     domains), evidence-backed validation, strict serializable-contract walk.
+   - Zero LLM/provider/network/Python code anywhere; no API keys; no data leaves the system.
+
+Verification (this machine):
+- npx tsc --noEmit : 0 errors
+- npm run lint : clean
+- npm test : 1156/1156 (JWT_SECRET set; includes 36 global-search + 12 ai-foundation new tests)
+- Regression suites re-verified: route-auth, phase53 archive, phase53 evidence, evidence-preview
+- npm run build : success; /api/search registered; standalone 73MB; NO python-analytics
+- Standalone smoke: GET / 200; POST /api/search 401 unauthenticated
+- Leakage tests: unauthorized tables never read at IO level; client cannot send
+  permission/scope fields; no raw server errors surfaced to UI
+
+Run: npm install; copy .env.example; set JWT_SECRET (32+ chars) + Firebase creds.
+Docs: docs/PHASE6.1-SEARCH-AI-FOUNDATION.md (architecture, domains, permission flow,
+navigation flow, AI integration, extension points, limitations).

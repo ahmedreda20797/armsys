@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { usePermissions } from '@/hooks/usePermissions';
+import { useRecordHighlight } from '@/hooks/use-record-highlight';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -100,6 +101,9 @@ export default function AttendancePage() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [monthFilter, setMonthFilter] = useState('all');
+  // Phase 6.1 (Global Search §8): exact-record deep-link highlight via
+  // the shared evidence mechanism — records carry data-record-id below.
+  useRecordHighlight({ ready: !loading });
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [checkoutRecord, setCheckoutRecord] = useState<AttendanceRecord | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -566,6 +570,7 @@ export default function AttendancePage() {
                 {sorted.map((rec) => (
                   <TableRow
                     key={rec.id}
+                    data-record-id={rec.id}
                     className="border-slate-700/50 hover:bg-slate-700/30"
                   >
                     <TableCell>

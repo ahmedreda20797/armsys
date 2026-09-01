@@ -10,6 +10,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { useNotificationContext } from '@/contexts/NotificationContext';
 import { useAppStore } from '@/lib/store';
+import { GlobalSearch } from '@/components/search/GlobalSearch';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -316,6 +317,9 @@ export function Header({ title, onMenuToggle, onToggleSidebarCollapse, sidebarCo
             {title}
           </h1>
         </div>
+
+        {/* ── Center: Global Search trigger (Phase 6.1 — desktop field, mobile icon) ── */}
+        <GlobalSearch />
 
         {/* ── Right: notification bell + avatar ── */}
         <div className="flex items-center gap-2">

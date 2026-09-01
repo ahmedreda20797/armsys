@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { usePermissions } from '@/hooks/usePermissions';
+import { useRecordHighlight } from '@/hooks/use-record-highlight';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -106,6 +107,9 @@ export default function HrDeductionsPage() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'approved' | 'rejected'>('all');
+  // Phase 6.1 (Global Search §8): exact-record deep-link highlight via
+  // the shared evidence mechanism — records carry data-record-id below.
+  useRecordHighlight({ ready: !loading });
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -389,6 +393,7 @@ export default function HrDeductionsPage() {
                   {pending.map((ded) => (
                     <motion.div
                       key={ded.id}
+                      data-record-id={ded.id}
                       initial={{ opacity: 0, x: 20 }}
                       animate={{ opacity: 1, x: 0 }}
                       exit={{ opacity: 0, x: -20 }}
@@ -491,6 +496,7 @@ export default function HrDeductionsPage() {
                     {other.map((ded) => (
                       <TableRow
                         key={ded.id}
+                        data-record-id={ded.id}
                         className="border-slate-700/50 hover:bg-slate-700/30"
                       >
                         <TableCell>

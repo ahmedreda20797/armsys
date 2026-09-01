@@ -98,7 +98,13 @@ export default function EmployeesPage() {
   // CURRENT (active) workforce — archived employees "disappear" from
   // the default list and remain reachable through this filter (the
   // archive search view). Nothing is deleted.
-  const [statusFilter, setStatusFilter] = useState<'all' | EmployeeStatus>('active');
+  // Phase 6.1 (Global Search §8/§13): a deep-linked archived/inactive
+  // employee seeds this filter from navParams.status so the exact row
+  // is reachable; the store's highlightId row mechanic does the rest.
+  const navStatus = useAppStore((s) => s.navParams.status);
+  const [statusFilter, setStatusFilter] = useState<'all' | EmployeeStatus>(() =>
+    navStatus === 'archived' || navStatus === 'inactive' ? navStatus : 'active',
+  );
   const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [form, setForm] = useState<EmployeeFormData>(emptyForm);
