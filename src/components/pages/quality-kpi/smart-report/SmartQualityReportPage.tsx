@@ -73,10 +73,10 @@ import {
   ObservationsSection,
   ReportHeaderSection,
   RepeatedIssuesSection,
-  SmartAnalysisPlaceholder,
   TrendSection,
 } from './report-sections';
 import { AnalyticsSection } from './AnalyticsSection';
+import { AIAnalysisSection } from './AIAnalysisSection';
 import {
   EvidencePreviewModal,
   type EvidencePreviewRequestState,
@@ -365,8 +365,16 @@ function ReportBody() {
               touching the facts-only sections above) */}
           <AnalyticsSection employeeId={employeeId} month={month} />
 
-          {/* §31 Future AI placeholder — hidden content, clear label */}
-          <SmartAnalysisPlaceholder />
+          {/* Phase 6.2 — Smart Quality AI (§23): mounted in the reserved
+              "التحليل الذكي" spot. ON-DEMAND only, evidence-auditable via
+              the SAME EvidencePreviewModal, failure-isolated from the
+              facts sections above. */}
+          <AIAnalysisSection
+            key={`${employeeId}:${month}`}
+            employeeId={employeeId}
+            month={month}
+            onViewEvidence={handleViewEvidence}
+          />
 
           <p className="text-[10px] text-slate-600 font-mono text-left" dir="ltr">
             generatedAt: {views.generatedAt}

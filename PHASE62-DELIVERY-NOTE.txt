@@ -1,0 +1,60 @@
+PHASE 6.2 DELIVERY NOTE
+========================
+
+1) Smart Quality AI — first REAL AI layer (READ-ONLY intelligence)
+   - Mounted in the Smart Quality Report's reserved "التحليل الذكي" spot.
+     ON-DEMAND button only ("تشغيل التحليل الذكي") — never loads with the page.
+   - Pipeline: verified PI dataset → deterministic TypeScript analytics
+     (engine untouched) → compact structured input → provider → STRICT
+     validation → result. The AI interprets results; it never recalculates.
+   - Provider abstraction: src/lib/ai/provider (z-ai adapter using the
+     bundled SDK + generic OpenAI-compatible HTTPS adapter). Configuration
+     is SERVER-ONLY env: AI_ENABLED / AI_PROVIDER / AI_MODEL / AI_API_KEY /
+     AI_BASE_URL / AI_TIMEOUT_MS. Empty config = AI_UNAVAILABLE, everything
+     else keeps working. No key ever reaches the browser.
+   - Authorization FIRST: auth → kpiReports:view → employee scope (404
+     anti-enumeration) → only then the dataset. The AI can never see more
+     than the caller. Client sends {employeeId, month} only.
+   - Data sufficiency is deterministic: NO_DATA / INSUFFICIENT_DATA show a
+     clear period-named message WITHOUT calling the provider; LIMITED_DATA
+     runs the AI with honest limitations; MTD is always "حتى تاريخه".
+   - Hallucination guard: every number in AI text must exist in the input
+     (Arabic-Indic digits handled) — otherwise the item is dropped with an
+     audit note. Evidence refs must exist in the input catalog. Recommendation
+     status is forced PROPOSED; EXECUTED claims are dropped. No causality,
+     no personnel judgments, injection-typed data stays data (delimited).
+   - Every insight/recommendation is evidence-clickable → the SAME
+     EvidencePreviewModal → "فتح السجل في المصدر" + highlight.
+   - Distinct states: READY / NO_DATA / INSUFFICIENT_DATA / AI_UNAVAILABLE /
+     AI_TIMEOUT / AI_ERROR / AI_INVALID_RESPONSE / AI_RATE_LIMITED — an AI
+     failure degrades the AI section alone; Facts + Analytics + Evidence stay.
+   - Cache: content-addressed (payload hash + engine + prompt version +
+     provider/model), failures never cached. Rate protection: 6 req/min/user.
+
+2) Quality Observations — period visibility rule (§68) [closes the incident]
+   - Root cause of the earlier "disappearing observations": the page's month
+     filter defaulted to the CURRENT month, hidden in a collapsed panel, and
+     even "مسح الفلاتر" kept it — every month rollover looked like data loss.
+     The Firebase data was never touched (ZERO writes; read/display path only).
+   - Now: "فترة العرض: …" chip always visible in the toolbar; empty state
+     names the period ("لا توجد ملاحظات مسجلة في سبتمبر 2026."); one-click
+     "عرض كل الأشهر"; "مسح الفلاتر" truly clears. Regression tests pin all of it.
+
+Verification (this machine):
+- npx tsc --noEmit : 0 errors
+- npm run lint : clean
+- npm test : 1223/1223 (JWT_SECRET set; +67 new tests: provider/service/route/
+  UI-contract + observations §68 regression incl. 80-record incident fixture)
+- npm run build : success; ƒ /api/ai/quality-analysis registered; standalone smoke
+  GET / 200 and POST /api/ai/quality-analysis unauth 401
+- REAL provider request verified in the dev sandbox via the z-ai adapter
+  (glm-4.6): full pipeline returned validated Arabic insights + PROPOSED
+  recommendations over an in-memory fixture (no Firebase touched). The
+  OpenAI-compatible adapter was verified against a LOCAL mock server only —
+  no real OpenAI credentials exist here.
+- Regression suites green: Global Search, Evidence Preview/Navigation,
+  Phase 5.3 archive, KPI, month-close, quality workflow.
+
+Run: npm install; copy .env.example; set JWT_SECRET (32+ chars) + Firebase creds.
+To enable AI: AI_ENABLED=true + AI_PROVIDER=z-ai (or openai-compatible + AI_API_KEY).
+Docs: docs/PHASE6.2-SMART-QUALITY-AI.md

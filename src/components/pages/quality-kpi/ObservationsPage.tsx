@@ -24,7 +24,9 @@ import {
 import {
   Eye, Plus, Search, Filter, Trash2, Pencil, Check, X, Star, Clock,
   ClipboardList, FileText, Info, Lock, ShieldAlert, Copy, ExternalLink, Link2,
+  CalendarDays,
 } from 'lucide-react';
+import { formatMonth } from './kpi-reports-shared';
 import { ApprovalStatusBadge } from '@/components/shared/kpi';
 import { EmployeeSearchInput } from '@/components/shared/EmployeeSearchInput';
 import { TimelineView } from '@/components/shared/audit';
@@ -128,7 +130,14 @@ export default function ObservationsPage() {
   }, [obsList, search]);
 
   function clearFilters() {
-    setFilters({ month: CURRENT_MONTH });
+    // Phase 6.2 (spec §68): "مسح الفلاتر" must actually CLEAR — including
+    // the month. The current-month default applies only to a fresh page
+    // load, and the active period is always visible in the toolbar.
+    setFilters({});
+  }
+
+  function showAllMonths() {
+    setFilters((f) => ({ ...f, month: undefined }));
   }
 
   const deleteMut = useDeleteObservation();
@@ -187,6 +196,24 @@ export default function ObservationsPage() {
         <Button variant="outline" size="sm" onClick={() => setShowFilters((s) => !s)} className="gap-2">
           <Filter className="size-4" /> فلترة
         </Button>
+        {/* Phase 6.2 (spec §68): the ACTIVE period is always visible in the
+            toolbar — a month-filtered view must never look like the whole
+            dataset. Clicking it opens the filter panel to change the month. */}
+        <button
+          type="button"
+          data-testid="observations-period-indicator"
+          onClick={() => setShowFilters((s) => !s)}
+          title="الفترة المعروضة — اضغط لتغيير الشهر"
+          className="flex items-center gap-1.5 rounded-full border border-sky-500/30 bg-sky-500/10 px-3 py-1.5 text-xs text-sky-200 hover:bg-sky-500/15"
+        >
+          <CalendarDays className="size-3.5" />
+          فترة العرض: {filters.month ? formatMonth(filters.month) : 'كل الأشهر'}
+        </button>
+        {filters.month && (
+          <Button variant="ghost" size="sm" data-testid="observations-show-all-months" onClick={showAllMonths} className="text-xs text-slate-400">
+            عرض كل الأشهر
+          </Button>
+        )}
         {Object.values(filters).some(Boolean) && (
           <Button variant="ghost" size="sm" onClick={clearFilters} className="text-xs text-slate-400">
             مسح الفلاتر
@@ -314,7 +341,11 @@ export default function ObservationsPage() {
           {[1, 2, 3].map((i) => <Skeleton key={i} className="h-28 rounded-lg bg-slate-800/50" />)}
         </div>
       ) : filtered.length === 0 ? (
-        <EmptyState hasFilters={!!search || Object.values(filters).some(Boolean)} />
+        <EmptyState
+          monthLabel={filters.month ? formatMonth(filters.month) : null}
+          hasFilters={!!search || Object.values(filters).some(Boolean)}
+          onShowAllMonths={showAllMonths}
+        />
       ) : (
         <div className="space-y-3">
           {filtered.map((obs, i) => (
@@ -409,17 +440,46 @@ function StatChip({ label, value, icon: Icon, className }: { label: string; valu
   );
 }
 
-function EmptyState({ hasFilters }: { hasFilters: boolean }) {
+// Phase 6.2 (spec §68): the empty state NAMES the active period —
+// "لا توجد ملاحظات مسجلة في سبتمبر 2026." never a bare
+// "لا توجد ملاحظات" that reads as if the data disappeared.
+function EmptyState({
+  monthLabel,
+  hasFilters,
+  onShowAllMonths,
+}: {
+  monthLabel: string | null;
+  hasFilters: boolean;
+  onShowAllMonths: () => void;
+}) {
   return (
     <Card className="border-slate-700/40 bg-slate-800/30">
       <CardContent className="flex flex-col items-center justify-center py-14">
         <div className="size-12 rounded-full bg-slate-800 flex items-center justify-center mb-3">
           <Eye className="size-6 text-slate-600" />
         </div>
-        <p className="text-slate-400 text-sm font-medium">لا توجد ملاحظات</p>
-        <p className="text-slate-600 text-xs mt-1">
-          {hasFilters ? 'لم يتم العثور على نتائج مع الفلاتر المحددة' : 'لم يتم تسجيل أي ملاحظات جودة بعد'}
+        <p className="text-slate-400 text-sm font-medium">
+          {monthLabel ? `لا توجد ملاحظات مسجلة في ${monthLabel}` : 'لا توجد نتائج مطابقة'}
         </p>
+        <p className="text-slate-600 text-xs mt-1">
+          {monthLabel
+            ? 'العرض مُفلتر على هذه الفترة — غيّر الشهر أو اعرض كل الأشهر.'
+            : hasFilters
+              ? 'لم يتم العثور على نتائج مع الفلاتر المحددة'
+              : 'لم يتم تسجيل أي ملاحظات جودة بعد'}
+        </p>
+        {monthLabel && (
+          <Button
+            variant="outline"
+            size="sm"
+            data-testid="observations-empty-show-all"
+            onClick={onShowAllMonths}
+            className="mt-4 border-slate-700/50 text-slate-300 hover:bg-slate-800/60"
+          >
+            <CalendarDays className="size-3.5 ml-1" />
+            عرض كل الأشهر
+          </Button>
+        )}
       </CardContent>
     </Card>
   );
