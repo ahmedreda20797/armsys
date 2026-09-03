@@ -27,6 +27,6 @@ export {
   AI_RECOMMENDATION_STATUS,
 } from './contracts';
 export { AI_PROMPT_VERSION } from './version';
-export { runQualityAIAnalysis, type RunQualityAIAnalysisInput } from './service';
+export { runQualityAIAnalysis, QUALITY_AI_MAX_OUTPUT_TOKENS, type RunQualityAIAnalysisInput } from './service';
 export type { QualityAIAnalysisPayload, QualityAIInputOutcome } from './input-builder';
 export { buildQualityAIAnalysisInput } from './input-builder';

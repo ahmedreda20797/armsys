@@ -92,6 +92,36 @@ export function aiFailureHeading(status: string): string {
   }
 }
 
+// ── Phase 6.5-A §17 — gateway diagnostic → user-safe hint ──────
+// The envelope now carries `diagnostic.status` (the REAL category
+// behind the friendly message). This maps each gateway state to ONE
+// honest, actionable, secret-free Arabic hint. Raw provider errors,
+// keys and stack traces never reach this layer.
+
+/** User-safe hint per gateway diagnostic status (null = no hint). */
+export function aiDiagnosticHint(gatewayStatus: string): string | null {
+  switch (gatewayStatus) {
+    case 'DISABLED':
+      return 'الذكاء الاصطناعي معطّل في هذه البيئة (AI_ENABLED) — التفعيل يتم من إعدادات الخادم بواسطة المدير.';
+    case 'MISCONFIGURED':
+      return 'إعداد المزود ناقص (المزود/الموديل/المفتاح) — راجع /api/ai/diagnostics بصلاحية المدير.';
+    case 'MODEL_ERROR':
+      return 'الموديل المُهيأ غير متاح لدى المزود — يلزم اختيار موديل صريح مدعوم (راجع /api/ai/models).';
+    case 'UNAVAILABLE':
+      return 'تعذر الوصول إلى مزود الذكاء الاصطناعي — تحقق من الشبكة أو إعداد المزود ثم أعد المحاولة.';
+    case 'RATE_LIMITED':
+      return 'تم تجاوز حد الاستخدام المؤقت — انتظر قليلاً ثم أعد المحاولة.';
+    case 'PROVIDER_ERROR':
+      return 'أعاد المزود خطأً مؤقتًا — أعد المحاولة بعد قليل.';
+    case 'TIMEOUT':
+      return 'استغرقت المعالجة وقتًا أطول من المهلة المحددة — أعد المحاولة، ويمكن للمدير مراجعة AI_TIMEOUT_MS.';
+    case 'VALIDATION_ERROR':
+      return 'لم تجتز الاستجابة التحقق الصارم — لن تُعرض أي نتيجة غير موثوقة.';
+    default:
+      return null;
+  }
+}
+
 /** Sufficiency chip label (§2/§69 — never call limited data "فشل"). */
 export function aiSufficiencyLabel(sufficiency: 'SUFFICIENT_DATA' | 'LIMITED_DATA'): string {
   return sufficiency === 'LIMITED_DATA' ? 'محدودة' : 'كافية';

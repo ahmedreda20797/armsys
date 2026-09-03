@@ -1,0 +1,62 @@
+══════════════════════════════════════════════════════════════════
+  ARM ERP — مذكرة تسليم Phase 6.5-A
+  REAL GEMINI ACTIVATION READINESS & PRODUCTION VERIFICATION
+══════════════════════════════════════════════════════════════════
+
+الخلاصة بصدق
+──────────────
+المعمارية جاهزة 100% لتفعيل Gemini الحقيقي، وكل ما يمكن إثباته
+دون مفتاح حقيقي مُثبت. المفتاح غير موجود في بيئة التطوير، ولا
+يوجد وصول إلى Vercel أو Firebase — لذلك حسب قاعدة «لا نجاح مزيف»:
+
+  ⏳ Production verification pending
+  ⏳ Real-Gemini request: ready with ONE command once a key exists
+  ⏳ Real-Firebase data path: ready, needs FIREBASE_* on the runner
+
+ما الذي أُضيف فعليًا؟
+──────────────
+١) GET /api/ai/models (للمدير فقط): يسرد الموديلات التي يدعمها
+   حساب Gemini فعليًا الآن (آمن — معرّفات فقط، المفتاح في header،
+   وصدى أي مفتاح عبر الميتاداتا يُموى). لا اختيار تلقائي —
+   المدير يثبّت AI_MODEL صراحةً.
+
+٢) بروب الصحة أصبح طلب صدى §7 الحرفي:
+   "Respond with exactly: ARM_AI_HEALTH_OK" + حقل echoMatched.
+
+٣) maxDuration = 60 على مسارات AI (درس البروب الحقيقي 30s مقابل
+   حد Vercel الافتراضي 10s) + توثيق AI_TIMEOUT_MS=45000 مثالًا.
+
+٤) scripts/phase65-verify-gemini.ts — التحقق كله بأمر واحد:
+   إعداد → اكتشاف موديلات → طلب صدى → اختبار ARM كامل
+   (مُعلَّم: fixture في الذاكرة) → حكم + خطوات متبقية.
+
+٥) واجهة التقرير الذكي تعرض الآن «التصنيف الفعلي» خلف الرسالة
+   الودية لكل فشل (DISABLED/MISCONFIGURED/MODEL_ERROR/…) — بلا
+   مفاتيح وبلا أخطاء خام.
+
+البوابات
+──────────────
+TypeScript: 0 أخطاء · ESLint: نظيف · الاختبارات: 1371/1371
+Build: ناجح (5 مسارات AI: diagnostics/health/models/
+provider-settings/quality-analysis)
+بروب خط الأنابيب بمزود حقيقي (z-ai glm-4.6): OPERATIONAL —
+ويُلصق بوضوح: هذا ليس تحقق Gemini (§24).
+
+خطوات المدير (بالترتيب)
+──────────────
+١. مفتاح Google AI Studio (سري خادمي فقط).
+٢. بجهاز عليه المفتاح:
+   AI_ENABLED=true AI_PROVIDER=gemini AI_API_KEY=<key> \
+     npx tsx scripts/phase65-verify-gemini.ts
+   → اختر AI_MODEL من generateCapableModels → أعد التشغيل
+   → توقع: REAL_PROVIDER_OPERATIONAL_END_TO_END + echoMatched:true
+٣. Vercel → Settings → Env Variables → Production scope:
+   AI_ENABLED/AI_PROVIDER=gemini/AI_MODEL/AI_API_KEY/AI_TIMEOUT_MS=45000
+   (+JWT_SECRET وFIREBASE_* إن لم تكونا) → Redeploy.
+٤. بعد النشر بصلاحية مدير: /api/ai/health ثم /api/ai/diagnostics
+   ثم التقرير الذكي من الواجهة (تختفي رسالة «غير مُهيأ»).
+٥. لإعادة السكربت على مسار Firebase الحقيقي: أضف FIREBASE_* لجهاز
+   التشغيل وأعده — سجل التدقيق aiAuditLog يُكتب تلقائيًا.
+
+التوثيق الكامل: docs/PHASE6.5-A-GEMINI-ACTIVATION.md
+══════════════════════════════════════════════════════════════════

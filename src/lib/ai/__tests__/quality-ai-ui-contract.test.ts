@@ -112,9 +112,12 @@ describe('AI section — client security (§31/§64)', () => {
     assert.match(section, /import type \{ QualityAIApiResponse/);
   });
 
-  it('the service and route import the provider factory — server-side only', () => {
+  it('the service and route resolve the provider through the gateway — server-side only', () => {
+    // Phase 6.4 (§8): provider resolution moved from the direct factory
+    // (createAIProviderFromEnv) to the gateway resolver resolveAIProvider
+    // — explicit, layered (settings → env), still server-side only.
     const service = readSrc(SERVICE_PATH);
-    assert.match(service, /createAIProviderFromEnv/);
+    assert.match(service, /resolveAIProvider/);
     const route = readSrc(ROUTE_PATH);
     assert.match(route, /runQualityAIAnalysis/);
     assert.ok(!route.includes('AI_API_KEY'), 'route never touches the raw key');

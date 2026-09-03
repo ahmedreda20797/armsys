@@ -42,6 +42,13 @@ import {
 } from '@/lib/performance-intelligence';
 import { runQualityAIAnalysis } from '@/lib/ai/quality/service';
 import { checkQualityAIRateLimit } from '@/lib/ai/quality/cache';
+import { getAIProviderSettings, type AIProviderSettings } from '@/lib/ai/gateway/provider-settings';
+
+// Phase 6.5-A §14: real analysis latency measured at ~30s (glm-4.6).
+// Vercel functions default to a 10s limit — this declares the intent
+// explicitly (the platform clamps it to the plan's real maximum).
+// AI_TIMEOUT_MS MUST stay below this value.
+export const maxDuration = 60;
 
 interface ParsedAiBody {
   employeeId: string;
@@ -130,8 +137,18 @@ export async function POST(request: NextRequest) {
     });
     if (!dataset) return notFoundError('الموظف غير موجود');
 
+    // ── Admin provider-settings override (non-secret; Phase 6.4 §6) ──
+    // Fetched HERE (inside the route's DB context) and injected into
+    // the gateway resolution — the gateway core itself stays DB-free.
+    let settings: AIProviderSettings | null = null;
+    try {
+      settings = await getAIProviderSettings();
+    } catch {
+      settings = null; // store unavailable → env-only resolution
+    }
+
     // ── AI pipeline (never throws — explicit statuses, §53) ──
-    const response = await runQualityAIAnalysis({ dataset, userId: permCheck.user.id });
+    const response = await runQualityAIAnalysis({ dataset, userId: permCheck.user.id, settings });
     return Response.json(response);
   } catch (error) {
     logServerFailure('ai-quality-analysis', 'POST', error);

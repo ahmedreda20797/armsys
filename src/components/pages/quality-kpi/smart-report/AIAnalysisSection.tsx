@@ -52,6 +52,7 @@ import {
   AI_PRIORITY_LABELS,
   AI_SEVERITY_LABELS,
   aiBadgeTone,
+  aiDiagnosticHint,
   aiFailureHeading,
   aiSufficiencyLabel,
 } from './ai-view';
@@ -61,7 +62,7 @@ type AiState =
   | { kind: 'IDLE' }
   | { kind: 'LOADING' }
   | { kind: 'READY'; result: QualityAIAnalysisResult; cached: boolean }
-  | { kind: 'FAILED'; status: string; message: string };
+  | { kind: 'FAILED'; status: string; message: string; diagnostic?: { status: string } };
 
 export function AIAnalysisSection({
   employeeId,
@@ -92,7 +93,14 @@ export function AIAnalysisSection({
       if (response.status === 'OK') {
         setState({ kind: 'READY', result: response.result, cached: response.cached });
       } else {
-        setState({ kind: 'FAILED', status: response.status, message: response.message });
+        // Phase 6.5-A §17: carry the gateway diagnostic (REAL category)
+        // so the failure view can render the honest, user-safe hint.
+        setState({
+          kind: 'FAILED',
+          status: response.status,
+          message: response.message,
+          diagnostic: 'diagnostic' in response ? response.diagnostic : undefined,
+        });
       }
     } catch (error) {
       if (controller.signal.aborted) return; // superseded/unmounted — keep quiet
@@ -184,7 +192,7 @@ export function AIAnalysisSection({
       )}
 
       {state.kind === 'FAILED' && (
-        <FailureView status={state.status} message={state.message} onRetry={runAnalysis} />
+        <FailureView status={state.status} message={state.message} diagnosticStatus={state.diagnostic?.status} onRetry={runAnalysis} />
       )}
     </SectionCard>
   );
@@ -413,7 +421,17 @@ function EvidenceChips({
 }
 
 // ── failure / empty states (§24/§69 — distinct, honest) ─────────
-function FailureView({ status, message, onRetry }: { status: string; message: string; onRetry: () => void }) {
+function FailureView({
+  status,
+  message,
+  diagnosticStatus,
+  onRetry,
+}: {
+  status: string;
+  message: string;
+  diagnosticStatus?: string;
+  onRetry: () => void;
+}) {
   const isInfo = status === 'NO_DATA' || status === 'INSUFFICIENT_DATA' || status === 'AI_UNAVAILABLE';
   const isTimeout = status === 'AI_TIMEOUT';
   const Icon = isInfo ? Info : isTimeout ? Clock : status === 'AI_RATE_LIMITED' ? Lock : AlertTriangle;
@@ -424,6 +442,8 @@ function FailureView({ status, message, onRetry }: { status: string; message: st
       : 'border-amber-500/20 bg-amber-500/5';
   const iconTone = isInfo ? 'text-sky-400' : isTimeout ? 'text-orange-400' : 'text-amber-400';
   const textTone = isInfo ? 'text-sky-200' : isTimeout ? 'text-orange-200' : 'text-amber-200';
+  // §17: the REAL gateway category renders as an actionable, secret-free hint.
+  const hint = diagnosticStatus ? aiDiagnosticHint(diagnosticStatus) : null;
 
   return (
     <div className={`space-y-2 rounded-xl border p-4 ${boxTone}`} data-testid={`ai-state-${status}`}>
@@ -432,6 +452,12 @@ function FailureView({ status, message, onRetry }: { status: string; message: st
         <div className="min-w-0 space-y-1">
           <p className={`text-sm font-semibold ${textTone}`}>{aiFailureHeading(status)}</p>
           <p className="text-[12px] leading-6 text-slate-300">{message}</p>
+          {hint && (
+            <p className="text-[11px] leading-5 text-slate-400" data-testid="ai-diagnostic-hint">
+              <span className="font-semibold text-slate-300">التصنيف الفعلي ({diagnosticStatus}): </span>
+              {hint}
+            </p>
+          )}
           {!isInfo && (
             <p className="text-[11px] text-slate-500">
               الحقائق والتحليل الإحصائي والأدلة في التقرير تبقى متاحة بشكل طبيعي — فشل التحليل الذكي لا يؤثر عليها.

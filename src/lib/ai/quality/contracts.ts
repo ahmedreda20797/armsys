@@ -13,6 +13,7 @@
 // ══════════════════════════════════════════════════════════════
 
 import type { AnalyticsEvidenceRef } from '@/lib/analytics/types';
+import type { AIStatus } from '../gateway/status';
 
 /** §12 — evidence refs reuse the Analytics evidence shape EXACTLY
  *  { collection, recordIds, completeRecordList }. */
@@ -120,12 +121,33 @@ export interface QualityAIAnalysisResult {
 }
 
 // ── API envelope (route → browser) — §24 states ────────────────
+
+/** Phase 6.4 (§3/§25): the ADDITIVE gateway diagnostic carried by
+ *  failure envelopes — the real diagnostic category behind the
+ *  friendly message. Optional, so Phase 6.2 consumers/tests keep
+ *  working unchanged (§37). */
+export interface QualityAIDiagnostic {
+  /** Gateway-level status per spec §25 taxonomy. */
+  status: AIStatus;
+  /** Stable configuration problem codes (DISABLED/MISCONFIGURED only). */
+  problems?: string[];
+  /** Stable error category (AI_* code) when applicable. */
+  errorCategory?: string | null;
+  /** Where provider/model came from (observability). */
+  providerSource?: 'env' | 'settings' | 'none';
+  /** Phase 6.5-A §6 — per-stage wall-clock timings in ms (AGGREGATE
+   *  NUMBERS ONLY — never prompt/response content, never credentials).
+   *  Lets verification answer WHERE the time goes without touching
+   *  the validated result or any business behavior. */
+  timingMs?: Record<string, number>;
+}
+
 export type QualityAIApiResponse =
-  | { status: 'OK'; result: QualityAIAnalysisResult; cached: boolean }
+  | { status: 'OK'; result: QualityAIAnalysisResult; cached: boolean; diagnostic?: QualityAIDiagnostic }
   | { status: 'NO_DATA'; message: string }
   | { status: 'INSUFFICIENT_DATA'; message: string }
-  | { status: 'AI_UNAVAILABLE'; message: string }
-  | { status: 'AI_TIMEOUT'; message: string }
-  | { status: 'AI_ERROR'; reason: string; message: string }
-  | { status: 'AI_INVALID_RESPONSE'; message: string }
-  | { status: 'AI_RATE_LIMITED'; message: string };
+  | { status: 'AI_UNAVAILABLE'; message: string; diagnostic?: QualityAIDiagnostic }
+  | { status: 'AI_TIMEOUT'; message: string; diagnostic?: QualityAIDiagnostic }
+  | { status: 'AI_ERROR'; reason: string; message: string; diagnostic?: QualityAIDiagnostic }
+  | { status: 'AI_INVALID_RESPONSE'; message: string; diagnostic?: QualityAIDiagnostic }
+  | { status: 'AI_RATE_LIMITED'; message: string; diagnostic?: QualityAIDiagnostic };
