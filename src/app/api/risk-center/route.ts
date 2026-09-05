@@ -47,6 +47,14 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const deptFilter = searchParams.get('department');
     const levelFilter = searchParams.get('level');
+    // Milestone 7 §14 — optional month attribution: when present, risk
+    // factors are computed from the records RECORDED in that month
+    // (traceable source data), instead of the default rolling snapshot.
+    // The comparison answer is "how did recorded factors change", never
+    // a fabricated reconstruction of a past state.
+    const monthParam = searchParams.get('month');
+    const monthKey =
+      monthParam && /^\d{4}-\d{2}$/.test(monthParam) ? monthParam : null;
 
     const [batch, empMap] = await Promise.all([
       getAllBatch([
@@ -102,9 +110,49 @@ export async function GET(request: NextRequest) {
     sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
     const sevenDaysAgoStr = sevenDaysAgo.toISOString().split('T')[0];
 
+    // ── §14 month attribution helpers (only active when monthKey set) ──
+    // A record belongs to the month when its stored date/month field
+    // falls inside it — each table uses its OWN stored field verbatim.
+    const inMonth = (record: any, fields: readonly string[]): boolean => {
+      if (!monthKey) return true;
+      for (const field of fields) {
+        const v = record[field];
+        if (typeof v === 'string') {
+          if (/^\d{4}-\d{2}/.test(v) && v.slice(0, 7) === monthKey) return true;
+          // DD/MM/YYYY display dates → compare month+year.
+          const m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(v);
+          if (m && `${m[3]}-${m[2]}` === monthKey) return true;
+          // MM/YYYY month labels.
+          const mm = /^(\d{2})\/(\d{4})$/.exec(v);
+          if (mm && `${mm[2]}-${mm[1]}` === monthKey) return true;
+        }
+      }
+      return false;
+    };
+
+    const monthScoped = monthKey !== null;
+    const attRecordsForScore = monthScoped
+      ? attendanceRecords.filter((r: any) => inMonth(r, ['date']))
+      : attendanceRecords;
+    const qualityForScore = monthScoped
+      ? qualityDeductions.filter((r: any) => inMonth(r, ['month', 'date']))
+      : qualityDeductions;
+    const hrForScore = monthScoped
+      ? hrDeductions.filter((r: any) => inMonth(r, ['month', 'deductionDate']))
+      : hrDeductions;
+    const followUpsForScore = monthScoped
+      ? followUps.filter((r: any) => inMonth(r, ['date']))
+      : followUps;
+    const complaintsForScore = monthScoped
+      ? complaints.filter((r: any) => inMonth(r, ['createdAt']))
+      : complaints;
+    const capaForScore = monthScoped
+      ? capaCases.filter((r: any) => inMonth(r, ['createdAt']))
+      : capaCases;
+
     // ── Pre-compute attendance stats per employee ──
     const empAttendance = new Map<string, { delays: number; absences: number; lastDate: string }>();
-    for (const r of attendanceRecords) {
+    for (const r of attRecordsForScore) {
       if (!empAttendance.has(r.employeeId)) {
         empAttendance.set(r.employeeId, { delays: 0, absences: 0, lastDate: '' });
       }
@@ -116,19 +164,19 @@ export async function GET(request: NextRequest) {
 
     // ── Pre-compute quality deductions per employee (all time) ──
     const empQuality = new Map<string, number>();
-    for (const q of qualityDeductions) {
+    for (const q of qualityForScore) {
       empQuality.set(q.employeeId, (empQuality.get(q.employeeId) || 0) + 1);
     }
 
     // ── Pre-compute HR deductions per employee ──
     const empHr = new Map<string, number>();
-    for (const h of hrDeductions) {
+    for (const h of hrForScore) {
       empHr.set(h.employeeId, (empHr.get(h.employeeId) || 0) + 1);
     }
 
     // ── Pre-compute follow-up stats per employee ──
     const empFollowUps = new Map<string, { open: number; high: number; critical: number; repeated: number; lastDate: string }>();
-    for (const f of followUps) {
+    for (const f of followUpsForScore) {
       if (!empFollowUps.has(f.employeeId)) {
         empFollowUps.set(f.employeeId, { open: 0, high: 0, critical: 0, repeated: 0, lastDate: '' });
       }
@@ -137,7 +185,7 @@ export async function GET(request: NextRequest) {
       if (f.priorityLevel === 'high') stat.high += 1;
       if (f.priorityLevel === 'critical') stat.critical += 1;
       // Repeated: same type within 30 days
-      const recentSameType = followUps.filter(
+      const recentSameType = followUpsForScore.filter(
         (other: any) => other.employeeId === f.employeeId && other.followUpType === f.followUpType && other.date >= thirtyDaysAgoStr && other.id !== f.id
       );
       if (recentSameType.length > 0) stat.repeated = 1;
@@ -146,7 +194,7 @@ export async function GET(request: NextRequest) {
 
     // ── Pre-compute complaints per employee ──
     const empComplaints = new Map<string, { open: number; lastDate: string }>();
-    for (const c of complaints) {
+    for (const c of complaintsForScore) {
       if (!c.employeeId) continue;
       if (!empComplaints.has(c.employeeId)) {
         empComplaints.set(c.employeeId, { open: 0, lastDate: '' });
@@ -159,7 +207,7 @@ export async function GET(request: NextRequest) {
     // ── Pre-compute CAPA stats per employee ──
     const empCapa = new Map<string, { open: number; overdue: number; critical: number; reopened: number; capaIds: string[]; lastDate: string }>();
 
-    for (const c of capaCases) {
+    for (const c of capaForScore) {
       // Collect CAPAs linked directly via employeeId or via relatedEmployeeIds
       const linkedIds: string[] = [];
       if (c.employeeId) linkedIds.push(c.employeeId);
@@ -225,18 +273,23 @@ export async function GET(request: NextRequest) {
       });
 
       // ── Trend (simple heuristic: recent 7 days activity vs older) ──
-      const recentAttendance = attendanceRecords.filter(
-        (r: any) => r.employeeId === emp.id && r.date >= sevenDaysAgoStr && (r.status === 'late' || r.status === 'absent')
-      ).length;
-      const recentFollowUps = followUps.filter(
-        (f: any) => f.employeeId === emp.id && f.date >= sevenDaysAgoStr && (f.status === 'open' || f.status === 'under_follow_up')
-      ).length;
-      const recentCapas = capaCases.filter(
-        (c: any) => (c.employeeId === emp.id || (c.relatedEmployeeIds || []).includes(emp.id)) && !isTerminalCAPA(c) && (c.updatedAt || c.createdAt || '') >= sevenDaysAgoStr
-      ).length;
+      // §14: in month-attributed mode the 7-day trend is NOT computable
+      // from the attributed month alone — reported as stable (never
+      // fabricated) so the UI can flag it honestly.
       let trend: 'increasing' | 'stable' | 'improving' = 'stable';
-      if (recentAttendance >= 3 || recentFollowUps >= 2 || recentCapas >= 2) trend = 'increasing';
-      else if (recentAttendance === 0 && recentFollowUps === 0 && recentCapas === 0 && totalScore > 10) trend = 'improving';
+      if (!monthScoped) {
+        const recentAttendance = attendanceRecords.filter(
+          (r: any) => r.employeeId === emp.id && r.date >= sevenDaysAgoStr && (r.status === 'late' || r.status === 'absent')
+        ).length;
+        const recentFollowUps = followUps.filter(
+          (f: any) => f.employeeId === emp.id && f.date >= sevenDaysAgoStr && (f.status === 'open' || f.status === 'under_follow_up')
+        ).length;
+        const recentCapas = capaCases.filter(
+          (c: any) => (c.employeeId === emp.id || (c.relatedEmployeeIds || []).includes(emp.id)) && !isTerminalCAPA(c) && (c.updatedAt || c.createdAt || '') >= sevenDaysAgoStr
+        ).length;
+        if (recentAttendance >= 3 || recentFollowUps >= 2 || recentCapas >= 2) trend = 'increasing';
+        else if (recentAttendance === 0 && recentFollowUps === 0 && recentCapas === 0 && totalScore > 10) trend = 'improving';
+      }
 
       // ── Recommendations ──
       const recommendations: string[] = [];
@@ -318,6 +371,12 @@ export async function GET(request: NextRequest) {
         immediateActionCount,
       },
       departmentAnalysis: deptAnalysis,
+      // §14 auditability: which attribution produced these numbers.
+      basis: monthScoped ? 'month' : 'rolling',
+      monthKey,
+      basisLabel: monthScoped
+        ? `عوامل الخطر المسجلة خلال ${monthKey}`
+        : 'لقطة متجددة (آخر 30 يوماً / الحالة الحالية)',
     });
   } catch (error) {
     console.error('[GET /api/risk-center] Error:', error);

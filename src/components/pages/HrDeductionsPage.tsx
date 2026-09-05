@@ -47,12 +47,17 @@ import {
   Trash2,
   ShieldAlert,
   Loader2,
+  CalendarDays,
 } from 'lucide-react';
 import { EmployeeSearchInput } from '@/components/shared/EmployeeSearchInput';
 import type { HrDeduction, Employee } from '@/types';
 import { useAppStore } from '@/lib/store';
 import { useAuth } from '@/contexts/AuthContext';
 import { authFetch } from '@/lib/api-fetch';
+import { formatMonthLabelAr } from '@/lib/month-label';
+import { currentMonthKey } from '@/lib/date-utils';
+import { PagePeriodIndicator } from '@/components/shared/PagePeriodIndicator';
+import { PageHeaderBar } from '@/components/shared/PageHeaderBar';
 import { CAPALinkBadge } from '@/components/shared/CAPALinkBadge';
 
 const DEDUCTION_TYPES = [
@@ -107,21 +112,32 @@ export default function HrDeductionsPage() {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [loading, setLoading] = useState(true);
   // Phase 6.3 (§8): filter context persists per user (session-scoped).
+  // Milestone 7 §13: period filter added — DEFAULT = CURRENT MONTH
+  // (no persisted state only, §27); 'all' stays selectable. Version
+  // bumped to 2: the shape grows monthFilter and old state orphans
+  // cleanly instead of silently missing the field.
   const [hrView, setHrView] = usePageState<{
     search: string;
     statusFilter: 'all' | 'pending' | 'approved' | 'rejected';
+    monthFilter: string;
   }>({
     page: 'hrDeductions',
     slot: 'filters',
-    version: 1,
-    initial: () => ({ search: '', statusFilter: 'all' }),
-    validate: (raw) => (raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : null),
+    version: 2,
+    initial: () => ({ search: '', statusFilter: 'all', monthFilter: currentMonthKey() }),
+    validate: (raw) =>
+      raw && typeof raw === 'object' && !Array.isArray(raw)
+        && typeof (raw as { monthFilter?: unknown }).monthFilter === 'string'
+        ? raw
+        : null,
   });
   const search = hrView.search;
   const setSearch = (v: string) => setHrView((s) => ({ ...s, search: v }));
   const statusFilter = hrView.statusFilter;
   const setStatusFilter = (v: 'all' | 'pending' | 'approved' | 'rejected') =>
     setHrView((s) => ({ ...s, statusFilter: v }));
+  const monthFilter = hrView.monthFilter;
+  const setMonthFilter = (v: string) => setHrView((s) => ({ ...s, monthFilter: v }));
   // Phase 6.1 (Global Search §8): exact-record deep-link highlight via
   // the shared evidence mechanism — records carry data-record-id below.
   useRecordHighlight({ ready: !loading });
@@ -294,14 +310,16 @@ export default function HrDeductionsPage() {
     return unit === 'days' ? 'يوم' : 'جنيه';
   };
 
-  // Filtering
+  // Filtering — Milestone 7 §13: the period filter (month) applies to
+  // BOTH sections; 'all' shows every month. Calculations untouched.
   const filtered = deductions.filter((d) => {
     const matchesSearch =
       (d.employeeName || '').toLowerCase().includes(search.toLowerCase()) ||
       d.month.includes(search) ||
       d.type.includes(search);
     const matchesStatus = statusFilter === 'all' || d.status === statusFilter;
-    return matchesSearch && matchesStatus;
+    const matchesMonth = monthFilter === 'all' || d.month === monthFilter;
+    return matchesSearch && matchesStatus && matchesMonth;
   });
 
   const pending = filtered.filter((d) => d.status === 'pending');
@@ -317,43 +335,49 @@ export default function HrDeductionsPage() {
 
   return (
     <div dir="rtl" className="space-y-6">
-      {/* Header */}
-      <motion.div
-        initial={{ opacity: 0, y: -10 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="flex flex-col sm:flex-row sm:items-center justify-between gap-4"
-      >
-        <div>
-          <h1 className="text-2xl font-bold text-white flex items-center gap-2">
-            <Banknote className="size-6 text-violet-400" />
-            خصومات الموارد البشرية
-          </h1>
-          <p className="text-slate-400 mt-1 text-sm">
-            {allPendingCount} خصم معلق
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          {canCreate && (
-            <Button
-              onClick={() => { setIsAddOpen(true); setAddForm({ ...EMPTY_FORM, deductionDate: getTodayDate() }); }}
-              className="bg-linear-to-r from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white h-9 px-5 shadow-lg shadow-violet-500/20 transition-all"
-            >
-              <Plus className="size-4" />
-              إضافة خصم
-            </Button>
-          )}
-        </div>
-      </motion.div>
+      {/* Header (§25/§26 — sticky, primary action always accessible) */}
+      <PageHeaderBar
+        icon={<Banknote className="size-5" />}
+        iconClassName="bg-violet-500/15 border-violet-500/30 text-violet-400"
+        title="خصومات الموارد البشرية"
+        subtitle={`${allPendingCount} خصم معلق`}
+        extras={
+          <PagePeriodIndicator
+            testId="hr-period-indicator"
+            label={monthFilter === 'all' ? 'كل الأشهر' : formatMonthLabelAr(monthFilter)}
+            filtered={monthFilter !== 'all'}
+            onShowAll={() => setMonthFilter('all')}
+          />
+        }
+        primaryAction={canCreate ? {
+          label: 'إضافة خصم',
+          onClick: () => { setIsAddOpen(true); setAddForm({ ...EMPTY_FORM, deductionDate: getTodayDate() }); },
+        } : undefined}
+      />
 
-      {/* Search */}
-      <div className="relative max-w-md">
-        <Search className="absolute right-3 top-1/2 -translate-y-1/2 size-4 text-slate-400" />
-        <Input
-          placeholder="بحث باسم الموظف أو الشهر أو النوع..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="bg-slate-800 border-slate-600 text-white pr-10 placeholder:text-slate-500"
-        />
+      {/* Search + period filter (§13 — visible outside any collapsed panel) */}
+      <div className="flex items-center gap-3 flex-wrap">
+        <div className="relative max-w-md flex-1 min-w-[240px]">
+          <Search className="absolute right-3 top-1/2 -translate-y-1/2 size-4 text-slate-400" />
+          <Input
+            placeholder="بحث باسم الموظف أو الشهر أو النوع..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="bg-slate-800 border-slate-600 text-white pr-10 placeholder:text-slate-500"
+          />
+        </div>
+        <Select value={monthFilter} onValueChange={setMonthFilter}>
+          <SelectTrigger className="bg-slate-800/70 border-slate-700/70 text-white w-40 h-10 text-sm">
+            <CalendarDays className="size-3.5 ml-1.5 text-slate-500" />
+            <SelectValue placeholder="الشهر" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all" className="text-white">كل الأشهر</SelectItem>
+            {MONTH_OPTIONS.map((m) => (
+              <SelectItem key={m.value} value={m.value} className="text-white">{m.label}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
 
       {/* Filter Tabs */}
@@ -388,7 +412,12 @@ export default function HrDeductionsPage() {
           <CardContent className="flex flex-col items-center justify-center py-16">
             <Banknote className="size-12 text-slate-600 mb-4" />
             <p className="text-slate-400 text-lg font-medium">لا توجد خصومات</p>
-            <p className="text-slate-500 text-sm mt-1">ابدأ بإضافة خصم جديد</p>
+            <p className="text-slate-500 text-sm mt-1">
+              {/* §10: the active period is NAMED in the empty state. */}
+              {monthFilter !== 'all'
+                ? `لا توجد خصومات مسجلة في ${formatMonthLabelAr(monthFilter)}.`
+                : 'ابدأ بإضافة خصم جديد'}
+            </p>
           </CardContent>
         </Card>
       ) : (

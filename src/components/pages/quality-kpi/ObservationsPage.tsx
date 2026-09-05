@@ -28,6 +28,7 @@ import {
 } from 'lucide-react';
 import { formatMonth } from './kpi-reports-shared';
 import { ApprovalStatusBadge } from '@/components/shared/kpi';
+import { PageHeaderBar } from '@/components/shared/PageHeaderBar';
 import { EmployeeSearchInput } from '@/components/shared/EmployeeSearchInput';
 import { TimelineView } from '@/components/shared/audit';
 import { ApprovalHistoryTimeline } from '@/components/shared/approval';
@@ -179,24 +180,14 @@ export default function ObservationsPage() {
 
   return (
     <div dir="rtl" className="space-y-4 p-4 sm:p-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-100 flex items-center gap-2">
-            <Eye className="size-6 text-blue-400" />
-            ملاحظات الجودة
-          </h1>
-          <p className="text-sm text-slate-400 mt-1">
-            إدارة ملاحظات الجودة واعتمادها — المصدر الأساسي لمؤشرات الأداء
-          </p>
-        </div>
-        {canCreate && (
-          <Button onClick={() => setCreateOpen(true)} className="gap-2">
-            <Plus className="size-4" />
-            ملاحظة جديدة
-          </Button>
-        )}
-      </div>
+      {/* Header (§25/§26 — sticky, primary action always accessible) */}
+      <PageHeaderBar
+        icon={<Eye className="size-5" />}
+        iconClassName="bg-blue-500/15 border-blue-500/30 text-blue-400"
+        title="ملاحظات الجودة"
+        subtitle="إدارة ملاحظات الجودة واعتمادها — المصدر الأساسي لمؤشرات الأداء"
+        primaryAction={canCreate ? { label: 'ملاحظة جديدة', onClick: () => setCreateOpen(true) } : undefined}
+      />
 
       {/* Toolbar */}
       <div className="flex flex-wrap items-center gap-2">

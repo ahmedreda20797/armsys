@@ -532,6 +532,20 @@ export function useKpiManagementSummary(month: string | null) {
   });
 }
 
+/**
+ * Cross-domain management report (Milestone 7, Phase A) — the engine's
+ * quality summary beside scoped operational counts (complaints · CAPA ·
+ * follow-ups · HR deductions). Server applies permissions + scope.
+ */
+export function useManagementReport(month: string | null) {
+  return useQuery({
+    queryKey: [...reportsKey('management'), month ?? 'none'],
+    queryFn: () => apiFetch(`/api/reports/management?month=${month}`),
+    enabled: !!month,
+    staleTime: 15_000,
+  });
+}
+
 export type KpiReportTableKind = 'monthly' | 'mtd' | 'historical';
 
 /** Kind-switching table report hook (one active query per tab). */

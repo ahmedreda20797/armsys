@@ -8,6 +8,7 @@ import { useRecordHighlight } from '@/hooks/use-record-highlight';
 import { getDaysRemaining } from '@/lib/date-utils';
 import { useTravel, useEmployees, useCreateTravel, useUpdateTravel, useDeleteTravel } from '@/hooks/use-queries';
 import { usePageState } from '@/hooks/use-page-state';
+import { PageHeaderBar } from '@/components/shared/PageHeaderBar';
 import { useQueryClient } from '@tanstack/react-query';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -71,6 +72,7 @@ import {
   ChevronRight,
   ChevronsLeft,
   ChevronsRight,
+  MessageSquareWarning,
 } from 'lucide-react';
 import type { TravelDeal, Employee } from '@/types';
 import { logCreate, logUpdate, logDelete } from '@/lib/activity-logger';
@@ -368,12 +370,15 @@ interface TripCardProps {
   onDelete: (id: string) => void;
   onQuickChangeStatus: (tripId: string, status: string) => void;
   onQuickToggleService: (tripId: string, service: string) => void;
+  /** Milestone 7 §7: report a complaint/problem from this deal. */
+  onReportComplaint: (trip: TravelWithEmployee) => void;
 }
 
 /** THE KEY OPTIMIZATION: React.memo trip card — only re-renders when its own data changes */
 const TripCard = memo(function TripCard({
   trip, showCategoryBadge, isHighlighted, isExpanded, canEdit, highlightRef,
   onToggleExpand, onEdit, onDelete, onQuickChangeStatus, onQuickToggleService,
+  onReportComplaint,
 }: TripCardProps) {
   const daysLeft = useMemo(() => getDaysRemaining(trip.departureDate), [trip.departureDate]);
   const retDays = useMemo(() => trip.returnDate ? getDaysRemaining(trip.returnDate) : null, [trip.returnDate]);
@@ -603,6 +608,19 @@ const TripCard = memo(function TripCard({
                       <QuickStatusBtns trip={trip} onStatusChange={onQuickChangeStatus} />
                     </div>
                   )}
+
+                  {/* §7 — Report a complaint/problem from this deal.
+                      Integrates with the EXISTING complaint workflow
+                      (navigates with pre-fill context; zero duplicated
+                      complaint logic inside Travel). */}
+                  <button
+                    onClick={() => onReportComplaint(trip)}
+                    className="flex items-center justify-center gap-1.5 w-full px-3 py-2 rounded-lg border border-rose-500/30 bg-rose-500/10 text-rose-300 text-xs font-medium hover:bg-rose-500/20 hover:text-rose-200 transition-colors"
+                    title="فتح نموذج شكوى معبأ ببيانات هذه الرحلة"
+                  >
+                    <MessageSquareWarning className="size-3.5" />
+                    تبليغ عن مشكلة / شكوى بخصوص هذه الرحلة
+                  </button>
                 </div>
               </div>
             </motion.div>
@@ -1115,6 +1133,23 @@ export default function TravelPage() {
     setExpandedCardId(id);
   }, []);
 
+  // ── §7 Travel → Complaint: open the EXISTING complaint workflow with
+  // the deal's known context pre-filled (never invent missing data).
+  // The complaints page owns the form/business logic — Travel only
+  // supplies a navigation intent, exactly like the CAPA integration.
+  const reportComplaint = useCallback((trip: TravelWithEmployee) => {
+    useAppStore.getState().navigateTo('complaints', undefined, {
+      source: 'travel',
+      sourceRecordId: trip.id,
+      dealId: trip.dealerName || '',
+      employeeId: trip.employeeId || '',
+      customerName: trip.dealerName || trip.customerNames || '',
+      description: trip.destination
+        ? `مشكلة في رحلة إلى ${trip.destination} — تاريخ السفر ${trip.departureDate}${trip.customerNames ? ` — العملاء: ${trip.customerNames}` : ''}`
+        : '',
+    });
+  }, []);
+
   const scrollToTrip = useCallback((tripId: string) => {
     setActiveTab('all');
     setFilterEmployee('all');
@@ -1194,7 +1229,7 @@ export default function TravelPage() {
                   isHighlighted={highlightId === trip.id} isExpanded={expandedCardId === trip.id}
                   canEdit={canUpdate} highlightRef={highlightRef}
                   onToggleExpand={handleToggleExpand} onEdit={openEdit} onDelete={setDeletingId}
-                  onQuickChangeStatus={quickChangeStatus} onQuickToggleService={quickToggleService}
+                  onQuickChangeStatus={quickChangeStatus} onQuickToggleService={quickToggleService} onReportComplaint={reportComplaint}
                 />
               ))}
             </AnimatePresence>
@@ -1324,7 +1359,7 @@ export default function TravelPage() {
                 isHighlighted={highlightId === trip.id} isExpanded={expandedCardId === trip.id}
                 canEdit={canUpdate} highlightRef={highlightRef}
                 onToggleExpand={handleToggleExpand} onEdit={openEdit} onDelete={setDeletingId}
-                onQuickChangeStatus={quickChangeStatus} onQuickToggleService={quickToggleService}
+                onQuickChangeStatus={quickChangeStatus} onQuickToggleService={quickToggleService} onReportComplaint={reportComplaint}
               />
             ))}
           </AnimatePresence>
@@ -1452,27 +1487,27 @@ export default function TravelPage() {
 
   return (
     <div dir="rtl" className="space-y-5">
-      {/* Header */}
-      <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-white flex items-center gap-2">
-            <Plane className="size-6 text-violet-400" />
-            إدارة السفر
-            {isFetching && <span className="size-3 border-2 border-violet-400 border-t-transparent rounded-full animate-spin" />}
-          </h1>
-          <p className="text-slate-400 mt-1 text-sm">{tabCounts.upcoming + tabCounts.in_progress} رحلة نشطة • {tabCounts.all} إجمالي{'canceled' in tabCounts && tabCounts.canceled > 0 ? ` • ${tabCounts.canceled} ملغاة` : ''}</p>
-        </div>
-        {canCreate && (
-          <div className="flex gap-2">
-            <Button onClick={() => { setForm(emptyForm); setEditingTrip(null); setIsAddOpen(true); }} className="bg-linear-to-r from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white h-9 px-5 shadow-lg shadow-violet-500/20 transition-all">
-              <Plus className="size-4" /> إضافة رحلة
-            </Button>
-            <Button onClick={() => setIsUploadOpen(true)} variant="outline" className="border-amber-500/30 text-amber-400 hover:bg-amber-500/10">
-              <Upload className="size-4" /> رفع شيت
-            </Button>
-          </div>
-        )}
-      </motion.div>
+      {/* Header (§25/§26 — sticky) */}
+      <PageHeaderBar
+        icon={<Plane className="size-5" />}
+        iconClassName="bg-violet-500/15 border-violet-500/30 text-violet-400"
+        title="إدارة السفر"
+        subtitle={
+          <>
+            {tabCounts.upcoming + tabCounts.in_progress} رحلة نشطة • {tabCounts.all} إجمالي
+            {isFetching && <span className="inline-block size-3 border-2 border-violet-400 border-t-transparent rounded-full animate-spin mr-2 align-middle" />}
+          </>
+        }
+        primaryAction={canCreate ? {
+          label: 'إضافة رحلة',
+          onClick: () => { setForm(emptyForm); setEditingTrip(null); setIsAddOpen(true); },
+        } : undefined}
+        actions={canCreate ? (
+          <Button onClick={() => setIsUploadOpen(true)} variant="outline" className="border-amber-500/30 text-amber-400 hover:bg-amber-500/10">
+            <Upload className="size-4" /> رفع شيت
+          </Button>
+        ) : undefined}
+      />
 
       {/* ━━━ URGENT ALERTS BANNER ━━━ */}
       {urgentTrips.length > 0 && (

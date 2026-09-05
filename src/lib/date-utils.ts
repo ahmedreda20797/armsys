@@ -72,3 +72,27 @@ export function generateMonthOptions(format: 'YYYY-MM' | 'MM/YYYY' = 'YYYY-MM'):
   }
   return months;
 }
+
+// ══════════════════════════════════════════════════════════════
+//  Today helpers — Milestone 7 §5 (DEFAULT DATE = TODAY doctrine)
+//
+//  One shared pair replaces the per-page implementations (HrDeductions
+//  getTodayDate / FollowUps getTodayStr): every creation form defaults
+//  its date field to TODAY while the user keeps full manual override
+//  for historical/delayed registration.
+// ══════════════════════════════════════════════════════════════
+
+/** Today as an ISO day key "YYYY-MM-DD" (input[type=date] value format). */
+export function todayDayKey(now: Date = new Date()): string {
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+}
+
+/** Today in the app's display format "DD/MM/YYYY" (manual date inputs). */
+export function todayDisplayDate(now: Date = new Date()): string {
+  return `${String(now.getDate()).padStart(2, '0')}/${String(now.getMonth() + 1).padStart(2, '0')}/${now.getFullYear()}`;
+}
+
+/** Current calendar month as a period key "YYYY-MM" (period filters). */
+export function currentMonthKey(now: Date = new Date()): string {
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+}

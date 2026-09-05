@@ -84,6 +84,10 @@ export async function POST(request: NextRequest) {
       responsiblePerson,
       compensationProvided,
       relatedCapaIds,
+      // Milestone 7 §7 — additive source trace (Travel → Complaint):
+      // optional, length-capped so the payload cannot bloat storage.
+      sourcePage,
+      sourceRecordId,
     } = body;
 
     if (!customerName || !complaintType || !description) {
@@ -133,6 +137,12 @@ export async function POST(request: NextRequest) {
       compensationProvided: compensationProvided || null,
       resolvedAt: null,
       relatedCapaIds: relatedCapaIds || [],
+      ...(typeof sourcePage === 'string' && sourcePage && sourcePage.length <= 50
+        ? { sourcePage }
+        : {}),
+      ...(typeof sourceRecordId === 'string' && sourceRecordId && sourceRecordId.length <= 100
+        ? { sourceRecordId }
+        : {}),
     });
 
     return NextResponse.json(complaint, { status: 201 });

@@ -17,9 +17,23 @@ import {
   Clock, Users, TrendingUp, TrendingDown, Minus, ChevronLeft,
   ChevronRight, X, Search, Activity, Eye, FileWarning,
   UserCheck, Award, Zap, BarChart3, Target, FilePlus, FileText,
+  Loader2,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { authFetch } from '@/lib/api-fetch';
+import { useAppStore } from '@/lib/store';
+import { formatMonthLabelAr } from '@/lib/month-label';
+
+/** Last 12 month keys, newest first (§14 month selector options). */
+function buildMonthOptions(): string[] {
+  const now = new Date();
+  const out: string[] = [];
+  for (let i = 0; i < 12; i++) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    out.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`);
+  }
+  return out;
+}
 
 // ═══════════════════════════════════════════════════
 //  TYPES
@@ -111,6 +125,15 @@ export default function RiskCenterPage() {
   const [levelFilter, setLevelFilter] = useState('all');
   const [deptFilter, setDeptFilter] = useState('all');
   const [selectedEmployee, setSelectedEmployee] = useState<EmployeeRisk | null>(null);
+  // ═══ Milestone 7 §14 — monthly view + comparison ═══
+  // Default view stays the rolling snapshot (''); selecting a month
+  // switches to month-attributed factors (traceable records only).
+  const [basis, setBasis] = useState<'rolling' | 'month'>('rolling');
+  const [basisLabel, setBasisLabel] = useState<string>('لقطة متجددة');
+  const [month, setMonth] = useState<string>('');
+  const [compareRows, setCompareRows] = useState<Record<string, number> | null>(null);
+  const [compareLabel, setCompareLabel] = useState<string | null>(null);
+  const [compareState, setCompareState] = useState<'idle' | 'loading' | 'ready' | 'insufficient'>('idle');
 
   useEffect(() => {
     if (!canView) return; // loading initialized to false for non-viewers
@@ -120,13 +143,19 @@ export default function RiskCenterPage() {
   async function fetchRiskData() {
     setLoading(true);
     setError(null);
+    setCompareRows(null);
+    setCompareState('idle');
+    setCompareLabel(null);
     try {
-      const res = await authFetch('/api/risk-center');
+      const qs = month ? `?month=${month}` : '';
+      const res = await authFetch(`/api/risk-center${qs}`);
       if (res.ok) {
         const data = await res.json();
         setEmployees(data.employees || []);
         setSummary(data.summary || null);
         setDeptAnalysis(data.departmentAnalysis || {});
+        setBasis(data.basis === 'month' ? 'month' : 'rolling');
+        setBasisLabel(data.basisLabel || 'لقطة متجددة');
       } else {
         setError('تعذر تحميل بيانات المخاطر');
         setEmployees([]);
@@ -142,6 +171,63 @@ export default function RiskCenterPage() {
       setLoading(false);
     }
   }
+
+  const previousMonthKeyOf = (key: string): string => {
+    const [y, m] = key.split('-').map(Number);
+    const d = new Date(y, m - 2, 1);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+  };
+
+  // §14 month comparison: same month-attributed computation on the
+  // previous month; deltas are shown ONLY where source data exists —
+  // otherwise the UI says explicitly that the comparison cannot be
+  // calculated (no fabricated history).
+  async function loadComparison() {
+    if (!month) return;
+    setCompareState('loading');
+    try {
+      const prev = previousMonthKeyOf(month);
+      const res = await authFetch(`/api/risk-center?month=${prev}`);
+      if (!res.ok) {
+        setCompareState('insufficient');
+        setCompareLabel(null);
+        return;
+      }
+      const data = await res.json();
+      const rows: Record<string, number> = {};
+      let anyData = false;
+      for (const emp of (data.employees || []) as EmployeeRisk[]) {
+        const hadFactors = Object.values(emp.breakdown || {}).some((f: any) => (f?.count ?? 0) > 0);
+        if (hadFactors) anyData = true;
+        rows[emp.employeeId] = emp.riskScore;
+      }
+      if (!anyData) {
+        setCompareState('insufficient');
+        setCompareRows(null);
+        setCompareLabel(null);
+        return;
+      }
+      setCompareRows(rows);
+      setCompareLabel(prev);
+      setCompareState('ready');
+    } catch {
+      setCompareState('insufficient');
+    }
+  }
+
+  const deltaFor = (employeeId: string, currentScore: number): { delta: number; comparable: boolean } => {
+    if (compareState !== 'ready' || !compareRows) return { delta: 0, comparable: false };
+    if (!(employeeId in compareRows)) return { delta: 0, comparable: false };
+    const hasFactorsNow = employees.some(
+      (e) => e.employeeId === employeeId &&
+        Object.values(e.breakdown || {}).some((f: any) => (f?.count ?? 0) > 0),
+    );
+    const hadFactorsPrev = (compareRows[employeeId] ?? 0) > 0;
+    // Both months genuinely zero for this employee → "no data" in both;
+    // a 0-vs-0 delta would fabricate meaning where nothing happened.
+    if (!hasFactorsNow && !hadFactorsPrev) return { delta: 0, comparable: false };
+    return { delta: currentScore - (compareRows[employeeId] ?? 0), comparable: true };
+  };
 
   // ── Department list for filters ──
   const departmentList = useMemo(() => {
@@ -189,7 +275,7 @@ export default function RiskCenterPage() {
   return (
     <div dir="rtl" className="space-y-5">
       {/* ═══ Header ═══ */}
-      <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="flex items-center justify-between">
+      <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
           <div className="flex items-center justify-center size-10 rounded-xl bg-red-500/15 border border-red-500/30">
             <ShieldAlert className="size-5 text-red-400" />
@@ -197,13 +283,47 @@ export default function RiskCenterPage() {
           <div>
             <h1 className="text-xl font-bold text-white">مركز المخاطر</h1>
             <p className="text-slate-500 text-xs mt-0.5">نظام الإنذار المبكر — مَن يحتاج تدخل اليوم؟</p>
+            {/* §14: which attribution produced these numbers — visible. */}
+            <p className="text-slate-600 text-[10px] mt-0.5">{basisLabel}</p>
           </div>
         </div>
-        <Button variant="ghost" size="sm" onClick={fetchRiskData} className="text-slate-400 hover:text-white">
-          <Activity className="size-4 ml-1" />
-          تحديث
-        </Button>
+        <div className="flex items-center gap-2 flex-wrap">
+          {/* §14 month selector — rolling snapshot is the default */}
+          <Select
+            value={month || 'rolling'}
+            onValueChange={(v) => { setMonth(v === 'rolling' ? '' : v); }}
+          >
+            <SelectTrigger className="bg-slate-800/70 border-slate-700/70 text-white w-44 h-9 text-sm">
+              <SelectValue placeholder="لقطة متجددة" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="rolling" className="text-white">لقطة متجددة (الحالية)</SelectItem>
+              {buildMonthOptions().map((m) => (
+                <SelectItem key={m} value={m} className="text-white">{formatMonthLabelAr(m)}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {month && compareState !== 'loading' && (
+            <Button variant="outline" size="sm" onClick={() => void loadComparison()} className="border-slate-700/70 text-slate-300 hover:bg-slate-800 h-9">
+              <BarChart3 className="size-3.5 ml-1" />
+              مقارنة بالشهر السابق
+            </Button>
+          )}
+          {compareState === 'loading' && <Loader2 className="size-4 animate-spin text-slate-400" />}
+          <Button variant="ghost" size="sm" onClick={fetchRiskData} className="text-slate-400 hover:text-white">
+            <Activity className="size-4 ml-1" />
+            تحديث
+          </Button>
+        </div>
       </motion.div>
+
+      {/* §14 explicit comparison-impossible notice (never fake history) */}
+      {month && compareState === 'insufficient' && (
+        <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3.5 py-2.5 text-xs text-amber-200 flex items-center gap-2">
+          <AlertCircle className="size-3.5 shrink-0" />
+          لا يمكن حساب المقارنة مع الشهر السابق — لا توجد بيانات مخاطر مسجلة فيه ضمن صلاحياتك.
+        </div>
+      )}
 
       {/* ═══ Summary Stats ═══ */}
       <motion.div initial={{ opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }} className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2.5">
@@ -347,6 +467,11 @@ export default function RiskCenterPage() {
                       <th className="text-right text-slate-400 text-[11px] font-medium px-3 py-2.5 whitespace-nowrap">القسم</th>
                       <th className="text-right text-slate-400 text-[11px] font-medium px-3 py-2.5 whitespace-nowrap">المركز</th>
                       <th className="text-right text-slate-400 text-[11px] font-medium px-3 py-2.5 whitespace-nowrap text-center">نقاط المخاطر</th>
+                      {compareState === 'ready' && compareLabel && (
+                        <th className="text-right text-slate-400 text-[11px] font-medium px-3 py-2.5 whitespace-nowrap text-center">
+                          تغيّر ({formatMonthLabelAr(compareLabel)})
+                        </th>
+                      )}
                       <th className="text-right text-slate-400 text-[11px] font-medium px-3 py-2.5 whitespace-nowrap">مستوى المخاطر</th>
                       <th className="text-right text-slate-400 text-[11px] font-medium px-3 py-2.5 whitespace-nowrap text-center">حالات مفتوحة</th>
                       <th className="text-right text-slate-400 text-[11px] font-medium px-3 py-2.5 whitespace-nowrap text-center">جودة</th>
@@ -360,6 +485,7 @@ export default function RiskCenterPage() {
                   <tbody>
                     {filtered.map((emp) => {
                       const rl = getRiskLevelConfig(emp.riskLevel);
+                      const cmp = compareState === 'ready' ? deltaFor(emp.employeeId, emp.riskScore) : { delta: 0, comparable: false };
                       return (
                         <motion.tr
                           key={emp.employeeId}
@@ -380,6 +506,18 @@ export default function RiskCenterPage() {
                           <td className="px-3 py-2.5 whitespace-nowrap text-center">
                             <span className={`font-bold text-sm ${rl.color}`}>{emp.riskScore}</span>
                           </td>
+                          {compareState === 'ready' && compareLabel && (
+                            <td className="px-3 py-2.5 whitespace-nowrap text-center">
+                              {cmp.comparable ? (
+                                <span className={`text-xs font-bold flex items-center justify-center gap-1 ${cmp.delta > 0 ? 'text-red-400' : cmp.delta < 0 ? 'text-emerald-400' : 'text-slate-500'}`}>
+                                  {cmp.delta > 0 ? <TrendingUp className="size-3" /> : cmp.delta < 0 ? <TrendingDown className="size-3" /> : <Minus className="size-3" />}
+                                  {cmp.delta > 0 ? `+${cmp.delta}` : cmp.delta}
+                                </span>
+                              ) : (
+                                <span className="text-[10px] text-slate-600">— لا بيانات كافية</span>
+                              )}
+                            </td>
+                          )}
                           <td className="px-3 py-2.5 whitespace-nowrap">
                             <div className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full border text-[10px] font-medium ${rl.bg} ${rl.color} ${rl.border}`}>
                               <div className={`w-1.5 h-1.5 rounded-full ${rl.dot}`} />
@@ -617,8 +755,10 @@ export default function RiskCenterPage() {
                         variant="outline"
                         className="flex-1 text-xs bg-teal-500/10 border-teal-500/30 text-teal-300 hover:bg-teal-500/20 hover:text-teal-200"
                         onClick={() => {
-                          // Navigate to CAPA page filtered by this employee
-                          window.location.href = `/capa?employeeId=${selectedEmployee.employeeId}`;
+                          // SPA navigation (the page router is not URL-based).
+                          useAppStore.getState().navigateTo('capa', undefined, {
+                            employeeId: selectedEmployee.employeeId,
+                          });
                         }}
                       >
                         <Eye className="size-3.5 ml-1" />
@@ -629,8 +769,14 @@ export default function RiskCenterPage() {
                         variant="outline"
                         className="flex-1 text-xs bg-teal-500/10 border-teal-500/30 text-teal-300 hover:bg-teal-500/20 hover:text-teal-200"
                         onClick={() => {
-                          // Navigate to CAPA creation with employee pre-filled
-                          window.location.href = `/capa?create=true&employeeId=${selectedEmployee.employeeId}`;
+                          // §1: create intent — navigates AND auto-opens the
+                          // CAPA dialog with the employee pre-filled.
+                          useAppStore.getState().navigateTo('capa', undefined, {
+                            source: 'risk_center',
+                            employeeId: selectedEmployee.employeeId,
+                            employeeName: selectedEmployee.employeeName,
+                            problemDescription: selectedEmployee.recommendations[0] || '',
+                          });
                         }}
                       >
                         <FilePlus className="size-3.5 ml-1" />

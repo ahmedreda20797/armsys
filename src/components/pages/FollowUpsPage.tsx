@@ -14,6 +14,7 @@ import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { EmployeeLink } from '@/components/shared/EmployeeLink';
+import { PageHeaderBar } from '@/components/shared/PageHeaderBar';
 import { EmployeeSearchInput } from '@/components/shared/EmployeeSearchInput';
 import { UserSearchInput } from '@/components/shared/UserSearchInput';
 import { CAPALinkBadge } from '@/components/shared/CAPALinkBadge';
@@ -336,6 +337,16 @@ export default function FollowUpsPage() {
     followUps.filter(f => f.nextFollowUpDate === todayStr && (f.status === 'open' || f.status === 'under_follow_up')),
     [followUps, todayStr]
   );
+  // §8: overdue active follow-ups join the alert area as structured
+  // items (display-only derivation — the canonical status/timing rules
+  // in lib/metrics/followUpMetrics stay untouched).
+  const overdueFollowUps = useMemo(() =>
+    followUps
+      .filter(f => f.nextFollowUpDate && f.nextFollowUpDate < todayStr && (f.status === 'open' || f.status === 'under_follow_up'))
+      .sort((a, b) => (a.nextFollowUpDate || '').localeCompare(b.nextFollowUpDate || ''))
+      .slice(0, 6),
+    [followUps, todayStr]
+  );
 
   // ═══ Departments ═══
   const departmentList = useMemo(() => {
@@ -597,70 +608,71 @@ export default function FollowUpsPage() {
 
   return (
     <div dir="rtl" className="space-y-5">
-      {/* ═══ Header ═══ */}
-      <motion.div
-        initial={{ opacity: 0, y: -10 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="flex flex-col sm:flex-row sm:items-center justify-between gap-3"
-      >
-        <div className="flex items-center gap-3">
-          <div className="flex items-center justify-center size-10 rounded-xl bg-cyan-500/15 border border-cyan-500/30">
-            <ClipboardList className="size-5 text-cyan-400" />
-          </div>
-          <div>
-            <h1 className="text-xl font-bold text-white">مركز المتابعة والملاحظات</h1>
-            <p className="text-slate-500 text-xs mt-0.5">إدارة وتتبع جميع ملاحظات الأداء والسلوك</p>
-          </div>
-        </div>
-        <div className="flex items-center gap-2">
-          <div className="flex rounded-lg border border-slate-700/50 overflow-hidden">
+      {/* ═══ Header (§25/§26 — sticky) ═══ */}
+      <PageHeaderBar
+        icon={<ClipboardList className="size-5" />}
+        iconClassName="bg-cyan-500/15 border-cyan-500/30 text-cyan-400"
+        title="مركز المتابعة والملاحظات"
+        subtitle="إدارة وتتبع جميع ملاحظات الأداء والسلوك"
+        primaryAction={canCreate ? { label: 'إضافة متابعة', onClick: openCreate } : undefined}
+        actions={
+          <div className="flex rounded-lg border border-slate-700/50 overflow-hidden shrink-0">
             <button
               onClick={() => setViewMode('table')}
               className={`p-2 transition-colors ${viewMode === 'table' ? 'bg-cyan-500/15 text-cyan-400' : 'text-slate-500 hover:text-slate-300'}`}
+              aria-label="عرض جدول"
             >
               <Table2 className="size-4" />
             </button>
             <button
               onClick={() => setViewMode('cards')}
               className={`p-2 transition-colors ${viewMode === 'cards' ? 'bg-cyan-500/15 text-cyan-400' : 'text-slate-500 hover:text-slate-300'}`}
+              aria-label="عرض بطاقات"
             >
               <LayoutList className="size-4" />
             </button>
           </div>
-          {canCreate && (
-            <Button onClick={openCreate} size="sm" className="bg-cyan-600 hover:bg-cyan-700 text-white h-9 px-4">
-              <Plus className="size-4 ml-1" />
-              إضافة متابعة
-            </Button>
-          )}
-        </div>
-      </motion.div>
+        }
+      />
 
-      {/* ═══ Today's Follow-ups Alert ═══ */}
+      {/* ═══ §8 Follow-up alerts — STRUCTURED items (icon · title ·
+          employee · issue · status · date · action), mobile-stacked.
+          Never one crowded horizontal line of names again. ═══ */}
       <AnimatePresence>
-        {todaysFollowUps.length > 0 && (
+        {(todaysFollowUps.length > 0 || overdueFollowUps.length > 0) && (
           <motion.div
             initial={{ opacity: 0, y: -10, scale: 0.98 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -10, scale: 0.98 }}
           >
             <Card className="border-amber-500/40 bg-amber-500/5">
-              <CardContent className="p-3.5">
-                <div className="flex items-start gap-2.5">
-                  <div className="flex-shrink-0 size-8 rounded-full bg-amber-500/15 flex items-center justify-center mt-0.5">
-                    <Bell className="size-4 text-amber-400" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-amber-300 text-sm font-semibold">
-                      متابعات مجدولة اليوم ({todaysFollowUps.length})
-                    </p>
-                    <p className="text-amber-200/70 text-xs mt-1 leading-relaxed">
-                      {todaysFollowUps.map(f => {
-                        const name = f.employeeName || employees.find((e: any) => e.id === f.employeeId)?.name || 'غير معروف';
-                        return `${name} (${f.subject || f.followUpType})`;
-                      }).join(' · ')}
-                    </p>
-                  </div>
+              <CardContent className="p-3.5 space-y-2">
+                <p className="text-amber-300 text-sm font-semibold flex items-center gap-2">
+                  <Bell className="size-4 shrink-0" />
+                  متابعات تحتاج انتباه
+                  <span className="text-amber-200/60 text-[11px] font-normal">
+                    (اليوم: {todaysFollowUps.length} · متأخرة: {overdueFollowUps.length})
+                  </span>
+                </p>
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2">
+                  {overdueFollowUps.map((f) => (
+                    <FollowUpAlertItem
+                      key={f.id}
+                      followUp={f}
+                      employeeName={f.employeeName || employees.find((e: any) => e.id === f.employeeId)?.name || 'غير معروف'}
+                      tone="overdue"
+                      onView={() => setViewingItem(f)}
+                    />
+                  ))}
+                  {todaysFollowUps.filter(f => !overdueFollowUps.some(o => o.id === f.id)).map((f) => (
+                    <FollowUpAlertItem
+                      key={f.id}
+                      followUp={f}
+                      employeeName={f.employeeName || employees.find((e: any) => e.id === f.employeeId)?.name || 'غير معروف'}
+                      tone="due"
+                      onView={() => setViewingItem(f)}
+                    />
+                  ))}
                 </div>
               </CardContent>
             </Card>
@@ -1547,6 +1559,84 @@ export default function FollowUpsPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+    </div>
+  );
+}
+// ══════════════════════════════════════════════════════════════
+//  FollowUpAlertItem — §8 structured alert: icon / title / employee
+//  / issue / status / date / action, each on its own labeled line.
+//  Readable in seconds; stacks on mobile.
+// ══════════════════════════════════════════════════════════════
+function FollowUpAlertItem({
+  followUp, employeeName, tone, onView,
+}: {
+  followUp: FollowUp;
+  employeeName: string;
+  tone: 'overdue' | 'due';
+  onView: () => void;
+}) {
+  const isOverdue = tone === 'overdue';
+  const typeLabel = TYPE_OPTIONS.find((t) => t.value === followUp.followUpType)?.label ?? followUp.followUpType;
+  const statusLabel = STATUS_OPTIONS.find((st) => st.value === followUp.status)?.label ?? followUp.status;
+
+  return (
+    <div
+      className={`rounded-xl border p-3 space-y-2 ${
+        isOverdue ? 'border-red-500/30 bg-red-500/5' : 'border-amber-500/30 bg-amber-500/5'
+      }`}
+    >
+      {/* Title row: icon + headline + status badge */}
+      <div className="flex items-center justify-between gap-2">
+        <p className={`text-xs font-semibold flex items-center gap-1.5 ${isOverdue ? 'text-red-300' : 'text-amber-300'}`}>
+          {isOverdue ? <AlertOctagon className="size-3.5 shrink-0" /> : <Bell className="size-3.5 shrink-0" />}
+          {isOverdue ? 'متابعة متأخرة' : 'متابعة مستحقة اليوم'}
+        </p>
+        <Badge
+          variant="outline"
+          className={`text-[10px] px-1.5 py-0 shrink-0 ${
+            isOverdue ? 'bg-red-500/15 text-red-400 border-red-500/30' : 'bg-amber-500/15 text-amber-400 border-amber-500/30'
+          }`}
+        >
+          {isOverdue ? 'متأخرة' : 'اليوم'}
+        </Badge>
+      </div>
+
+      {/* Employee */}
+      <div className="grid grid-cols-[auto_1fr] gap-x-2 gap-y-1 text-[11px]">
+        <span className="text-slate-500">الموظف:</span>
+        <span className="text-white font-medium truncate">{employeeName}</span>
+
+        {/* Issue */}
+        <span className="text-slate-500">الموضوع:</span>
+        <span className="text-slate-300 line-clamp-2 leading-relaxed">
+          {followUp.subject || typeLabel}
+        </span>
+
+        {/* Status */}
+        <span className="text-slate-500">الحالة:</span>
+        <span className="text-slate-300">{statusLabel}</span>
+
+        {/* Date / duration */}
+        <span className="text-slate-500">{isOverdue ? 'كان مستحقاً:' : 'الاستحقاق:'}</span>
+        <span className={`font-mono ${isOverdue ? 'text-red-400' : 'text-amber-400'}`} dir="ltr">
+          {followUp.nextFollowUpDate || '—'}
+        </span>
+      </div>
+
+      {/* Action */}
+      <Button
+        size="sm"
+        variant="outline"
+        onClick={onView}
+        className={`w-full h-7 text-[11px] ${
+          isOverdue
+            ? 'border-red-500/40 text-red-300 hover:bg-red-500/15'
+            : 'border-amber-500/40 text-amber-300 hover:bg-amber-500/15'
+        }`}
+      >
+        <Eye className="size-3 ml-1" />
+        فتح المتابعة
+      </Button>
     </div>
   );
 }

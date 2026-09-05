@@ -51,12 +51,26 @@ import {
   FileText,
   AlertTriangle,
   ShieldAlert,
+  Plane,
 } from 'lucide-react';
 import { EmployeeSearchInput } from '@/components/shared/EmployeeSearchInput';
 import { logCreate, logUpdate, logDelete } from '@/lib/activity-logger';
 import { authFetch } from '@/lib/api-fetch';
 import { useAppStore } from '@/lib/store';
 import { CAPALinkBadge } from '@/components/shared/CAPALinkBadge';
+import { FavoriteToggle, PinToggle } from '@/components/shared/NavigationMarks';
+import { PageHeaderBar } from '@/components/shared/PageHeaderBar';
+import { complaintPrefillFromTravelIntent, hasCreateIntent } from '@/lib/record-prefill';
+import { OverflowMenu, type OverflowMenuItem } from '@/components/shared/OverflowMenu';
+import { useMarkState, useFavoriteToggleAction, usePinToggleAction } from '@/components/shared/NavigationMarks';
+import { Star, Pin as PinIcon } from 'lucide-react';
+
+type ComplaintDescriptor = {
+  targetType: 'record';
+  targetId: string;
+  route: string;
+  label: string;
+};
 
 // ═══════════════════════════════════════════════════════════════
 //  TYPES
@@ -196,17 +210,21 @@ export default function ComplaintsPage() {
   const { canView, canCreate, canUpdate, canDelete } = usePermissions('complaints');
 
   // Phase 6.3 (§8): filter context persists per user (session-scoped).
+  // Milestone 7 §15: OPEN vs CLOSED case separation — open cases stay
+  // operationally prominent (default tab); closed remain viewable.
+  // Version 2: the shape grows caseTab; old state orphans cleanly.
   const [complaintsView, setComplaintsView, resetComplaintsView] = usePageState<{
     search: string;
     employeeFilter: string;
     statusFilter: string;
     severityFilter: string;
     complaintTypeFilter: string;
+    caseTab: 'open' | 'closed' | 'all';
   }>({
     page: 'complaints',
     slot: 'filters',
-    version: 1,
-    initial: () => ({ search: '', employeeFilter: 'all', statusFilter: 'all', severityFilter: 'all', complaintTypeFilter: 'all' }),
+    version: 2,
+    initial: () => ({ search: '', employeeFilter: 'all', statusFilter: 'all', severityFilter: 'all', complaintTypeFilter: 'all', caseTab: 'open' }),
     validate: (raw) => (raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : null),
   });
   const search = complaintsView.search;
@@ -219,10 +237,33 @@ export default function ComplaintsPage() {
   const setSeverityFilter = (v: string) => setComplaintsView((s) => ({ ...s, severityFilter: v }));
   const complaintTypeFilter = complaintsView.complaintTypeFilter;
   const setComplaintTypeFilter = (v: string) => setComplaintsView((s) => ({ ...s, complaintTypeFilter: v }));
-  const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const caseTab = complaintsView.caseTab;
+  const setCaseTab = (v: 'open' | 'closed' | 'all') => setComplaintsView((s) => ({ ...s, caseTab: v }));
+
+  // Milestone 7 §7 — Travel → Complaint intent: read navParams BEFORE
+  // dialog state so the mount-time initializer below can consume it.
+  const navParams = useAppStore((s) => s.navParams);
+  const mountIntent = complaintPrefillFromTravelIntent(navParams);
+  const hasMountIntent = hasCreateIntent(navParams) && navParams?.source === 'travel';
+
+  // UX Corrections §1 (ROOT CAUSE FIX): the destination page remounts
+  // per navigation, so the intent MUST open the dialog at mount — the
+  // previous render-time guard compared navParams to useState(navParams)
+  // (always equal on mount) and the dialog never auto-opened.
+  const [isDialogOpen, setIsDialogOpen] = useState(() => hasMountIntent);
   const [editingComplaint, setEditingComplaint] = useState<Complaint | null>(null);
-  const [form, setForm] = useState<ComplaintFormData>({ ...emptyForm });
+  const [form, setForm] = useState<ComplaintFormData>(() => ({ ...emptyForm, ...mountIntent }));
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  // Source context when the complaint originates from another page —
+  // persisted with the record for trace.
+  const [sourceContext, setSourceContext] = useState<{ page: string; recordId: string } | null>(() =>
+    hasMountIntent
+      ? {
+          page: 'travel',
+          recordId: typeof navParams?.sourceRecordId === 'string' ? navParams.sourceRecordId : '',
+        }
+      : null,
+  );
 
   // Queries
   const { data: complaintsData, isLoading } = useComplaints();
@@ -247,6 +288,30 @@ export default function ComplaintsPage() {
   const complaints: Complaint[] = complaintsData?.data || complaintsData || [];
   const employees: any[] = employeesData || [];
 
+  // Travel → Complaint intents arriving WHILE the page is already
+  // mounted (the mount-time intent is handled by the initializers
+  // above). Compiler-endorsed "adjust state during render" guard.
+  const [lastHandledNav, setLastHandledNav] = useState(navParams);
+  if (navParams !== lastHandledNav) {
+    setLastHandledNav(navParams);
+    if (navParams?.source === 'travel') {
+      setEditingComplaint(null);
+      setSourceContext({
+        page: 'travel',
+        recordId: typeof navParams.sourceRecordId === 'string' ? navParams.sourceRecordId : '',
+      });
+      setForm((p) => ({
+        ...p,
+        ...complaintPrefillFromTravelIntent(navParams),
+      }));
+      setIsDialogOpen(true);
+    }
+  }
+
+  // §15 case classification — same vocabulary as the stats logic:
+  // open = open/investigating/pending_resolution; closed = resolved/closed.
+  const isClosedCase = (c: Complaint) => c.status === 'resolved' || c.status === 'closed';
+
   // Filtered complaints
   const filtered = useMemo(() => {
     return complaints.filter((c) => {
@@ -268,9 +333,19 @@ export default function ComplaintsPage() {
       const matchesType =
         complaintTypeFilter === 'all' || c.complaintType === complaintTypeFilter;
 
-      return matchesSearch && matchesEmployee && matchesStatus && matchesSeverity && matchesType;
+      // §15 case-tab gate — the explicit open/closed separation.
+      const matchesTab =
+        caseTab === 'all' || (caseTab === 'closed' ? isClosedCase(c) : !isClosedCase(c));
+
+      return matchesSearch && matchesEmployee && matchesStatus && matchesSeverity && matchesType && matchesTab;
     });
-  }, [complaints, search, employeeFilter, statusFilter, severityFilter, complaintTypeFilter]);
+  }, [complaints, search, employeeFilter, statusFilter, severityFilter, complaintTypeFilter, caseTab]);
+
+  // §15 case counts (over the whole scoped set, independent of search)
+  const caseCounts = useMemo(() => {
+    const open = complaints.filter((c) => !isClosedCase(c)).length;
+    return { open, closed: complaints.length - open };
+  }, [complaints]);
 
   // Stats
   const stats = useMemo(() => {
@@ -306,6 +381,7 @@ export default function ComplaintsPage() {
   // ═══ Form handlers ═══
   const openCreateDialog = () => {
     setEditingComplaint(null);
+    setSourceContext(null);
     setForm({ ...emptyForm });
     setIsDialogOpen(true);
   };
@@ -341,9 +417,17 @@ export default function ComplaintsPage() {
       severity: form.severity,
       status: form.status,
       resolution: form.resolution.trim() || null,
-      responsiblePersonId: form.responsiblePersonId || null,
-      compensation: form.compensation.trim() || null,
+      // Field keys match the API contract (responsiblePerson /
+      // compensationProvided) so user input persists.
+      responsiblePerson: form.responsiblePersonId || '',
+      compensationProvided: form.compensation.trim() || null,
     };
+    // Source trace (additive — Milestone 7 §7): a complaint opened from
+    // Travel carries its source page + record for the audit trail.
+    if (!editingComplaint && sourceContext?.recordId) {
+      payload.sourcePage = sourceContext.page;
+      payload.sourceRecordId = sourceContext.recordId;
+    }
 
     try {
       if (editingComplaint) {
@@ -355,6 +439,7 @@ export default function ComplaintsPage() {
       }
       setIsDialogOpen(false);
       setEditingComplaint(null);
+      setSourceContext(null);
       setForm({ ...emptyForm });
     } catch {
       // Error handled silently
@@ -378,34 +463,14 @@ export default function ComplaintsPage() {
 
   return (
     <div dir="rtl" className="space-y-5">
-      {/* ═══ Header ═══ */}
-      <motion.div
-        initial={{ opacity: 0, y: -10 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="flex flex-col sm:flex-row sm:items-center justify-between gap-3"
-      >
-        <div className="flex items-center gap-3">
-          <div className="flex items-center justify-center size-10 rounded-xl bg-rose-500/15 border border-rose-500/30">
-            <MessageSquareWarning className="size-5 text-rose-400" />
-          </div>
-          <div>
-            <h1 className="text-xl font-bold text-white">شكاوى العملاء</h1>
-            <p className="text-slate-500 text-xs mt-0.5">
-              {filtered.length} شكوى مسجلة
-            </p>
-          </div>
-        </div>
-        {canCreate && (
-          <Button
-            onClick={openCreateDialog}
-            size="sm"
-            className="bg-rose-600 hover:bg-rose-700 text-white h-9 px-4"
-          >
-            <Plus className="size-4 ml-1" />
-            إضافة شكوى
-          </Button>
-        )}
-      </motion.div>
+      {/* ═══ Header (§25/§26 — sticky) ═══ */}
+      <PageHeaderBar
+        icon={<MessageSquareWarning className="size-5" />}
+        iconClassName="bg-rose-500/15 border-rose-500/30 text-rose-400"
+        title="شكاوى العملاء"
+        subtitle={`${filtered.length} شكوى مسجلة`}
+        primaryAction={canCreate ? { label: 'إضافة شكوى', onClick: openCreateDialog } : undefined}
+      />
 
       {/* ═══ Stats Row ═══ */}
       {complaints.length > 0 && (
@@ -434,6 +499,24 @@ export default function ComplaintsPage() {
           </div>
         </motion.div>
       )}
+
+      {/* ═══ §15 Open / Closed case tabs ═══ */}
+      <div className="flex gap-1 overflow-x-auto pb-1">
+        {[
+          { key: 'open' as const, label: 'الحالات المفتوحة', count: caseCounts.open },
+          { key: 'closed' as const, label: 'الحالات المغلقة', count: caseCounts.closed },
+          { key: 'all' as const, label: 'الكل', count: complaints.length },
+        ].map((tab) => (
+          <button key={tab.key} onClick={() => setCaseTab(tab.key)}
+            className={`px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap transition-colors ${
+              caseTab === tab.key
+                ? 'bg-rose-600 text-white shadow-md shadow-rose-500/20'
+                : 'text-slate-400 hover:bg-slate-800 hover:text-white'
+            }`}>
+            {tab.label} ({tab.count})
+          </button>
+        ))}
+      </div>
 
       {/* ═══ Filters ═══ */}
       <div className="flex flex-col sm:flex-row gap-2.5">
@@ -579,26 +662,14 @@ export default function ComplaintsPage() {
                           >
                             {getStatusBadge(complaint.status)}
                           </Badge>
-                          {canUpdate && (
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="h-7 w-7 p-0 text-slate-400 hover:text-white hover:bg-slate-700/50"
-                              onClick={() => openEditDialog(complaint)}
-                            >
-                              <Pencil className="size-3.5" />
-                            </Button>
-                          )}
-                          {canDelete && (
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="h-7 w-7 p-0 text-slate-400 hover:text-red-400 hover:bg-red-500/10"
-                              onClick={() => setDeletingId(complaint.id)}
-                            >
-                              <Trash2 className="size-3.5" />
-                            </Button>
-                          )}
+                          {/* §6: secondary/contextual actions grouped in the ⋮ overflow */}
+                          <ComplaintCardActions
+                            complaint={complaint}
+                            canUpdate={canUpdate}
+                            canDelete={canDelete}
+                            onEdit={() => openEditDialog(complaint)}
+                            onDelete={() => setDeletingId(complaint.id)}
+                          />
                         </div>
                       </div>
 
@@ -704,6 +775,14 @@ export default function ComplaintsPage() {
               {editingComplaint ? 'قم بتعديل بيانات الشكوى' : 'أدخل بيانات الشكوى الجديدة'}
             </DialogDescription>
           </DialogHeader>
+
+          {/* §7 — source context banner: fields auto-filled from Travel */}
+          {sourceContext && (
+            <div className="rounded-lg border border-sky-500/30 bg-sky-500/10 px-3 py-2 text-[11px] text-sky-300 flex items-center gap-1.5">
+              <Plane className="size-3.5 shrink-0" />
+              تمت التعبئة تلقائياً من صفحة السفر — راجع البيانات وعدّلها قبل الحفظ.
+            </div>
+          )}
 
           <div className="space-y-4 py-2">
             {/* Row 1: Customer name + Contact */}
@@ -899,4 +978,76 @@ export default function ComplaintsPage() {
       </Dialog>
     </div>
   );
+}
+// ══════════════════════════════════════════════════════════════
+//  ComplaintCardActions — §6 overflow pattern for a complaint card:
+//  primary state stays visible on the card; edit / ⭐ favorite /
+//  📌 pin / CAPA / delete are grouped in the reusable ⋮ menu.
+// ══════════════════════════════════════════════════════════════
+function ComplaintCardActions({
+  complaint, canUpdate, canDelete, onEdit, onDelete,
+}: {
+  complaint: Complaint;
+  canUpdate: boolean;
+  canDelete: boolean;
+  onEdit: () => void;
+  onDelete: () => void;
+}) {
+  const descriptor: ComplaintDescriptor = {
+    targetType: 'record',
+    targetId: complaint.id,
+    route: 'complaints',
+    label: `شكوى: ${complaint.customerName}`,
+  };
+  const { favoriteActive, pinActive } = useMarkState(descriptor);
+  const toggleFavorite = useFavoriteToggleAction();
+  const togglePin = usePinToggleAction();
+
+  const items: OverflowMenuItem[] = [];
+  if (canUpdate) {
+    items.push({ key: 'edit', label: 'تعديل', icon: <Pencil className="size-3.5" />, onSelect: onEdit });
+  }
+  items.push(
+    {
+      key: 'favorite',
+      label: favoriteActive ? 'إزالة من المفضلة' : 'مفضلة ⭐',
+      icon: <Star className={`size-3.5 ${favoriteActive ? 'text-amber-400 fill-amber-400' : ''}`} />,
+      onSelect: () => void toggleFavorite(descriptor),
+    },
+    {
+      key: 'pin',
+      label: pinActive ? 'إزالة التثبيت' : 'تثبيت 📌',
+      icon: <PinIcon className={`size-3.5 ${pinActive ? 'text-cyan-400 fill-cyan-400' : ''}`} />,
+      onSelect: () => void togglePin(descriptor),
+    },
+    {
+      key: 'capa',
+      label: 'إنشاء CAPA',
+      icon: <ShieldAlert className="size-3.5" />,
+      separatorBefore: true,
+      onSelect: () => {
+        useAppStore.getState().navigateTo('capa', undefined, {
+          title: `شكوى عميل — ${complaint.complaintType}`,
+          department: '',
+          priority: complaint.severity === 'critical' ? 'critical' : complaint.severity === 'high' ? 'high' : 'medium',
+          employeeId: complaint.employeeId || '',
+          problemDescription: complaint.description,
+          source: 'complaint',
+          relatedComplaintId: complaint.id,
+        });
+      },
+    },
+  );
+  if (canDelete) {
+    items.push({
+      key: 'delete',
+      label: 'حذف',
+      icon: <Trash2 className="size-3.5" />,
+      destructive: true,
+      separatorBefore: true,
+      onSelect: onDelete,
+    });
+  }
+
+  return <OverflowMenu items={items} label={`إجراءات شكوى ${complaint.customerName}`} />;
 }

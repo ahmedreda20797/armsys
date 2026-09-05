@@ -1,10 +1,11 @@
 // ══════════════════════════════════════════════════════════════
-//  Personal workspace — Milestone 10 (PURE reconciliation)
+//  Personal workspace — Milestone 10 (PURE reconciliation) +
+//  Milestone 7 (Favorites · Pins — one coherent architecture)
 //
 //  Each USER (not role) owns an independent UI configuration:
-//  sidebar order and dashboard widget layout. These pure functions
-//  merge SAVED preferences with the CURRENT permission-filtered
-//  component set. The order is mandatory:
+//  sidebar order, dashboard widget layout, FAVORITES and PINS.
+//  These pure functions merge SAVED preferences with the CURRENT
+//  permission-filtered component set. The order is mandatory:
 //
 //    1. PERMISSION decides which pages/widgets EXIST for the user
 //    2. PERSONALIZATION only reorders / hides within that set
@@ -15,6 +16,14 @@
 //    • Pages removed from the order's permission set are dropped.
 //    • One user's layout never affects another's (per-user record,
 //      keyed by authenticated userId server-side).
+//
+//  MILESTONE 7 SEMANTIC SEPARATION (binding):
+//    • SIDEBAR ORDER — navigation presentation order.
+//    • FAVORITE (⭐) — "this is important to me" (bookmark).
+//    • PIN (📌) — persistent quick access to a page/record.
+//  They share ONE storage record, ONE user identity, ONE permission
+//  reconciliation, ONE navigation-descriptor shape — but keep their
+//  own arrays and their own UI semantics. Never collapsed.
 // ══════════════════════════════════════════════════════════════
 
 import type { WidgetConfig } from '@/config/dashboard-widgets';
@@ -25,6 +34,12 @@ export const USER_PREFERENCES_TABLE = 'userPreferences';
 export interface SidebarPreferences {
   /** Page ids in the user's preferred order (permission-filtered at read). */
   order?: string[];
+  /**
+   * UX Corrections §3 — the user's PINNED sidebar state: true = keep
+   * expanded, false = keep collapsed (hover still expands temporarily).
+   * Absent = system default (collapsed + hover expand).
+   */
+  pinOpen?: boolean;
 }
 
 export interface DashboardPreferences {
@@ -34,10 +49,44 @@ export interface DashboardPreferences {
   widgetOrder?: string[];
 }
 
+/**
+ * Compact navigation descriptor for a favorite/pin target — the
+ * OUTPUT of the existing navigation builders captured at save time,
+ * so navigation NEVER needs a second router: consume with
+ * navigateTo(route, targetId ?? undefined, navParams) and the
+ * existing useRecordHighlight does locate/scroll/highlight.
+ * Minimal by design — never a duplicated record.
+ */
+export interface NavigationDescriptor {
+  /** Target kind: a page or a specific record/card. */
+  targetType: 'page' | 'record';
+  /** Record id when targetType='record'. */
+  targetId?: string;
+  /** The PageRouter page key (route). */
+  route: string;
+  /** Compact deep-link context (e.g. employeeId/month/id params). */
+  navigationContext?: Record<string, string>;
+  /** Human label captured at save time (permission-safe display). */
+  label: string;
+}
+
+export interface FavoriteEntry extends NavigationDescriptor {
+  /** Stable entry id (cuid2 at save time). */
+  id: string;
+  addedAt: string;
+}
+
+export interface PinEntry extends NavigationDescriptor {
+  id: string;
+  addedAt: string;
+}
+
 export interface UserPreferences {
   userId?: string;
   sidebar?: SidebarPreferences;
   dashboard?: DashboardPreferences;
+  favorites?: FavoriteEntry[];
+  pins?: PinEntry[];
   updatedAt?: string;
 }
 
@@ -103,6 +152,63 @@ export function resolveWidgetLayout(
   });
 }
 
+// ─── Favorites / Pins reconciliation (Milestone 7) ─────────────
+// Permission-safe at READ: an entry whose route the user can no
+// longer see is HIDDEN but kept stored (permission may return) —
+// the same doctrine as reconcileSidebarOrder. De-dup by descriptor.
+// Deletion policy: entries are only ever removed by the OWNER's
+// explicit action or the reset endpoint — never silently mass-deleted.
+
+const MAX_ENTRIES = 60;
+const MAX_LABEL_LENGTH = 120;
+const MAX_NAV_PARAM_LENGTH = 100;
+const MAX_NAV_PARAMS = 6;
+
+/**
+ * Filter favorites/pins down to the CURRENTLY permitted set, stable
+ * by addedAt (newest first). Pure — the single reconciliation both
+ * the sidebar and the header menus consume.
+ */
+export function reconcileNavigationEntries<T extends NavigationDescriptor>(
+  entries: ReadonlyArray<T> | null | undefined,
+  isRouteVisible: (route: string) => boolean,
+): T[] {
+  if (!Array.isArray(entries)) return [];
+  return entries.filter((entry) => {
+    if (!entry || typeof entry.route !== 'string') return false;
+    if (entry.targetType !== 'page' && entry.targetType !== 'record') return false;
+    if (entry.targetType === 'record' && (typeof entry.targetId !== 'string' || !entry.targetId)) return false;
+    return isRouteVisible(entry.route);
+  });
+}
+
+/** Pure toggle: add (front, de-duped) or remove by descriptor match. */
+export function toggleNavigationEntry<T extends NavigationDescriptor>(
+  entries: ReadonlyArray<T> | null | undefined,
+  descriptor: Omit<T, 'id' | 'addedAt'>,
+  makeId: () => string,
+  now: string,
+  matches: (a: NavigationDescriptor, b: NavigationDescriptor) => boolean,
+): T[] {
+  const list = Array.isArray(entries) ? [...entries] : [];
+  const existingIdx = list.findIndex((e) => matches(e, descriptor));
+  if (existingIdx >= 0) {
+    list.splice(existingIdx, 1);
+    return list;
+  }
+  const entry = { ...descriptor, id: makeId(), addedAt: now } as unknown as T;
+  return [entry, ...list].slice(0, MAX_ENTRIES);
+}
+
+/** Descriptor equality: same route + target type + target id. */
+export function navigationEntriesEqual(a: NavigationDescriptor, b: NavigationDescriptor): boolean {
+  return (
+    a.route === b.route &&
+    a.targetType === b.targetType &&
+    (a.targetId ?? '') === (b.targetId ?? '')
+  );
+}
+
 // ─── API input sanitization ────────────────────────────────────
 // The preferences API accepts ONLY this shape; unknown fields are
 // dropped and arrays are size/string capped so a malicious payload
@@ -118,6 +224,55 @@ function sanitizeIdArray(value: unknown): string[] | undefined {
     .slice(0, MAX_ORDER_ENTRIES);
 }
 
+/** Sanitize one navigation entry (favorites/pins share the shape). */
+function sanitizeNavigationEntry(value: unknown): (NavigationDescriptor & { id: string; addedAt: string }) | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const raw = value as Record<string, unknown>;
+  if (typeof raw.id !== 'string' || raw.id.length === 0 || raw.id.length > MAX_ID_LENGTH) return null;
+  if (typeof raw.route !== 'string' || raw.route.length === 0 || raw.route.length > MAX_ID_LENGTH) return null;
+  if (raw.targetType !== 'page' && raw.targetType !== 'record') return null;
+  if (raw.targetType === 'record' && (typeof raw.targetId !== 'string' || !raw.targetId || raw.targetId.length > MAX_ID_LENGTH)) return null;
+  if (typeof raw.label !== 'string' || raw.label.length === 0 || raw.label.length > MAX_LABEL_LENGTH) return null;
+  if (typeof raw.addedAt !== 'string' || raw.addedAt.length === 0 || raw.addedAt.length > 40) return null;
+
+  let navigationContext: Record<string, string> | undefined;
+  if (raw.navigationContext && typeof raw.navigationContext === 'object' && !Array.isArray(raw.navigationContext)) {
+    const ctx: Record<string, string> = {};
+    for (const [k, v] of Object.entries(raw.navigationContext as Record<string, unknown>)) {
+      if (Object.keys(ctx).length >= MAX_NAV_PARAMS) break;
+      if (typeof k === 'string' && k.length <= 40 && typeof v === 'string' && v.length <= MAX_NAV_PARAM_LENGTH) {
+        ctx[k] = v;
+      }
+    }
+    if (Object.keys(ctx).length > 0) navigationContext = ctx;
+  }
+
+  return {
+    id: raw.id,
+    addedAt: raw.addedAt,
+    targetType: raw.targetType,
+    ...(raw.targetType === 'record' ? { targetId: raw.targetId as string } : {}),
+    route: raw.route,
+    ...(navigationContext ? { navigationContext } : {}),
+    label: raw.label,
+  };
+}
+
+function sanitizeNavigationArray(value: unknown): (NavigationDescriptor & { id: string; addedAt: string })[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const out: (NavigationDescriptor & { id: string; addedAt: string })[] = [];
+  const seen = new Set<string>();
+  for (const raw of value.slice(0, MAX_ENTRIES)) {
+    const entry = sanitizeNavigationEntry(raw);
+    if (!entry) continue;
+    const key = `${entry.route}:${entry.targetType}:${entry.targetId ?? ''}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(entry);
+  }
+  return out;
+}
+
 /**
  * Whitelist + validate a preferences PUT body. Returns null when
  * the body is not a usable object (caller replies 400).
@@ -128,8 +283,16 @@ export function sanitizeUserPreferencesInput(body: unknown): UserPreferences | n
   const out: UserPreferences = {};
 
   if (raw.sidebar && typeof raw.sidebar === 'object' && !Array.isArray(raw.sidebar)) {
-    const order = sanitizeIdArray((raw.sidebar as Record<string, unknown>).order);
-    if (order) out.sidebar = { order };
+    const sidebarRaw = raw.sidebar as Record<string, unknown>;
+    const order = sanitizeIdArray(sidebarRaw.order);
+    // §3: boolean-only; anything else is dropped (fail-safe to default).
+    const pinOpen = typeof sidebarRaw.pinOpen === 'boolean' ? sidebarRaw.pinOpen : undefined;
+    if (order || pinOpen !== undefined) {
+      out.sidebar = {
+        ...(order ? { order } : {}),
+        ...(pinOpen !== undefined ? { pinOpen } : {}),
+      };
+    }
   }
   if (raw.dashboard && typeof raw.dashboard === 'object' && !Array.isArray(raw.dashboard)) {
     const dash = raw.dashboard as Record<string, unknown>;
@@ -142,5 +305,10 @@ export function sanitizeUserPreferencesInput(body: unknown): UserPreferences | n
       };
     }
   }
+  // Milestone 7 — favorites/pins arrays replace wholesale when present.
+  const favorites = sanitizeNavigationArray(raw.favorites);
+  if (favorites) out.favorites = favorites as FavoriteEntry[];
+  const pins = sanitizeNavigationArray(raw.pins);
+  if (pins) out.pins = pins as PinEntry[];
   return out;
 }

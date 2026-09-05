@@ -39,6 +39,8 @@ export async function GET(request: NextRequest) {
       userId: auth.userId,
       sidebar: record?.sidebar ?? {},
       dashboard: record?.dashboard ?? {},
+      favorites: record?.favorites ?? [],
+      pins: record?.pins ?? [],
       updatedAt: record?.updatedAt ?? null,
     });
   } catch (error) {
@@ -60,10 +62,13 @@ export async function PUT(request: NextRequest) {
 
     const existing = await getById<UserPreferences>(USER_PREFERENCES_TABLE, auth.userId);
     // Merge over the previous record so a partial PUT (sidebar only)
-    // never wipes the dashboard preferences.
+    // never wipes the dashboard preferences (arrays replace wholesale
+    // when present — the client owns the read-modify-write).
     const merged: UserPreferences = {
       sidebar: { ...(existing?.sidebar ?? {}), ...(sanitized.sidebar ?? {}) },
       dashboard: { ...(existing?.dashboard ?? {}), ...(sanitized.dashboard ?? {}) },
+      favorites: sanitized.favorites ?? existing?.favorites ?? [],
+      pins: sanitized.pins ?? existing?.pins ?? [],
       updatedAt: new Date().toISOString(),
     };
 

@@ -2,13 +2,19 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { toast } from 'sonner';
 import { usePermissions } from '@/hooks/usePermissions';
 import { useAppStore } from '@/lib/store';
 import { authFetch } from '@/lib/api-fetch';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from '@/components/ui/select';
 import {
   UserCircle,
   ArrowRight,
@@ -46,6 +52,12 @@ import {
 } from 'lucide-react';
 import { EmployeeQualityKpiPanel } from '@/components/pages/quality-kpi/EmployeeQualityKpiPanel';
 import { EmployeePerformanceSection } from '@/components/pages/employee360/EmployeePerformanceSection';
+import {
+  DOCUMENT_TYPES,
+  DOCUMENT_STATUS_LABELS,
+  documentStatus,
+  documentTypeLabel,
+} from '@/lib/employee-documents';
 
 // ══════════════════════════════════════════════════════════════
 //  Types
@@ -386,6 +398,211 @@ function GlassCard({ children, className = '', glow = '' }: { children: React.Re
     <Card className={`bg-slate-800/40 border border-slate-700/30 backdrop-blur-sm ${glow} ${className}`}>
       <CardContent className="p-4">{children}</CardContent>
     </Card>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════
+//  Documents section — Milestone 7 §17
+//  Metadata-only documents (type/title/expiry/uploader/status +
+//  optional URL). The API enforces employees permission + scope;
+//  the component never invents a status — expired is derived from
+//  the stored expiry date only.
+// ══════════════════════════════════════════════════════════════
+
+const DOC_TYPE_LABELS: Record<string, string> = Object.fromEntries(
+  DOCUMENT_TYPES.map((t) => [t.value, t.label]),
+);
+
+interface DocRow {
+  id: string;
+  employeeId: string;
+  docType: string;
+  title: string;
+  url: string | null;
+  expiryDate: string | null;
+  uploadedByName: string | null;
+  uploadedAt: string;
+}
+
+function documentStatusOf(expiryDate: string | null): { label: string; cls: string } {
+  const status = documentStatus(expiryDate);
+  const cls =
+    status === 'expired'
+      ? 'bg-red-500/15 text-red-400 border-red-500/30'
+      : status === 'valid'
+        ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30'
+        : 'bg-slate-600/20 text-slate-300 border-slate-500/30';
+  return { label: DOCUMENT_STATUS_LABELS[status], cls };
+}
+
+function EmployeeDocumentsSection({ employeeId }: { employeeId: string }) {
+  const { canUpdate } = usePermissions('employees');
+  const [docs, setDocs] = useState<DocRow[] | null>(null);
+  const [error, setError] = useState(false);
+  const [adding, setAdding] = useState(false);
+  const [form, setForm] = useState({ title: '', docType: 'identity', url: '', expiryDate: '' });
+  const [saving, setSaving] = useState(false);
+
+  const loadDocs = useCallback(async () => {
+    setError(false);
+    try {
+      const res = await authFetch(`/api/employee-documents?employeeId=${employeeId}`);
+      setDocs(res.ok ? await res.json() : null);
+      if (!res.ok) setError(true);
+    } catch {
+      setError(true);
+      setDocs([]);
+    }
+  }, [employeeId]);
+
+  useEffect(() => {
+    // Async boundary: the fetcher sets loading state before its first
+    // await — deferring keeps the effect body free of setState.
+    void (async () => { await loadDocs(); })();
+  }, [loadDocs]);
+
+  const handleAdd = async () => {
+    if (!form.title.trim()) return;
+    setSaving(true);
+    try {
+      const res = await authFetch('/api/employee-documents', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          employeeId,
+          title: form.title.trim(),
+          docType: form.docType,
+          url: form.url.trim() || null,
+          expiryDate: form.expiryDate || null,
+        }),
+      });
+      if (res.ok) {
+        toast.success('تم إضافة المستند');
+        setAdding(false);
+        setForm({ title: '', docType: 'identity', url: '', expiryDate: '' });
+        await loadDocs();
+      } else {
+        const data = await res.json().catch(() => null);
+        toast.error(data?.error || 'فشل إضافة المستند');
+      }
+    } catch {
+      toast.error('فشل إضافة المستند');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    try {
+      const res = await authFetch(`/api/employee-documents/${id}`, { method: 'DELETE' });
+      if (res.ok) {
+        toast.success('تم حذف المستند');
+        await loadDocs();
+      }
+    } catch {
+      toast.error('فشل حذف المستند');
+    }
+  };
+
+  return (
+    <GlassCard className="p-5 space-y-4">
+      <div className="flex items-center justify-between">
+        <h3 className="text-white font-semibold flex items-center gap-2">
+          <div className="w-7 h-7 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center">
+            <ShieldCheck className="size-4 text-emerald-400" />
+          </div>
+          مستندات الموظف
+        </h3>
+        {canUpdate && (
+          <Button size="sm" variant="outline" className="border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10 h-8 text-xs"
+            onClick={() => setAdding((v) => !v)}>
+            <Plus className="size-3.5 ml-1" />
+            إضافة مستند
+          </Button>
+        )}
+      </div>
+
+      {adding && canUpdate && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 rounded-xl border border-slate-700/30 bg-slate-900/40 p-4">
+          <div className="space-y-1">
+            <Label className="text-xs text-slate-400">العنوان *</Label>
+            <Input value={form.title} onChange={(e) => setForm((p) => ({ ...p, title: e.target.value }))}
+              className="bg-slate-800 border-slate-600 text-white h-9 text-sm" placeholder="مثال: صورة البطاقة" />
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs text-slate-400">النوع</Label>
+            <Select value={form.docType} onValueChange={(v) => setForm((p) => ({ ...p, docType: v }))}>
+              <SelectTrigger className="bg-slate-800 border-slate-600 text-white h-9 text-sm"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {Object.entries(DOC_TYPE_LABELS).map(([k, label]) => (
+                  <SelectItem key={k} value={k} className="text-white">{label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs text-slate-400">تاريخ الانتهاء (اختياري)</Label>
+            <Input type="date" value={form.expiryDate} onChange={(e) => setForm((p) => ({ ...p, expiryDate: e.target.value }))}
+              className="bg-slate-800 border-slate-600 text-white h-9 text-sm" dir="ltr" />
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs text-slate-400">رابط المستند (اختياري)</Label>
+            <Input value={form.url} onChange={(e) => setForm((p) => ({ ...p, url: e.target.value }))}
+              className="bg-slate-800 border-slate-600 text-white h-9 text-sm" placeholder="https://..." dir="ltr" />
+          </div>
+          <div className="sm:col-span-2 flex justify-end">
+            <Button size="sm" onClick={handleAdd} disabled={saving || !form.title.trim()}
+              className="bg-emerald-600 hover:bg-emerald-700 text-white">
+              {saving ? <Loader2 className="size-3.5 animate-spin" /> : 'حفظ'}
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {docs === null ? (
+        error ? (
+          <p className="text-slate-500 text-sm text-center py-6">تعذر تحميل المستندات</p>
+        ) : (
+          <div className="space-y-2">{[1, 2].map((i) => <Skeleton key={i} className="h-12 rounded-lg bg-slate-800/50" />)}</div>
+        )
+      ) : docs.length === 0 ? (
+        <p className="text-slate-500 text-sm text-center py-6">لا توجد مستندات مسجلة لهذا الموظف</p>
+      ) : (
+        <div className="space-y-2">
+          {docs.map((doc) => {
+            const status = documentStatusOf(doc.expiryDate);
+            return (
+              <div key={doc.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-700/30 bg-slate-900/40 px-3 py-2.5">
+                <div className="min-w-0">
+                  <p className="text-white text-sm font-medium truncate">{doc.title}</p>
+                  <p className="text-slate-500 text-[11px]">
+                    {documentTypeLabel(doc.docType)}
+                    {doc.expiryDate && <span dir="ltr"> · ينتهي: {doc.expiryDate}</span>}
+                    {doc.uploadedByName && ` · رفعها: ${doc.uploadedByName}`}
+                  </p>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <Badge variant="outline" className={`text-[10px] ${status.cls}`}>{status.label}</Badge>
+                  {doc.url && (
+                    <a href={doc.url} target="_blank" rel="noopener noreferrer"
+                      className="text-cyan-400 hover:text-cyan-300 text-xs flex items-center gap-1">
+                      <ExternalLink className="size-3" /> فتح
+                    </a>
+                  )}
+                  {canUpdate && (
+                    <button onClick={() => void handleDelete(doc.id)}
+                      className="p-1.5 rounded-md text-slate-600 hover:text-red-400 hover:bg-red-500/10 transition-colors"
+                      title="حذف المستند" aria-label={`حذف ${doc.title}`}>
+                      <XCircle className="size-3.5" />
+                    </button>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </GlassCard>
   );
 }
 
@@ -1011,16 +1228,7 @@ export default function Employee360Page({ employeeId: propEmployeeId, onClose }:
       case 'documents':
         return (
           <motion.div variants={scaleIn} initial="hidden" animate="visible">
-            <GlassCard className="flex flex-col items-center justify-center py-16">
-              <motion.div
-                initial={{ scale: 0, rotate: -90 }}
-                animate={{ scale: 1, rotate: 0 }}
-                transition={{ type: 'spring', stiffness: 200, delay: 0.1 }}
-              >
-                <ShieldCheck className="size-10 text-slate-600 mb-3" />
-              </motion.div>
-              <p className="text-slate-400">قريباً - سيتم إضافة المستندات</p>
-            </GlassCard>
+            <EmployeeDocumentsSection employeeId={employeeId} />
           </motion.div>
         );
       default: return renderOverviewTab();
@@ -1126,6 +1334,12 @@ export default function Employee360Page({ employeeId: propEmployeeId, onClose }:
                     <span className="flex items-center gap-1.5 text-sm text-slate-400">
                       <Phone className="size-3.5 text-slate-500" />
                       <span className="text-white" dir="ltr">{employee.mobile}</span>
+                    </span>
+                  )}
+                  {(employee as any).residence && (
+                    <span className="flex items-center gap-1.5 text-sm text-slate-400">
+                      <Building2 className="size-3.5 text-slate-500" />
+                      <span className="text-white">الإقامة: {(employee as any).residence}</span>
                     </span>
                   )}
                   {employee.shiftStart && employee.shiftEnd && (

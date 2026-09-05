@@ -123,7 +123,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { code, name, department, position, shiftStart, shiftEnd, hireDate, mobile, createdById } = body;
+    const { code, name, department, position, shiftStart, shiftEnd, hireDate, mobile, residence, createdById } = body;
 
     if (!name) {
       return NextResponse.json({ error: 'Name is required' }, { status: 400 });
@@ -168,6 +168,7 @@ export async function POST(request: NextRequest) {
       shiftEnd: shiftEnd || null,
       hireDate: hireDate || null,
       mobile: mobile || null,
+      residence: residence || null,
       createdById: createdById || null,
       // M0.6-A: lifecycle default. Legacy employees (no field) keep
       // reading as active via normalizeEmployeeStatus.

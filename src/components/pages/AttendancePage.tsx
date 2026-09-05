@@ -6,6 +6,9 @@ import { usePermissions } from '@/hooks/usePermissions';
 import { usePageState } from '@/hooks/use-page-state';
 import { formatMonthLabelAr } from '@/lib/month-label';
 import { useRecordHighlight } from '@/hooks/use-record-highlight';
+import { todayDisplayDate } from '@/lib/date-utils';
+import { PagePeriodIndicator } from '@/components/shared/PagePeriodIndicator';
+import { PageHeaderBar } from '@/components/shared/PageHeaderBar';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -80,6 +83,22 @@ function getTodayDate(): string {
   return `${dd}/${mm}/${yyyy}`;
 }
 
+/** Shift a "DD/MM/YYYY" display date by n days (§11 day navigation). */
+function shiftDisplayDate(display: string, days: number): string {
+  const [dd, mm, yyyy] = display.split('/').map(Number);
+  if (!dd || !mm || !yyyy) return display;
+  const d = new Date(yyyy, mm - 1, dd);
+  d.setDate(d.getDate() + days);
+  return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
+}
+
+/** "DD/MM/YYYY" → "YYYY-MM-DD" for input[type=date]; '' when absent. */
+function displayToIso(display: string): string {
+  const [dd, mm, yyyy] = display.split('/');
+  if (!dd || !mm || !yyyy) return '';
+  return `${yyyy}-${mm}-${dd}`;
+}
+
 const LATE_GRACE_PERIOD = 15; // minutes — first 15 min are free, late starts at minute 16
 
 function calcMinutesLate(checkIn: string, shiftStart: string | null): number {
@@ -102,11 +121,14 @@ export default function AttendancePage() {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [loading, setLoading] = useState(true);
   // Phase 6.3 (§8): filter context persists per user (session-scoped).
+  // Milestone 7 §11: attendance/check-in/check-out DEFAULT = TODAY.
+  // Filter vocabulary: 'all' | 'MM/YYYY' (month) | 'd:DD/MM/YYYY' (day).
+  // The persisted state wins when present (§27); fresh mounts get today.
   const [attendanceView, setAttendanceView] = usePageState<{ search: string; monthFilter: string }>({
     page: 'attendance',
     slot: 'filters',
     version: 1,
-    initial: () => ({ search: '', monthFilter: 'all' }),
+    initial: () => ({ search: '', monthFilter: `d:${todayDisplayDate()}` }),
     validate: (raw) =>
       raw && typeof raw === 'object' && typeof (raw as { monthFilter?: unknown }).monthFilter === 'string'
         ? raw
@@ -116,6 +138,10 @@ export default function AttendancePage() {
   const setSearch = (v: string) => setAttendanceView((s) => ({ ...s, search: v }));
   const monthFilter = attendanceView.monthFilter;
   const setMonthFilter = (v: string) => setAttendanceView((s) => ({ ...s, monthFilter: v }));
+  // §11 derived day-filter state: the DD/MM/YYYY value + its ISO form
+  // for the date picker ('' disables the picker when a month is active).
+  const dayFilterValue = monthFilter.startsWith('d:') ? monthFilter.slice(2) : '';
+  const dayFilterIso = dayFilterValue ? displayToIso(dayFilterValue) : '';
   // Phase 6.1 (Global Search §8): exact-record deep-link highlight via
   // the shared evidence mechanism — records carry data-record-id below.
   useRecordHighlight({ ready: !loading });
@@ -374,9 +400,13 @@ export default function AttendancePage() {
   const filtered = records.filter((rec) => {
     const name = rec.employee?.name?.toLowerCase() || '';
     const matchesSearch = name.includes(search.toLowerCase()) || rec.date.includes(search);
-    const matchesMonth = monthFilter && monthFilter !== 'all'
-      ? rec.date.toLowerCase().includes(monthFilter)
-      : true;
+    // §11 vocabulary: day ('d:DD/MM/YYYY') / month ('MM/YYYY') / all.
+    const matchesMonth =
+      monthFilter === 'all'
+        ? true
+        : monthFilter.startsWith('d:')
+          ? rec.date === monthFilter.slice(2)
+          : rec.date.toLowerCase().includes(monthFilter);
     return matchesSearch && matchesMonth;
   });
 
@@ -413,75 +443,73 @@ export default function AttendancePage() {
 
   return (
     <div dir="rtl" className="space-y-6">
-      {/* Header */}
-      <motion.div
-        initial={{ opacity: 0, y: -10 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="flex flex-col sm:flex-row sm:items-center justify-between gap-4"
-      >
-        <div>
-          <h1 className="text-2xl font-bold text-white flex items-center gap-2">
-            <Clock className="size-6 text-blue-400" />
-            سجل الحضور والانصراف
-          </h1>
-          <p className="text-slate-400 mt-1 text-sm">
-            {filtered.length} سجل حضور
-          </p>
-        </div>
-        <div className="flex items-center gap-2 flex-wrap">
-          {canCreate && (
+      {/* Header (§25/§26 — sticky, period visible) */}
+      <PageHeaderBar
+        icon={<Clock className="size-5" />}
+        iconClassName="bg-blue-500/15 border-blue-500/30 text-blue-400"
+        title="سجل الحضور والانصراف"
+        subtitle={`${filtered.length} سجل حضور`}
+        extras={
+          <PagePeriodIndicator
+            testId="attendance-period-indicator"
+            label={
+              monthFilter === 'all'
+                ? 'كل السجلات'
+                : monthFilter.startsWith('d:')
+                  ? `يوم ${monthFilter.slice(2)}`
+                  : `شهر ${monthFilter}`
+            }
+            filtered={monthFilter !== 'all'}
+            onShowAll={() => setMonthFilter('all')}
+          />
+        }
+        primaryAction={canCreate ? {
+          label: 'تسجيل حضور',
+          onClick: () => {
+            setAddForm({
+              employeeId: '',
+              date: getTodayDate(),
+              checkIn: '',
+              status: '',
+              notes: '',
+            });
+            setIsAddOpen(true);
+          },
+        } : undefined}
+        actions={canCreate ? (
+          <>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".xlsx,.xls,.csv"
+              onChange={handleUploadExcel}
+              className="hidden"
+            />
             <Button
-              onClick={() => {
-                setAddForm({
-                  employeeId: '',
-                  date: getTodayDate(),
-                  checkIn: '',
-                  status: '',
-                  notes: '',
-                });
-                setIsAddOpen(true);
-              }}
-              className="bg-linear-to-r from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white h-9 px-5 shadow-lg shadow-violet-500/20 transition-all"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={uploading}
+              variant="outline"
+              className="border-slate-600 text-slate-300 hover:bg-slate-800 hover:text-white h-9 px-4 transition-all"
             >
-              <Plus className="size-4" />
-              تسجيل حضور
+              {uploading ? (
+                <>
+                  <motion.div
+                    className="size-4 border-2 border-slate-500 border-t-white rounded-full"
+                    animate={{ rotate: 360 }}
+                    transition={{ duration: 0.8, repeat: Infinity, ease: 'linear' }}
+                  />
+                  جاري الرفع...
+                </>
+              ) : (
+                <>
+                  <FileSpreadsheet className="size-4 ml-1" />
+                  رفع شيت إكسيل
+                </>
+              )}
             </Button>
-          )}
-          {canCreate && (
-            <>
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept=".xlsx,.xls,.csv"
-                onChange={handleUploadExcel}
-                className="hidden"
-              />
-              <Button
-                onClick={() => fileInputRef.current?.click()}
-                disabled={uploading}
-                variant="outline"
-                className="border-slate-600 text-slate-300 hover:bg-slate-800 hover:text-white h-9 px-4 transition-all"
-              >
-                {uploading ? (
-                  <>
-                    <motion.div
-                      className="size-4 border-2 border-slate-500 border-t-white rounded-full"
-                      animate={{ rotate: 360 }}
-                      transition={{ duration: 0.8, repeat: Infinity, ease: 'linear' }}
-                    />
-                    جاري الرفع...
-                  </>
-                ) : (
-                  <>
-                    <FileSpreadsheet className="size-4 ml-1" />
-                    رفع شيت إكسيل
-                  </>
-                )}
-              </Button>
-            </>
-          )}
-        </div>
-      </motion.div>
+          </>
+        ) : undefined}
+      />
 
       {/* Summary Cards */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -511,7 +539,7 @@ export default function AttendancePage() {
         </Card>
       </div>
 
-      {/* Filters */}
+      {/* Filters — §11: day navigation (prev/next/today) + month + all */}
       <div className="flex flex-col sm:flex-row gap-3">
         <div className="relative flex-1 max-w-md">
           <Search className="absolute right-3 top-1/2 -translate-y-1/2 size-4 text-slate-400" />
@@ -530,14 +558,59 @@ export default function AttendancePage() {
             </button>
           )}
         </div>
+        {/* Day navigation — prev/next day + picker (§11 daily default) */}
+        <div className="flex items-center gap-1.5">
+          <button
+            type="button"
+            onClick={() => setMonthFilter(`d:${shiftDisplayDate(dayFilterValue, -1)}`)}
+            disabled={monthFilter === 'all'}
+            className="px-2.5 py-2 rounded-lg border border-slate-600 text-slate-300 hover:bg-slate-700/60 disabled:opacity-40 text-sm"
+            title="اليوم السابق"
+            aria-label="اليوم السابق"
+          >
+            ›
+          </button>
+          <input
+            type="date"
+            value={dayFilterIso}
+            onChange={(e) => {
+              if (!e.target.value) return;
+              const [y, m, d] = e.target.value.split('-');
+              setMonthFilter(`d:${d}/${m}/${y}`);
+            }}
+            disabled={monthFilter === 'all'}
+            className="bg-slate-800 border border-slate-600 text-white rounded-lg h-10 px-2 text-sm disabled:opacity-40"
+            dir="ltr"
+            aria-label="اختيار اليوم"
+          />
+          <button
+            type="button"
+            onClick={() => setMonthFilter(`d:${shiftDisplayDate(dayFilterValue, 1)}`)}
+            disabled={monthFilter === 'all'}
+            className="px-2.5 py-2 rounded-lg border border-slate-600 text-slate-300 hover:bg-slate-700/60 disabled:opacity-40 text-sm"
+            title="اليوم التالي"
+            aria-label="اليوم التالي"
+          >
+            ‹
+          </button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setMonthFilter(`d:${todayDisplayDate()}`)}
+            className="border-slate-600 text-slate-300 hover:bg-slate-800 h-9"
+          >
+            اليوم
+          </Button>
+        </div>
         <Select value={monthFilter} onValueChange={setMonthFilter}>
           <SelectTrigger className="bg-slate-800 border-slate-600 text-white w-full sm:w-48">
             <SelectValue placeholder="تصفية بالشهر" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all" className="text-white">الكل</SelectItem>
+            <SelectItem value="all" className="text-white">كل السجلات</SelectItem>
+            <SelectItem value={`d:${todayDisplayDate()}`} className="text-white">اليوم</SelectItem>
             {months.map((m) => (
-              <SelectItem key={m} value={m} className="text-white">{m}</SelectItem>
+              <SelectItem key={m} value={m} className="text-white">شهر {m}</SelectItem>
             ))}
           </SelectContent>
         </Select>
@@ -560,7 +633,9 @@ export default function AttendancePage() {
               {search
                 ? 'لم يتم العثور على نتائج'
                 : monthFilter && monthFilter !== 'all'
-                  ? `لا توجد سجلات حضور في ${formatMonthLabelAr(monthFilter)}.`
+                  ? monthFilter.startsWith('d:')
+                    ? `لا توجد سجلات حضور في يوم ${monthFilter.slice(2)}.`
+                    : `لا توجد سجلات حضور في ${formatMonthLabelAr(monthFilter)}.`
                   : 'ابدأ بتسجيل الحضور'}
             </p>
           </CardContent>

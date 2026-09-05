@@ -22,10 +22,11 @@ import { usePageState } from '@/hooks/use-page-state';
 import KpiEmployeeReportTab from './KpiEmployeeReportTab';
 import KpiMonthlyTableTab from './KpiMonthlyTableTab';
 import KpiSummaryTab from './KpiSummaryTab';
+import ManagementReportTab from './ManagementReportTab';
 import PerformanceAnalysisTab from './PerformanceAnalysisTab';
 import { buildMonthOptions, currentMonthKey, formatMonth } from './kpi-reports-shared';
 
-type TabKey = 'employee' | 'monthly' | 'mtd' | 'historical' | 'summary' | 'performance';
+type TabKey = 'employee' | 'monthly' | 'mtd' | 'historical' | 'summary' | 'management' | 'performance';
 
 export default function KpiReportsPage() {
   // Phase 6.3 (§8/§38/§39/§50): the reporting work context — active tab
@@ -98,6 +99,7 @@ export default function KpiReportsPage() {
           <TabsTrigger value="historical">التاريخي</TabsTrigger>
           <TabsTrigger value="employee">الموظف</TabsTrigger>
           <TabsTrigger value="summary">الملخص الإداري</TabsTrigger>
+          <TabsTrigger value="management">التقرير الإداري الشامل</TabsTrigger>
           <TabsTrigger value="performance">تحليل الأداء</TabsTrigger>
         </TabsList>
 
@@ -115,6 +117,9 @@ export default function KpiReportsPage() {
         </TabsContent>
         <TabsContent value="summary">
           <KpiSummaryTab month={effectiveMonth} />
+        </TabsContent>
+        <TabsContent value="management">
+          <ManagementReportTab month={effectiveMonth} />
         </TabsContent>
         <TabsContent value="performance">
           <PerformanceAnalysisTab month={effectiveMonth} />

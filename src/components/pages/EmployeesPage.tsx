@@ -40,6 +40,8 @@ import {
   Loader2,
 } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { FavoriteToggle, PinToggle } from '@/components/shared/NavigationMarks';
+import { PageHeaderBar } from '@/components/shared/PageHeaderBar';
 import {
   EMPLOYEE_STATUSES,
   EMPLOYEE_STATUS_LABELS_AR,
@@ -60,6 +62,7 @@ interface EmployeeFormData {
   shiftEnd: string;
   hireDate: string;
   mobile: string;
+  residence: string;
   status: string;
 }
 
@@ -72,6 +75,7 @@ const emptyForm: EmployeeFormData = {
   shiftEnd: '',
   hireDate: '',
   mobile: '',
+  residence: '',
   status: 'active',
 };
 
@@ -241,6 +245,7 @@ export default function EmployeesPage() {
       shiftEnd: emp.shiftEnd || '',
       hireDate: emp.hireDate || '',
       mobile: emp.mobile || '',
+      residence: (emp as any).residence || '',
       status: normalizeEmployeeStatus(emp.status),
     });
   };
@@ -251,6 +256,7 @@ export default function EmployeesPage() {
       (emp.code || '').toLowerCase().includes(search.toLowerCase()) ||
       (emp.department || '').toLowerCase().includes(search.toLowerCase()) ||
       (emp.position || '').toLowerCase().includes(search.toLowerCase()) ||
+      (emp.residence || '').toLowerCase().includes(search.toLowerCase()) ||
       (emp.mobile || '').toLowerCase().includes(search.toLowerCase())
   ).filter((emp: any) =>
     statusFilter === 'all' || normalizeEmployeeStatus(emp.status) === statusFilter
@@ -368,6 +374,15 @@ export default function EmployeesPage() {
               dir="ltr"
             />
           </div>
+          <div className="space-y-2 sm:col-span-2">
+            <Label className="text-slate-300">مكان الإقامة</Label>
+            <Input
+              value={form.residence}
+              onChange={(e) => updateForm('residence', e.target.value)}
+              className="bg-slate-800 border-slate-600 text-white"
+              placeholder="المدينة / المنطقة — قابلة للبحث"
+            />
+          </div>
           {editingEmployee && (
             <div className="space-y-2">
               <Label className="text-slate-300">حالة الموظف</Label>
@@ -415,63 +430,47 @@ export default function EmployeesPage() {
 
   return (
     <div dir="rtl" className="space-y-6">
-      {/* Header */}
-      <motion.div
-        initial={{ opacity: 0, y: -10 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="flex flex-col sm:flex-row sm:items-center justify-between gap-4"
-      >
-        <div>
-          <h1 className="text-2xl font-bold text-white flex items-center gap-2">
-            <Users className="size-6 text-violet-400" />
-            إدارة الموظفين
-          </h1>
-          <p className="text-slate-400 mt-1 text-sm">
-            {filtered.length} من {employees.length} موظف
-          </p>
-        </div>
-        <div className="flex items-center gap-2 flex-wrap">
-          {canUpload && (
-            <>
-              <Button
-                variant="outline"
-                onClick={() => fileInputRef.current?.click()}
-                disabled={uploading}
-                className="border-slate-600 text-slate-300 hover:bg-slate-700"
-              >
-                {uploading ? (
-                  <><Loader2 className="size-4 animate-spin" /> جاري الرفع...</>
-                ) : (
-                  <>
-                    <Upload className="size-4" />
-                    رفع Excel
-                  </>
-                )}
-              </Button>
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept=".xlsx,.xls"
-                onChange={handleUpload}
-                className="hidden"
-              />
-            </>
-          )}
-          {canCreate && (
+      {/* Header (§25/§26 — sticky, primary action always accessible) */}
+      <PageHeaderBar
+        icon={<Users className="size-5" />}
+        iconClassName="bg-violet-500/15 border-violet-500/30 text-violet-400"
+        title="إدارة الموظفين"
+        subtitle={`${filtered.length} من ${employees.length} موظف`}
+        primaryAction={canCreate ? {
+          label: 'إضافة موظف',
+          onClick: () => {
+            setForm(emptyForm);
+            setEditingEmployee(null);
+            setIsAddOpen(true);
+          },
+        } : undefined}
+        actions={canUpload ? (
+          <>
             <Button
-              onClick={() => {
-                setForm(emptyForm);
-                setEditingEmployee(null);
-                setIsAddOpen(true);
-              }}
-              className="bg-linear-to-r from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white h-9 px-5 shadow-lg shadow-violet-500/20 transition-all"
+              variant="outline"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={uploading}
+              className="border-slate-600 text-slate-300 hover:bg-slate-700"
             >
-              <Plus className="size-4" />
-              إضافة موظف
+              {uploading ? (
+                <><Loader2 className="size-4 animate-spin" /> جاري الرفع...</>
+              ) : (
+                <>
+                  <Upload className="size-4" />
+                  رفع Excel
+                </>
+              )}
             </Button>
-          )}
-        </div>
-      </motion.div>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".xlsx,.xls"
+              onChange={handleUpload}
+              className="hidden"
+            />
+          </>
+        ) : undefined}
+      />
 
       {/* Search + M0.6-A lifecycle filter */}
       <div className="flex items-center gap-3 flex-wrap">
@@ -539,8 +538,9 @@ export default function EmployeesPage() {
                   <TableHead className="text-slate-400 text-sm font-medium">الاسم</TableHead>
                   <TableHead className="text-slate-400 text-sm font-medium hidden sm:table-cell">القسم</TableHead>
                   <TableHead className="text-slate-400 text-sm font-medium hidden md:table-cell">الوظيفة</TableHead>
-                  <TableHead className="text-slate-400 text-sm font-medium hidden lg:table-cell">الدوام</TableHead>
-                  <TableHead className="text-slate-400 text-sm font-medium hidden lg:table-cell">الموبايل</TableHead>
+                  <TableHead className="text-slate-400 text-sm font-medium hidden lg:table-cell">الإقامة</TableHead>
+                  <TableHead className="text-slate-400 text-sm font-medium hidden xl:table-cell">الدوام</TableHead>
+                  <TableHead className="text-slate-400 text-sm font-medium hidden xl:table-cell">الموبايل</TableHead>
                   {(canUpdate || canDelete) && <TableHead className="text-slate-400 text-sm font-medium">إجراءات</TableHead>}
                 </TableRow>
               </TableHeader>
@@ -578,15 +578,42 @@ export default function EmployeesPage() {
                       </TableCell>
                       <TableCell className="text-slate-300 hidden sm:table-cell">{emp.department || '—'}</TableCell>
                       <TableCell className="text-slate-300 hidden md:table-cell">{emp.position || '—'}</TableCell>
-                      <TableCell className="text-slate-300 hidden lg:table-cell" dir="ltr">
+                      <TableCell className="text-slate-300 hidden lg:table-cell">{emp.residence || '—'}</TableCell>
+                      <TableCell className="text-slate-300 hidden xl:table-cell" dir="ltr">
                         {emp.shiftStart && emp.shiftEnd ? `${emp.shiftStart} - ${emp.shiftEnd}` : '—'}
                       </TableCell>
-                      <TableCell className="text-slate-300 hidden lg:table-cell" dir="ltr">
+                      <TableCell className="text-slate-300 hidden xl:table-cell" dir="ltr">
                         {canSeeField('employees', 'mobile') ? emp.mobile || '—' : '—'}
                       </TableCell>
                       {(canOpenEmployee360 || canUpdate || canDelete) && (
                         <TableCell>
                           <div className="flex items-center gap-1">
+                            {/* §22/§23: mark this employee (⭐/📌) — navigates
+                                back to the exact row via the shared highlight. */}
+                            <FavoriteToggle
+                              size="sm"
+                              descriptor={{
+                                targetType: 'record',
+                                targetId: emp.id,
+                                route: 'employees',
+                                label: emp.name,
+                                navigationContext: normalizeEmployeeStatus(emp.status) !== 'active'
+                                  ? { status: normalizeEmployeeStatus(emp.status) }
+                                  : undefined,
+                              }}
+                            />
+                            <PinToggle
+                              size="sm"
+                              descriptor={{
+                                targetType: 'record',
+                                targetId: emp.id,
+                                route: 'employees',
+                                label: emp.name,
+                                navigationContext: normalizeEmployeeStatus(emp.status) !== 'active'
+                                  ? { status: normalizeEmployeeStatus(emp.status) }
+                                  : undefined,
+                              }}
+                            />
                             {canOpenEmployee360 && (
                             <Button
                               variant="ghost"

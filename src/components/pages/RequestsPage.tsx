@@ -54,7 +54,8 @@ import { EmployeeSearchInput } from '@/components/shared/EmployeeSearchInput';
 import type { RequestRecord, Employee } from '@/types';
 import { useAppStore } from '@/lib/store';
 import { useAuth } from '@/contexts/AuthContext';
-import { getRequestTypeLabel, getRequestTypeColor } from '@/lib/date-utils';
+import { getRequestTypeLabel, getRequestTypeColor, todayDayKey } from '@/lib/date-utils';
+import { PageHeaderBar } from '@/components/shared/PageHeaderBar';
 import { logCreate, logApprove, logDelete } from '@/lib/activity-logger';
 import { toast } from 'sonner';
 import { authFetch } from '@/lib/api-fetch';
@@ -339,70 +340,55 @@ export default function RequestsPage() {
 
   return (
     <div dir="rtl" className="space-y-6">
-      {/* Header */}
-      <motion.div
-        initial={{ opacity: 0, y: -10 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="flex flex-col sm:flex-row sm:items-center justify-between gap-4"
-      >
-        <div className="flex items-center gap-3">
-          <div className="flex items-center justify-center size-10 rounded-xl bg-violet-500/15 border border-violet-500/30">
-            <FileText className="size-5 text-violet-400" />
-          </div>
-          <div>
-            <h1 className="text-xl font-bold text-white">إدارة الطلبات</h1>
-            <p className="text-slate-500 text-xs mt-0.5">
-              {requests.length} طلب — {pending.length} معلق
-            </p>
-          </div>
-        </div>
-        <div className="flex items-center gap-2">
-          {canCreate && (
-            <Button
-              onClick={() => setIsAddOpen(true)}
-              size="sm"
-              className="bg-linear-to-r from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white h-9 px-5 shadow-lg shadow-violet-500/20 transition-all"
-            >
-              <Plus className="size-4 ml-1" />
-              تقديم طلب
-            </Button>
-          )}
-          {canCreate && (
-            <>
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept=".xlsx,.xls,.csv"
-                onChange={handleUploadExcel}
-                className="hidden"
-              />
-              <Button
-                onClick={() => fileInputRef.current?.click()}
-                disabled={uploading}
-                size="sm"
-                variant="outline"
-                className="border-slate-600 text-slate-300 hover:bg-slate-800 hover:text-white h-9 px-4 transition-all"
-              >
-                {uploading ? (
-                  <>
-                    <motion.div
-                      className="size-4 border-2 border-slate-500 border-t-white rounded-full"
-                      animate={{ rotate: 360 }}
-                      transition={{ duration: 0.8, repeat: Infinity, ease: 'linear' }}
-                    />
-                    جاري الرفع...
-                  </>
-                ) : (
-                  <>
-                    <FileSpreadsheet className="size-4 ml-1" />
-                    رفع شيت إكسيل
-                  </>
-                )}
-              </Button>
-            </>
-          )}
-        </div>
-      </motion.div>
+      {/* Header (§25/§26 — sticky) */}
+      <PageHeaderBar
+        icon={<FileText className="size-5" />}
+        iconClassName="bg-violet-500/15 border-violet-500/30 text-violet-400"
+        title="إدارة الطلبات"
+        subtitle={`${requests.length} طلب — ${pending.length} معلق`}
+        primaryAction={canCreate ? {
+          label: 'تقديم طلب',
+          onClick: () => { setAddForm({ employeeId: '', type: 'leave', date: todayDayKey(), reason: '' }); setIsAddOpen(true); },
+        } : undefined}
+        actions={
+          <>
+            {canCreate && (
+              <>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".xlsx,.xls,.csv"
+                  onChange={handleUploadExcel}
+                  className="hidden"
+                />
+                <Button
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={uploading}
+                  size="sm"
+                  variant="outline"
+                  className="border-slate-600 text-slate-300 hover:bg-slate-800 hover:text-white h-9 px-4 transition-all"
+                >
+                  {uploading ? (
+                    <>
+                      <motion.div
+                        className="size-4 border-2 border-slate-500 border-t-white rounded-full"
+                        animate={{ rotate: 360 }}
+                        transition={{ duration: 0.8, repeat: Infinity, ease: 'linear' }}
+                      />
+                      جاري الرفع...
+                    </>
+                  ) : (
+                    <>
+                      <FileSpreadsheet className="size-4 ml-1" />
+                      رفع شيت إكسيل
+                    </>
+                  )}
+                </Button>
+              </>
+            )}
+          </>
+        }
+      />
 
       {/* Search + Month Filter */}
       <div className="flex flex-col sm:flex-row gap-2.5">

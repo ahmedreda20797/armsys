@@ -52,6 +52,9 @@ import { logCreate, logUpdate, logDelete } from '@/lib/activity-logger';
 import { authFetch } from '@/lib/api-fetch';
 import { useAppStore } from '@/lib/store';
 import { formatMonthLabelAr } from '@/lib/month-label';
+import { todayDisplayDate, currentMonthKey } from '@/lib/date-utils';
+import { PagePeriodIndicator } from '@/components/shared/PagePeriodIndicator';
+import { PageHeaderBar } from '@/components/shared/PageHeaderBar';
 import { CAPALinkBadge } from '@/components/shared/CAPALinkBadge';
 
 interface QualityWithEmployee extends QualityDeduction {
@@ -173,11 +176,14 @@ export default function QualityPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   // Phase 6.3 (§8): filter context persists per user (session-scoped).
+  // Milestone 7 §12: the period DEFAULT is the CURRENT MONTH (applies
+  // only when the user has no persisted filter state — §27) — 'all'
+  // remains one click away and is never re-imposed after Clear.
   const [qualityView, setQualityView] = usePageState<{ search: string; monthFilter: string }>({
     page: 'quality',
     slot: 'filters',
     version: 1,
-    initial: () => ({ search: '', monthFilter: 'all' }),
+    initial: () => ({ search: '', monthFilter: currentMonthKey() }),
     validate: (raw) =>
       raw && typeof raw === 'object' && typeof (raw as { monthFilter?: unknown }).monthFilter === 'string'
         ? raw
@@ -466,34 +472,32 @@ export default function QualityPage() {
 
   return (
     <div dir="rtl" className="space-y-5">
-      {/* ═══ Header ═══ */}
-      <motion.div
-        initial={{ opacity: 0, y: -10 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="flex flex-col sm:flex-row sm:items-center justify-between gap-3"
-      >
-        <div className="flex items-center gap-3">
-          <div className="flex items-center justify-center size-10 rounded-xl bg-violet-500/15 border border-violet-500/30">
-            <Award className="size-5 text-violet-400" />
-          </div>
-          <div>
-            <h1 className="text-xl font-bold text-white">خصومات الجودة</h1>
-            <p className="text-slate-500 text-xs mt-0.5">
-              {filtered.length} سجل خصم — {sortedEmployees.length} موظف
-            </p>
-          </div>
-        </div>
-        {canCreate && (
-          <Button
-            onClick={() => { setEditingDeduction(null); setIsAddOpen(true); }}
-            size="sm"
-            className="bg-linear-to-r from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white h-9 px-5 shadow-lg shadow-violet-500/20 transition-all"
-          >
-            <Plus className="size-4 ml-1" />
-            إضافة خصم
-          </Button>
-        )}
-      </motion.div>
+      {/* ═══ Header (§25/§26 — sticky, primary action always accessible) ═══ */}
+      <PageHeaderBar
+        icon={<Award className="size-5" />}
+        iconClassName="bg-violet-500/15 border-violet-500/30 text-violet-400"
+        title="خصومات الجودة"
+        subtitle={`${filtered.length} سجل خصم — ${sortedEmployees.length} موظف`}
+        extras={
+          <PagePeriodIndicator
+            testId="quality-period-indicator"
+            label={monthFilter && monthFilter !== 'all' ? formatMonthLabelAr(monthFilter) : 'كل الأشهر'}
+            filtered={!!monthFilter && monthFilter !== 'all'}
+            onShowAll={() => setMonthFilter('all')}
+          />
+        }
+        primaryAction={canCreate ? {
+          label: 'إضافة خصم',
+          onClick: () => {
+            setEditingDeduction(null);
+            // §5: DEFAULT DATE = TODAY — month derives from it; the
+            // user can still type any historical date before saving.
+            const today = todayDisplayDate();
+            setAddForm((p) => ({ ...p, date: today, month: parseDateToMonth(today) }));
+            setIsAddOpen(true);
+          },
+        } : undefined}
+      />
 
       {/* ═══ Stats Bar ═══ */}
       {filtered.length > 0 && (
@@ -549,9 +553,9 @@ export default function QualityPage() {
             <SelectValue placeholder="الشهر" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all" className="text-white">الكل</SelectItem>
+            <SelectItem value="all" className="text-white">كل الأشهر</SelectItem>
             {months.map((m) => (
-              <SelectItem key={m} value={m} className="text-white">{m}</SelectItem>
+              <SelectItem key={m} value={m} className="text-white">{formatMonthLabelAr(m)}</SelectItem>
             ))}
           </SelectContent>
         </Select>

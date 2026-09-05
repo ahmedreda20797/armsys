@@ -22,13 +22,18 @@ import {
   CheckCircle2, AlertTriangle, Clock, Loader2, Eye, BarChart3,
   UserCheck, FileText,
   Target, Zap, TrendingUp, Flame,
-  CircleDot, Download, AlertOctagon,
+  CircleDot, Download, AlertOctagon, ShieldAlert,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { logDelete } from '@/lib/activity-logger';
 import { authFetch } from '@/lib/api-fetch';
 import { useAppStore } from '@/lib/store';
 import type { CAPACase, Employee } from '@/types';
+import type { RepetitionAlert } from '@/lib/repetition-detection';
+import { buildCapaPrefillFromAlert } from '@/lib/repetition-detection';
+import { capaDefaultsFromNavParams, hasCreateIntent } from '@/lib/record-prefill';
+import { FavoriteToggle, PinToggle } from '@/components/shared/NavigationMarks';
+import { PageHeaderBar } from '@/components/shared/PageHeaderBar';
 import CAPAQuickCreate from '@/components/capa/CAPAQuickCreate';
 import CAPADetailPage from '@/components/capa/CAPADetailPage';
 import {
@@ -111,8 +116,34 @@ function CAPAListPage() {
   const setActiveTab = (v: string) => setCapaView((s) => ({ ...s, activeTab: v }));
 
   // Quick Create
-  const [isCreateOpen, setIsCreateOpen] = useState(false);
-  const [createDefaults, setCreateDefaults] = useState<Record<string, any>>({});
+  // UX Corrections §1 (ROOT CAUSE FIX): cross-module create intents
+  // (Quality deduction / Complaint / Follow-up / Repetition alert)
+  // arrive via navParams BEFORE this page mounts — the PageRouter
+  // remounts pages per navigation. The previous render-time guard
+  // compared navParams against useState(navParams), which is ALWAYS
+  // equal on mount, so the dialog never auto-opened. State now
+  // INITIALIZES from the mount-time intent, and the render-time
+  // guard below keeps handling intents that arrive while mounted.
+  const [isCreateOpen, setIsCreateOpen] = useState(() => hasCreateIntent(navParams));
+  const [createDefaults, setCreateDefaults] = useState<Record<string, any>>(() =>
+    capaDefaultsFromNavParams(navParams),
+  );
+
+  // ═══ Milestone 7 §8 — Repetition → CAPA alerts ═══
+  // Deterministic server detection (same employee + same issue key
+  // within the 30-day window, thresholds documented in
+  // lib/repetition-detection). Per-domain permissions + employee
+  // scope are enforced server-side; the banner only ever shows
+  // alerts this caller is entitled to see.
+  const [repetitionAlerts, setRepetitionAlerts] = useState<RepetitionAlert[]>([]);
+  const [repetitionDismissed, setRepetitionDismissed] = useState(false);
+  useEffect(() => {
+    if (!canView) return;
+    authFetch('/api/repetition-alerts')
+      .then((r) => (r.ok ? r.json() : { alerts: [] }))
+      .then((d) => setRepetitionAlerts(Array.isArray(d?.alerts) ? d.alerts : []))
+      .catch(() => setRepetitionAlerts([]));
+  }, [canView]);
 
   // Delete
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -129,28 +160,15 @@ function CAPAListPage() {
     fetchData();
   }, []);
 
-  // Listen for navParams changes (e.g. from cross-module "create CAPA").
-  // Uses the compiler-endorsed "adjust state during render" guard instead of
-  // an effect + setState (avoids cascading renders).
+  // Listen for navParams changes WHILE the page is mounted (the
+  // mount-time intent is handled by the useState initializers above).
+  // Uses the compiler-endorsed "adjust state during render" guard.
   const [lastHandledNav, setLastHandledNav] = useState(navParams);
   if (navParams !== lastHandledNav) {
     setLastHandledNav(navParams);
-    if (navParams?.source) {
-      const defaults: Record<string, any> = {};
-      if (navParams.title) defaults.title = navParams.title;
-      if (navParams.department) defaults.department = navParams.department;
-      if (navParams.priority) defaults.priority = navParams.priority;
-      if (navParams.employeeId) defaults.employeeId = navParams.employeeId;
-      if (navParams.problemDescription) defaults.problemDescription = navParams.problemDescription;
-      if (navParams.source) defaults.source = navParams.source;
-      if (navParams.relatedFollowUpId) defaults.relatedFollowUpId = navParams.relatedFollowUpId;
-      if (navParams.relatedComplaintId) defaults.relatedComplaintId = navParams.relatedComplaintId;
-      if (navParams.relatedQualityDeductionId) defaults.relatedQualityDeductionId = navParams.relatedQualityDeductionId;
-      if (navParams.relatedHrDeductionId) defaults.relatedHrDeductionId = navParams.relatedHrDeductionId;
-      if (Object.keys(defaults).length > 0) {
-        setCreateDefaults(defaults);
-        setIsCreateOpen(true);
-      }
+    if (hasCreateIntent(navParams)) {
+      setCreateDefaults(capaDefaultsFromNavParams(navParams));
+      setIsCreateOpen(true);
     }
   }
 
@@ -314,33 +332,28 @@ function CAPAListPage() {
 
   return (
     <div dir="rtl" className="space-y-5">
-      {/* ═══ Header ═══ */}
-      <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <div className="flex items-center justify-center size-10 rounded-xl bg-linear-to-br from-violet-600/20 to-indigo-600/20 border border-violet-500/30">
-            <ShieldCheck className="size-5 text-violet-400" />
-          </div>
-          <div>
-            <h1 className="text-xl font-bold text-white">نظام كابا — الإجراءات التصحيحية والوقائية</h1>
-            <p className="text-slate-500 text-xs mt-0.5">محرك تحسين الجودة وحل المشكلات</p>
-          </div>
-        </div>
-        {canCreate && (
-          <Button onClick={() => { setCreateDefaults({}); setIsCreateOpen(true); }} size="sm"
-            className="bg-linear-to-r from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white h-9 px-5 shadow-lg shadow-violet-500/20 transition-all">
-            <Plus className="size-4 ml-1" /> إنشاء حالة كابا
-          </Button>
-        )}
-        <div className="flex gap-1.5">
-          <Button onClick={openReport} size="sm" variant="outline" className="border-slate-700/70 text-slate-300 hover:bg-slate-800 hover:text-white h-9 px-3">
-            <BarChart3 className="size-4 ml-1" /> التقرير
-          </Button>
-          <Button onClick={() => handleExport('xlsx')} disabled={exporting} size="sm" variant="outline" className="border-slate-700/70 text-slate-300 hover:bg-slate-800 hover:text-white h-9 px-3">
-            {exporting ? <Loader2 className="size-4 animate-spin ml-1" /> : <Download className="size-4 ml-1" />}
-            {exporting ? 'جارٍ...' : 'تصدير'}
-          </Button>
-        </div>
-      </motion.div>
+      {/* ═══ Header (§25/§26 — sticky) ═══ */}
+      <PageHeaderBar
+        icon={<ShieldCheck className="size-5" />}
+        iconClassName="bg-linear-to-br from-violet-600/20 to-indigo-600/20 border-violet-500/30 text-violet-400"
+        title="نظام كابا — الإجراءات التصحيحية والوقائية"
+        subtitle="محرك تحسين الجودة وحل المشكلات"
+        primaryAction={canCreate ? {
+          label: 'إنشاء حالة كابا',
+          onClick: () => { setCreateDefaults({}); setIsCreateOpen(true); },
+        } : undefined}
+        actions={
+          <>
+            <Button onClick={openReport} size="sm" variant="outline" className="border-slate-700/70 text-slate-300 hover:bg-slate-800 hover:text-white h-9 px-3">
+              <BarChart3 className="size-4 ml-1" /> التقرير
+            </Button>
+            <Button onClick={() => handleExport('xlsx')} disabled={exporting} size="sm" variant="outline" className="border-slate-700/70 text-slate-300 hover:bg-slate-800 hover:text-white h-9 px-3">
+              {exporting ? <Loader2 className="size-4 animate-spin ml-1" /> : <Download className="size-4 ml-1" />}
+              {exporting ? 'جارٍ...' : 'تصدير'}
+            </Button>
+          </>
+        }
+      />
 
       {/* ═══ Enhanced Dashboard Widgets ═══ */}
       <motion.div initial={{ opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }} className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2.5">
@@ -360,6 +373,64 @@ function CAPAListPage() {
           </div>
         ))}
       </motion.div>
+
+      {/* ═══ §8 Repetition → CAPA alerts ═══ */}
+      {!repetitionDismissed && repetitionAlerts.length > 0 && (
+        <motion.div initial={{ opacity: 0, y: -5 }} animate={{ opacity: 1, y: 0 }}>
+          <Card className="border-amber-500/40 bg-amber-500/5">
+            <CardContent className="p-3.5 space-y-2">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2 text-amber-300 text-sm font-semibold">
+                  <AlertOctagon className="size-4" />
+                  مشكلات متكررة اكتُشفت ({repetitionAlerts.length}) — يُنصح بفتح CAPA
+                </div>
+                <button
+                  onClick={() => setRepetitionDismissed(true)}
+                  className="text-slate-500 hover:text-slate-300 text-xs px-2 py-1 rounded-md hover:bg-slate-800/60"
+                  aria-label="إخفاء تنبيهات التكرار"
+                >
+                  إخفاء
+                </button>
+              </div>
+              <p className="text-amber-200/60 text-[11px]">
+                كشف حتمي: نفس الموظف + نفس تصنيف المشكلة مرتين أو أكثر خلال آخر 30 يوماً — حسب سجلاتك المصرّح بها.
+              </p>
+              <div className="space-y-1.5 max-h-48 overflow-y-auto">
+                {repetitionAlerts.map((alert, idx) => {
+                  const empName = employees.find((e: any) => e.id === alert.employeeId)?.name || alert.employeeId;
+                  const sourceLabel = alert.source === 'followUp' ? 'متابعة' : alert.source === 'complaint' ? 'شكوى' : 'ملاحظة';
+                  return (
+                    <div
+                      key={`${alert.employeeId}:${alert.source}:${alert.issueKey}:${idx}`}
+                      className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-amber-500/20 bg-slate-900/40 px-3 py-2"
+                    >
+                      <div className="flex items-center gap-2 flex-wrap min-w-0">
+                        <span className="text-white text-xs font-medium">{empName}</span>
+                        <span className="text-amber-300 text-xs">«{alert.issueLabel}»</span>
+                        <span className="text-slate-500 text-[10px]">
+                          {sourceLabel} · {alert.occurrenceCount} مرات · {alert.firstDay} → {alert.lastDay}
+                        </span>
+                      </div>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-7 text-[11px] border-amber-500/40 text-amber-300 hover:bg-amber-500/15"
+                        onClick={() => {
+                          setCreateDefaults(buildCapaPrefillFromAlert(alert, empName));
+                          setIsCreateOpen(true);
+                        }}
+                      >
+                        <ShieldAlert className="size-3 ml-1" />
+                        إنشاء CAPA
+                      </Button>
+                    </div>
+                  );
+                })}
+              </div>
+            </CardContent>
+          </Card>
+        </motion.div>
+      )}
 
       {/* ═══ Filters + Tabs ═══ */}
       <div className="space-y-3">
@@ -488,6 +559,29 @@ function CAPAListPage() {
                           </div>
                         </div>
                         <div className="flex items-center gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
+                          {/* §22/§23: mark this CAPA case (⭐/📌) — the
+                              descriptor opens the exact DETAIL card via the
+                              page's navParams.id contract. */}
+                          <FavoriteToggle
+                            size="sm"
+                            descriptor={{
+                              targetType: 'record',
+                              targetId: item.id,
+                              route: 'capa',
+                              label: `CAPA: ${item.title || item.capaId || ''}`,
+                              navigationContext: { id: item.id },
+                            }}
+                          />
+                          <PinToggle
+                            size="sm"
+                            descriptor={{
+                              targetType: 'record',
+                              targetId: item.id,
+                              route: 'capa',
+                              label: `CAPA: ${item.title || item.capaId || ''}`,
+                              navigationContext: { id: item.id },
+                            }}
+                          />
                           {canDelete && <button onClick={() => setDeletingId(item.id)} className="p-1.5 rounded-md text-slate-600 hover:text-red-400 hover:bg-red-500/10 transition-colors"><Trash2 className="size-3.5" /></button>}
                         </div>
                       </div>
@@ -553,7 +647,13 @@ function CAPAListPage() {
       )}
 
       {/* ═══ Quick Create Dialog ═══ */}
+      {/* key = defaults identity: a NEW pre-fill payload (cross-module
+          create intent or repetition alert) REMOUNTS the component so
+          its useState re-initializes from the incoming defaults —
+          without this, dynamically-arriving defaults were silently
+          dropped (the form captured them only at first mount). */}
       <CAPAQuickCreate
+        key={JSON.stringify(createDefaults)}
         open={isCreateOpen}
         onOpenChange={(open) => { if (!open) { setIsCreateOpen(false); setCreateDefaults({}); } }}
         onCreated={handleCreated}

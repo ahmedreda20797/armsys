@@ -23,6 +23,12 @@ export interface Employee {
   shiftEnd: string | null;
   hireDate: string | null;
   mobile: string | null;
+  /**
+   * Milestone 7 §16 — residence/location. OPTIONAL free text
+   * (legacy employees have no field); searchable/filterable in the
+   * Employee Database and shown in Employee 360.
+   */
+  residence?: string | null;
   createdById: string | null;
   createdAt: string;
   updatedAt: string;
@@ -51,6 +57,32 @@ export interface BiometricRecord {
   checkIn: string | null;
   checkOut: string | null;
   createdAt: string;
+}
+
+/**
+ * Milestone 7 §17 — employee document METADATA.
+ *
+ * Metadata-only design: the stack stores evidence as URLs (see
+ * quality observations), so a document is its metadata plus an
+ * OPTIONAL external link — no binary blobs in RTDB. Documents are
+ * deliberately NOT a Global Search domain (restricted employee data
+ * must not surface in search §17); access goes through the
+ * employees permission + employee scope on every route.
+ */
+export interface EmployeeDocument {
+  id: string;
+  employeeId: string;
+  /** Document type (card/contract/certificate/other — free vocabulary). */
+  docType: string;
+  title: string;
+  /** Optional external link (existing evidence-as-URL doctrine). */
+  url: string | null;
+  /** Expiry day key YYYY-MM-DD when applicable (null = open-ended). */
+  expiryDate: string | null;
+  uploadedBy: string | null;
+  uploadedByName: string | null;
+  uploadedAt: string;
+  updatedAt: string;
 }
 
 export interface AttendanceRecord {

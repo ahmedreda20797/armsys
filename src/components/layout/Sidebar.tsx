@@ -1,6 +1,31 @@
 'use client';
 
-import React, { useState, useCallback, useRef, useEffect } from 'react';
+// ══════════════════════════════════════════════════════════════
+//  Sidebar — enterprise navigation surface (UX Corrections §2-§5)
+//
+//  §2  CUSTOMIZATION HAPPENS HERE, not in a dialog: a ⋮ menu in the
+//      sidebar enters an in-place EDIT MODE — drag handles appear on
+//      the actual items, order changes live, [إلغاء]/[حفظ] finish.
+//      ORDER ONLY: the flat saved order is re-filtered through each
+//      page's registry group on render, so pages can never migrate
+//      across structural boundaries and permissions always win
+//      (reconcileSidebarOrder + useSidebarPages).
+//
+//  §3  COLLAPSE BY DEFAULT + HOVER: the sidebar renders collapsed;
+//      hovering (desktop) temporarily expands it as an overlay; a
+//      manual toggle PINS the chosen state, persisted through the
+//      existing preferences record (sidebar.pinOpen — user-scoped).
+//      Three separated states: pinned preference (store+prefs),
+//      temporary hover (local), rendered result (derived).
+//
+//  §4/§5 Favorites ⭐ and Pins 📌 live INSIDE the sidebar as
+//      dedicated workspace sections — never in the global Header.
+//      Entries are the existing compact navigation descriptors,
+//      reconciled against CURRENT visible pages before rendering,
+//      navigated with the store's navigateTo + useRecordHighlight.
+// ══════════════════════════════════════════════════════════════
+
+import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -42,13 +67,47 @@ import {
   FileBarChart,
   FileSearch,
   SlidersHorizontal,
+  MoreVertical,
+  RotateCcw,
+  GripVertical,
+  ArrowUp,
+  ArrowDown,
+  Star,
+  Pin as PinIcon,
+  Save,
+  Loader2,
 } from 'lucide-react';
 import { usePermissions } from '@/hooks/usePermissions';
 import { useSidebarPages } from '@/hooks/use-sidebar-order';
-import { SidebarCustomizeDialog } from '@/components/shared/SidebarCustomizeDialog';
 import { useAuth } from '@/contexts/AuthContext';
 import { useIsMobile } from '@/hooks/use-mobile';
-import { SIDEBAR_GROUPS } from '@/config/permissions';
+import { SIDEBAR_GROUPS, APP_PAGES } from '@/config/permissions';
+import { useAppStore } from '@/lib/store';
+import {
+  useUserPreferences,
+  useSaveUserPreferences,
+} from '@/hooks/use-user-preferences';
+import {
+  reconcileSidebarOrder,
+  reconcileNavigationEntries,
+  navigationEntriesEqual,
+  type FavoriteEntry,
+  type NavigationDescriptor,
+  type PinEntry,
+} from '@/lib/personalization';
+import {
+  useFavoriteToggleAction,
+  usePinToggleAction,
+  useMarkState,
+} from '@/components/shared/NavigationMarks';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { toast } from 'sonner';
 import type { LucideIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -88,19 +147,16 @@ const ICON_MAP: Record<string, LucideIcon> = {
   FileSearch,
 };
 
-interface SidebarProps {
-  currentPage: string;
-  onNavigate: (page: string) => void;
-  isOpen: boolean;
-  onToggle: () => void;
-  isCollapsed: boolean;
-  onToggleCollapse: () => void;
-}
+/** Page id → config (current-page ⭐/📌 descriptors in the ⋮ menu). */
+const APP_PAGES_BY_ID = new Map(APP_PAGES.map((p) => [p.id, p]));
 
-// ══════════════════════════════════════════════════════════════════
+const WIDTH_COLLAPSED = 72;
+const WIDTH_EXPANDED = 288;
+
+// ══════════════════════════════════════════════════════════════
 //  Fixed-position Tooltip — rendered in a portal so it NEVER
 //  affects layout flow or causes any horizontal shift.
-// ══════════════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════════
 function SidebarTooltip({ label, children }: { label: string; children: React.ReactNode }) {
   const [show, setShow] = useState(false);
   const [pos, setPos] = useState({ top: 0, right: 0 });
@@ -148,7 +204,6 @@ function SidebarTooltip({ label, children }: { label: string; children: React.Re
         document.body
       )
     : null;
-   
 
   return (
     <div
@@ -163,141 +218,77 @@ function SidebarTooltip({ label, children }: { label: string; children: React.Re
   );
 }
 
-// ══════════════════════════════════════════════════════════════════
-//  Collapsed Desktop Sidebar — icons only, no section headers
-// ══════════════════════════════════════════════════════════════════
-function CollapsedSidebar({
-  currentPage,
+/** Array move preserving all other indices (ORDER ONLY). */
+function moveItem(list: string[], from: number, to: number): string[] {
+  const next = [...list];
+  const [item] = next.splice(from, 1);
+  next.splice(to, 0, item);
+  return next;
+}
+
+// ══════════════════════════════════════════════════════════════
+//  Workspace entries (⭐ Favorites / 📌 Pins) — dedicated section
+// ══════════════════════════════════════════════════════════════
+function WorkspaceSection<T extends NavigationDescriptor & { id: string }>({
+  title,
+  icon,
+  entries,
   onNavigate,
-  onToggleCollapse,
-  userName,
-  userInitials,
-  onLogout,
+  onRemove,
 }: {
-  currentPage: string;
-  onNavigate: (page: string) => void;
-  onToggleCollapse: () => void;
-  userName: string;
-  userInitials: string;
-  onLogout: () => void;
+  title: string;
+  icon: React.ReactNode;
+  entries: T[];
+  onNavigate: (entry: T) => void;
+  onRemove: (entry: T) => void;
 }) {
-  // Permission-filtered pages in the USER'S saved order (Milestone 10)
-  const visiblePages = useSidebarPages();
-
+  if (entries.length === 0) return null;
   return (
-    <div
-      className="hidden lg:flex lg:flex-col lg:fixed lg:inset-y-0 lg:right-0 z-20 shadow-xl"
-      style={{ width: 72 }} // fixed width — never changes
-    >
-      <div className="flex flex-col h-full bg-slate-900 text-white" style={{ width: 72 }}>
-        {/* Logo */}
-        <div className="flex items-center justify-center h-20 border-b border-slate-700/50 shrink-0">
-          <motion.img
-            src="/logo-full-clean.png"
-            alt="ARM Logo"
-            className="h-10 w-auto object-contain"
-            animate={{ y: [0, -3, 0] }}
-            transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }}
-          />
-        </div>
-
-        {/* Navigation — icons only, NO section headers, NO separators */}
-        <nav className="flex-1 overflow-y-auto py-3 flex flex-col items-center gap-1 px-2">
-          {SIDEBAR_GROUPS.map((group) => {
-            const groupPages = visiblePages.filter((p) => p.groupId === group.id);
-            if (groupPages.length === 0) return null;
-            return (
-              <React.Fragment key={group.id}>
-                {groupPages.map((page) => {
-                  const Icon = ICON_MAP[page.icon];
-                  const isActive = currentPage === page.id;
-                  return (
-                    <SidebarTooltip key={page.id} label={page.title}>
-                      <motion.button
-                        onClick={() => onNavigate(page.id)}
-                        whileHover={{ scale: 1.08 }}
-                        whileTap={{ scale: 0.95 }}
-                        aria-label={page.title}
-                        className={cn(
-                          'w-12 h-10 flex items-center justify-center rounded-lg transition-colors duration-150 relative focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/50',
-                          isActive
-                            ? 'bg-gradient-to-r from-violet-600 to-indigo-600 text-white shadow-lg shadow-violet-500/20'
-                            : 'text-slate-400 hover:bg-slate-800 hover:text-white'
-                        )}
-                      >
-                        {Icon && <Icon className="h-5 w-5 shrink-0" />}
-                        {isActive && (
-                          <motion.div
-                            className="absolute right-0 top-1/2 -translate-y-1/2 w-1 h-6 rounded-l-full bg-violet-400"
-                            layoutId="collapsedIndicator"
-                            transition={{ type: 'spring', stiffness: 350, damping: 30 }}
-                          />
-                        )}
-                      </motion.button>
-                    </SidebarTooltip>
-                  );
-                })}
-              </React.Fragment>
-            );
-          })}
-        </nav>
-
-        {/* Bottom controls */}
-        <div className="border-t border-slate-700/50 py-3 flex flex-col items-center gap-2 shrink-0">
-          <SidebarTooltip label={userName}>
-            <div className="w-10 h-10 rounded-full bg-gradient-to-br from-slate-600 to-slate-700 text-sm font-bold text-white ring-2 ring-slate-600 flex items-center justify-center cursor-default hover:ring-violet-500/40 transition-all">
-              {userInitials}
-            </div>
-          </SidebarTooltip>
-          <SidebarTooltip label="تسجيل الخروج">
-            <motion.button
-              whileHover={{ scale: 1.1 }}
-              whileTap={{ scale: 0.9 }}
-              onClick={onLogout}
-              aria-label="تسجيل الخروج"
-              className="w-10 h-10 rounded-lg text-slate-400 hover:text-red-400 hover:bg-red-500/10 transition-colors flex items-center justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500/50"
+    <div className="px-1">
+      <p className="px-2 py-1 text-[10px] font-bold text-slate-500 flex items-center gap-1.5">
+        {icon}
+        {title}
+        <span className="text-slate-600 font-mono">({entries.length})</span>
+      </p>
+      <ul className="space-y-0.5">
+        {entries.map((entry) => (
+          <li key={entry.id} className="group/item relative">
+            <button
+              type="button"
+              onClick={() => onNavigate(entry)}
+              className="w-full flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs text-slate-300 hover:bg-slate-800 hover:text-white transition-colors text-right focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/40"
+              title={entry.label}
             >
-              <LogOut className="h-4 w-4" />
-            </motion.button>
-          </SidebarTooltip>
-          <SidebarTooltip label="توسيع القائمة">
-            <motion.button
-              whileHover={{ scale: 1.1 }}
-              whileTap={{ scale: 0.9 }}
-              onClick={onToggleCollapse}
-              aria-label="توسيع القائمة"
-              className="w-10 h-10 rounded-lg text-slate-400 hover:text-violet-400 hover:bg-violet-500/10 transition-colors flex items-center justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/50"
+              <span className="shrink-0">{icon}</span>
+              <span className="truncate flex-1 min-w-0">{entry.label}</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => onRemove(entry)}
+              aria-label={`إزالة ${entry.label}`}
+              title="إزالة"
+              className="absolute left-1 top-1/2 -translate-y-1/2 p-1 rounded-md text-slate-600 hover:text-red-400 hover:bg-red-500/10 opacity-0 group-hover/item:opacity-100 transition-opacity"
             >
-              <ChevronLeft className="h-4 w-4" />
-            </motion.button>
-          </SidebarTooltip>
-        </div>
-      </div>
+              <X className="size-3" />
+            </button>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }
 
-// ══════════════════════════════════════════════════════════════════
-//  Cosmic collapse arrow
-// ══════════════════════════════════════════════════════════════════
-function CosmicChevron({ isOpen }: { isOpen: boolean }) {
-  return (
-    <motion.div
-      animate={{ rotate: isOpen ? 180 : 0 }}
-      transition={{ duration: 0.25, ease: [0.4, 0, 0.2, 1] }}
-      className="flex items-center justify-center w-5 h-5 rounded-md bg-gradient-to-br from-violet-500/20 to-indigo-500/20 border border-violet-500/20 shrink-0"
-    >
-      <svg width="10" height="10" viewBox="0 0 10 10" fill="none" className="text-violet-400">
-        <path
-          d="M7.5 3.75L5 6.25L2.5 3.75"
-          stroke="currentColor"
-          strokeWidth="1.5"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-      </svg>
-    </motion.div>
-  );
+// ══════════════════════════════════════════════════════════════
+//  Sidebar
+// ══════════════════════════════════════════════════════════════
+
+interface SidebarProps {
+  currentPage: string;
+  onNavigate: (page: string) => void;
+  isOpen: boolean;
+  onToggle: () => void;
+  isCollapsed: boolean;
+  onToggleCollapse: () => void;
 }
 
 export function Sidebar({
@@ -314,7 +305,111 @@ export function Sidebar({
   const visiblePages = useSidebarPages();
   const { user, logout } = useAuth();
   const isMobile = useIsMobile();
-  const [customizeOpen, setCustomizeOpen] = useState(false);
+  const { user: _authUser } = useAuth();
+  void _authUser;
+
+  const { data: preferences } = useUserPreferences();
+  const savePrefs = useSaveUserPreferences();
+  const setSidebarCollapsed = useAppStore((s) => s.setSidebarCollapsed);
+
+  // ── §3: apply the user's PINNED preference once per session ──
+  const appliedPrefRef = useRef(false);
+  useEffect(() => {
+    if (appliedPrefRef.current) return;
+    const pinOpen = preferences?.sidebar?.pinOpen;
+    if (pinOpen === undefined) return; // keep the system default (collapsed)
+    appliedPrefRef.current = true;
+    setSidebarCollapsed(!pinOpen);
+  }, [preferences, setSidebarCollapsed]);
+
+  // ── §3: temporary hover state (desktop, only when pinned closed) ──
+  const [hovering, setHovering] = useState(false);
+
+  // ── §2: in-sidebar EDIT MODE ──
+  const defaultOrder = useMemo(() => visiblePages.map((p) => p.id), [visiblePages]);
+  const [editOrder, setEditOrder] = useState<string[] | null>(null);
+  const [dragIndex, setDragIndex] = useState<number | null>(null);
+  const [dropIndex, setDropIndex] = useState<number | null>(null);
+  const wasCollapsedBeforeEditRef = useRef<boolean | null>(null);
+
+  const enterEditMode = () => {
+    wasCollapsedBeforeEditRef.current = isCollapsed;
+    if (isCollapsed) setSidebarCollapsed(false); // editing needs the full surface
+    setEditOrder([...defaultOrder]);
+  };
+  const exitEditMode = () => {
+    setEditOrder(null);
+    setDragIndex(null);
+    setDropIndex(null);
+    if (wasCollapsedBeforeEditRef.current && !isCollapsed) {
+      setSidebarCollapsed(true); // restore the pinned state
+    }
+    wasCollapsedBeforeEditRef.current = null;
+  };
+  const saveEdit = async () => {
+    if (!editOrder) return;
+    try {
+      await savePrefs.mutateAsync({ sidebar: { order: editOrder } });
+      toast.success('تم حفظ ترتيب القائمة');
+      exitEditMode();
+    } catch {
+      toast.error('تعذر حفظ ترتيب القائمة');
+    }
+  };
+  const resetOrder = async () => {
+    try {
+      await savePrefs.mutateAsync({ sidebar: { order: defaultOrder } });
+      toast.success('تمت إعادة القائمة للوضع الافتراضي');
+      setEditOrder(null);
+    } catch {
+      toast.error('تعذر إعادة الترتيب الافتراضي');
+    }
+  };
+  const editing = editOrder !== null;
+  // While editing, the surface must stay expanded (hover cannot collapse it).
+  const expanded = isMobile ? false : editing || !isCollapsed || hovering;
+
+  const handleDrop = () => {
+    if (dragIndex === null || dropIndex === null || !editOrder) return;
+    if (dragIndex !== dropIndex) {
+      setEditOrder(moveItem(editOrder, dragIndex, dropIndex));
+    }
+    setDragIndex(null);
+    setDropIndex(null);
+  };
+
+  // ── §4/§5: favorites + pins, reconciled against CURRENT routes ──
+  const visibleIds = useMemo(() => new Set(visiblePages.map((p) => p.id)), [visiblePages]);
+  const isRouteVisible = useCallback((route: string) => visibleIds.has(route), [visibleIds]);
+  const favorites = useMemo<FavoriteEntry[]>(
+    () => reconcileNavigationEntries<FavoriteEntry>(preferences?.favorites, isRouteVisible),
+    [preferences, isRouteVisible],
+  );
+  const pins = useMemo<PinEntry[]>(
+    () => reconcileNavigationEntries<PinEntry>(preferences?.pins, isRouteVisible),
+    [preferences, isRouteVisible],
+  );
+  const navigateEntry = useCallback((entry: NavigationDescriptor) => {
+    useAppStore.getState().navigateTo(
+      entry.route,
+      entry.targetType === 'record' ? entry.targetId ?? undefined : undefined,
+      entry.navigationContext ?? {},
+    );
+  }, []);
+  const removeFavorite = useFavoriteToggleAction();
+  const removePin = usePinToggleAction();
+
+  // ── ⋮ menu: ⭐/📌 for the CURRENT page ──
+  const pageDescriptor = useMemo<NavigationDescriptor | null>(() => {
+    const cfg = APP_PAGES_BY_ID.get(currentPage);
+    if (!cfg) return null;
+    return { targetType: 'page', route: cfg.id, label: cfg.title };
+  }, [currentPage]);
+  const pageMarkState = useMarkState(
+    pageDescriptor ?? { targetType: 'page', route: '__none__', label: '' },
+  );
+  const toggleFavorite = useFavoriteToggleAction();
+  const togglePin = usePinToggleAction();
 
   const userInitials = user?.name
     ? user.name.split(' ').map((n) => n[0]).join('').toUpperCase().slice(0, 2)
@@ -332,20 +427,59 @@ export function Sidebar({
     setCollapsedGroups((prev) => ({ ...prev, [groupId]: !prev[groupId] }));
   }, []);
 
-  // Collapsed desktop sidebar
-  if (!isMobile && isCollapsed) {
-    return (
-      <CollapsedSidebar
-        currentPage={currentPage}
-        onNavigate={onNavigate}
-        onToggleCollapse={onToggleCollapse}
-        userName={userName}
-        userInitials={userInitials}
-        onLogout={logout}
-      />
-    );
-  }
+  // ── Sidebar settings ⋮ menu (§2) — shared by expanded + collapsed ──
+  const settingsMenu = (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          aria-label="إعدادات القائمة"
+          title="إعدادات القائمة"
+          className="p-2 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/50"
+        >
+          <MoreVertical className="size-4" />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" side="top" sideOffset={6} className="bg-slate-900 border-slate-700/60 min-w-52">
+        <DropdownMenuItem
+          onClick={() => enterEditMode()}
+          className="gap-2 cursor-pointer text-xs text-slate-300 focus:text-white focus:bg-slate-800"
+        >
+          <SlidersHorizontal className="size-3.5" />
+          تخصيص القائمة
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          onClick={() => void resetOrder()}
+          disabled={savePrefs.isPending}
+          className="gap-2 cursor-pointer text-xs text-slate-300 focus:text-white focus:bg-slate-800"
+        >
+          <RotateCcw className="size-3.5" />
+          إعادة للوضع الافتراضي
+        </DropdownMenuItem>
+        {pageDescriptor && (
+          <>
+            <DropdownMenuSeparator className="bg-slate-700/50" />
+            <DropdownMenuItem
+              onClick={() => void toggleFavorite(pageDescriptor)}
+              className="gap-2 cursor-pointer text-xs text-slate-300 focus:text-white focus:bg-slate-800"
+            >
+              <Star className={cn('size-3.5', pageMarkState.favoriteActive && 'text-amber-400 fill-amber-400')} />
+              {pageMarkState.favoriteActive ? 'إزالة الصفحة من المفضلة' : 'إضافة الصفحة للمفضلة ⭐'}
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onClick={() => void togglePin(pageDescriptor)}
+              className="gap-2 cursor-pointer text-xs text-slate-300 focus:text-white focus:bg-slate-800"
+            >
+              <PinIcon className={cn('size-3.5', pageMarkState.pinActive && 'text-cyan-400 fill-cyan-400')} />
+              {pageMarkState.pinActive ? 'إزالة تثبيت الصفحة' : 'تثبيت الصفحة 📌'}
+            </DropdownMenuItem>
+          </>
+        )}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
 
+  // ── Nav content (expanded, normal mode) ──
   const expandedNav = (
     <nav className="flex-1 overflow-y-auto py-3 px-3 arm-scroll">
       {SIDEBAR_GROUPS.map((group, groupIdx) => {
@@ -369,7 +503,11 @@ export function Sidebar({
               <span className="flex-1 text-right text-[10px] font-bold tracking-wide text-slate-500 group-hover/header:text-slate-400 whitespace-nowrap transition-colors">
                 {group.label}
               </span>
-              <CosmicChevron isOpen={!isGroupCollapsed} />
+              <motion.span animate={{ rotate: isGroupCollapsed ? 0 : 180 }} transition={{ duration: 0.25, ease: [0.4, 0, 0.2, 1] }} className="flex items-center justify-center w-5 h-5 rounded-md bg-gradient-to-br from-violet-500/20 to-indigo-500/20 border border-violet-500/20 shrink-0">
+                <svg width="10" height="10" viewBox="0 0 10 10" fill="none" className="text-violet-400">
+                  <path d="M7.5 3.75L5 6.25L2.5 3.75" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </motion.span>
             </button>
 
             <AnimatePresence initial={false}>
@@ -426,6 +564,125 @@ export function Sidebar({
     </nav>
   );
 
+  // ── §2: EDIT MODE surface — flat, directly draggable list ──
+  const editNav = (
+    <div
+      className="flex-1 overflow-y-auto py-3 px-3 arm-scroll space-y-1"
+      onDragOver={(e) => e.preventDefault()}
+      onDrop={handleDrop}
+      aria-label="ترتيب الصفحات — وضع التحرير"
+    >
+      <p className="text-[10px] text-slate-500 px-2 pb-1 leading-relaxed">
+        اسحب الصفوف (أو استخدم الأسهم) لإعادة الترتيب — الترتيب فقط؛ الصفحة تبقى دائماً داخل مجموعتها.
+      </p>
+      {(editOrder ?? []).map((pageId, index) => {
+        const page = APP_PAGES_BY_ID.get(pageId);
+        const groupLabel = SIDEBAR_GROUPS.find((g) => g.id === page?.groupId)?.label ?? '';
+        const Icon = page ? ICON_MAP[page.icon] : undefined;
+        const isDragging = dragIndex === index;
+        const isDropTarget = dropIndex === index && dragIndex !== null && dragIndex !== index;
+        return (
+          <div
+            key={pageId}
+            draggable
+            onDragStart={(e) => {
+              setDragIndex(index);
+              e.dataTransfer.effectAllowed = 'move';
+              try { e.dataTransfer.setData('text/plain', pageId); } catch { /* optional */ }
+            }}
+            onDragEnd={() => { setDragIndex(null); setDropIndex(null); }}
+            onDragOver={(e) => {
+              e.preventDefault();
+              e.dataTransfer.dropEffect = 'move';
+              setDropIndex(index);
+            }}
+            onDrop={handleDrop}
+            className={cn(
+              'flex items-center gap-2 p-2 rounded-xl bg-slate-800/40 border transition-colors cursor-grab active:cursor-grabbing',
+              isDragging ? 'border-violet-500/60 opacity-60' : isDropTarget ? 'border-violet-500/80 ring-1 ring-violet-500/60' : 'border-slate-700/30',
+            )}
+          >
+            <GripVertical className="size-4 text-slate-600 shrink-0" aria-hidden="true" />
+            <span className="text-[10px] text-slate-500 font-mono w-5 text-center shrink-0">{index + 1}</span>
+            {Icon && <Icon className="size-4 text-slate-400 shrink-0" />}
+            <div className="flex-1 min-w-0">
+              <p className="text-xs text-slate-200 truncate">{page?.title ?? pageId}</p>
+              <p className="text-[9px] text-slate-500">{groupLabel}</p>
+            </div>
+            <div className="flex items-center gap-0.5 shrink-0">
+              <button
+                type="button"
+                disabled={index === 0}
+                onClick={() => setEditOrder(moveItem(editOrder ?? [], index, index - 1))}
+                aria-label={`نقل ${page?.title ?? pageId} لأعلى`}
+                className="p-1.5 rounded-md text-slate-400 hover:text-white hover:bg-slate-700/60 disabled:opacity-30"
+              >
+                <ArrowUp className="size-3.5" />
+              </button>
+              <button
+                type="button"
+                disabled={index === (editOrder ?? []).length - 1}
+                onClick={() => setEditOrder(moveItem(editOrder ?? [], index, index + 1))}
+                aria-label={`نقل ${page?.title ?? pageId} لأسفل`}
+                className="p-1.5 rounded-md text-slate-400 hover:text-white hover:bg-slate-700/60 disabled:opacity-30"
+              >
+                <ArrowDown className="size-3.5" />
+              </button>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+
+  // ── §2: edit-mode footer — ONLY [إلغاء] [حفظ] ──
+  const editFooter = (
+    <div className="border-t border-slate-700/50 p-3 shrink-0 flex items-center gap-2">
+      <button
+        type="button"
+        onClick={exitEditMode}
+        className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg border border-slate-600/60 text-slate-300 hover:bg-slate-800 hover:text-white text-xs font-semibold transition-colors"
+      >
+        <X className="size-3.5" />
+        إلغاء
+      </button>
+      <button
+        type="button"
+        onClick={() => void saveEdit()}
+        disabled={savePrefs.isPending}
+        className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-violet-600 hover:bg-violet-700 text-white text-xs font-semibold transition-colors disabled:opacity-60"
+      >
+        {savePrefs.isPending ? <Loader2 className="size-3.5 animate-spin" /> : <Save className="size-3.5" />}
+        حفظ
+      </button>
+    </div>
+  );
+
+  // ── Normal-mode footer: user + ⋮ settings + logout ──
+  const normalFooter = (
+    <div className="border-t border-slate-700/50 p-3 shrink-0">
+      <div className="flex items-center gap-2.5 mb-2">
+        <div className="flex items-center justify-center w-9 h-9 rounded-full bg-gradient-to-br from-violet-600 to-indigo-600 text-xs font-bold text-white ring-2 ring-violet-500/50 shrink-0">
+          {userInitials}
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="text-xs font-semibold text-white truncate">{userName}</p>
+          <span className="inline-block mt-0.5 px-1.5 py-0 text-[9px] font-medium rounded-full bg-violet-600/20 text-violet-400 border border-violet-600/30">
+            {userRank}
+          </span>
+        </div>
+        {settingsMenu}
+      </div>
+      <button
+        onClick={logout}
+        className="w-full flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-xs font-semibold bg-red-600 hover:bg-red-700 active:scale-[0.98] text-white transition-all duration-150 shadow-md shadow-red-900/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500/50"
+      >
+        <LogOut className="h-3.5 w-3.5" />
+        <span>تسجيل الخروج</span>
+      </button>
+    </div>
+  );
+
   const sidebarContent = (
     <div className="flex flex-col h-full bg-slate-900 text-white">
       {/* Logo */}
@@ -450,48 +707,40 @@ export function Sidebar({
           <button
             onClick={onToggleCollapse}
             className="absolute top-4 left-4 p-1.5 rounded-md text-slate-400 hover:text-white hover:bg-slate-800 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/40"
-            aria-label="طي القائمة"
+            aria-label={isCollapsed ? 'تثبيت القائمة مفتوحة' : 'تصغير القائمة'}
+            title={isCollapsed ? 'تثبيت القائمة مفتوحة 📌' : 'تصغير القائمة'}
           >
             <ChevronRight className="h-5 w-5" />
           </button>
         )}
       </div>
 
-      {expandedNav}
-
-      {/* User Profile */}
-      <div className="border-t border-slate-700/50 p-4 shrink-0">
-        <div className="flex items-center gap-3 mb-3">
-          <div className="flex items-center justify-center w-10 h-10 rounded-full bg-gradient-to-br from-violet-600 to-indigo-600 text-sm font-bold text-white ring-2 ring-violet-500/50 shrink-0">
-            {userInitials}
-          </div>
-          <div className="flex-1 min-w-0">
-            <p className="text-sm font-semibold text-white truncate">{userName}</p>
-            <span className="inline-block mt-0.5 px-2 py-0.5 text-[10px] font-medium rounded-full bg-violet-600/20 text-violet-400 border border-violet-600/30">
-              {userRank}
-            </span>
-          </div>
+      {/* §2: editing replaces the nav; §4/§5: favorites/pins live here */}
+      {editing ? editNav : expandedNav}
+      {!editing && (
+        <div className="px-2 pb-2 space-y-2 border-t border-slate-800/60 pt-2 overflow-y-auto arm-scroll max-h-56 shrink-0">
+          <WorkspaceSection
+            title="المثبتة"
+            icon={<PinIcon className="size-3 text-cyan-400" />}
+            entries={pins}
+            onNavigate={navigateEntry}
+            onRemove={(entry) => void removePin(entry)}
+          />
+          <WorkspaceSection
+            title="المفضلة"
+            icon={<Star className="size-3 text-amber-400" />}
+            entries={favorites}
+            onNavigate={navigateEntry}
+            onRemove={(entry) => void removeFavorite(entry)}
+          />
         </div>
-        <button
-          onClick={() => setCustomizeOpen(true)}
-          className="w-full flex items-center justify-center gap-2 px-4 py-2 mb-2 rounded-lg text-xs font-medium bg-slate-800/60 hover:bg-slate-800 text-slate-300 hover:text-white border border-slate-700/50 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/40"
-        >
-          <SlidersHorizontal className="h-3.5 w-3.5" />
-          <span>تخصيص القائمة</span>
-        </button>
-        <button
-          onClick={logout}
-          className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold bg-red-600 hover:bg-red-700 active:scale-[0.98] text-white transition-all duration-150 shadow-md shadow-red-900/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500/50"
-        >
-          <LogOut className="h-4 w-4" />
-          <span>تسجيل الخروج</span>
-        </button>
-      </div>
-      <SidebarCustomizeDialog open={customizeOpen} onClose={() => setCustomizeOpen(false)} />
+      )}
+
+      {editing ? editFooter : normalFooter}
     </div>
   );
 
-  // Mobile overlay
+  // ── Mobile overlay (unchanged pattern) ──
   if (isMobile) {
     return (
       <AnimatePresence>
@@ -520,13 +769,152 @@ export function Sidebar({
     );
   }
 
-  // Desktop expanded — fixed width, never changes
+  // ── Desktop: ONE animated surface (§3) — width transitions between
+  // collapsed rail and full sidebar; hover temporarily expands as an
+  // overlay (content margin unchanged), pin state pushes content. ──
   return (
     <div
-      className="hidden lg:flex lg:flex-col lg:fixed lg:inset-y-0 lg:right-0 z-20 shadow-2xl"
-      style={{ width: 288 }}
+      className={cn(
+        'hidden lg:flex lg:flex-col lg:fixed lg:inset-y-0 lg:right-0 z-20 bg-slate-900 text-white overflow-hidden shadow-xl',
+        // Hover-expanded overlay floats ABOVE content — stronger shadow + lift.
+        hovering && !editing && isCollapsed && 'z-30 shadow-2xl shadow-black/60 ring-1 ring-slate-700/50',
+      )}
+      style={{
+        width: expanded ? WIDTH_EXPANDED : WIDTH_COLLAPSED,
+        transition: 'width 0.28s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.28s ease',
+      }}
+      onMouseEnter={() => setHovering(true)}
+      onMouseLeave={() => setHovering(false)}
+      aria-label="التنقل الرئيسي"
     >
-      {sidebarContent}
+      {expanded ? (
+        sidebarContent
+      ) : (
+        <CollapsedRail
+          currentPage={currentPage}
+          onNavigate={onNavigate}
+          onToggleCollapse={onToggleCollapse}
+          userName={userName}
+          userInitials={userInitials}
+          onLogout={logout}
+          settingsMenu={settingsMenu}
+        />
+      )}
+    </div>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════
+//  Collapsed rail (§3 default state) — icons only, no section
+//  headers; the ⋮ settings menu stays reachable.
+// ══════════════════════════════════════════════════════════════
+function CollapsedRail({
+  currentPage,
+  onNavigate,
+  onToggleCollapse,
+  userName,
+  userInitials,
+  onLogout,
+  settingsMenu,
+}: {
+  currentPage: string;
+  onNavigate: (page: string) => void;
+  onToggleCollapse: () => void;
+  userName: string;
+  userInitials: string;
+  onLogout: () => void;
+  settingsMenu: React.ReactNode;
+}) {
+  // Permission-filtered pages in the USER'S saved order (Milestone 10)
+  const visiblePages = useSidebarPages();
+
+  return (
+    <div className="flex flex-col h-full w-full bg-slate-900">
+      {/* Logo */}
+      <div className="flex items-center justify-center h-20 border-b border-slate-700/50 shrink-0">
+        <motion.img
+          src="/logo-full-clean.png"
+          alt="ARM Logo"
+          className="h-10 w-auto object-contain"
+          animate={{ y: [0, -3, 0] }}
+          transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }}
+        />
+      </div>
+
+      {/* Navigation — icons only */}
+      <nav className="flex-1 overflow-y-auto py-3 flex flex-col items-center gap-1 px-2 arm-scroll">
+        {SIDEBAR_GROUPS.map((group) => {
+          const groupPages = visiblePages.filter((p) => p.groupId === group.id);
+          if (groupPages.length === 0) return null;
+          return (
+            <React.Fragment key={group.id}>
+              {groupPages.map((page) => {
+                const Icon = ICON_MAP[page.icon];
+                const isActive = currentPage === page.id;
+                return (
+                  <SidebarTooltip key={page.id} label={page.title}>
+                    <motion.button
+                      onClick={() => onNavigate(page.id)}
+                      whileHover={{ scale: 1.08 }}
+                      whileTap={{ scale: 0.95 }}
+                      aria-label={page.title}
+                      className={cn(
+                        'w-12 h-10 flex items-center justify-center rounded-lg transition-colors duration-150 relative focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/50',
+                        isActive
+                          ? 'bg-gradient-to-r from-violet-600 to-indigo-600 text-white shadow-lg shadow-violet-500/20'
+                          : 'text-slate-400 hover:bg-slate-800 hover:text-white'
+                      )}
+                    >
+                      {Icon && <Icon className="h-5 w-5 shrink-0" />}
+                      {isActive && (
+                        <motion.div
+                          className="absolute right-0 top-1/2 -translate-y-1/2 w-1 h-6 rounded-l-full bg-violet-400"
+                          layoutId="collapsedIndicator"
+                          transition={{ type: 'spring', stiffness: 350, damping: 30 }}
+                        />
+                      )}
+                    </motion.button>
+                  </SidebarTooltip>
+                );
+              })}
+            </React.Fragment>
+          );
+        })}
+      </nav>
+
+      {/* Bottom controls */}
+      <div className="border-t border-slate-700/50 py-3 flex flex-col items-center gap-2 shrink-0">
+        <SidebarTooltip label={userName}>
+          <div className="w-10 h-10 rounded-full bg-gradient-to-br from-slate-600 to-slate-700 text-sm font-bold text-white ring-2 ring-slate-600 flex items-center justify-center cursor-default hover:ring-violet-500/40 transition-all">
+            {userInitials}
+          </div>
+        </SidebarTooltip>
+        <SidebarTooltip label="تسجيل الخروج">
+          <motion.button
+            whileHover={{ scale: 1.1 }}
+            whileTap={{ scale: 0.9 }}
+            onClick={onLogout}
+            aria-label="تسجيل الخروج"
+            className="w-10 h-10 rounded-lg text-slate-400 hover:text-red-400 hover:bg-red-500/10 transition-colors flex items-center justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500/50"
+          >
+            <LogOut className="h-4 w-4" />
+          </motion.button>
+        </SidebarTooltip>
+        <SidebarTooltip label="إعدادات القائمة">
+          {settingsMenu}
+        </SidebarTooltip>
+        <SidebarTooltip label="تثبيت القائمة مفتوحة 📌">
+          <motion.button
+            whileHover={{ scale: 1.1 }}
+            whileTap={{ scale: 0.9 }}
+            onClick={onToggleCollapse}
+            aria-label="تثبيت القائمة مفتوحة"
+            className="w-10 h-10 rounded-lg text-slate-400 hover:text-violet-400 hover:bg-violet-500/10 transition-colors flex items-center justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/50"
+          >
+            <ChevronLeft className="h-4 w-4" />
+          </motion.button>
+        </SidebarTooltip>
+      </div>
     </div>
   );
 }

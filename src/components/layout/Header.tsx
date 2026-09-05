@@ -4,18 +4,50 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Menu, Bell, PanelRightClose, PanelRightOpen, X, CheckCheck,
-  ExternalLink, Eye, Trash2, Loader2, AlertCircle, ChevronDown,
+  ExternalLink, Eye, Trash2, Loader2, AlertCircle, ChevronDown, Plus,
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { useNotificationContext } from '@/contexts/NotificationContext';
 import { useAppStore } from '@/lib/store';
 import { GlobalSearch } from '@/components/search/GlobalSearch';
+import { useSaveUserPreferences } from '@/hooks/use-user-preferences';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 import type { AppNotification } from '@/types';
+
+// ══════════════════════════════════════════════════════════════
+//  HeaderCreateActionSlot — §7: the CURRENT page's primary create
+//  action appears here while the user has scrolled past the page
+//  header (registered by PageHeaderBar through the store). One
+//  effective action at a time; utility actions never register.
+// ══════════════════════════════════════════════════════════════
+function HeaderCreateActionSlot() {
+  const action = useAppStore((s) => s.headerCreateAction);
+
+  return (
+    <AnimatePresence mode="popLayout">
+      {action && (
+        <motion.button
+          key={action.label}
+          type="button"
+          initial={{ opacity: 0, y: -10, scale: 0.9 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          exit={{ opacity: 0, y: -10, scale: 0.9 }}
+          transition={{ duration: 0.22, ease: [0.4, 0, 0.2, 1] }}
+          onClick={action.onClick}
+          className="hidden sm:inline-flex items-center gap-1.5 h-9 px-4 rounded-lg bg-linear-to-r from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white text-xs font-semibold shadow-lg shadow-violet-500/25 whitespace-nowrap"
+          title={action.label}
+        >
+          <Plus className="size-3.5" />
+          {action.label}
+        </motion.button>
+      )}
+    </AnimatePresence>
+  );
+}
 
 // ══════════════════════════════════════════════════════════════
 //  Category → Emoji + Color + Label + Target Page
@@ -182,6 +214,19 @@ interface HeaderProps {
 
 export function Header({ title, onMenuToggle, onToggleSidebarCollapse, sidebarCollapsed }: HeaderProps) {
   const { user } = useAuth();
+  const savePrefs = useSaveUserPreferences();
+
+  // §3: the toggle PINS the chosen state — the store flips and the
+  // pinned preference persists (user-scoped, via the existing
+  // preferences record). No cross-user path exists (server keys the
+  // record to the authenticated caller).
+  const handleSidebarPinToggle = () => {
+    const nextPinnedOpen = sidebarCollapsed; // collapsed now → pinned open next
+    onToggleSidebarCollapse();
+    savePrefs.mutate({ sidebar: { pinOpen: nextPinnedOpen } }, {
+      onError: () => toast.error('تعذر حفظ تفضيل القائمة'),
+    });
+  };
   const isMobile = useIsMobile();
   const { navigateTo, openEmployee360 } = useAppStore();
   const {
@@ -304,7 +349,7 @@ export function Header({ title, onMenuToggle, onToggleSidebarCollapse, sidebarCo
         <div className="flex items-center gap-3">
           {/* Mobile menu button — hidden on desktop via CSS (isMobile is SSR-safe false initially) */}
           <motion.button
-            onClick={isMobile ? onMenuToggle : onToggleSidebarCollapse}
+            onClick={isMobile ? onMenuToggle : handleSidebarPinToggle}
             className="p-2 rounded-lg text-slate-400 hover:bg-slate-800 transition-colors"
             whileTap={{ scale: 0.9 }}
             whileHover={{ scale: 1.05 }}
@@ -321,8 +366,13 @@ export function Header({ title, onMenuToggle, onToggleSidebarCollapse, sidebarCo
         {/* ── Center: Global Search trigger (Phase 6.1 — desktop field, mobile icon) ── */}
         <GlobalSearch />
 
-        {/* ── Right: notification bell + avatar ── */}
+        {/* ── Right: scrolling create action + notification bell + avatar ── */}
         <div className="flex items-center gap-2">
+          {/* §7: the page's PRIMARY create action transitions here while
+              the user scrolls — one effective action, never duplicated.
+              Favorites/Pins intentionally live in the SIDEBAR (§4/§5/§10). */}
+          <HeaderCreateActionSlot />
+
           {/* ═══════════════════════════════════════════════════════
               NOTIFICATION BELL — Real-time interactive system
               ═══════════════════════════════════════════════════════ */}
@@ -421,7 +471,11 @@ export function Header({ title, onMenuToggle, onToggleSidebarCollapse, sidebarCo
                   </div>
 
                   {/* ── Notifications List ── */}
-                  <ScrollArea className="max-h-[460px]">
+                  {/* §9: bounded viewport-relative height — ONLY the list
+                      scrolls (independently of the page behind), with an
+                      explicit scrollbar and overscroll containment so
+                      wheel/touch never scrolls the page behind the panel. */}
+                  <ScrollArea className="max-h-[min(70vh,600px)] [&>[data-radix-scroll-area-viewport]]:overscroll-contain">
                     {/* Loading state */}
                     {loading && notifications.length === 0 ? (
                       <div className="flex flex-col items-center justify-center py-16 px-4">
