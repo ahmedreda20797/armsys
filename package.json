@@ -7,7 +7,7 @@
     "build": "next build && cp -r .next/static .next/standalone/.next/ && cp -r public .next/standalone/",
     "start": "next start",
     "lint": "eslint .",
-    "test": "tsx --test src/lib/**/__tests__/*.test.ts",
+    "test": "node scripts/run-tests.mjs",
     "test:python-reference": "python3 -m unittest discover -s python-analytics/tests -v",
     "integrity:organization": "tsx scripts/organization-integrity.ts"
   },

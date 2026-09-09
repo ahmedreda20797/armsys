@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getAll, withEmployee, sortByDateField } from '@/lib/db';
 import { requireAuth } from '@/lib/verify-permission';
 import { asScopeViewer, employeeInScope, authScopeViewer, filterRowsByEmployeeScope, resolveEmployeeScopeFromDb } from '@/lib/scope/server';
+import { dispatchAutomationEvent } from '@/lib/automation/event-bridge';
 
 export async function GET(request: NextRequest) {
   try {
@@ -143,6 +144,16 @@ export async function POST(request: NextRequest) {
       ...(typeof sourceRecordId === 'string' && sourceRecordId && sourceRecordId.length <= 100
         ? { sourceRecordId }
         : {}),
+    });
+
+    // §13: automation event — active complaints-module rules fire here.
+    void dispatchAutomationEvent('record_created', 'complaints', {
+      employeeId: employeeId || null,
+      status: status || 'open',
+      severity: severity || 'medium',
+      category: complaintType,
+      sourceRecordId: complaint.id,
+      extra: { customerName: customerName || null },
     });
 
     return NextResponse.json(complaint, { status: 201 });

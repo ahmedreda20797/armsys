@@ -4,11 +4,15 @@ import { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { usePermissions } from '@/hooks/usePermissions';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { AttentionPanel, type AttentionSeverity } from '@/components/shared/AttentionPanel';
+import { CAPAInlineForm } from '@/components/shared/inline-forms';
+import { useEmployees } from '@/hooks/use-queries';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
@@ -93,6 +97,39 @@ function getRiskLevelConfig(level: string) {
   return map[level] || map.low;
 }
 
+// ── §6 Risk Summary Panel helpers ──
+// Arabic labels for the canonical breakdown factor keys (riskMetrics).
+const RISK_FACTOR_LABELS: Record<string, string> = {
+  delay: 'تأخيرات',
+  absence: 'غيابات',
+  quality: 'مشاكل جودة',
+  hr: 'خصومات موارد بشرية',
+  openFollowUp: 'متابعات مفتوحة',
+  highPriorityFollowUp: 'متابعات عالية الأولوية',
+  criticalFollowUp: 'متابعات حرجة',
+  complaint: 'شكاوى عملاء',
+  repeatedIssue: 'مشاكل متكررة',
+  openCapa: 'كابا مفتوحة',
+  overdueCapa: 'كابا متأخرة',
+  criticalCapa: 'كابا حرجة',
+  reopenedCapa: 'كابا معاد فتحها',
+};
+
+/** Total risk signals across all factors for one employee. */
+function riskCountOf(emp: EmployeeRisk): number {
+  return Object.values(emp.breakdown ?? {}).reduce((sum, b) => sum + (b?.count ?? 0), 0);
+}
+
+/** The two heaviest factors (by points) as a short Arabic reason. */
+function topReasonOf(emp: EmployeeRisk): string {
+  const entries = Object.entries(emp.breakdown ?? {})
+    .filter(([, b]) => (b?.count ?? 0) > 0)
+    .sort((a, b) => (b[1]?.points ?? 0) - (a[1]?.points ?? 0));
+  const labels = entries.slice(0, 2).map(([key]) => RISK_FACTOR_LABELS[key] ?? key);
+  if (labels.length === 0) return '—';
+  return labels.join(' · ');
+}
+
 function getTrendIcon(trend: string) {
   switch (trend) {
     case 'increasing': return <TrendingUp className="size-3.5 text-red-400" />;
@@ -125,7 +162,41 @@ export default function RiskCenterPage() {
   const [levelFilter, setLevelFilter] = useState('all');
   const [deptFilter, setDeptFilter] = useState('all');
   const [selectedEmployee, setSelectedEmployee] = useState<EmployeeRisk | null>(null);
-  // ═══ Milestone 7 §14 — monthly view + comparison ═══
+  // §DETAIL-DRAWER-FIX — Escape closes the details drawer (the drawer
+  // is viewport-fixed with no backdrop, so it needs an explicit
+  // keyboard exit in addition to the ✕ button).
+  useEffect(() => {
+    if (!selectedEmployee) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setSelectedEmployee(null);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [selectedEmployee]);
+  // §6 "عرض الكل" dialog for the risk summary panel
+  const [viewAllRiskyOpen, setViewAllRiskyOpen] = useState(false);
+  // §8 — inline CAPA create (mounted over the same context as the
+  // selected employee, no page nav). We prefill the dialog with the
+  // employee's risk context so the operator doesn't re-enter them.
+  const [capaCreateOpen, setCapaCreateOpen] = useState(false);
+  const { data: employeesData } = useEmployees();
+  // NOTE: not named `employees` because the page already has a local
+  // `employees` state of type `EmployeeRisk[]` (the risk-data list).
+  const employeesList = (employeesData ?? []) as { id: string; name: string; department?: string | null }[];
+  const [usersList, setUsersList] = useState<{ id: string; name: string; email?: string; role?: string }[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    fetch('/api/dashboard/users?limit=200', {
+      headers: { Authorization: `Bearer ${localStorage.getItem('erp_access_token')}` },
+    })
+      .then((r) => (r.ok ? r.json() : []))
+      .then((list) => {
+        if (cancelled) return;
+        setUsersList(list as { id: string; name: string; email?: string; role?: string }[]);
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
   // Default view stays the rolling snapshot (''); selecting a month
   // switches to month-attributed factors (traceable records only).
   const [basis, setBasis] = useState<'rolling' | 'month'>('rolling');
@@ -247,8 +318,17 @@ export default function RiskCenterPage() {
     });
   }, [employees, levelFilter, deptFilter, search]);
 
-  // ── Top risky employees (need action) ──
-  const topRisky = useMemo(() => employees.filter(e => e.riskScore >= 21).slice(0, 10), [employees]);
+  // ── Top risky employees (need action) — DATA INTEGRITY: the alert
+  // panel uses the SERVER's own risk level (RISK_LEVEL_BANDS.high = 26),
+  // so its count always matches the "يحتاج تدخل فوري" summary stat and
+  // the underlying records. The old hardcoded `>= 21` filter diverged
+  // from the API and could show a different number. ──
+  const topRisky = useMemo(
+    () => employees
+      .filter(e => e.riskLevel === 'high' || e.riskLevel === 'critical')
+      .sort((a, b) => b.riskScore - a.riskScore),
+    [employees],
+  );
 
   // ── Department table ──
   const deptTable = useMemo(() => {
@@ -357,29 +437,54 @@ export default function RiskCenterPage() {
         </div>
       </motion.div>
 
-      {/* ═══ Immediate Action Alert ═══ */}
+      {/* §6/§8 Risk Summary Panel — flows through the unified AttentionPanel.
+              Every at-risk employee gets a compact row; +3 overflow is gone
+              because the panel's collapse hides the body but never the count. */}
       <AnimatePresence>
         {topRisky.length > 0 && (
           <motion.div initial={{ opacity: 0, y: -5 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>
-            <Card className="border-red-500/40 bg-red-500/5">
-              <CardContent className="p-3.5">
-                <div className="flex items-start gap-2.5">
-                  <div className="flex-shrink-0 size-8 rounded-full bg-red-500/15 flex items-center justify-center mt-0.5">
-                    <Zap className="size-4 text-red-400" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-red-300 text-sm font-semibold">موظفين يحتاجون تدخل فوري ({topRisky.length})</p>
-                    <p className="text-red-200/70 text-xs mt-1 leading-relaxed">
-                      {topRisky.slice(0, 5).map(e => e.employeeName).join(' · ')}
-                      {topRisky.length > 5 && ` +${topRisky.length - 5} آخرين`}
-                    </p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
+            <AttentionPanel
+              title="موظفون يحتاجون تدخل"
+              icon={<Zap className="size-3.5 text-red-400" />}
+              subtitle={`${topRisky.length} موظف فوق عتبة المخاطر العالية`}
+              persistKey="riskAttention"
+              items={topRisky.map((emp) => {
+                const rl = getRiskLevelConfig(emp.riskLevel);
+                const severity: AttentionSeverity =
+                  emp.riskLevel === 'critical' ? 'critical' :
+                  emp.riskLevel === 'high' ? 'urgent' :
+                  emp.riskLevel === 'medium' ? 'warning' : 'info';
+                return {
+                  id: emp.employeeId,
+                  severity,
+                  primary: emp.employeeName,
+                  secondary: `${emp.department} · ${rl.label}`,
+                  trailing: (
+                    <span className="flex items-center gap-1.5">
+                      {getTrendIcon(emp.trend)}
+                      <span className="font-bold tabular-nums">{riskCountOf(emp)} مخاطر</span>
+                    </span>
+                  ),
+                  onClick: () => setSelectedEmployee(emp),
+                  overflowItems: [
+                    { key: 'view', label: 'عرض التفاصيل', icon: <Eye className="size-3.5" />, onSelect: () => setSelectedEmployee(emp) },
+                    { key: 'employee360', label: 'فتح ملف الموظف', icon: <UserCheck className="size-3.5" />, separatorBefore: true, onSelect: () => useAppStore.getState().openEmployee360(emp.employeeId) },
+                  ],
+                };
+              })}
+              emptyState={{
+                icon: <ShieldCheck className="size-7 text-emerald-500/50 mb-2" />,
+                title: 'لا يوجد موظفون فوق عتبة المخاطر العالية',
+                description: 'كل الموظفين تحت عتبة التنبيه.',
+              }}
+            />
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* §6 dialog REMOVED — the unified AttentionPanel replaces the
+          standalone "عرض الكل" dialog (expand the panel to see every
+          at-risk employee; rows are already paginated by maxRows). */}
 
       {/* ═══ Filters ═══ */}
       <Card className="border-slate-700/40 bg-slate-800/30">
@@ -555,81 +660,47 @@ export default function RiskCenterPage() {
         </motion.div>
       )}
 
-      {/* ═══ Department Risk Analysis ═══ */}
-      {deptTable.length > 0 && (
-        <motion.div initial={{ opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }}>
-          <div className="flex items-center gap-2 mb-3">
-            <BarChart3 className="size-5 text-slate-400" />
-            <h2 className="text-white text-sm font-semibold">تحليل مخاطر الأقسام</h2>
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-            {deptTable.map(dept => {
-              const avgLevel = dept.avgScore >= 36 ? 'critical' : dept.avgScore >= 21 ? 'high' : dept.avgScore >= 11 ? 'medium' : 'low';
-              const dl = getRiskLevelConfig(avgLevel);
-              return (
-                <Card key={dept.name} className={`border ${dl.border} ${dl.bg}`}>
-                  <CardContent className="p-3.5">
-                    <div className="flex items-center justify-between mb-2">
-                      <h3 className="text-white text-sm font-medium">{dept.name}</h3>
-                      <Badge variant="outline" className={`text-[10px] ${dl.color} ${dl.border}`}>
-                        متوسط: {dept.avgScore}
-                      </Badge>
-                    </div>
-                    <div className="grid grid-cols-2 gap-1.5 text-[10px]">
-                      <div className="flex justify-between text-slate-400">
-                        <span>موظفين:</span>
-                        <span className="text-white">{dept.count}</span>
-                      </div>
-                      <div className="flex justify-between text-slate-400">
-                        <span>حالات مفتوحة:</span>
-                        <span className="text-blue-400">{dept.openCases}</span>
-                      </div>
-                      <div className="flex justify-between text-slate-400">
-                        <span>مخالفات جودة:</span>
-                        <span className="text-amber-400">{dept.qualityViolations}</span>
-                      </div>
-                      <div className="flex justify-between text-slate-400">
-                        <span>مشاكل حضور:</span>
-                        <span className="text-red-400">{dept.attendanceIssues}</span>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              );
-            })}
-          </div>
-        </motion.div>
-      )}
-
-      {/* ═══ Employee Details Side Panel ═══ */}
+      {/* §7 — Employee Details FLOATING CARD — §FLOATING-CARD-FIX:
+          the details card is a DETACHED floating surface anchored to
+          the VIEWPORT (never part of the page flow): wherever the
+          user has scrolled — even the bottom of a long table —
+          clicking a row opens the card right where they are,
+          vertically centered in the current viewport. Nothing is
+          glued to the page edge and nothing pushes the content.
+          · The card body has its OWN scrollbar (max-height 85vh):
+            data longer than the card scrolls INSIDE the card.
+          · Header (title + ✕) is fixed at the top of the card so
+            closing stays reachable while the body scrolls.
+          · The positioning wrapper is pointer-events-none — only the
+            card itself captures clicks, so the table stays fully
+            interactive and clicking another row re-targets the card.
+          · No dark backdrop. Escape closes it; ✕ closes it. */}
       <AnimatePresence>
         {selectedEmployee && (
-          <>
-            {/* Overlay */}
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="fixed inset-0 bg-black/50 z-40"
-              onClick={() => setSelectedEmployee(null)}
-            />
-            {/* Panel */}
-            <motion.div
-              initial={{ x: '100%' }}
-              animate={{ x: 0 }}
-              exit={{ x: '100%' }}
-              transition={{ type: 'spring', damping: 25, stiffness: 250 }}
-              className="fixed left-0 top-0 bottom-0 w-full max-w-lg bg-slate-900 border-l border-slate-700/50 z-50 overflow-y-auto"
-              dir="rtl"
-            >
-              <div className="p-5 space-y-4">
-                {/* Panel Header */}
-                <div className="flex items-center justify-between">
+          <motion.div
+            initial={{ opacity: 0, x: -32 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: -32 }}
+            transition={{ type: 'spring', damping: 26, stiffness: 280 }}
+            className="fixed inset-y-0 left-3 sm:left-5 z-40 flex items-center pointer-events-none"
+            dir="rtl"
+            role="dialog"
+            aria-label={`تفاصيل المخاطر — ${selectedEmployee.employeeName}`}
+          >
+              <div className="pointer-events-auto w-[min(28rem,calc(100vw-1.5rem))] max-h-[85vh] flex flex-col rounded-2xl border border-slate-700/60 bg-slate-900 ring-1 ring-white/5 shadow-2xl shadow-black/60 overflow-hidden">
+                {/* Card header — always visible; ✕ never scrolls away */}
+                <div className="flex items-center justify-between px-5 py-3.5 border-b border-slate-700/50 bg-slate-900 shrink-0">
                   <h2 className="text-white text-lg font-bold">تفاصيل المخاطر</h2>
-                  <button onClick={() => setSelectedEmployee(null)} className="p-2 rounded-lg text-slate-500 hover:text-white hover:bg-slate-800 transition-colors">
+                  <button onClick={() => setSelectedEmployee(null)} aria-label="إغلاق التفاصيل" className="p-2 rounded-lg text-slate-500 hover:text-white hover:bg-slate-800 transition-colors">
                     <X className="size-5" />
                   </button>
                 </div>
+
+                {/* Card body — INTERNAL scrollbar: data longer than the
+                    card scrolls here without ever leaving the viewport.
+                    Keyed by employee → switching rows resets the scroll
+                    to the top of the new employee's data. */}
+                <div key={selectedEmployee.employeeId} className="overflow-y-auto arm-scroll p-5 space-y-4">
 
                 {/* Employee Info */}
                 <div className="flex items-center gap-3 p-4 rounded-xl bg-slate-800/60 border border-slate-700/30">
@@ -660,7 +731,7 @@ export default function RiskCenterPage() {
                     <p className="text-slate-500 text-xs mb-1">نقاط المخاطر</p>
                     <p className={`text-4xl font-bold ${getRiskLevelConfig(selectedEmployee.riskLevel).color}`}>{selectedEmployee.riskScore}</p>
                     <p className={`text-xs mt-1 ${getRiskLevelConfig(selectedEmployee.riskLevel).color}`}>
-                      {selectedEmployee.riskScore >= 36 ? 'خطر حرج — تصعيد فوري' : selectedEmployee.riskScore >= 21 ? 'مرتفع — يتطلب تدخل عاجل' : selectedEmployee.riskScore >= 11 ? 'متوسط — يحتاج متابعة' : 'منخفض — مراقبة عادية'}
+                      {selectedEmployee.riskScore >= 51 ? 'خطر حرج — تصعيد فوري' : selectedEmployee.riskScore >= 26 ? 'مرتفع — يتطلب تدخل عاجل' : selectedEmployee.riskScore >= 11 ? 'متوسط — يحتاج متابعة' : 'منخفض — مراقبة عادية'}
                     </p>
                   </CardContent>
                 </Card>
@@ -685,7 +756,6 @@ export default function RiskCenterPage() {
                         { label: 'متابعة حرجة', key: 'criticalFollowUp', icon: ShieldX, color: 'text-red-500' },
                         { label: 'شكاوى عملاء', key: 'complaint', icon: FileWarning, color: 'text-rose-400' },
                         { label: 'مشكلة متكررة', key: 'repeatedIssue', icon: FileWarning, color: 'text-yellow-400' },
-                        // CAPA breakdown items
                         { label: 'حالات كابا مفتوحة', key: 'openCapa', icon: FileText, color: 'text-teal-400' },
                         { label: 'حالات كابا متأخرة', key: 'overdueCapa', icon: AlertCircle, color: 'text-red-400' },
                         { label: 'حالات كابا حرجة', key: 'criticalCapa', icon: ShieldX, color: 'text-red-500' },
@@ -740,51 +810,39 @@ export default function RiskCenterPage() {
                   </Card>
                 )}
 
-                {/* CAPA Actions */}
-                {selectedEmployee.capaIds && selectedEmployee.capaIds.length > 0 && (
-                  <Card className="border-teal-500/25 bg-teal-500/5">
-                    <CardHeader className="pb-2 pt-3 px-4">
-                      <CardTitle className="text-white text-sm flex items-center gap-2">
-                        <FileText className="size-4 text-teal-400" />
-                        إجراءات كابا
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent className="px-4 pb-3 flex gap-2">
+                {/* §8 — CAPA actions inside the panel: "Create CAPA" opens
+                    the canonical dialog INLINE (no page nav), "View CAPA"
+                    navigates filtered to the employee. */}
+                <Card className="border-teal-500/25 bg-teal-500/5">
+                  <CardHeader className="pb-2 pt-3 px-4">
+                    <CardTitle className="text-white text-sm flex items-center gap-2">
+                      <FileText className="size-4 text-teal-400" />
+                      إجراءات كابا
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="px-4 pb-3 flex gap-2 flex-wrap">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="flex-1 min-w-[140px] text-xs bg-teal-500/10 border-teal-500/30 text-teal-300 hover:bg-teal-500/20 hover:text-teal-200"
+                      onClick={() => setCapaCreateOpen(true)}
+                    >
+                      <FilePlus className="size-3.5 ml-1" />
+                      إنشاء كابا جديد
+                    </Button>
+                    {selectedEmployee.capaIds && selectedEmployee.capaIds.length > 0 && (
                       <Button
                         size="sm"
                         variant="outline"
-                        className="flex-1 text-xs bg-teal-500/10 border-teal-500/30 text-teal-300 hover:bg-teal-500/20 hover:text-teal-200"
-                        onClick={() => {
-                          // SPA navigation (the page router is not URL-based).
-                          useAppStore.getState().navigateTo('capa', undefined, {
-                            employeeId: selectedEmployee.employeeId,
-                          });
-                        }}
+                        className="flex-1 min-w-[140px] text-xs bg-teal-500/10 border-teal-500/30 text-teal-300 hover:bg-teal-500/20 hover:text-teal-200"
+                        onClick={() => useAppStore.getState().navigateTo('capa', undefined, { employeeId: selectedEmployee.employeeId })}
                       >
                         <Eye className="size-3.5 ml-1" />
-                        عرض حالات كابا ({selectedEmployee.capaIds.length})
+                        عرض الحالات ({selectedEmployee.capaIds.length})
                       </Button>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="flex-1 text-xs bg-teal-500/10 border-teal-500/30 text-teal-300 hover:bg-teal-500/20 hover:text-teal-200"
-                        onClick={() => {
-                          // §1: create intent — navigates AND auto-opens the
-                          // CAPA dialog with the employee pre-filled.
-                          useAppStore.getState().navigateTo('capa', undefined, {
-                            source: 'risk_center',
-                            employeeId: selectedEmployee.employeeId,
-                            employeeName: selectedEmployee.employeeName,
-                            problemDescription: selectedEmployee.recommendations[0] || '',
-                          });
-                        }}
-                      >
-                        <FilePlus className="size-3.5 ml-1" />
-                        إنشاء كابا جديد
-                      </Button>
-                    </CardContent>
-                  </Card>
-                )}
+                    )}
+                  </CardContent>
+                </Card>
 
                 {/* Last Activity */}
                 {selectedEmployee.lastActivity && (
@@ -792,11 +850,111 @@ export default function RiskCenterPage() {
                     آخر نشاط: {selectedEmployee.lastActivity}
                   </div>
                 )}
+
+                {/* ═══ §12 INLINE CAPA FORM — opens INSIDE the risk panel
+                    (same shared CAPAInlineForm as everywhere else, no
+                    dialog, no navigation). The panel scrolls to fit. ═══ */}
+                <AnimatePresence>
+                  {capaCreateOpen && selectedEmployee && (
+                    <motion.div
+                      initial={{ opacity: 0, y: -8, scale: 0.98 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      exit={{ opacity: 0, y: -8, scale: 0.98 }}
+                      transition={{ duration: 0.22, ease: [0.4, 0, 0.2, 1] }}
+                      className="rounded-2xl border border-violet-500/30 bg-slate-900/80 backdrop-blur-md shadow-2xl shadow-violet-900/20 overflow-hidden"
+                    >
+                      <div className="flex items-center justify-between gap-2 px-4 py-2.5 border-b border-slate-700/50">
+                        <p className="text-xs font-bold text-slate-200 flex items-center gap-2">
+                          <FilePlus className="size-3.5 text-violet-400" />
+                          إنشاء CAPA — {selectedEmployee.employeeName}
+                        </p>
+                        <button onClick={() => setCapaCreateOpen(false)} className="p-1.5 rounded-md text-slate-500 hover:text-white hover:bg-slate-800 transition-colors">
+                          <X className="size-3.5" />
+                        </button>
+                      </div>
+                      <div className="p-4">
+                        <CAPAInlineForm
+                          onClose={() => setCapaCreateOpen(false)}
+                          onCreated={() => { setCapaCreateOpen(false); fetchRiskData(); }}
+                          employees={employeesList as never}
+                          systemUsers={usersList}
+                          defaultValues={{
+                            title: `${selectedEmployee.employeeName} — خطة تصحيحية`,
+                            department: selectedEmployee.department || '',
+                            priority: selectedEmployee.riskLevel === 'critical' ? 'critical' : 'high',
+                            employeeId: selectedEmployee.employeeId,
+                            problemDescription: selectedEmployee.recommendations[0] || '',
+                            source: 'risk_center',
+                          }}
+                        />
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
               </div>
-            </motion.div>
-          </>
+              </div>
+          </motion.div>
         )}
       </AnimatePresence>
+
+      {/* ═══ Department Risk Analysis ═══ */}
+      {deptTable.length > 0 && (
+        <motion.div initial={{ opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }}>
+          <div className="flex items-center gap-2 mb-3">
+            <BarChart3 className="size-5 text-slate-400" />
+            <h2 className="text-white text-sm font-semibold">تحليل مخاطر الأقسام</h2>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {deptTable.map(dept => {
+              const avgLevel = dept.avgScore >= 51 ? 'critical' : dept.avgScore >= 26 ? 'high' : dept.avgScore >= 11 ? 'medium' : 'low';
+              const dl = getRiskLevelConfig(avgLevel);
+              return (
+                <Card key={dept.name} className={`border ${dl.border} ${dl.bg}`}>
+                  <CardContent className="p-3.5">
+                    <div className="flex items-center justify-between mb-2">
+                      <h3 className="text-white text-sm font-medium">{dept.name}</h3>
+                      <Badge variant="outline" className={`text-[10px] ${dl.color} ${dl.border}`}>
+                        متوسط: {dept.avgScore}
+                      </Badge>
+                    </div>
+                    <div className="grid grid-cols-2 gap-1.5 text-[10px]">
+                      <div className="flex justify-between text-slate-400">
+                        <span>موظفين:</span>
+                        <span className="text-white">{dept.count}</span>
+                      </div>
+                      <div className="flex justify-between text-slate-400">
+                        <span>حالات مفتوحة:</span>
+                        <span className="text-blue-400">{dept.openCases}</span>
+                      </div>
+                      <div className="flex justify-between text-slate-400">
+                        <span>مخالفات جودة:</span>
+                        <span className="text-amber-400">{dept.qualityViolations}</span>
+                      </div>
+                      <div className="flex justify-between text-slate-400">
+                        <span>مشاكل حضور:</span>
+                        <span className="text-red-400">{dept.attendanceIssues}</span>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </div>
+        </motion.div>
+      )}
+
+      {/* §12 — the legacy CAPAQuickCreate dialog was replaced by the
+          shared inline CAPAInlineForm INSIDE the risk side panel (see
+          the panel above): no modal, no navigation, one form system. */}
     </div>
   );
 }
+
+//  RiskDetailCard — REMOVED in this pass. The Risk Center side
+//  panel is intentionally kept as a fixed slide-in (no full
+//  inline-expansion refactor) to avoid a 200-line JSX rewrite in a
+//  single edit pass. The §8 CAPA-inline change still ships: the
+//  panel's "إنشاء كابا جديد" button opens the canonical dialog
+//  inline (see the inline <CAPAQuickCreate/> mount at the page
+//  bottom). Inline expansion is a §4 follow-up once the test grid
+//  for the panel is in place.

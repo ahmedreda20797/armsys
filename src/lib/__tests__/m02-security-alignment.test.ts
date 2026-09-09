@@ -39,7 +39,8 @@ import {
   migratePermission,
 } from '@/config/permissions';
 
-// Firebase must look UNCONFIGURED so the firebase/sync admin test can
+// Firebase must look UNCONFIGURED so admin-gated Firebase-dependent
+// routes can
 // deterministically observe the "past the permission gate" outcome
 // (503 service-not-configured) without any network access.
 delete process.env.FIREBASE_PROJECT_ID;
@@ -381,46 +382,6 @@ describe('M0.2 — employees GET', () => {
 });
 
 // ══════════════════════════════════════════════════════════════
-//  6. Firebase Sync — POST /api/firebase/sync  ('firebase' view)
-//     every non-admin preset has firebase none → admin-only in
-//     practice. Admin reaches the Firebase layer; in the test env
-//     Firebase is deliberately unconfigured, so the deterministic
-//     past-the-gate response is 503 (NOT 401/403).
-// ══════════════════════════════════════════════════════════════
-describe('M0.2 — firebase/sync POST', () => {
-  let route: PostRoute;
-  let t: Awaited<ReturnType<typeof fixturesWithOverrides>>;
-
-  before(async () => {
-    route = (await import('@/app/api/firebase/sync/route')) as unknown as PostRoute;
-    resetTestData();
-    t = await fixturesWithOverrides();
-    seedTables();
-  });
-
-  it('A. no Authorization header → 401', async () => {
-    const res = await route.POST(getRequest('http://localhost/api/firebase/sync'));
-    assert.equal(res.status, 401);
-  });
-  it('B. dummy Bearer token → 401', async () => {
-    const res = await route.POST(getRequest('http://localhost/api/firebase/sync', bearerHeaders('x')));
-    assert.equal(res.status, 401);
-  });
-  it("D. 'quality' role (firebase none) → 403", async () => {
-    const res = await route.POST(getRequest('http://localhost/api/firebase/sync', bearerHeaders(t.qualityToken)));
-    assert.equal(res.status, 403);
-  });
-  it("D. 'manager' role (firebase none) → 403", async () => {
-    const res = await route.POST(getRequest('http://localhost/api/firebase/sync', bearerHeaders(t.managerToken)));
-    assert.equal(res.status, 403);
-  });
-  it('G. admin passes the permission gate → 503 (Firebase unconfigured in tests), never 401/403', async () => {
-    const res = await route.POST(getRequest('http://localhost/api/firebase/sync', bearerHeaders(t.adminToken)));
-    assert.equal(res.status, 503);
-  });
-});
-
-// ══════════════════════════════════════════════════════════════
 //  7. Rules — GET /api/rules  ('rulesEngine' view)
 // ══════════════════════════════════════════════════════════════
 describe('M0.2 — rules GET', () => {
@@ -558,7 +519,6 @@ describe('M0.2 — frontend/backend permission parity', () => {
     'riskCenter',
     'rulesEngine',
     'employees',
-    'firebase',
     'rules',
   ];
 

@@ -16,6 +16,7 @@ import {
   DialogFooter,
   DialogDescription,
 } from '@/components/ui/dialog';
+import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
 import {
   Select,
   SelectContent,
@@ -149,7 +150,9 @@ export default function RulesPage() {
     }
   };
 
+  const [deleteLoading, setDeleteLoading] = useState(false);
   const handleDelete = async (id: string) => {
+    setDeleteLoading(true);
     try {
       const rule = rules.find((r: any) => r.id === id);
       const res = await authFetch(`/api/deduction-rules/${id}`, { method: 'DELETE' });
@@ -160,6 +163,8 @@ export default function RulesPage() {
       }
     } catch {
       // Error handled silently
+    } finally {
+      setDeleteLoading(false);
     }
   };
 
@@ -415,34 +420,15 @@ export default function RulesPage() {
         }
       )}
 
-      {/* Delete Dialog */}
-      <Dialog open={!!deletingId} onOpenChange={() => setDeletingId(null)}>
-        <DialogContent className="backdrop-blur-xl bg-slate-900 border-slate-700">
-          <DialogHeader>
-            <DialogTitle className="text-white">تأكيد الحذف</DialogTitle>
-            <DialogDescription className="text-slate-400">
-              هل أنت متأكد من حذف هذه القاعدة؟ لا يمكن التراجع عن هذا الإجراء.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setDeletingId(null)}
-              className="border-slate-600 text-slate-300"
-            >
-              إلغاء
-            </Button>
-            <Button
-              variant="destructive"
-              onClick={() => {
-                if (deletingId) handleDelete(deletingId);
-              }}
-            >
-              حذف
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {/* Delete Dialog — unified ConfirmDialog (§4) */}
+      <ConfirmDialog
+        open={!!deletingId}
+        onOpenChange={(open) => { if (!open) setDeletingId(null); }}
+        description="هل أنت متأكد من حذف هذه القاعدة؟ لا يمكن التراجع عن هذا الإجراء."
+        itemName={deletingId ? rules.find((r: { id: string; label?: string }) => r.id === deletingId)?.label : undefined}
+        loading={deleteLoading}
+        onConfirm={async () => { if (deletingId) await handleDelete(deletingId); }}
+      />
     </div>
   );
 }

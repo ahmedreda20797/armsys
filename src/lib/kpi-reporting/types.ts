@@ -241,6 +241,12 @@ export interface KpiMonthlyFilters {
   minScore?: number;
   maxScore?: number;
   /**
+   * §10 ARCHIVED EMPLOYEES: excluded from reports BY DEFAULT. When
+   * true, currently-archived-yet-eligible employees get rows again
+   * (always labelled "مؤرشف" in the UI/Excel). Default: excluded.
+   */
+  includeArchived?: boolean;
+  /**
    * Server-side AUTHORIZED employee scope (M0.5): when present,
    * rows are narrowed to these ids BEFORE any other filter/sort —
    * authorization is never a client-side concern.

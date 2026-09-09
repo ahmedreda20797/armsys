@@ -56,6 +56,7 @@ import { useAppStore } from '@/lib/store';
 import { useAuth } from '@/contexts/AuthContext';
 import { getRequestTypeLabel, getRequestTypeColor, todayDayKey } from '@/lib/date-utils';
 import { PageHeaderBar } from '@/components/shared/PageHeaderBar';
+import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
 import { logCreate, logApprove, logDelete } from '@/lib/activity-logger';
 import { toast } from 'sonner';
 import { authFetch } from '@/lib/api-fetch';
@@ -241,7 +242,9 @@ export default function RequestsPage() {
     }
   };
 
+  const [deleteLoading, setDeleteLoading] = useState(false);
   const handleDelete = async (id: string) => {
+    setDeleteLoading(true);
     try {
       const req = requests.find((r: any) => r.id === id);
       const res = await authFetch(`/api/requests/${id}`, { method: 'DELETE' });
@@ -252,6 +255,8 @@ export default function RequestsPage() {
       }
     } catch {
       // Error handled silently
+    } finally {
+      setDeleteLoading(false);
     }
   };
 
@@ -783,37 +788,15 @@ export default function RequestsPage() {
         </DialogContent>
       </Dialog>
 
-      {/* ═══ Delete Confirmation Dialog ═══ */}
-      <Dialog open={!!deletingId} onOpenChange={() => setDeletingId(null)}>
-        <DialogContent className="backdrop-blur-xl bg-slate-900 border-slate-700 max-w-sm">
-          <DialogHeader>
-            <DialogTitle className="text-white flex items-center gap-2">
-              <AlertTriangle className="size-5 text-red-400" />
-              تأكيد الحذف
-            </DialogTitle>
-            <DialogDescription className="text-slate-400">
-              هل أنت متأكد من حذف هذا الطلب؟ لا يمكن التراجع عن هذا الإجراء.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setDeletingId(null)}
-              className="border-slate-600 text-slate-300"
-            >
-              إلغاء
-            </Button>
-            <Button
-              variant="destructive"
-              onClick={() => {
-                if (deletingId) handleDelete(deletingId);
-              }}
-            >
-              حذف
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {/* ═══ Delete Confirmation — unified ConfirmDialog (§4) ═══ */}
+      <ConfirmDialog
+        open={!!deletingId}
+        onOpenChange={(open) => { if (!open) setDeletingId(null); }}
+        description="هل أنت متأكد من حذف هذا الطلب؟ لا يمكن التراجع عن هذا الإجراء."
+        itemName={deletingId ? requests.find((r: { id: string; employeeName?: string }) => r.id === deletingId)?.employeeName : undefined}
+        loading={deleteLoading}
+        onConfirm={async () => { if (deletingId) await handleDelete(deletingId); }}
+      />
 
       {/* ═══ Upload Result Dialog ═══ */}
       <Dialog open={!!uploadResult} onOpenChange={() => setUploadResult(null)}>

@@ -12,6 +12,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
+import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
 import { Switch } from '@/components/ui/switch';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
@@ -280,12 +281,15 @@ export default function ObservationTemplatesPage() {
     }
   }
 
-  async function handleDelete(template: ObservationTemplate) {
-    if (!confirm(`حذف القالب "${template.title}"؟`)) return;
+  // §4: deletion goes through the unified ConfirmDialog.
+  const [deleteTarget, setDeleteTarget] = useState<ObservationTemplate | null>(null);
+  async function confirmDelete() {
+    if (!deleteTarget) return;
     try {
-      await deleteMut.mutateAsync(template.id);
-      logDelete('templates', 'قالب ملاحظة', template.title);
+      await deleteMut.mutateAsync(deleteTarget.id);
+      logDelete('templates', 'قالب ملاحظة', deleteTarget.title);
       toast.success('تم حذف القالب');
+      setDeleteTarget(null);
     } catch (e) {
       toast.error('فشل الحذف', { description: e instanceof Error ? e.message : undefined });
     }
@@ -386,7 +390,7 @@ export default function ObservationTemplatesPage() {
                 template={t}
                 canDelete={canDelete}
                 onToggleFavorite={() => handleToggleFavorite(t.id)}
-                onDelete={() => handleDelete(t)}
+                onDelete={() => setDeleteTarget(t)}
               />
             </motion.div>
           ))}
@@ -411,6 +415,16 @@ export default function ObservationTemplatesPage() {
           categories={categories}
         />
       )}
+
+      {/* §4: unified delete confirmation */}
+      <ConfirmDialog
+        open={!!deleteTarget}
+        onOpenChange={(open) => { if (!open) setDeleteTarget(null); }}
+        description="سيتم حذف القالب نهائياً. الملاحظات المنشأة منه لا تتأثر."
+        itemName={deleteTarget?.title}
+        loading={deleteMut.isPending}
+        onConfirm={confirmDelete}
+      />
     </div>
   );
 }

@@ -24,6 +24,7 @@ import {
   DialogFooter,
   DialogDescription,
 } from '@/components/ui/dialog';
+import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
 import {
   Select,
   SelectContent,
@@ -66,7 +67,8 @@ interface KnowledgeArticle {
   authorId: string;
   createdAt: string;
   updatedAt: string;
-  author?: { id: string; name: string; department: string | null } | null;
+  /** Server-enriched display name for the author (§12 fix). */
+  authorName?: string | null;
 }
 
 interface ArticleFormData {
@@ -324,7 +326,13 @@ export default function KnowledgeBasePage() {
           <div>
             <h1 className="text-xl font-bold text-white">قاعدة المعرفة</h1>
             <p className="text-slate-500 text-xs mt-0.5">
-              {filtered.length} مقال معرفي
+              دروس مستفادة من المشاكل: المشكلة، السبب الجذري، الحل، وطريقة الوقاية — {filtered.length} مقال
+            </p>
+            {/* §12: purpose statement — the page documents recurring
+                problems and their fixes (SOPs / work instructions grow
+                out of these lessons). */}
+            <p className="text-slate-600 text-[10px] mt-0.5 leading-relaxed">
+              الغرض: عند تكرار مشكلة، ابحث هنا أولاً — كل مقال يوثّق ما حدث ولماذا وكيف حُلّ وكيف نمنع تكراره.
             </p>
           </div>
         </div>
@@ -445,7 +453,7 @@ export default function KnowledgeBasePage() {
             <p className="text-slate-600 text-xs mt-1">
               {search || departmentFilter !== 'all' || statusFilter !== 'all' || categoryFilter
                 ? 'لم يتم العثور على نتائج'
-                : 'لم يتم إضافة أي مقالات بعد'}
+                : 'ابدأ بتوثيق أول درس مستفاد: مشكلة حدثت، سببها الجذري، الحل، وطريقة الوقاية'}
             </p>
           </CardContent>
         </Card>
@@ -546,10 +554,10 @@ export default function KnowledgeBasePage() {
 
                       {/* Meta row */}
                       <div className="flex flex-wrap items-center gap-4 text-[11px] text-slate-500 pt-1 border-t border-slate-700/30">
-                        {article.author && (
+                        {article.authorName && (
                           <span className="flex items-center gap-1">
                             <User className="size-3" />
-                            {article.author.name}
+                            {article.authorName}
                           </span>
                         )}
                         <span className="flex items-center gap-1">
@@ -697,12 +705,12 @@ export default function KnowledgeBasePage() {
               </div>
               <div className="space-y-1.5">
                 <Label className="text-slate-300 text-xs">الكاتب</Label>
-                <Select value={form.authorId} onValueChange={(v) => setForm((p) => ({ ...p, authorId: v }))}>
+                <Select value={form.authorId || '__none'} onValueChange={(v) => setForm((p) => ({ ...p, authorId: v === '__none' ? '' : v }))}>
                   <SelectTrigger className="bg-slate-800/70 border-slate-700/70 text-white h-9 text-sm">
                     <SelectValue placeholder="اختر الكاتب" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="" className="text-white">— بدون —</SelectItem>
+                    <SelectItem value="__none" className="text-white">— بدون —</SelectItem>
                     {employees.map((emp: any) => (
                       <SelectItem key={emp.id} value={emp.id} className="text-white">
                         {emp.name}
@@ -733,33 +741,15 @@ export default function KnowledgeBasePage() {
         </DialogContent>
       </Dialog>
 
-      {/* ═══ Delete Confirmation Dialog ═══ */}
-      <Dialog open={!!deletingId} onOpenChange={(open) => { if (!open) setDeletingId(null); }}>
-        <DialogContent className="bg-slate-900 border-slate-700/60 max-w-sm">
-          <DialogHeader>
-            <DialogTitle className="text-white text-lg">تأكيد الحذف</DialogTitle>
-            <DialogDescription className="text-slate-500 text-xs">
-              هل أنت متأكد من حذف هذا المقال؟ لا يمكن التراجع عن هذا الإجراء.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter className="gap-2 sm:gap-0">
-            <Button
-              variant="ghost"
-              onClick={() => setDeletingId(null)}
-              className="text-slate-400 hover:text-white hover:bg-slate-800"
-            >
-              إلغاء
-            </Button>
-            <Button
-              onClick={() => deletingId && handleDelete(deletingId)}
-              disabled={deleteMutation.isPending}
-              className="bg-red-600 hover:bg-red-700 text-white"
-            >
-              {deleteMutation.isPending ? 'جاري الحذف...' : 'حذف'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {/* ═══ Delete Confirmation — unified ConfirmDialog (§4) ═══ */}
+      <ConfirmDialog
+        open={!!deletingId}
+        onOpenChange={(open) => { if (!open) setDeletingId(null); }}
+        description="هل أنت متأكد من حذف هذا المقال؟ لا يمكن التراجع عن هذا الإجراء."
+        itemName={deletingId ? articles.find((a) => a.id === deletingId)?.title : undefined}
+        loading={deleteMutation.isPending}
+        onConfirm={async () => { if (deletingId) await handleDelete(deletingId); }}
+      />
     </div>
   );
 }

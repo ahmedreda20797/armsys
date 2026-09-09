@@ -42,6 +42,7 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { FavoriteToggle, PinToggle } from '@/components/shared/NavigationMarks';
 import { PageHeaderBar } from '@/components/shared/PageHeaderBar';
+import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
 import {
   EMPLOYEE_STATUSES,
   EMPLOYEE_STATUS_LABELS_AR,
@@ -141,6 +142,7 @@ export default function EmployeesPage() {
 
   // Swipe to delete state
   const [swipeId, setSwipeId] = useState<string | null>(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
   const touchStartX = useRef<number | null>(null);
   const touchCurrentX = useRef<number | null>(null);
 
@@ -225,12 +227,14 @@ export default function EmployeesPage() {
 
   const handleDelete = async (id: string) => {
     const empName = employees.find((e: any) => e.id === id)?.name || '';
+    setDeleteLoading(true);
     deleteEmployee.mutate(id, {
       onSuccess: () => {
         logDelete('employees', 'موظف', empName);
         setSwipeId(null);
         setDeletingId(null);
       },
+      onSettled: () => setDeleteLoading(false),
     });
   };
 
@@ -684,35 +688,15 @@ export default function EmployeesPage() {
         }
       )}
 
-      {/* Delete Confirm Dialog */}
-      <Dialog open={!!deletingId || !!swipeId} onOpenChange={() => { setDeletingId(null); setSwipeId(null); }}>
-        <DialogContent className="backdrop-blur-xl bg-slate-900 border-slate-700">
-          <DialogHeader>
-            <DialogTitle className="text-white">تأكيد الحذف</DialogTitle>
-            <DialogDescription className="text-slate-400">
-              هل أنت متأكد من حذف هذا الموظف؟ لا يمكن التراجع عن هذا الإجراء.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => { setDeletingId(null); setSwipeId(null); }}
-              className="border-slate-600 text-slate-300"
-            >
-              إلغاء
-            </Button>
-            <Button
-              variant="destructive"
-              onClick={() => {
-                const id = deletingId || swipeId;
-                if (id) handleDelete(id);
-              }}
-            >
-              حذف
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {/* Delete Confirm Dialog — unified ConfirmDialog (§4) */}
+      <ConfirmDialog
+        open={!!deletingId || !!swipeId}
+        onOpenChange={(open) => { if (!open) { setDeletingId(null); setSwipeId(null); } }}
+        description="هل أنت متأكد من حذف هذا الموظف؟ لا يمكن التراجع عن هذا الإجراء."
+        itemName={(() => { const id = deletingId || swipeId; return id ? employees.find((e: { id: string; name?: string }) => e.id === id)?.name : undefined; })()}
+        loading={deleteLoading}
+        onConfirm={async () => { const id = deletingId || swipeId; if (id) await handleDelete(id); }}
+      />
     </div>
   );
 }

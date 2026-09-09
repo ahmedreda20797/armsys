@@ -160,14 +160,21 @@ export function formatSignedPoints(value: number): string {
  * can never widen the data.
  */
 export async function downloadKpiReportExcel(
-  reportId: 'kpi-monthly' | 'kpi-mtd' | 'kpi-historical',
+  reportId: string,
   body: Record<string, unknown>,
   fileName: string,
 ): Promise<void> {
+  const payload = { ...body };
+  if (payload.filters && typeof payload.filters === 'object') {
+    // Drop empty filter envelopes instead of sending noise.
+    if (Object.keys(payload.filters as Record<string, unknown>).length === 0) {
+      delete payload.filters;
+    }
+  }
   const res = await authFetch('/api/reports/run', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ reportId, format: 'excel', ...body }),
+    body: JSON.stringify({ reportId, format: 'excel', ...payload }),
   });
   if (!res.ok) {
     let message = 'فشل تصدير التقرير';

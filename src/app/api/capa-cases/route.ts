@@ -3,6 +3,7 @@ import { getAll, createRecord, sortByDateField, getEmployeeMap, getById, invalid
 import { requireAuth } from '@/lib/verify-permission';
 import { asScopeViewer, employeeInScope, authScopeViewer, filterRowsByEmployeeScope, resolveEmployeeScopeFromDb } from '@/lib/scope/server';
 import { createSmartNotification } from '@/lib/rules-engine';
+import { dispatchAutomationEvent } from '@/lib/automation/event-bridge';
 import { isOverdueCAPA, capaOverdueDays, capaDueDateMs, isClosedCAPA, CAPA_SLA_DAYS } from '@/lib/metrics';
 import type { CAPACase } from '@/types';
 
@@ -254,6 +255,18 @@ export async function POST(request: NextRequest) {
     });
 
     invalidateCache('capaCases');
+
+    // §13: automation event — active capa-module rules fire here.
+    void dispatchAutomationEvent('record_created', 'capa', {
+      employeeId: body.employeeId || null,
+      employeeName,
+      department: body.department || null,
+      status: capaCase.status,
+      priority: capaCase.priority,
+      category: capaCase.issueCategory,
+      sourceRecordId: capaCase.id,
+      extra: { capaId: capaCase.capaId, slaDays },
+    });
 
     // ── Task 3: CAPA Created Notification ──
     try {

@@ -11,6 +11,7 @@ import {
   Search, Star, Copy, Trash2, Plus, X, Bookmark,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
 import type { VBNodeTemplate, VBNodeConfig } from '../engine/v2-types';
 import {
   subscribe, getAllTemplates, getFavorites, toggleFavorite,
@@ -52,10 +53,10 @@ export const NodeTemplateLibrary = memo(function NodeTemplateLibrary({
     cloneTemplate(tpl.id);
   };
 
+  // §4: deletion goes through the unified ConfirmDialog.
+  const [deleteTarget, setDeleteTarget] = useState<VBNodeTemplate | null>(null);
   const handleDelete = (tpl: VBNodeTemplate) => {
-    if (confirm(`حذف القالب "${tpl.name}"؟`)) {
-      deleteTemplate(tpl.id);
-    }
+    setDeleteTarget(tpl);
   };
 
   return (
@@ -188,6 +189,15 @@ export const NodeTemplateLibrary = memo(function NodeTemplateLibrary({
             })}
           </div>
         </div>
+
+        {/* §4: unified delete confirmation */}
+        <ConfirmDialog
+          open={!!deleteTarget}
+          onOpenChange={(open) => { if (!open) setDeleteTarget(null); }}
+          description="سيتم حذف القالب المحفوظ نهائياً."
+          itemName={deleteTarget?.name}
+          onConfirm={() => { if (deleteTarget) deleteTemplate(deleteTarget.id); setDeleteTarget(null); }}
+        />
       </div>
     </div>
   );

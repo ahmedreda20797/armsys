@@ -79,9 +79,19 @@ describe('M0.1.1 — .env.example must contain placeholders only', () => {
   });
 
   it('every value is placeholder-marked', () => {
+    // Operational (non-secret) defaults are ALLOWED to be real values:
+    // they are behavior switches/limits, not credentials. Everything
+    // else that carries a value must look like a placeholder so no
+    // real secret ever ships inside the committed example file.
+    const OPERATIONAL_DEFAULTS = new Set([
+      'AI_ENABLED',      // boolean master switch ('false' by default)
+      'AI_PROVIDER',     // enum: gemini | z-ai | openai-compatible
+      'AI_TIMEOUT_MS',   // numeric clamp hint
+    ]);
     const values = parseValues(readEnvExample());
     for (const [name, value] of Object.entries(values)) {
       if (value === '') continue;
+      if (OPERATIONAL_DEFAULTS.has(name)) continue;
       assert.match(
         value,
         /your[-_]/i,

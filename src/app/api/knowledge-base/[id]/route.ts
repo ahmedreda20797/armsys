@@ -22,9 +22,14 @@ export async function PUT(
       department,
       category,
       tags,
-      author,
       status,
     } = body;
+    // §12: the page sends authorId; legacy records used `author`.
+    const authorId = typeof body.authorId === 'string' && body.authorId.length > 0
+      ? body.authorId
+      : typeof body.author === 'string'
+        ? body.author
+        : undefined;
 
     const { updateRecord } = await import('@/lib/db');
     const article = await updateRecord('knowledgeBase', id, {
@@ -36,7 +41,7 @@ export async function PUT(
       ...(department !== undefined && { department }),
       ...(category !== undefined && { category }),
       ...(tags !== undefined && { tags }),
-      ...(author !== undefined && { author }),
+      ...(authorId !== undefined && { authorId }),
       ...(status !== undefined && { status }),
     });
 

@@ -150,10 +150,12 @@ export const APP_PAGES: PageConfig[] = [
   { id: 'organization', title: 'الهيكل التنظيمي', icon: 'Network', permissionKey: 'organization', availableActions: ['create', 'update', 'delete'], groupId: 'settings' },
   { id: 'workflowDesigner', title: 'مصمم المسارات', icon: 'Workflow', permissionKey: 'workflowDesigner', availableActions: ['create', 'update', 'delete'], groupId: 'settings' },
   { id: 'rulesEngine', title: 'الأتمتة والقواعد', icon: 'Zap', permissionKey: 'rulesEngine', availableActions: ['create', 'update', 'delete'], groupId: 'settings' },
-  { id: 'firebase', title: 'Firebase Settings', icon: 'Database', permissionKey: 'firebase', availableActions: [], groupId: 'settings' },
+  // §14: the standalone 'firebase' settings page was REMOVED — Firebase
+  // configuration itself (admin SDK, RTDB) is unchanged; it simply has
+  // no in-app administration surface anymore.
   // ── Month close / KPI settings (Phase 1) ──
   { id: 'monthClose', title: 'إغلاق الشهر', icon: 'CalendarCog', permissionKey: 'monthClose', availableActions: ['approve'], groupId: 'settings' },
-  { id: 'kpiSettings', title: 'إعدادات مؤشرات الجودة', icon: 'Settings2', permissionKey: 'kpiSettings', availableActions: ['update'], groupId: 'settings' },
+  { id: 'kpiSettings', title: 'إعدادات محرك الأداء', icon: 'Settings2', permissionKey: 'kpiSettings', availableActions: ['update'], groupId: 'settings' },
 ];
 
 // Role presets with action-level permissions
@@ -191,7 +193,6 @@ export const HR_PERMISSIONS: PermissionsMap = {
   travel: 'read',
   reports: { level: 'edit', actions: { export: false } },
   controlPanel: 'none',
-  firebase: 'none',
   followUps: 'none',
   capa: 'none',
   complaints: 'none',
@@ -235,7 +236,6 @@ export const MANAGER_PERMISSIONS: PermissionsMap = {
   travel: 'read',
   reports: { level: 'edit', actions: { export: true } },
   controlPanel: 'none',
-  firebase: 'none',
   followUps: 'read',
   capa: 'read',
   complaints: makeEditWithActions(['create', 'update', 'delete']),
@@ -277,7 +277,6 @@ export const QUALITY_PERMISSIONS: PermissionsMap = {
   travel: 'read',
   reports: { level: 'edit', actions: { export: true } },
   controlPanel: 'none',
-  firebase: 'none',
   followUps: makeEditWithActions(['create', 'update', 'delete']),
   capa: makeEditWithActions(['create', 'update', 'delete']),
   complaints: makeEditWithActions(['create', 'update', 'delete']),
@@ -324,7 +323,6 @@ export const DEFAULT_PERMISSIONS: PermissionsMap = {
   travel: 'read',
   reports: 'none',
   controlPanel: 'none',
-  firebase: 'none',
   followUps: 'read',
   capa: 'read',
   complaints: 'read',

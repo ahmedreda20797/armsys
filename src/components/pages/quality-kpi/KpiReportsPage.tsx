@@ -1,12 +1,20 @@
 'use client';
 
 // ══════════════════════════════════════════════════════════════
-//  KPI Reports Page — Quality KPI Reporting Layer (Phase 2)
+//  KPI Reports Page — Quality KPI Reporting Layer (Phase 2 + §10)
 //
-//  Five logically separated reports over the existing KPI Framework
-//  (spec §3): Employee · Monthly · MTD · Historical · Management
-//  Summary. The page owns ONLY the shared period selector and tab
-//  shell — every number comes from the /api/kpi-reports/* services.
+//  §10 TAB AUDIT RESULT (was 7 tabs, several functionally duplicated):
+//    • الشهري / MTD / التاريخي were THREE tabs over ONE component and
+//      ONE runner differing only in value basis → merged into ONE
+//      "جدول الأداء" tab with an explicit basis switcher (شهري · MTD ·
+//      تاريخي) — the basis banners still label the data's nature.
+//    • الملخص الإداري (quality-only statistics) and التقرير الإداري
+//      الشامل (quality KPI + cross-domain operational counts) kept
+//      SEPARATE: different questions — "كيف أداء الجودة؟" vs
+//      "كيف الأداء التشغيلي عبر كل المجالات؟". Both are labeled.
+//    Each tab carries a one-line PURPOSE so a business user knows
+//    what question it answers before opening it.
+//  The reporting work context (tab · month · basis) persists per user.
 // ══════════════════════════════════════════════════════════════
 
 import { useMemo } from 'react';
@@ -20,36 +28,72 @@ import {
 import { useMonthSnapshots } from '@/hooks/use-kpi-queries';
 import { usePageState } from '@/hooks/use-page-state';
 import KpiEmployeeReportTab from './KpiEmployeeReportTab';
-import KpiMonthlyTableTab from './KpiMonthlyTableTab';
+import KpiMonthlyTableTab, { type TableTabKind } from './KpiMonthlyTableTab';
 import KpiSummaryTab from './KpiSummaryTab';
 import ManagementReportTab from './ManagementReportTab';
 import PerformanceAnalysisTab from './PerformanceAnalysisTab';
 import { buildMonthOptions, currentMonthKey, formatMonth } from './kpi-reports-shared';
 
-type TabKey = 'employee' | 'monthly' | 'mtd' | 'historical' | 'summary' | 'management' | 'performance';
+type TabKey = 'table' | 'employee' | 'summary' | 'management' | 'performance';
+/** Legacy tab values (pre-§10) map onto the merged table tab. */
+type LegacyTabKey = 'monthly' | 'mtd' | 'historical' | TabKey;
+type BasisKind = TableTabKind;
+
+const TAB_PURPOSE: Record<TabKey, string> = {
+  table: 'جدول أداء الجودة لكل موظف في الشهر — الدرجة الخام والوزن والمساهمة وحالة التقرير.',
+  employee: 'ملف أداء موظف واحد في الشهر: المكونات والأدلة والاتجاه — يفتح من اختيار موظف.',
+  summary: 'إحصائيات جودة الفترة: كم موظفاً متاحاً/معلقاً/غير مكتمل، المتوسطات، وأفضل وأدنى درجة.',
+  management: 'التقرير الإداري الشامل: ملخص الجودة + أعداد تشغيلية (شكاوى، كابا، متابعات، خصومات HR) لكل قسم.',
+  performance: 'تحليل الأداء بالوقائع: ما حدث فعلاً لكل موظف خلال الفترة (سجلات، حالات، أدلة).',
+};
+
+const BASIS_OPTIONS: Array<{ value: BasisKind; label: string; hint: string }> = [
+  { value: 'monthly', label: 'الشهري', hint: 'قيمة الشهر حسب أساس الحساب الحالي' },
+  { value: 'mtd', label: 'MTD', hint: 'حساب حي حتى تاريخه من بيانات الجودة الحالية' },
+  { value: 'historical', label: 'تاريخي', hint: 'القيم المجمّدة من لقطة إغلاق الشهر' },
+];
+
+function normalizeView(raw: { tab?: unknown; month?: unknown; basis?: unknown } | null): {
+  tab: TabKey;
+  month: string;
+  basis: BasisKind;
+} | null {
+  if (!raw || typeof raw !== 'object' || typeof raw.month !== 'string') return null;
+  const tabRaw = raw.tab as string | undefined;
+  let tab: TabKey = 'table';
+  let basis: BasisKind = 'monthly';
+  if (tabRaw === 'monthly' || tabRaw === 'mtd' || tabRaw === 'historical') {
+    // Legacy 3-tab values → merged table tab with the matching basis.
+    basis = tabRaw;
+  } else if (tabRaw === 'employee' || tabRaw === 'summary' || tabRaw === 'management' || tabRaw === 'performance') {
+    tab = tabRaw;
+  }
+  if (typeof raw.basis === 'string' && (raw.basis === 'monthly' || raw.basis === 'mtd' || raw.basis === 'historical')) {
+    basis = raw.basis;
+  }
+  return { tab, month: raw.month, basis };
+}
 
 export default function KpiReportsPage() {
   // Phase 6.3 (§8/§38/§39/§50): the reporting work context — active tab
-  // + selected period — persists per user across navigation.
+  // + selected period + table basis — persists per user across navigation.
   const [kpiReportsView, setKpiReportsView] = usePageState<{
     tab: TabKey;
     month: string;
+    basis: BasisKind;
   }>({
     page: 'kpiReports',
     slot: 'view',
-    version: 1,
-    initial: () => ({ tab: 'monthly', month: currentMonthKey() }),
-    validate: (raw) =>
-      raw && typeof raw === 'object'
-      && typeof (raw as { tab?: unknown }).tab === 'string'
-      && typeof (raw as { month?: unknown }).month === 'string'
-        ? (raw as { tab: TabKey; month: string })
-        : null,
+    version: 2,
+    initial: () => ({ tab: 'table', month: currentMonthKey(), basis: 'monthly' }),
+    validate: (raw) => normalizeView(raw as { tab?: unknown; month?: unknown; basis?: unknown } | null),
   });
   const tab = kpiReportsView.tab;
   const setTab = (v: TabKey) => setKpiReportsView((s) => ({ ...s, tab: v }));
   const month = kpiReportsView.month;
   const setMonth = (v: string) => setKpiReportsView((s) => ({ ...s, month: v }));
+  const basis = kpiReportsView.basis;
+  const setBasis = (v: BasisKind) => setKpiReportsView((s) => ({ ...s, basis: v }));
   const snapshotsQuery = useMonthSnapshots();
 
   const monthOptions = useMemo(
@@ -72,7 +116,7 @@ export default function KpiReportsPage() {
             تقارير KPI
           </h1>
           <p className="text-sm text-slate-400">
-            تقارير جودة KPI فوق إطار مؤشرات الأداء القابل للتهيئة — درجة خام ووزن ومساهمة، مع تمييز واضح بين MTD والقيم المجمّدة.
+            تقارير جودة KPI فوق إطار مؤشرات الأداء القابل للتهيئة — مع تمييز واضح بين MTD والقيم المجمّدة.
           </p>
         </div>
         <div className="no-print space-y-1.5 min-w-[190px]">
@@ -94,23 +138,36 @@ export default function KpiReportsPage() {
 
       <Tabs value={tab} onValueChange={(v) => setTab(v as TabKey)} className="space-y-4">
         <TabsList className="no-print bg-slate-800/50 flex-wrap h-auto">
-          <TabsTrigger value="monthly">الشهري</TabsTrigger>
-          <TabsTrigger value="mtd">MTD</TabsTrigger>
-          <TabsTrigger value="historical">التاريخي</TabsTrigger>
-          <TabsTrigger value="employee">الموظف</TabsTrigger>
-          <TabsTrigger value="summary">الملخص الإداري</TabsTrigger>
+          <TabsTrigger value="table">جدول الأداء</TabsTrigger>
+          <TabsTrigger value="employee">أداء الموظف</TabsTrigger>
+          <TabsTrigger value="summary">ملخص الجودة</TabsTrigger>
           <TabsTrigger value="management">التقرير الإداري الشامل</TabsTrigger>
           <TabsTrigger value="performance">تحليل الأداء</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="monthly">
-          <KpiMonthlyTableTab kind="monthly" month={effectiveMonth} />
-        </TabsContent>
-        <TabsContent value="mtd">
-          <KpiMonthlyTableTab kind="mtd" month={effectiveMonth} />
-        </TabsContent>
-        <TabsContent value="historical">
-          <KpiMonthlyTableTab kind="historical" month={effectiveMonth} />
+        {/* §10 — every tab states its purpose up-front */}
+        <p className="no-print text-[11px] text-slate-500 -mt-2 px-1">{TAB_PURPOSE[tab]}</p>
+
+        <TabsContent value="table" className="space-y-3">
+          {/* Basis switcher — the former 3 duplicated tabs (§10) */}
+          <div className="no-print flex items-center gap-1 rounded-xl border border-slate-700/60 bg-slate-950/40 p-1 w-fit">
+            {BASIS_OPTIONS.map((opt) => (
+              <button
+                key={opt.value}
+                type="button"
+                title={opt.hint}
+                onClick={() => setBasis(opt.value)}
+                className={`px-4 py-1.5 text-xs rounded-lg font-medium transition-colors ${
+                  basis === opt.value
+                    ? 'bg-violet-500/20 text-violet-200'
+                    : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+          <KpiMonthlyTableTab kind={basis} month={effectiveMonth} />
         </TabsContent>
         <TabsContent value="employee">
           <KpiEmployeeReportTab month={effectiveMonth} />

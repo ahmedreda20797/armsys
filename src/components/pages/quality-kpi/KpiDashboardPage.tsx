@@ -12,9 +12,12 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
 import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import {
   Gauge, Users, ArrowDownCircle, ArrowUpCircle, Clock, Trophy,
   TrendingDown, AlertCircle, BarChart3, Activity, Radio, Building2,
-  CheckCircle2, XCircle, Eye,
+  CheckCircle2, XCircle, Eye, MoreVertical, Scale, Settings2,
 } from 'lucide-react';
 import {
   ScoreRing, ScoreBadge, TrendArrow, RangeSelector, Leaderboard,
@@ -197,10 +200,13 @@ function MonthlyScoresWidget({ scores }: { scores: DashboardMonthlyScore[] }) {
 
 // ─── Page ─────────────────────────────────────────────────────
 export default function KpiDashboardPage() {
-  const { canView } = usePermissions('kpiDashboard');
+  const { canView, canViewPage } = usePermissions('kpiDashboard');
   const [range, setRange] = useState<KpiRangePreset>('current_month');
   const [customMonths, setCustomMonths] = useState('');
   const [department, setDepartment] = useState('');
+  // §9 — the company-KPI scheme card is hidden by default; toggled
+  // from the header ⋮ menu.
+  const [schemeSummaryOpen, setSchemeSummaryOpen] = useState(false);
 
   const { data, isLoading, isFetching, refetch } = useKpiDashboard({
     range,
@@ -348,6 +354,33 @@ export default function KpiDashboardPage() {
           >
             <Activity className={`size-4 ${isFetching ? 'animate-spin' : ''}`} />
           </Button>
+          {/* §9: reference data + engine configuration live here, not
+              permanently on the dashboard surface. */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="icon" title="خيارات" aria-label="خيارات اللوحة">
+                <MoreVertical className="size-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="bg-slate-900 border-slate-700/60 min-w-52">
+              <DropdownMenuItem
+                onClick={() => setSchemeSummaryOpen((v) => !v)}
+                className="gap-2 cursor-pointer text-xs text-slate-300 focus:text-white focus:bg-slate-800"
+              >
+                <Scale className="size-3.5" />
+                {schemeSummaryOpen ? 'إخفاء أوزان المؤشرات' : 'أوزان المؤشرات'}
+              </DropdownMenuItem>
+              {canViewPage('kpiSettings') && (
+                <DropdownMenuItem
+                  onClick={() => navigateTo('kpiSettings')}
+                  className="gap-2 cursor-pointer text-xs text-slate-300 focus:text-white focus:bg-slate-800"
+                >
+                  <Settings2 className="size-3.5" />
+                  إعدادات محرك الأداء
+                </DropdownMenuItem>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </div>
 
@@ -382,8 +415,14 @@ export default function KpiDashboardPage() {
         />
       </div>
 
-      {/* KPI Framework (Phase 1): active scheme & component weights */}
-      <KpiSchemeSummaryCard scheme={activeScheme} loading={schemesLoading} />
+      {/* KPI Framework (Phase 1): active scheme & component weights —
+          §9: REMOVED from the always-visible main surface. The general
+          company-KPI weights are reference data, not daily signal; they
+          now live behind the header ⋮ menu ("أوزان المؤشرات") and are
+          EDITABLE from إعدادات محرك الأداء (kpiSettings). */}
+      {schemeSummaryOpen && (
+        <KpiSchemeSummaryCard scheme={activeScheme} loading={schemesLoading} />
+      )}
 
       {/* Score + Trend + Performance factor row */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">

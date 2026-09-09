@@ -19,6 +19,7 @@ import {
 import { isMonthClosed } from '@/lib/month-lock';
 import { resolveActor } from '@/lib/auth/actor-resolver';
 import { asScopeViewer, employeeInScope } from '@/lib/scope/server';
+import { dispatchAutomationEvent } from '@/lib/automation/event-bridge';
 import { makeApprovalEvent, appendApprovalEvent, projectLatestApprovalStatus } from '@/lib/approvals';
 import { makeAuditEvent, writeAudit } from '@/lib/audit';
 import { AUDIT_LOG_TABLE } from '@/app/api/quality-audit-log/route';
@@ -123,6 +124,19 @@ export async function POST(
     });
 
     await notifyObservationApproved(existing.employeeName, actor.name, id, pointsAfter);
+
+    // §13: status_changed event — rules keyed on approval transitions
+    // (e.g. N approved deductions → CAPA) execute here.
+    void dispatchAutomationEvent('status_changed', 'quality', {
+      employeeId: existing.employeeId,
+      employeeName: existing.employeeName,
+      department: existing.department,
+      status: newStatus,
+      severity: existing.severity,
+      category: existing.categoryName,
+      sourceRecordId: id,
+      extra: { points: pointsAfter, previousStatus: existing.approvalStatus },
+    });
 
     return Response.json(updated);
   } catch (error) {

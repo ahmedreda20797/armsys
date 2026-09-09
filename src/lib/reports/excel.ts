@@ -74,13 +74,25 @@ export async function buildReportExcel(
   // ── Data rows ──
   response.rows.forEach((row, rowIdx) => {
     const dataRow = sheet.getRow(rowIdx + 5);
-    dataRow.height = 20;
+    // §10/§11: rows carrying multi-line cells (e.g. deduction reasons)
+    // get a taller row so every bullet line stays readable.
+    const hasMultiline = columns.some((col) =>
+      typeof row[col.key] === 'string' && (row[col.key] as string).includes('\n'));
+    dataRow.height = hasMultiline ? Math.max(20, 14 * Math.max(...columns.map((col) =>
+      typeof row[col.key] === 'string' ? (row[col.key] as string).split('\n').length : 1))) : 20;
     columns.forEach((col, colIdx) => {
       const cell = dataRow.getCell(colIdx + 1);
       const raw = row[col.key];
       cell.value = (raw === null || raw === undefined ? '' : raw) as ExcelJS.CellValue;
+      const isMultiline = typeof raw === 'string' && raw.includes('\n');
       cell.font = { name: 'Arial', size: 10, color: { argb: '333333' } };
-      cell.alignment = { horizontal: typeof raw === 'number' ? 'center' : 'right', vertical: 'middle' };
+      cell.alignment = {
+        horizontal: typeof raw === 'number' ? 'center' : 'right',
+        vertical: isMultiline ? 'top' : 'middle',
+        // Multi-line cells wrap so bulleted reasons stay organized
+        // inside ONE cell (§10/§11 Excel contract).
+        wrapText: isMultiline,
+      };
       cell.border = {
         top: { style: 'hair', color: { argb: 'D0D0D0' } },
         bottom: { style: 'hair', color: { argb: 'D0D0D0' } },

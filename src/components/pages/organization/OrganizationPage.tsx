@@ -79,7 +79,7 @@ const TYPE_STYLES: Record<OrgNodeType, string> = {
   subteam: 'bg-cyan-500/10 text-cyan-300 border-cyan-500/20',
 };
 
-const EDITABLE_PAGES = APP_PAGES.filter((p) => !['home', 'firebase'].includes(p.id));
+const EDITABLE_PAGES = APP_PAGES.filter((p) => p.id !== 'home'); // §14: 'firebase' page removed
 
 export default function OrganizationPage() {
   // Action checks against the 'organization' permission key — the

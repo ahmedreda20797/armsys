@@ -7,6 +7,7 @@ import { usePageState } from '@/hooks/use-page-state';
 import { useAuth } from '@/contexts/AuthContext';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { AttentionPanel, type AttentionItem } from '@/components/shared/AttentionPanel';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -34,7 +35,8 @@ import { buildCapaPrefillFromAlert } from '@/lib/repetition-detection';
 import { capaDefaultsFromNavParams, hasCreateIntent } from '@/lib/record-prefill';
 import { FavoriteToggle, PinToggle } from '@/components/shared/NavigationMarks';
 import { PageHeaderBar } from '@/components/shared/PageHeaderBar';
-import CAPAQuickCreate from '@/components/capa/CAPAQuickCreate';
+import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
+import { CAPAInlineForm } from '@/components/shared/inline-forms';
 import CAPADetailPage from '@/components/capa/CAPADetailPage';
 import {
   STATUS_OPTIONS, PRIORITY_OPTIONS, ISSUE_CATEGORIES, DEPARTMENTS,
@@ -136,7 +138,6 @@ function CAPAListPage() {
   // scope are enforced server-side; the banner only ever shows
   // alerts this caller is entitled to see.
   const [repetitionAlerts, setRepetitionAlerts] = useState<RepetitionAlert[]>([]);
-  const [repetitionDismissed, setRepetitionDismissed] = useState(false);
   useEffect(() => {
     if (!canView) return;
     authFetch('/api/repetition-alerts')
@@ -144,6 +145,17 @@ function CAPAListPage() {
       .then((d) => setRepetitionAlerts(Array.isArray(d?.alerts) ? d.alerts : []))
       .catch(() => setRepetitionAlerts([]));
   }, [canView]);
+
+  // §12 — when the inline create card opens (alert row, overflow menu,
+  // navParams intent), bring it into view so the user sees the form
+  // open in place instead of hunting for it.
+  useEffect(() => {
+    if (!isCreateOpen) return;
+    const raf = requestAnimationFrame(() => {
+      document.getElementById('capa-inline-create')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [isCreateOpen]);
 
   // Delete
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -250,7 +262,9 @@ function CAPAListPage() {
   };
 
   // ═══ Delete Handler ═══
+  const [deleting, setDeleting] = useState(false);
   const handleDelete = async (id: string) => {
+    setDeleting(true);
     try {
       const res = await authFetch(`/api/capa-cases/${id}`, { method: 'DELETE' });
       if (res.ok) {
@@ -259,6 +273,7 @@ function CAPAListPage() {
         setCases((p) => p.filter((c) => c.id !== id));
       }
     } catch { toast.error('فشل في الحذف'); }
+    setDeleting(false);
     setDeletingId(null);
   };
 
@@ -374,63 +389,79 @@ function CAPAListPage() {
         ))}
       </motion.div>
 
-      {/* ═══ §8 Repetition → CAPA alerts ═══ */}
-      {!repetitionDismissed && repetitionAlerts.length > 0 && (
+      {/* ═══ §8 Repetition → CAPA alerts (now flows through the
+              shared AttentionPanel: collapse, default-closed, severity
+              accent — no permanent hide, the surface is always reachable). */}
+      {repetitionAlerts.length > 0 && (
         <motion.div initial={{ opacity: 0, y: -5 }} animate={{ opacity: 1, y: 0 }}>
-          <Card className="border-amber-500/40 bg-amber-500/5">
-            <CardContent className="p-3.5 space-y-2">
-              <div className="flex items-center justify-between gap-2">
-                <div className="flex items-center gap-2 text-amber-300 text-sm font-semibold">
-                  <AlertOctagon className="size-4" />
-                  مشكلات متكررة اكتُشفت ({repetitionAlerts.length}) — يُنصح بفتح CAPA
-                </div>
-                <button
-                  onClick={() => setRepetitionDismissed(true)}
-                  className="text-slate-500 hover:text-slate-300 text-xs px-2 py-1 rounded-md hover:bg-slate-800/60"
-                  aria-label="إخفاء تنبيهات التكرار"
-                >
-                  إخفاء
-                </button>
-              </div>
-              <p className="text-amber-200/60 text-[11px]">
-                كشف حتمي: نفس الموظف + نفس تصنيف المشكلة مرتين أو أكثر خلال آخر 30 يوماً — حسب سجلاتك المصرّح بها.
-              </p>
-              <div className="space-y-1.5 max-h-48 overflow-y-auto">
-                {repetitionAlerts.map((alert, idx) => {
-                  const empName = employees.find((e: any) => e.id === alert.employeeId)?.name || alert.employeeId;
-                  const sourceLabel = alert.source === 'followUp' ? 'متابعة' : alert.source === 'complaint' ? 'شكوى' : 'ملاحظة';
-                  return (
-                    <div
-                      key={`${alert.employeeId}:${alert.source}:${alert.issueKey}:${idx}`}
-                      className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-amber-500/20 bg-slate-900/40 px-3 py-2"
-                    >
-                      <div className="flex items-center gap-2 flex-wrap min-w-0">
-                        <span className="text-white text-xs font-medium">{empName}</span>
-                        <span className="text-amber-300 text-xs">«{alert.issueLabel}»</span>
-                        <span className="text-slate-500 text-[10px]">
-                          {sourceLabel} · {alert.occurrenceCount} مرات · {alert.firstDay} → {alert.lastDay}
-                        </span>
-                      </div>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="h-7 text-[11px] border-amber-500/40 text-amber-300 hover:bg-amber-500/15"
-                        onClick={() => {
-                          setCreateDefaults(buildCapaPrefillFromAlert(alert, empName));
-                          setIsCreateOpen(true);
-                        }}
-                      >
-                        <ShieldAlert className="size-3 ml-1" />
-                        إنشاء CAPA
-                      </Button>
-                    </div>
-                  );
-                })}
-              </div>
-            </CardContent>
-          </Card>
+          <AttentionPanel
+            title="مشكلات متكررة"
+            icon={<AlertOctagon className="size-3.5 text-amber-300" />}
+            subtitle={`${repetitionAlerts.length} موظف بنمط متكرر خلال آخر 30 يوماً — يُنصح بفتح CAPA`}
+            persistKey="capaRepetitionAttention"
+            items={repetitionAlerts.map((alert, idx): AttentionItem => {
+              const empName = employees.find((e: any) => e.id === alert.employeeId)?.name || alert.employeeId;
+              const sourceLabel = alert.source === 'followUp' ? 'متابعة' : alert.source === 'complaint' ? 'شكوى' : 'ملاحظة';
+              return {
+                id: `${alert.employeeId}:${alert.source}:${alert.issueKey}:${idx}`,
+                severity: 'warning',
+                primary: empName,
+                secondary: `${alert.issueLabel} · ${alert.occurrenceCount} مرات`,
+                trailing: <span className="font-mono">{alert.firstDay} → {alert.lastDay}</span>,
+                onClick: () => {
+                  setCreateDefaults(buildCapaPrefillFromAlert(alert, empName));
+                  setIsCreateOpen(true);
+                },
+                overflowItems: [
+                  { key: 'view', label: 'فتح ملف الموظف', icon: <Eye className="size-3.5" />, onSelect: () => useAppStore.getState().openEmployee360(alert.employeeId) },
+                  { key: 'capa', label: 'إنشاء CAPA', icon: <ShieldAlert className="size-3.5" />, separatorBefore: true, onSelect: () => { setCreateDefaults(buildCapaPrefillFromAlert(alert, empName)); setIsCreateOpen(true); } },
+                ],
+              };
+            })}
+          />
         </motion.div>
       )}
+
+      {/* ═══ §12 QUICK CREATE — INLINE CARD (not a dialog) ═══ */}
+      {/* Same motion-card + shared CAPAInlineForm used by the Dashboard
+          quick action / Quality / Follow-ups / Complaints / Risk Center.
+          key = defaults identity: a NEW pre-fill payload (cross-module
+          create intent or repetition alert) REMOUNTS the form so its
+          useState re-initializes from the incoming defaults — without
+          this, dynamically-arriving defaults were silently dropped. */}
+      <AnimatePresence>
+        {isCreateOpen && (
+          <motion.div
+            id="capa-inline-create"
+            initial={{ opacity: 0, y: -8, scale: 0.98 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -8, scale: 0.98 }}
+            transition={{ duration: 0.22, ease: [0.4, 0, 0.2, 1] }}
+            className="rounded-2xl border border-violet-500/30 bg-slate-900/60 backdrop-blur-md shadow-2xl shadow-violet-900/20"
+          >
+            <div className="flex items-center justify-between gap-2 px-4 py-2.5 border-b border-slate-700/50">
+              <p className="text-xs font-bold text-slate-200 flex items-center gap-2">
+                <Plus className="size-3.5 text-violet-400" />
+                إنشاء حالة CAPA جديدة
+              </p>
+              <Button variant="ghost" size="sm" onClick={() => { setIsCreateOpen(false); setCreateDefaults({}); }} className="h-7 text-xs text-slate-400 hover:text-white">
+                <X className="size-3.5 ml-1" />
+                إغلاق
+              </Button>
+            </div>
+            <div className="p-4">
+              <CAPAInlineForm
+                key={JSON.stringify(createDefaults)}
+                onClose={() => { setIsCreateOpen(false); setCreateDefaults({}); }}
+                onCreated={(newId) => { setIsCreateOpen(false); setCreateDefaults({}); if (newId) handleCreated(newId); }}
+                defaultValues={createDefaults}
+                employees={employees}
+                systemUsers={systemUsers}
+              />
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* ═══ Filters + Tabs ═══ */}
       <div className="space-y-3">
@@ -646,32 +677,17 @@ function CAPAListPage() {
         </div>
       )}
 
-      {/* ═══ Quick Create Dialog ═══ */}
-      {/* key = defaults identity: a NEW pre-fill payload (cross-module
-          create intent or repetition alert) REMOUNTS the component so
-          its useState re-initializes from the incoming defaults —
-          without this, dynamically-arriving defaults were silently
-          dropped (the form captured them only at first mount). */}
-      <CAPAQuickCreate
-        key={JSON.stringify(createDefaults)}
-        open={isCreateOpen}
-        onOpenChange={(open) => { if (!open) { setIsCreateOpen(false); setCreateDefaults({}); } }}
-        onCreated={handleCreated}
-        defaultValues={createDefaults}
-        employees={employees}
-        systemUsers={systemUsers}
-      />
+      {/* ═══ §12 QUICK CREATE — INLINE CARD (moved above; legacy position removed) ═══ */}
 
-      {/* ═══ Delete Dialog ═══ */}
-      <Dialog open={!!deletingId} onOpenChange={() => setDeletingId(null)}>
-        <DialogContent className="backdrop-blur-xl bg-slate-900 border-slate-700">
-          <DialogHeader><DialogTitle className="text-white">تأكيد الحذف</DialogTitle><DialogDescription className="text-slate-400">هل أنت متأكد من حذف هذه الحالة؟</DialogDescription></DialogHeader>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setDeletingId(null)} className="border-slate-600 text-slate-300">إلغاء</Button>
-            <Button variant="destructive" onClick={() => { if (deletingId) handleDelete(deletingId); }}>حذف</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {/* ═══ Delete Dialog — unified ConfirmDialog (§4) ═══ */}
+      <ConfirmDialog
+        open={!!deletingId}
+        onOpenChange={(open) => { if (!open) setDeletingId(null); }}
+        description="هل أنت متأكد من حذف هذه الحالة؟ لا يمكن التراجع عن هذه العملية."
+        itemName={deletingId ? cases.find((c) => c.id === deletingId)?.title : undefined}
+        loading={deleting}
+        onConfirm={async () => { if (deletingId) await handleDelete(deletingId); }}
+      />
 
       {/* ═══ Report Dialog ═══ */}
       <Dialog open={showReport} onOpenChange={(o) => { if (!o) { setShowReport(false); setReportData(null); } }}>

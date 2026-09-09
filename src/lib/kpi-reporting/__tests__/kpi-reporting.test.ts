@@ -497,7 +497,8 @@ describe('immutability (spec §9/§15/§16/§26)', () => {
   it('9 · frozen scheme version is preserved while the current scheme is v2', async () => {
     const loaders = makeLoaders({ schemes: [makeSchemeV2()] });
     const report = await buildMonthlyKpiReport(
-      { monthKey: '2026-07', reportKind: 'HISTORICAL', now: NOW_AUG, loaders },
+      { monthKey: '2026-07', reportKind: 'HISTORICAL', now: NOW_AUG, loaders,
+        filters: { includeArchived: true } },
     );
     const ahmed = report.rows.find((r) => r.employeeId === 'emp_ahmed')!;
     // Frozen result keeps v1 + weight 15 even though the current scheme is v2/20%.
@@ -553,8 +554,11 @@ describe('immutability (spec §9/§15/§16/§26)', () => {
 
 describe('archive lifecycle (spec §11)', () => {
   it('10 · employee archived mid-month stays VISIBLE in that month with valid results', async () => {
+    // §10: archived employees are excluded by default — opt in to keep
+    // this archive-lifecycle test asserting the historical visibility.
     const report = await buildMonthlyKpiReport(
-      { monthKey: '2026-08', reportKind: 'MTD', now: NOW_AUG, loaders: makeLoaders() },
+      { monthKey: '2026-08', reportKind: 'MTD', now: NOW_AUG, loaders: makeLoaders(),
+        filters: { includeArchived: true } },
     );
     const sara = report.rows.find((r) => r.employeeId === 'emp_sara')!;
     assert.ok(sara, 'archived employee visible for the month she worked');
@@ -564,7 +568,8 @@ describe('archive lifecycle (spec §11)', () => {
 
     // Also visible in her frozen July history.
     const july = await buildMonthlyKpiReport(
-      { monthKey: '2026-07', reportKind: 'HISTORICAL', now: NOW_AUG, loaders: makeLoaders() },
+      { monthKey: '2026-07', reportKind: 'HISTORICAL', now: NOW_AUG, loaders: makeLoaders(),
+        filters: { includeArchived: true } },
     );
     assert.ok(july.rows.find((r) => r.employeeId === 'emp_sara'));
   });
@@ -690,21 +695,22 @@ describe('filtering & search (spec §19/§20)', () => {
   const AUG = { monthKey: '2026-08', reportKind: 'MONTHLY' as const, now: NOW_AUG };
 
   it('18 · employee search matches name, code and id substrings', async () => {
-    const byName = await buildMonthlyKpiReport({ ...AUG, loaders: makeLoaders(), filters: { employeeQuery: 'أحمد' } });
+    // §10: opt in to archived so the test sees the full fixture.
+    const byName = await buildMonthlyKpiReport({ ...AUG, loaders: makeLoaders(), filters: { employeeQuery: 'أحمد', includeArchived: true } });
     assert.deepEqual(byName.rows.map((r) => r.employeeId), ['emp_ahmed']);
 
-    const byCode = await buildMonthlyKpiReport({ ...AUG, loaders: makeLoaders(), filters: { employeeQuery: '002' } });
+    const byCode = await buildMonthlyKpiReport({ ...AUG, loaders: makeLoaders(), filters: { employeeQuery: '002', includeArchived: true } });
     assert.deepEqual(byCode.rows.map((r) => r.employeeId), ['emp_sara']);
 
-    const byId = await buildMonthlyKpiReport({ ...AUG, loaders: makeLoaders(), filters: { employeeQuery: 'emp_zero' } });
+    const byId = await buildMonthlyKpiReport({ ...AUG, loaders: makeLoaders(), filters: { employeeQuery: 'emp_zero', includeArchived: true } });
     assert.deepEqual(byId.rows.map((r) => r.employeeId), ['emp_zero']);
   });
 
   it('19 · department and team filters narrow the report', async () => {
-    const byDept = await buildMonthlyKpiReport({ ...AUG, loaders: makeLoaders(), filters: { department: 'تقنية المعلومات' } });
+    const byDept = await buildMonthlyKpiReport({ ...AUG, loaders: makeLoaders(), filters: { department: 'تقنية المعلومات', includeArchived: true } });
     assert.deepEqual(byDept.rows.map((r) => r.employeeId), ['emp_nodata']);
 
-    const byTeam = await buildMonthlyKpiReport({ ...AUG, loaders: makeLoaders(), filters: { team: 'فريق المبيعات الشمال' } });
+    const byTeam = await buildMonthlyKpiReport({ ...AUG, loaders: makeLoaders(), filters: { team: 'فريق المبيعات الشمال', includeArchived: true } });
     assert.deepEqual(byTeam.rows.map((r) => r.employeeId).sort(), ['emp_ahmed', 'emp_sara']);
   });
 
@@ -734,8 +740,12 @@ describe('filtering & search (spec §19/§20)', () => {
   });
 
   it('sorting: score desc puts nulls last; status sort is rank-deterministic', async () => {
+    // §10: archived employees are excluded by default — opt in here so
+    // the test sees the same data the previous behavior produced.
     const byScore = await buildMonthlyKpiReport({
-      ...AUG, loaders: makeLoaders(), sort: { key: 'score', direction: 'desc' },
+      ...AUG, loaders: makeLoaders(),
+      sort: { key: 'score', direction: 'desc' },
+      filters: { includeArchived: true },
     });
     const scores = byScore.rows.map((r) => r.quality?.rawScore ?? null);
     assert.deepEqual(scores.slice(0, 2), [95, 91]);
@@ -743,6 +753,7 @@ describe('filtering & search (spec §19/§20)', () => {
 
     const byStatus = await buildMonthlyKpiReport({
       ...AUG, loaders: makeLoaders(), sort: { key: 'status', direction: 'asc' },
+      filters: { includeArchived: true },
     });
     const ranks = byStatus.rows.map((r) => KPI_REPORT_STATUS_RANK[r.rowStatus]);
     assert.deepEqual([...ranks].sort((a, b) => a - b), ranks);
@@ -924,8 +935,10 @@ describe('data contract for future AI (spec §28/§29)', () => {
 
 describe('management summary (spec §15)', () => {
   it('aggregates QUALITY KPI statistics with explicit labeling', async () => {
+    // §10: archived employees are excluded by default — opt in here so
+    // the test's expectations about emp_sara stay valid.
     const summary = await buildKpiManagementSummary(
-      { monthKey: '2026-08', now: NOW_AUG, loaders: makeLoaders() },
+      { monthKey: '2026-08', now: NOW_AUG, loaders: makeLoaders(), filters: { includeArchived: true } },
     );
     assert.equal(summary.statisticsKind, 'QUALITY_KPI');
     assert.ok(summary.label.includes('جودة'));

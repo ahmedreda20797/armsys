@@ -54,23 +54,37 @@ describe('dashboard widget layout', () => {
   });
 
   it('user order + hidden widgets apply within the permitted set', () => {
+    // Order pins quickAccess + attendanceToday first; pendingRequests is
+    // hidden; the remaining widgets append in registry order.
     const layout = resolveWidgetLayout(
       DASHBOARD_WIDGETS,
       { dashboard: { widgetOrder: ['quickAccess', 'attendanceToday'], hiddenWidgets: ['pendingRequests'] } },
       all,
     );
-    assert.deepEqual(layout.map((w) => w.id), ['quickAccess', 'attendanceToday', 'requestTypeAnalytics', 'departmentsOverview']);
-    assert.ok(!layout.some((w) => w.id === 'pendingRequests'));
+    const ids = layout.map((w) => w.id);
+    // The two pinned widgets come first, in order; pendingRequests is hidden.
+    assert.deepEqual(ids.slice(0, 2), ['quickAccess', 'attendanceToday']);
+    assert.ok(!ids.includes('pendingRequests'));
+    // The remaining permitted widgets appear in registry order.
+    const expectedRest = DASHBOARD_WIDGETS
+      .filter((w) => w.id !== 'pendingRequests' && w.id !== 'quickAccess' && w.id !== 'attendanceToday')
+      .map((w) => w.id);
+    assert.deepEqual(ids.slice(2), expectedRest);
   });
 
   it('PERMISSION WINS: an unauthorized widget never renders even if not hidden', () => {
-    const none = (w: WidgetConfig) => w.permissionKey === 'home'; // only quickAccess permitted
+    // Only 'home'-permission widgets permitted — quickAccess + attentionRequired
+    // are both permitted; pendingRequests is not.
+    const homeOnly = (w: WidgetConfig) => w.permissionKey === 'home';
     const layout = resolveWidgetLayout(
       DASHBOARD_WIDGETS,
-      { dashboard: { widgetOrder: ['pendingRequests', 'quickAccess'] } },
-      none,
+      { dashboard: { widgetOrder: ['pendingRequests', 'quickAccess', 'attentionRequired'] } },
+      homeOnly,
     );
-    assert.deepEqual(layout.map((w) => w.id), ['quickAccess']);
+    // pendingRequests is excluded; the order array pins the relative
+    // order of permitted widgets.
+    assert.ok(!layout.some((w) => w.id === 'pendingRequests'));
+    assert.deepEqual(layout.map((w) => w.id), ['quickAccess', 'attentionRequired']);
   });
 
   it('permission loss reconciliation: widget hidden after permission revocation stays gone; regrant + unhide restores', () => {

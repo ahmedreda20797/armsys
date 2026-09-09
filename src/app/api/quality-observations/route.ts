@@ -23,6 +23,7 @@ import { makeApprovalEvent, appendApprovalEvent, projectLatestApprovalStatus } f
 import { makeAuditEvent, writeAudit } from '@/lib/audit';
 import { AUDIT_LOG_TABLE } from '@/app/api/quality-audit-log/route';
 import { notifyObservationAwaitingApproval } from '@/lib/notifications/quality-events';
+import { dispatchAutomationEvent } from '@/lib/automation/event-bridge';
 import type { QualityObservation, ApprovalEvent } from '@/types/quality-kpi';
 
 export const OBSERVATIONS_TABLE = 'qualityObservations';
@@ -246,7 +247,7 @@ export async function POST(request: NextRequest) {
       clientRequestId: clientRequestId || null,
     });
 
-    // ── Audit + notification (fire-and-forget, never block) ──
+    // ── Audit + notification + automation (fire-and-forget, never block) ──
     await writeAudit({
       collection: AUDIT_LOG_TABLE,
       actorId: observerId,
@@ -262,6 +263,19 @@ export async function POST(request: NextRequest) {
     if (wantsPoints) {
       await notifyObservationAwaitingApproval(employeeName, observerName, observation.id);
     }
+
+    // §13: record_created event — active quality-module rules with this
+    // trigger now actually execute (engine handles throttle + logs).
+    void dispatchAutomationEvent('record_created', 'quality', {
+      employeeId,
+      employeeName,
+      department,
+      status: approvalStatus,
+      severity: severity || 'medium',
+      category: categoryName,
+      sourceRecordId: observation.id,
+      extra: { points: effectivePoints, isBonus: effectiveIsBonus },
+    });
 
     // Invalidate observation cache so subsequent GETs reflect the new record.
     invalidateCache(OBSERVATIONS_TABLE);

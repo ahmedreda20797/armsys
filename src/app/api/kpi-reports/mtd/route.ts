@@ -76,6 +76,7 @@ export async function GET(request: NextRequest) {
         department: searchParams.get('department') ?? undefined,
         team: searchParams.get('team') ?? undefined,
         status: (statusParam as KpiReportRowStatus | null) ?? undefined,
+        includeArchived: searchParams.get('includeArchived') === 'true',
         scopeLimit,
       },
       sort: { key: sortByParam as KpiMonthlySortKey, direction: sortDirParam },

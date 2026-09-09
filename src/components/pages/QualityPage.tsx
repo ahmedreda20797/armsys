@@ -45,6 +45,7 @@ import {
   CheckCircle2,
   Copy,
   ClipboardCheck,
+  User as UserIcon,
 } from 'lucide-react';
 import { EmployeeSearchInput } from '@/components/shared/EmployeeSearchInput';
 import type { QualityDeduction, Employee } from '@/types';
@@ -55,7 +56,9 @@ import { formatMonthLabelAr } from '@/lib/month-label';
 import { todayDisplayDate, currentMonthKey } from '@/lib/date-utils';
 import { PagePeriodIndicator } from '@/components/shared/PagePeriodIndicator';
 import { PageHeaderBar } from '@/components/shared/PageHeaderBar';
+import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
 import { CAPALinkBadge } from '@/components/shared/CAPALinkBadge';
+import { CAPAInlineForm, type CapaInlineFormState } from '@/components/shared/inline-forms';
 
 interface QualityWithEmployee extends QualityDeduction {
   employee?: {
@@ -171,6 +174,10 @@ function formatAllDeductionsForCopy(empName: string, deductions: QualityWithEmpl
 
 export default function QualityPage() {
   const { canEdit, canCreate, canUpdate, canDelete, canUpload } = usePermissions('quality');
+  // §12 GLOBAL INLINE FORM STANDARD — "إنشاء CAPA" from a quality note
+  // opens the shared inline CAPA form HERE (gated by the CAPA page's
+  // own create permission); it NEVER navigates away from Quality.
+  const { canCreate: canCreateCapa } = usePermissions('capa');
   const [deductions, setDeductions] = useState<QualityWithEmployee[]>([]);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [loading, setLoading] = useState(true);
@@ -201,6 +208,13 @@ export default function QualityPage() {
   const [copiedDedId, setCopiedDedId] = useState<string | null>(null);
   const [copiedAllEmpId, setCopiedAllEmpId] = useState<string | null>(null);
   const [editingDeduction, setEditingDeduction] = useState<QualityWithEmployee | null>(null);
+  // §12 — inline CAPA creation from a quality note: which employee block
+  // hosts the form + the prefilled defaults. key forces a remount so a
+  // second click on another note always starts from the NEW prefill.
+  const [capaPrefill, setCapaPrefill] = useState<{ empId: string; defaults: Partial<CapaInlineFormState> } | null>(null);
+  // System users for the CAPA form's "مُسند إليه" field (same source the
+  // CAPA page and dashboard quick action use).
+  const [systemUsers, setSystemUsers] = useState<{ id: string; name: string; email?: string; role?: string }[]>([]);
   const [addForm, setAddForm] = useState({
     employeeId: '',
     date: '',
@@ -215,6 +229,11 @@ export default function QualityPage() {
 
   useEffect(() => {
     fetchData();
+    // System users for the inline CAPA form (assigned-to field).
+    authFetch('/api/dashboard/users')
+      .then((r) => (r.ok ? r.json() : []))
+      .then((list) => setSystemUsers(Array.isArray(list) ? list : []))
+      .catch(() => setSystemUsers([]));
   }, []);
 
   async function fetchData() {
@@ -368,7 +387,9 @@ export default function QualityPage() {
     }
   };
 
+  const [deleteLoading, setDeleteLoading] = useState(false);
   const handleDelete = async (id: string) => {
+    setDeleteLoading(true);
     try {
       const ded = deductions.find((d: any) => d.id === id);
       const res = await authFetch(`/api/quality/${id}`, { method: 'DELETE' });
@@ -379,6 +400,8 @@ export default function QualityPage() {
       }
     } catch {
       // Error handled silently
+    } finally {
+      setDeleteLoading(false);
     }
   };
 
@@ -610,11 +633,11 @@ export default function QualityPage() {
               >
                 {/* ═══ Employee Header Card ═══ */}
                 <div
-                  className="flex items-center gap-3 px-4 py-3 rounded-xl border border-slate-700/40 bg-slate-800/50 cursor-pointer hover:bg-slate-800/70 transition-colors"
+                  className="flex items-center gap-3 px-4 py-2.5 rounded-xl border border-slate-700/40 bg-slate-800/50 cursor-pointer hover:bg-slate-800/70 transition-colors"
                   onClick={() => setExpandedEmp(isEmpExpanded ? null : empId)}
                 >
                   {/* Avatar */}
-                  <div className="flex-shrink-0 size-10 rounded-full bg-gradient-to-br from-slate-700 to-slate-800 flex items-center justify-center border border-slate-600/50">
+                  <div className="flex-shrink-0 size-9 rounded-full bg-gradient-to-br from-slate-700 to-slate-800 flex items-center justify-center border border-slate-600/50">
                     <span className="text-white text-sm font-bold">
                       {emp.name.charAt(0)}
                     </span>
@@ -703,7 +726,7 @@ export default function QualityPage() {
                             >
                               <div
                                 data-record-id={d.id}
-                                className="flex items-center gap-2.5 px-3 py-2.5 rounded-lg border border-slate-700/30 bg-slate-800/30 cursor-pointer hover:bg-slate-800/50 transition-colors"
+                                className="flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-700/30 bg-slate-800/30 cursor-pointer hover:bg-slate-800/50 transition-colors"
                                 onClick={() => setExpandedRow(isRowExpanded ? null : d.id)}
                               >
                                 {/* Type Badge */}
@@ -717,6 +740,17 @@ export default function QualityPage() {
 
                                 {/* Date + Days */}
                                 <span className="flex-shrink-0 text-slate-500 text-[11px]" dir="ltr">{d.date}</span>
+
+                                {/* §8 Added-by metadata — visible WITHOUT opening details.
+                                    Honest for legacy rows: "غير مسجل" means the record
+                                    predates the createdBy column, never a guessed name. */}
+                                <span
+                                  className="hidden lg:inline-flex flex-shrink-0 items-center gap-1 text-[10px] text-slate-500 bg-slate-800/60 border border-slate-700/40 rounded px-1.5 py-0.5"
+                                  title="المستخدم الذي أضاف هذا الخصم"
+                                >
+                                  <UserIcon className="size-2.5" />
+                                  أضافها: {d.createdByName || 'غير مسجل'}
+                                </span>
 
                                 {/* Description preview */}
                                 <div className="flex-1 min-w-0">
@@ -821,6 +855,7 @@ export default function QualityPage() {
                                         {d.deductionAmount > 0 && (
                                           <span className="text-slate-500">المبلغ: <span className="text-rose-400" dir="ltr">{d.deductionAmount.toLocaleString()} جنيه</span></span>
                                         )}
+                                        <span className="text-slate-500">أضافها: <span className="text-slate-300">{d.createdByName || 'غير مسجل'}</span></span>
                                       </div>
                                       {d.evidence && (
                                         <a
@@ -840,21 +875,27 @@ export default function QualityPage() {
                                           <CAPALinkBadge capaId={(d as any).relatedCapaId} compact />
                                         </div>
                                       )}
-                                      {!(d as any).relatedCapaId && (
+                                      {!(d as any).relatedCapaId && canCreateCapa && (
                                         <Button
                                           size="sm"
                                           variant="outline"
                                           className="mt-2 text-[11px] border-cyan-500/30 text-cyan-400 hover:bg-cyan-500/10 h-7"
                                           onClick={(e) => {
                                             e.stopPropagation();
-                                            useAppStore.getState().navigateTo('capa', undefined, {
-                                              title: `خصم جودة — ${d.type}`,
-                                              department: '',
-                                              priority: d.deductionDays >= 3 ? 'high' : 'medium',
-                                              employeeId: d.employeeId,
-                                              problemDescription: d.description,
-                                              source: 'automation',
-                                              relatedQualityDeductionId: d.id,
+                                            // §12 GLOBAL INLINE FORM STANDARD — open the CAPA form
+                                            // INLINE inside this employee block (prefilled from the
+                                            // note); the user never leaves the Quality page.
+                                            setCapaPrefill({
+                                              empId: empId,
+                                              defaults: {
+                                                title: `خصم جودة — ${d.type}`,
+                                                department: emp.department || '',
+                                                priority: d.deductionDays >= 3 ? 'high' : 'medium',
+                                                employeeId: d.employeeId,
+                                                problemDescription: d.description,
+                                                source: 'automation',
+                                                relatedQualityDeductionId: d.id,
+                                              },
                                             });
                                           }}
                                         >
@@ -869,6 +910,46 @@ export default function QualityPage() {
                             </motion.div>
                           );
                         })}
+
+                        {/* ━━━ §12 INLINE CAPA FORM — opens INSIDE this
+                            employee block (directly below the note the
+                            action was triggered from), prefilled from the
+                            selected quality note. No page navigation. ━━━ */}
+                        <AnimatePresence>
+                          {canCreateCapa && capaPrefill?.empId === empId && (
+                            <motion.div
+                              initial={{ opacity: 0, y: -8, scale: 0.98 }}
+                              animate={{ opacity: 1, y: 0, scale: 1 }}
+                              exit={{ opacity: 0, y: -8, scale: 0.98 }}
+                              transition={{ duration: 0.22, ease: [0.4, 0, 0.2, 1] }}
+                              className="rounded-2xl border border-violet-500/30 bg-slate-900/60 backdrop-blur-md shadow-2xl shadow-violet-900/20 overflow-hidden"
+                            >
+                              <div className="flex items-center justify-between gap-2 px-4 py-2.5 border-b border-slate-700/50">
+                                <p className="text-xs font-bold text-slate-200 flex items-center gap-2">
+                                  <ShieldAlert className="size-3.5 text-violet-400" />
+                                  إنشاء CAPA من خصم الجودة
+                                </p>
+                                <Button variant="ghost" size="sm" onClick={() => setCapaPrefill(null)} className="h-7 text-xs text-slate-400 hover:text-white">
+                                  <X className="size-3.5 ml-1" />
+                                  إغلاق
+                                </Button>
+                              </div>
+                              <div className="p-4">
+                                <CAPAInlineForm
+                                  key={capaPrefill.defaults.relatedQualityDeductionId || JSON.stringify(capaPrefill.defaults)}
+                                  onClose={() => setCapaPrefill(null)}
+                                  onCreated={() => {
+                                    setCapaPrefill(null);
+                                    void fetchData();
+                                  }}
+                                  employees={employees}
+                                  systemUsers={systemUsers}
+                                  defaultValues={capaPrefill.defaults}
+                                />
+                              </div>
+                            </motion.div>
+                          )}
+                        </AnimatePresence>
                       </div>
                     </motion.div>
                   )}
@@ -1018,33 +1099,15 @@ export default function QualityPage() {
       </Dialog>
 
       {/* ═══ Delete Dialog ═══ */}
-      <Dialog open={!!deletingId} onOpenChange={() => setDeletingId(null)}>
-        <DialogContent className="backdrop-blur-xl bg-slate-900 border-slate-700">
-          <DialogHeader>
-            <DialogTitle className="text-white">تأكيد الحذف</DialogTitle>
-            <DialogDescription className="text-slate-400">
-              هل أنت متأكد من حذف هذا الخصم؟ لا يمكن التراجع عن هذا الإجراء.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setDeletingId(null)}
-              className="border-slate-600 text-slate-300"
-            >
-              إلغاء
-            </Button>
-            <Button
-              variant="destructive"
-              onClick={() => {
-                if (deletingId) handleDelete(deletingId);
-              }}
-            >
-              حذف
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {/* ═══ Delete Dialog — unified ConfirmDialog (§4) ═══ */}
+      <ConfirmDialog
+        open={!!deletingId}
+        onOpenChange={(open) => { if (!open) setDeletingId(null); }}
+        description="هل أنت متأكد من حذف هذا الخصم؟ لا يمكن التراجع عن هذا الإجراء."
+        itemName={deletingId ? deductions.find((d: { id: string; description?: string }) => d.id === deletingId)?.description : undefined}
+        loading={deleteLoading}
+        onConfirm={async () => { if (deletingId) await handleDelete(deletingId); }}
+      />
     </div>
   );
 }

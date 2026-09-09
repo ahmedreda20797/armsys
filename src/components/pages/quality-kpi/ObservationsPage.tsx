@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useMemo } from 'react';
-import { motion } from 'framer-motion';
+import { useState, useMemo, useEffect } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
 import { usePermissions } from '@/hooks/usePermissions';
 import { useAppStore } from '@/lib/store';
@@ -29,7 +29,14 @@ import {
 import { formatMonth } from './kpi-reports-shared';
 import { ApprovalStatusBadge } from '@/components/shared/kpi';
 import { PageHeaderBar } from '@/components/shared/PageHeaderBar';
+import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
+import { OverflowMenu, type OverflowMenuItem } from '@/components/shared/OverflowMenu';
+import { useMarkState, useFavoriteToggleAction, usePinToggleAction } from '@/components/shared/NavigationMarks';
+import type { NavigationDescriptor } from '@/lib/personalization';
+import { Pin as PinIcon, ShieldCheck } from 'lucide-react';
+import { cn } from '@/lib/utils';
 import { EmployeeSearchInput } from '@/components/shared/EmployeeSearchInput';
+import { CAPAInlineForm } from '@/components/shared/inline-forms';
 import { TimelineView } from '@/components/shared/audit';
 import { ApprovalHistoryTimeline } from '@/components/shared/approval';
 import { buildTimeline } from '@/lib/audit/timeline-builder';
@@ -58,6 +65,21 @@ const SEVERITY_LABELS: Record<string, string> = {
 const STATUS_LABELS: Record<string, string> = {
   open: 'مفتوحة', in_review: 'قيد المراجعة', resolved: 'تم الحل', closed: 'مغلقة',
 };
+
+/** §7 — GLOBAL RULE (inline contract): "إنشاء CAPA" from a quality note
+ *  opens the REAL CAPA form INLINE on this page with the observation
+ *  prefilled — no navigation to the CAPA page. (The old nav-based flow
+ *  is kept in §11 for the CAPA page's own deep-link consumption.) */
+function capaDefaultsFromObservation(obs: QualityObservation) {
+  return {
+    title: obs.categoryName ?? '',
+    department: obs.department ?? '',
+    priority: obs.severity === 'critical' ? 'critical' : obs.severity === 'high' ? 'high' : 'medium',
+    employeeId: obs.employeeId ?? '',
+    problemDescription: obs.notes ?? '',
+    source: 'observation',
+  };
+}
 
 // ─── Page ─────────────────────────────────────────────────────
 export default function ObservationsPage() {
@@ -159,16 +181,49 @@ export default function ObservationsPage() {
 
   const deleteMut = useDeleteObservation();
 
-  async function handleDelete(obs: QualityObservation) {
-    if (!confirm(`حذف ملاحظة الجودة للموظف ${obs.employeeName}؟`)) return;
+  // §4: deletion goes through the unified ConfirmDialog — a pending
+  // target is parked in state instead of a native confirm() popup.
+  const [deleteTarget, setDeleteTarget] = useState<QualityObservation | null>(null);
+  async function confirmDelete() {
+    if (!deleteTarget) return;
     try {
-      await deleteMut.mutateAsync(obs.id);
-      logDelete('observations', 'ملاحظة', obs.employeeName);
+      await deleteMut.mutateAsync(deleteTarget.id);
+      logDelete('observations', 'ملاحظة', deleteTarget.employeeName);
       toast.success('تم حذف الملاحظة');
+      setDeleteTarget(null);
     } catch (e) {
       toast.error('فشل الحذف', { description: e instanceof Error ? e.message : undefined });
     }
   }
+
+  // §7 inline CAPA creation (GLOBAL RULE): the observation chosen from a
+  // card's ⋮ menu parks here and the REAL CAPA form renders INLINE above
+  // the list — same visual pattern as the Dashboard quick-action host.
+  const [capaTarget, setCapaTarget] = useState<QualityObservation | null>(null);
+
+  // System users for the inline CAPA form's "المسؤول" picker (same
+  // endpoint the quick-action host and Risk Center already use).
+  const [systemUsers, setSystemUsers] = useState<{ id: string; name: string; email?: string; role?: string }[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    fetch('/api/dashboard/users?limit=200', {
+      headers: { Authorization: `Bearer ${localStorage.getItem('erp_access_token')}` },
+    })
+      .then((r) => (r.ok ? r.json() : []))
+      .then((list) => { if (!cancelled) setSystemUsers((list as { id: string; name: string }[]) ?? []); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+
+  // The inline CAPA host mounts above the list — bring it into view
+  // so the user immediately sees the form they asked for.
+  useEffect(() => {
+    if (!capaTarget) return;
+    const raf = requestAnimationFrame(() => {
+      document.getElementById('observation-inline-capa')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [capaTarget]);
 
   if (!canView) {
     return (
@@ -342,6 +397,43 @@ export default function ObservationsPage() {
         <StatChip label="مرفوضة" value={obsList.filter((o) => o.approvalStatus === 'rejected').length} icon={X} className="text-rose-400" />
       </div>
 
+      {/* §7 inline CAPA host (GLOBAL RULE) — the REAL CAPA form opens
+          HERE, prefilled from the chosen quality note. Same visual
+          pattern as the Dashboard quick-action host; the user stays
+          on this page and can close back to the list. */}
+      <AnimatePresence>
+        {capaTarget && (
+          <motion.div
+            id="observation-inline-capa"
+            initial={{ opacity: 0, y: -8, scale: 0.98 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -8, scale: 0.98 }}
+            transition={{ duration: 0.22, ease: [0.4, 0, 0.2, 1] }}
+            className="rounded-2xl border border-violet-500/30 bg-slate-900/60 backdrop-blur-md shadow-2xl shadow-violet-900/20"
+          >
+            <div className="flex items-center justify-between gap-2 px-4 py-2.5 border-b border-slate-700/50">
+              <p className="text-xs font-bold text-slate-200 flex items-center gap-2">
+                <ShieldCheck className="size-3.5 text-violet-400" />
+                إنشاء CAPA من ملاحظة — {capaTarget.employeeName}
+              </p>
+              <Button variant="ghost" size="sm" onClick={() => setCapaTarget(null)} className="h-7 text-xs text-slate-400 hover:text-white">
+                <X className="size-3.5 ml-1" />
+                إغلاق
+              </Button>
+            </div>
+            <div className="p-4">
+              <CAPAInlineForm
+                onClose={() => setCapaTarget(null)}
+                onCreated={() => setCapaTarget(null)}
+                employees={employeeList as never}
+                systemUsers={systemUsers}
+                defaultValues={capaDefaultsFromObservation(capaTarget)}
+              />
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* List */}
       {isLoading ? (
         <div className="space-y-3">
@@ -371,10 +463,11 @@ export default function ObservationsPage() {
                 isAdmin={isAdmin}
                 monthClosed={closedMonths.has(obs.month)}
                 onEdit={() => setEditTarget(obs)}
-                onDelete={() => handleDelete(obs)}
+                onDelete={() => setDeleteTarget(obs)}
                 onApprove={() => setApproveTarget(obs)}
                 onReject={() => setRejectTarget(obs)}
                 onDetails={() => setDetailTarget(obs)}
+                onCreateCapa={setCapaTarget}
               />
             </motion.div>
           ))}
@@ -424,9 +517,19 @@ export default function ObservationsPage() {
           onApprove={() => { setDetailTarget(null); setApproveTarget(detailTarget); }}
           onReject={() => { setDetailTarget(null); setRejectTarget(detailTarget); }}
           onEdit={() => { setDetailTarget(null); setEditTarget(detailTarget); }}
-          onDelete={() => { setDetailTarget(null); handleDelete(detailTarget); }}
+          onDelete={() => { setDeleteTarget(detailTarget); }}
         />
       )}
+
+      {/* §4: unified delete confirmation */}
+      <ConfirmDialog
+        open={!!deleteTarget}
+        onOpenChange={(open) => { if (!open) setDeleteTarget(null); }}
+        description="سيتم حذف ملاحظة الجودة نهائياً من النظام."
+        itemName={deleteTarget ? deleteTarget.employeeName : undefined}
+        loading={deleteMut.isPending}
+        onConfirm={confirmDelete}
+      />
     </div>
   );
 }
@@ -494,7 +597,7 @@ function EmptyState({
 
 function ObservationCard({
   obs, canUpdate, canDelete, canApprove, isAdmin, monthClosed,
-  onEdit, onDelete, onApprove, onReject, onDetails,
+  onEdit, onDelete, onApprove, onReject, onDetails, onCreateCapa,
 }: {
   obs: QualityObservation;
   canUpdate: boolean;
@@ -507,6 +610,7 @@ function ObservationCard({
   onApprove: () => void;
   onReject: () => void;
   onDetails: () => void;
+  onCreateCapa: (obs: QualityObservation) => void;
 }) {
   const openEmployee360 = useAppStore((s) => s.openEmployee360);
 
@@ -516,64 +620,94 @@ function ObservationCard({
   const canEditThis = canUpdate && !monthClosed && (!approved || isAdmin);
   const canDeleteThis = canDelete && !monthClosed && (!approved || isAdmin);
 
+  // §7: secondary/contextual actions live in ONE ⋮ OverflowMenu —
+  // ⭐ favorite and 📌 pin target this RECORD through the shared
+  // NavigationMarks (same preferences record the sidebar reads).
+  const descriptor = useMemo<NavigationDescriptor>(() => ({
+    targetType: 'record',
+    targetId: obs.id,
+    route: 'observations',
+    label: `ملاحظة: ${obs.employeeName} — ${obs.categoryName}`,
+  }), [obs.id, obs.employeeName, obs.categoryName]);
+  const markState = useMarkState(descriptor);
+  const toggleFavorite = useFavoriteToggleAction();
+  const togglePin = usePinToggleAction();
+
+  const overflowItems: OverflowMenuItem[] = [
+    { key: 'edit', label: 'تعديل', icon: <Pencil className="size-3.5" />, onSelect: onEdit, separatorBefore: true },
+    { key: 'favorite', label: markState.favoriteActive ? 'إزالة من المفضلة' : 'إضافة للمفضلة ⭐', icon: <Star className={cn('size-3.5', markState.favoriteActive && 'text-amber-400 fill-amber-400')} />, onSelect: () => void toggleFavorite(descriptor) },
+    { key: 'pin', label: markState.pinActive ? 'إزالة التثبيت' : 'تثبيت 📌', icon: <PinIcon className={cn('size-3.5', markState.pinActive && 'text-cyan-400 fill-cyan-400')} />, onSelect: () => void togglePin(descriptor) },
+    { key: 'capa', label: 'إنشاء CAPA', icon: <ShieldCheck className="size-3.5" />, onSelect: () => onCreateCapa(obs), separatorBefore: true },
+    { key: 'delete', label: 'حذف', icon: <Trash2 className="size-3.5" />, destructive: true, onSelect: onDelete, separatorBefore: true },
+  ].filter((item) => {
+    if ((item.key === 'edit' || item.key === 'delete') && !(item.key === 'edit' ? canEditThis : canDeleteThis)) return false;
+    return true;
+  });
+
   return (
     <Card className="border-slate-700/40 bg-slate-800/30 hover:border-slate-600/50 transition-colors">
-      <CardContent className="pt-4 space-y-3">
+      {/* Compact density: tighter padding, single-line notes — more
+          records visible per screen without losing any information
+          (full notes remain one click away in تفاصيل). */}
+      <CardContent className="px-3.5 py-2.5">
         <div className="flex items-start justify-between gap-3">
           <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 flex-wrap">
+            <div className="flex items-center gap-1.5 flex-wrap">
               <button
-                className="font-semibold text-slate-100 hover:text-blue-400 transition-colors"
+                className="text-[13px] font-semibold text-slate-100 hover:text-blue-400 transition-colors"
                 onClick={() => openEmployee360(obs.employeeId)}
               >
                 {obs.employeeName}
               </button>
-              <Badge variant="outline" className="bg-slate-700/30 text-slate-300">{obs.department}</Badge>
+              <Badge variant="outline" className="bg-slate-700/30 text-slate-300 text-[10px] px-1.5">{obs.department}</Badge>
               <ApprovalStatusBadge status={obs.approvalStatus} />
               {obs.isBonus ? (
-                <Badge variant="outline" className="bg-emerald-500/10 text-emerald-400 border-emerald-500/20">+{obs.points} مكافأة</Badge>
+                <Badge variant="outline" className="bg-emerald-500/10 text-emerald-400 border-emerald-500/20 text-[10px] px-1.5">+{obs.points} مكافأة</Badge>
               ) : obs.applyPointDeduction ? (
-                <Badge variant="outline" className="bg-rose-500/10 text-rose-400 border-rose-500/20">-{obs.points} خصم</Badge>
+                <Badge variant="outline" className="bg-rose-500/10 text-rose-400 border-rose-500/20 text-[10px] px-1.5">-{obs.points} خصم</Badge>
               ) : null}
             </div>
-            <p className="text-sm text-slate-400 mt-1 line-clamp-2">{obs.notes || '—'}</p>
-            <div className="flex items-center gap-3 mt-2 text-xs text-slate-500">
+            <p className="text-xs text-slate-400 mt-1 line-clamp-1">{obs.notes || '—'}</p>
+            <div className="flex items-center gap-2 mt-1.5 text-[11px] text-slate-500 flex-wrap">
               <span>{obs.categoryName}</span><span>•</span>
               <span>{obs.observationDate}</span><span>•</span>
               <span>{SEVERITY_LABELS[obs.severity] ?? obs.severity}</span>
+              {/* §8 — "Added by" visible on the card itself (no click needed). */}
+              {obs.observerName && (
+                <>
+                  <span>•</span>
+                  <span className="text-slate-400" title="أضافها">
+                    بواسطة: <span className="text-slate-300">{obs.observerName}</span>
+                  </span>
+                </>
+              )}
             </div>
           </div>
-          <div className="flex flex-col gap-1">
-            <Button size="sm" variant="ghost" className="gap-1.5 text-slate-400" onClick={onDetails}>
+          <div className="flex items-center gap-1 shrink-0">
+            {/* §7: the ONE visible primary action is تفاصيل; everything
+                contextual (تعديل/⭐/📌/CAPA/حذف) lives in the ⋮ menu.
+                Approve/reject stay visible — they are the time-sensitive
+                primary decision for approvers on pending deductions. */}
+            {!monthClosed && canApprove && obs.applyPointDeduction && obs.approvalStatus === 'pending' && (
+              <>
+                <Button size="sm" variant="outline" className="h-7 gap-1.5 px-2 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10" onClick={onApprove}>
+                  <Check className="size-3.5" /> اعتماد
+                </Button>
+                <Button size="sm" variant="outline" className="h-7 gap-1.5 px-2 border-rose-500/30 text-rose-400 hover:bg-rose-500/10" onClick={onReject}>
+                  <X className="size-3.5" /> رفض
+                </Button>
+              </>
+            )}
+            <Button size="sm" variant="ghost" className="h-7 gap-1.5 px-2 text-slate-400" onClick={onDetails}>
               <Info className="size-3.5" /> تفاصيل
             </Button>
-            {monthClosed ? (
+            {!monthClosed && overflowItems.length > 0 && (
+              <OverflowMenu items={overflowItems} label="إجراءات الملاحظة" />
+            )}
+            {monthClosed && (
               <Badge variant="outline" className="justify-center gap-1 text-blue-400 border-blue-500/30 text-[10px]">
-                <Lock className="size-3" /> الشهر مغلق
+                <Lock className="size-3" /> مغلق
               </Badge>
-            ) : (
-              <>
-                {canApprove && obs.applyPointDeduction && obs.approvalStatus === 'pending' && (
-                  <>
-                    <Button size="sm" variant="outline" className="gap-1.5 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10" onClick={onApprove}>
-                      <Check className="size-3.5" /> اعتماد
-                    </Button>
-                    <Button size="sm" variant="outline" className="gap-1.5 border-rose-500/30 text-rose-400 hover:bg-rose-500/10" onClick={onReject}>
-                      <X className="size-3.5" /> رفض
-                    </Button>
-                  </>
-                )}
-                {canEditThis && (
-                  <Button size="sm" variant="ghost" className="gap-1.5 text-slate-400" onClick={onEdit}>
-                    <Pencil className="size-3.5" /> تعديل
-                  </Button>
-                )}
-                {canDeleteThis && (
-                  <Button size="sm" variant="ghost" className="gap-1.5 text-rose-400" onClick={onDelete}>
-                    <Trash2 className="size-3.5" /> حذف
-                  </Button>
-                )}
-              </>
             )}
           </div>
         </div>

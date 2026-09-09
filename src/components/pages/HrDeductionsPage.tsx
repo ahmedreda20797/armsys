@@ -59,6 +59,7 @@ import { currentMonthKey } from '@/lib/date-utils';
 import { PagePeriodIndicator } from '@/components/shared/PagePeriodIndicator';
 import { PageHeaderBar } from '@/components/shared/PageHeaderBar';
 import { CAPALinkBadge } from '@/components/shared/CAPALinkBadge';
+import { CAPAInlineForm, type CapaInlineFormState } from '@/components/shared/inline-forms';
 
 const DEDUCTION_TYPES = [
   { value: 'خصم تأخير', label: 'خصم تأخير' },
@@ -107,6 +108,10 @@ const EMPTY_FORM = {
 
 export default function HrDeductionsPage() {
   const { canEdit, canCreate, canUpdate, canDelete, canApprove } = usePermissions('hrDeductions');
+  // §12 GLOBAL INLINE FORM STANDARD — "إنشاء CAPA" from an approved HR
+  // violation opens the shared inline CAPA form HERE (gated by CAPA's
+  // own create permission); it never navigates to the CAPA page.
+  const { canCreate: canCreateCapa } = usePermissions('capa');
   const { user } = useAuth();
   const [deductions, setDeductions] = useState<HrDeductionWithEmployee[]>([]);
   const [employees, setEmployees] = useState<Employee[]>([]);
@@ -148,9 +153,17 @@ export default function HrDeductionsPage() {
   const [addForm, setAddForm] = useState({ ...EMPTY_FORM });
   const [editForm, setEditForm] = useState({ ...EMPTY_FORM, id: '' });
   const [capaCreating, setCapaCreating] = useState<string | null>(null);
+  // §12 — inline CAPA creation from an approved HR violation.
+  const [capaPrefill, setCapaPrefill] = useState<Partial<CapaInlineFormState> | null>(null);
+  const [systemUsers, setSystemUsers] = useState<{ id: string; name: string; email?: string; role?: string }[]>([]);
 
   useEffect(() => {
     fetchData();
+    // System users for the inline CAPA form (assigned-to field).
+    authFetch('/api/dashboard/users')
+      .then((r) => (r.ok ? r.json() : []))
+      .then((list) => setSystemUsers(Array.isArray(list) ? list : []))
+      .catch(() => setSystemUsers([]));
   }, []);
 
   async function fetchData() {
@@ -566,12 +579,15 @@ export default function HrDeductionsPage() {
                                 <CAPALinkBadge capaId={(ded as any).relatedCapaId} compact />
                               </div>
                             )}
-                            {canUpdate && !(ded as any).relatedCapaId && ded.status === 'approved' && (
+                            {canUpdate && canCreateCapa && !(ded as any).relatedCapaId && ded.status === 'approved' && (
                               <Button
                                 size="sm"
                                 variant="ghost"
                                 onClick={() => {
-                                  useAppStore.getState().navigateTo('capa', undefined, {
+                                  // §12 GLOBAL INLINE FORM STANDARD — open the CAPA form
+                                  // INLINE on this page (prefilled from the violation);
+                                  // the user never leaves HR Deductions.
+                                  setCapaPrefill({
                                     title: `مخالفة HR — ${ded.type}`,
                                     department: '',
                                     priority: ded.amount >= 3 ? 'high' : 'medium',
@@ -579,6 +595,9 @@ export default function HrDeductionsPage() {
                                     problemDescription: ded.reason,
                                     source: 'automation',
                                     relatedHrDeductionId: ded.id,
+                                  });
+                                  requestAnimationFrame(() => {
+                                    document.getElementById('hr-inline-capa')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
                                   });
                                 }}
                                 className="text-cyan-400/60 hover:text-cyan-300 hover:bg-cyan-500/10"
@@ -616,8 +635,47 @@ export default function HrDeductionsPage() {
               </div>
             </motion.div>
           )}
-        </div>
+      </div>
       )}
+
+      {/* ━━━ §12 INLINE CAPA FORM — opens here (prefilled from the
+          approved HR violation) instead of navigating to the CAPA page. ━━━ */}
+      <AnimatePresence>
+        {canCreateCapa && capaPrefill && (
+          <motion.div
+            id="hr-inline-capa"
+            initial={{ opacity: 0, y: -8, scale: 0.98 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -8, scale: 0.98 }}
+            transition={{ duration: 0.22, ease: [0.4, 0, 0.2, 1] }}
+            className="rounded-2xl border border-violet-500/30 bg-slate-900/60 backdrop-blur-md shadow-2xl shadow-violet-900/20"
+          >
+            <div className="flex items-center justify-between gap-2 px-4 py-2.5 border-b border-slate-700/50">
+              <p className="text-xs font-bold text-slate-200 flex items-center gap-2">
+                <ShieldAlert className="size-3.5 text-violet-400" />
+                إنشاء CAPA من مخالفة HR
+              </p>
+              <Button variant="ghost" size="sm" onClick={() => setCapaPrefill(null)} className="h-7 text-xs text-slate-400 hover:text-white">
+                <X className="size-3.5 ml-1" />
+                إغلاق
+              </Button>
+            </div>
+            <div className="p-4">
+              <CAPAInlineForm
+                key={JSON.stringify(capaPrefill)}
+                onClose={() => setCapaPrefill(null)}
+                onCreated={() => {
+                  setCapaPrefill(null);
+                  fetchData();
+                }}
+                employees={employees}
+                systemUsers={systemUsers}
+                defaultValues={capaPrefill}
+              />
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Add Dialog */}
       <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>

@@ -19,7 +19,7 @@
 // ══════════════════════════════════════════════════════════════
 
 import React, { useMemo, useState } from 'react';
-import { BarChart3, Download, FileSpreadsheet, Loader2, Printer, RotateCcw, Search } from 'lucide-react';
+import { BarChart3, ChevronDown, ChevronLeft, Download, FileSpreadsheet, Loader2, Printer, RotateCcw, Search } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -43,6 +43,12 @@ export interface ReportViewProps {
   reportId: string;
   /** Custom cell renderer per column key (badges, links, coloring). */
   renderCell?: (column: ReportColumnSpec, row: Row) => React.ReactNode;
+  /**
+   * §11 — OPT-IN hierarchical rows: when set, each data row gains a
+   * chevron column and can expand to the rendered detail beneath it.
+   * Reports that do not pass it render exactly as before.
+   */
+  renderExpanded?: (row: Row) => React.ReactNode;
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -76,18 +82,30 @@ export function ReportSummaryCards({
 
 /** Definition-driven table (columns from visibleColumns). */
 export function ReportTable({
-  columns, rows, renderCell,
+  columns, rows, renderCell, renderExpanded,
 }: {
   columns: ReadonlyArray<ReportColumnSpec>;
   rows: Row[];
   renderCell?: (column: ReportColumnSpec, row: Row) => React.ReactNode;
+  renderExpanded?: (row: Row) => React.ReactNode;
 }) {
+  // §11 expansion state — row id → expanded (page-local, not persisted).
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+  const toggleRow = (id: string) => {
+    setExpandedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
   return (
     <div className="rounded-2xl border border-slate-700/50 bg-slate-900/40 overflow-hidden print:border-slate-300">
       <div className="overflow-x-auto">
         <Table>
           <TableHeader>
             <TableRow className="border-slate-700/50 hover:bg-transparent">
+              {renderExpanded && <TableHead className="w-8" />}
               {columns.map((col) => (
                 <TableHead key={col.key} className="text-slate-300 text-xs whitespace-nowrap text-right">
                   {col.label}
@@ -96,17 +114,46 @@ export function ReportTable({
             </TableRow>
           </TableHeader>
           <TableBody>
-            {rows.map((row, i) => (
-              <TableRow key={String(row.id ?? i)} className="border-slate-800/60">
-                {columns.map((col) => (
-                  <TableCell key={col.key} className="text-slate-200 text-xs whitespace-nowrap">
-                    {renderCell
-                      ? (renderCell(col, row) ?? formatCell(row[col.key]))
-                      : formatCell(row[col.key])}
-                  </TableCell>
-                ))}
-              </TableRow>
-            ))}
+            {rows.map((row, i) => {
+              const rowId = String(row.id ?? row.employeeId ?? i);
+              const isExpanded = expandedIds.has(rowId);
+              return (
+                <React.Fragment key={rowId}>
+                  <TableRow className="border-slate-800/60">
+                    {renderExpanded && (
+                      <TableCell className="w-8">
+                        <button
+                          type="button"
+                          onClick={() => toggleRow(rowId)}
+                          aria-expanded={isExpanded}
+                          aria-label={isExpanded ? 'طي التفاصيل' : 'توسيع التفاصيل'}
+                          className="p-1 rounded-md text-slate-500 hover:text-white hover:bg-slate-700/40 transition-colors"
+                        >
+                          {isExpanded ? <ChevronDown className="size-4" /> : <ChevronLeft className="size-4" />}
+                        </button>
+                      </TableCell>
+                    )}
+                    {columns.map((col) => (
+                      <TableCell
+                        key={col.key}
+                        className={`text-slate-200 text-xs text-right ${typeof row[col.key] === 'string' && (row[col.key] as string).includes('\n') ? 'whitespace-pre-line leading-relaxed align-top' : 'whitespace-nowrap'}`}
+                      >
+                        {renderCell
+                          ? (renderCell(col, row) ?? formatCell(row[col.key]))
+                          : formatCell(row[col.key])}
+                      </TableCell>
+                    ))}
+                  </TableRow>
+                  {renderExpanded && isExpanded && (
+                    <TableRow className="border-slate-800/60 hover:bg-transparent">
+                      <TableCell colSpan={columns.length + 1} className="bg-slate-950/40 px-4 py-3">
+                        {renderExpanded(row)}
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </React.Fragment>
+              );
+            })}
           </TableBody>
         </Table>
       </div>
@@ -134,7 +181,7 @@ export function ReportEmptyState({ label }: { label?: string }) {
 //  ReportView
 // ─────────────────────────────────────────────────────────────
 
-export function ReportView({ reportId, renderCell }: ReportViewProps) {
+export function ReportView({ reportId, renderCell, renderExpanded }: ReportViewProps) {
   const { definition, isLoading: defLoading } = useReportDefinition(reportId);
   const { data: employees } = useEmployees();
 
@@ -373,7 +420,7 @@ export function ReportView({ reportId, renderCell }: ReportViewProps) {
           <div className="text-[11px] text-slate-500 print:text-slate-600">
             الفترة: {response.meta.period} · عدد الصفوف: {response.rows.length} · تاريخ الإنشاء: {new Date(response.meta.generatedAt).toLocaleString('ar-EG')}
           </div>
-          <ReportTable columns={definition.visibleColumns} rows={response.rows} renderCell={renderCell} />
+          <ReportTable columns={definition.visibleColumns} rows={response.rows} renderCell={renderCell} renderExpanded={renderExpanded} />
         </div>
       )}
 

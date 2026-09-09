@@ -197,3 +197,68 @@ Stage Summary:
 - STOP respected: no chatbot, no Global Search changes (contract untouched), no KPI/Archive/Evidence redesign (evidence consumed AS-IS), analytics engine untouched, no Python/Docker/background workers (HTTPS provider call only — Vercel compatible), no OrgMemory persistence, no feedback training, no auto-executed anything
 - AI is a strict READ-ONLY interpretation layer: auth→permission→scope BEFORE dataset; AI never sees what the caller cannot; validated PROPOSED-only recommendations; every insight evidence-backed and clickable to the exact source record
 - Observations incident closed: data-visibility restored via honest period UX + regression tests pinning §68 (data itself was never touched — zero writes to Firebase throughout)
+
+---
+Task ID: consistency-overhaul-1
+Agent: Super Z (main agent)
+Task: Consistency & interaction overhaul — unified collapsible AlertCards, sidebar state persistence, inline-form standard everywhere, real-data validation
+
+Work Log:
+- ROOT CAUSE 1 (alerts "permanently expanded"): AttentionPanel wrote collapse state to userPreferences.ui.*, but the `ui` namespace did not exist in the UserPreferences whitelist — sanitizeUserPreferencesInput silently stripped it and GET never returned it, so collapse state evaporated on every refetch. FIX: added `ui?: UiPreferences` (boolean-only, 64-key cap) to personalization, sanitized it, merged per-key in PUT /api/user-preferences, returned in GET. Regression tests: src/lib/personalization/__tests__/ui-flags.test.ts (6).
+- AttentionPanel (§10 GLOBAL ALERT CONTRACT): default state is now COLLAPSED when no stored preference (fixed `Boolean(undefined)` default-expanded bug), stored preference wins; external glow indicator while collapsed + active items for ALL severity tiers (rose/orange/amber/cyan), neutral when expanded/empty. Static contract tests added to AttentionPanel.test.ts (3).
+- Sidebar (§SIDEBAR-STATE): CollapsedRail flyouts decoupled from expanded-mode `collapsedGroups` — rail flyout is ephemeral (one open, click-to-open, closes on mouse-leave/navigation/re-click) and NEVER reads/writes group state, so collapsing the sidebar cannot disturb which groups the user left open (Bitrix-style). Group expanded/collapsed state now persists across reloads via localStorage `arm-erp:sidebar:collapsedGroups` (loaded post-mount, SSR-safe). No numbered page-count icons exist — rail remains a compact representation of the same group→pages structure.
+- FollowUpsPage: removed silent `.slice(0, 6)` overdue cap — panel rows and group counts now match real overdue records (body scrolls); "إنشاء CAPA" (overflow + view-dialog) opens the shared inline CAPA form in-page (prefilled, relatedFollowUpId preserved) instead of navigateTo('capa').
+- QualityPage: "إنشاء CAPA" on a note opens the shared CAPAInlineForm INSIDE the employee block (prefilled incl. relatedQualityDeductionId; canCreateCapa gate) — zero navigation; added visible "أضافها: {createdByName}" metadata on every row (hidden lg:inline) + in the expanded detail (legacy rows honestly show "غير مسجل"); compacted rows (py-2.5→py-2, gap) and header cards (py-3→py-2.5, avatar 10→9); fetches systemUsers for the assigned-to field.
+- /api/quality POST: stores createdById + createdByName (server-resolved via getEmployeeMap from the authenticated caller — never client-supplied); QualityDeduction type extended (optional fields, legacy-safe).
+- ComplaintsPage: CREATE now uses the shared ComplaintInlineForm inline card (same component as Travel/Dashboard) with the sky "تمت التعبئة تلقائياً من صفحة السفر" banner for travel intents; travel intents (mount + while-mounted) open the inline card prefilled; Dialog kept for EDIT only; both "إنشاء CAPA من الشكوى" producers (card button + ⋮ overflow) open the inline CAPA form in-page.
+- CAPAPage: Quick-Create Dialog replaced by the shared inline CAPA card above the filters (scrolls into view on open); onCreated still navigates to the new case detail (existing handleCreated). RiskCenterPage: CAPAQuickCreate modal replaced by the inline CAPA form INSIDE the risk side panel (prefilled from the employee, refreshes risk data on create). HrDeductionsPage: "إنشاء CAPA" on approved violations opens the inline CAPA form (prefilled, relatedHrDeductionId) instead of navigating.
+- inline-forms.tsx: CAPAInlineForm carries cross-module link ids (relatedFollowUpId/relatedComplaintId/relatedQualityDeductionId/relatedHrDeductionId — parity with CAPAQuickCreate) and passes the created case id to onCreated (backward-compatible).
+- Data integrity verification (code-level): risk-center immediateActionCount ≡ high+critical riskLevel counts ≡ client topRisky.length (same server bands, RISK_LEVEL_BANDS.high=26); repetition alerts = deterministic server detection (employeeId+source+issueKey ≥2 in 30d, permission+scope gated, no mock data); travel urgent = server-computed 0..14-day departure/return events; all panels render honest empty states.
+- Gates: tsc 0 errors; eslint clean on all touched files; npm test 1214 passing (JWT_SECRET set; +9 new tests), only 2 PRE-EXISTING failures remain (python-analytics.test.ts / remote-bridge.test.ts static-contract drift after the Phase 5.3 Python→TS engine migration — verified byte-identical failures on the pristine uploaded archive, untouched here by design); npm run build OK (88/88 pages); dev server boots, GET / 200, login page renders (dark RTL, no console errors). Authenticated click-through requires the deployment's Firebase credentials (not available in this environment).
+
+Stage Summary:
+- ONE alert system: all 6 surfaces (Dashboard, FollowUps, Travel, RiskCenter, CAPA, plus quality/KPI reuse) render the same AttentionPanel — collapsed by default, glowing when risks exist, full lists on expand, user choice persisted.
+- ONE inline form standard: every create action (Employee, Quality note, CAPA, Complaint, Follow-up, Request, CAPA-from-Quality/FollowUp/Complaint/HR/Risk, Complaint-from-Deal) opens inline in the current page; zero cross-page create navigations remain (CAPAPage internal list→detail routing is view routing, and "عرض الحالات" links are view links).
+- Sidebar: same navigation structure in both modes, group state preserved and persisted; rail flyouts ephemeral.
+- Known pre-existing issues intentionally NOT touched: 2 stale analytics static-contract tests; CAPADetailPanel side-panel expansion refactor note (§4 follow-up documented in file comments).
+
+---
+Task ID: 2 (ux-followup-fixes)
+Agent: Super Z (main agent)
+Task: User follow-up round — (1) collapsed-rail must show groups left open in pinned mode + active page's group, (2) unify user avatar across rail/sidebar/header (photo-ready), (3) flashing glow on critical/urgent alert cards, (4) row-detail card must stay visible when scrolled down, (5) explain + fix the 2 pre-existing analytics test failures.
+
+Work Log:
+- §SIDEBAR-MIRROR (Sidebar.tsx): replaced the dead ephemeral rail flyouts (clipped by the rail's overflow-hidden + killed on mouse-leave) with a persistent CollapsedGroupsMirror panel rendered as a SEPARATE fixed surface next to the rail (top-16, right:78px, scrollable, AnimatePresence). Groups left OPEN in the pinned sidebar stay visibly open while collapsed; the CURRENT page's group auto-opens (route-change sync effect) and the active page is highlighted. One source of truth: collapsedGroups — collapsing a group from the mirror closes it in the expanded sidebar too; rail group icons toggle the same shared state. Active group shows a state dot on its rail icon.
+- §AVATAR-UNIFICATION: new shared UserAvatar component (Radix Avatar, violet→indigo gradient + violet ring, shared getUserInitials, photo-ready via optional src for the future user-profile page). Replaced the three divergent avatars: Header (was emerald/teal), expanded sidebar footer (violet, inline impl), collapsed rail (was gray slate).
+- §ALERT-FLASH (globals.css + AttentionPanel): new alert-flash-critical / alert-flash-urgent breathing box-shadow keyframes applied to collapsed panels whose top severity is critical/urgent (warning/info keep static glow); expanded critical/urgent get a soft static accent; prefers-reduced-motion disables the animation and keeps a static indicator.
+- §DETAIL-DRAWER-FIX (RiskCenterPage): employee details card converted from top-of-document flow to a viewport-fixed drawer (fixed left-0 top-16 bottom-0, own scroll, shadow) — visible no matter where the user scrolled when clicking a row; dark backdrop REMOVED (table stays bright, clicking another row re-targets the drawer); Escape closes; slides from the left edge (RTL).
+- Analytics static-contract tests (user question): both failures were stale source scans asserting the route calls runPythonAnalytics (Python bridge) while Phase 5.3 moved execution to the in-process TS engine (runEmployeeAnalytics). Zero runtime impact — test-only. Updated remote-bridge.test.ts (21-22) + python-analytics.test.ts to assert the CURRENT engine call with auth→permission→scope→dataset ordering preserved.
+- Extra pre-existing failures also fixed: .env.example restored to a proper placeholders-only example (its [REDACTED] form failed the M0.1.1 contract: missing FIREBASE_API_KEY/CRON_SECRET declarations, non-placeholder values) + env test gained an explicit operational-defaults allowlist (AI_ENABLED/AI_PROVIDER/AI_TIMEOUT_MS); quality-migration.test.ts got a test-env.ts JWT_SECRET bootstrap (auth.ts throws at import without it — hermetic suite).
+
+Verification: tsc 0 errors; eslint clean on all touched files; FULL suite 1907/1907 PASS (0 fail) — previously 6 failing subtests; production build OK (JWT_SECRET env required, by design); dev server boots, login page renders clean, no console errors. Authenticated UI (mirror/drawer/flash) needs the user's Firebase creds to walk through visually.
+
+Stage Summary:
+- Deliverable: /home/z/my-project/download/arm-erp-project-updated-2.zip
+- Answers for the user: the 2 "analytics errors" were stale static contract tests (no production impact) — now updated to the Phase 5.3 TS-engine contract; suite fully green.
+
+---
+Task ID: 3 (unified-rail-floating-card)
+Agent: Super Z (main agent)
+Task: User round 3 — (1) collapsed sidebar's CollapsedGroupsMirror rendered as a large floating menu covering much of the page (screenshot); required: SAME menu shape for pinned & collapsed, icons-only when collapsed. (2) Risk Center details card must be fully DETACHED from the page: opens in the user's current viewport position when scrolling anywhere, with an INTERNAL scrollbar for long data.
+
+Work Log:
+- §UNIFIED-RAIL (Sidebar.tsx): DELETED the CollapsedGroupsMirror floating panel (fixed w-60 surface next to the rail) entirely — no secondary menu exists anymore. CollapsedRail now renders the SAME structure as the expanded sidebar (group → its pages) ICONS-ONLY inside the 72px rail itself: group icon toggles the same shared collapsedGroups state; pages of OPEN groups render directly beneath their group icon as compact w-9 icon buttons (tree spine connector, SidebarTooltip carries labels, active page = violet gradient + indicator, aria-expanded/aria-current preserved). Groups left open in pinned mode stay open collapsed; the current page's group auto-opens via the existing route-sync effect. Nav is overflow-y-auto so many open groups scroll within the rail.
+- §FLOATING-CARD-FIX (RiskCenterPage): details card converted from the edge-glued full-height drawer (fixed left-0 top-16 bottom-0) to a DETACHED floating card: fixed wrapper inset-y-0 left-3/5 + flex items-center → vertically centered in the VIEWPORT wherever the user has scrolled; card w-[min(28rem,calc(100vw-1.5rem))] max-h-[85vh] flex-col; header (title + ✕) pinned above an overflow-y-auto body (arm-scroll) → data longer than the card scrolls INSIDE; body keyed by employeeId → switching rows resets scroll to top; wrapper pointer-events-none so only the card captures clicks (table fully interactive, row click re-targets the card); no backdrop; Escape/✕ close preserved.
+- Visual verification WITHOUT auth creds: temporary /ui-preview route mounting the REAL CollapsedRail (mocked props, real group/page structure) + a replica of the floating card classes with long dummy content; agent-browser screenshots at 1440×900 confirmed: rail shows group icons with page icons beneath (nothing covering the page), group toggle works, card vertically centered, header pinned, internal scroll verified programmatically (scrollTop→max 1286/1286). Preview route + temporary export removed afterwards.
+- Gates: tsc 0 errors; eslint clean; npm test 1481/1481 pass; production build OK.
+
+Stage Summary:
+- Deliverable: /home/z/my-project/download/arm-erp-project-updated-3.zip
+- Collapsed sidebar = same menu shape as pinned, icons only; no page-blocking panel. Risk details = floating viewport-centered card with internal scrollbar.
+
+---
+Task ID: login-csp-env-fix (round 4)
+- firebase-server.ts: FirebaseConfigError + placeholder detection + key normalization + FIREBASE_SERVICE_ACCOUNT_JSON support
+- login route: 503 FIREBASE_CONFIG with Arabic guidance; middleware: connect-src firebasedatabase.app + dev localhost
+- scripts/create-first-admin.ts (first admin seed); scripts/run-tests.mjs (fixed npm test glob skipping src/lib/__tests__ — 22 files, 457 tests, recovered)
+- Gates: 1938/1938 tests, tsc 0, eslint clean, build OK, live smoke 503-in-0.1s verified

@@ -58,7 +58,6 @@ const M02_GATES: Record<string, string> = {
   'src/app/api/risk-center/route.ts': 'riskCenter',
   'src/app/api/rule-logs/route.ts': 'rulesEngine',
   'src/app/api/employees/route.ts': 'employees',
-  'src/app/api/firebase/sync/route.ts': 'firebase',
   'src/app/api/rules/route.ts': 'rulesEngine',
   'src/app/api/deduction-rules/route.ts': 'rules',
 };

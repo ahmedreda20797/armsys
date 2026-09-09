@@ -132,6 +132,10 @@ export interface QualityDeduction {
   month: string;
   relatedCapaId: string | null;
   createdAt: string;
+  /** §8 Added-by audit — who recorded this deduction (optional so
+   *  legacy records stay valid; UI shows "غير مسجل" when absent). */
+  createdById?: string | null;
+  createdByName?: string | null;
 }
 
 export interface HrDeduction {
@@ -327,7 +331,7 @@ export interface KnowledgeArticle {
   updatedAt: string;
 }
 
-export type PageId = 'home' | 'employees' | 'biometric' | 'attendance' | 'requests' | 'rules' | 'quality' | 'hrDeductions' | 'travel' | 'reports' | 'firebase' | 'followUps' | 'capa' | 'complaints' | 'knowledgeBase' | 'riskCenter' | 'operationsCenter' | 'employee360' | 'notifications' | 'rulesEngine' | 'controlPanel' | 'observations' | 'observationCategories' | 'observationTemplates' | 'kpiDashboard' | 'kpiReports' | 'monthClose' | 'kpiSettings' | 'qualityAuditLog' | 'qualityDeductionsReport' | 'smartQualityReport' | 'workflowDesigner' | 'organization';
+export type PageId = 'home' | 'employees' | 'biometric' | 'attendance' | 'requests' | 'rules' | 'quality' | 'hrDeductions' | 'travel' | 'reports' | 'followUps' | 'capa' | 'complaints' | 'knowledgeBase' | 'riskCenter' | 'operationsCenter' | 'employee360' | 'notifications' | 'rulesEngine' | 'controlPanel' | 'observations' | 'observationCategories' | 'observationTemplates' | 'kpiDashboard' | 'kpiReports' | 'monthClose' | 'kpiSettings' | 'qualityAuditLog' | 'qualityDeductionsReport' | 'smartQualityReport' | 'workflowDesigner' | 'organization';
 
 export interface AppNotification {
   id: string;

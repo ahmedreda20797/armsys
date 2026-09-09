@@ -9,6 +9,9 @@ import { getDaysRemaining } from '@/lib/date-utils';
 import { useTravel, useEmployees, useCreateTravel, useUpdateTravel, useDeleteTravel } from '@/hooks/use-queries';
 import { usePageState } from '@/hooks/use-page-state';
 import { PageHeaderBar } from '@/components/shared/PageHeaderBar';
+import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
+import { AttentionPanel, type AttentionSeverity } from '@/components/shared/AttentionPanel';
+import { ComplaintInlineForm } from '@/components/shared/inline-forms';
 import { useQueryClient } from '@tanstack/react-query';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -52,6 +55,7 @@ import {
   CreditCard,
   CheckCircle2,
   XCircle,
+  X,
   Car,
   Palmtree,
   Search,
@@ -231,14 +235,22 @@ function getUrgencyLevel(daysLeft: number): UrgencyLevel {
   return 'normal';
 }
 
-function getUrgencyLabel(daysLeft: number): string {
-  if (daysLeft === 0) return 'السفر اليوم!';
-  if (daysLeft === 1) return 'السفر بكره!';
-  if (daysLeft === 2) return 'بعد يومين';
+// Phase 6 §6 — return events get their own labels so the row
+// does not mix "السفر اليوم" with "العودة اليوم" (the prior
+// implementation derived urgency from departureDate only — return
+// days never surfaced, so a trip returning in 2 days looked fine
+// while the person had already left). The `urgentType` flag from
+// /api/travel decides the wording.
+function getUrgencyLabel(daysLeft: number, urgentType: 'departure' | 'return' = 'departure'): string {
+  const today = urgentType === 'return' ? 'العودة اليوم!' : 'السفر اليوم!';
+  const tomorrow = urgentType === 'return' ? 'العودة غداً' : 'السفر غداً';
+  if (daysLeft === 0) return today;
+  if (daysLeft === 1) return tomorrow;
+  if (daysLeft === 2) return `بعد يومين`;
   if (daysLeft > 2 && daysLeft <= 7) return `بعد ${daysLeft} أيام`;
   if (daysLeft > 7) return `بعد ${daysLeft} يوم`;
-  if (daysLeft === -1) return 'منذ يوم!';
-  if (daysLeft === -2) return 'منذ يومين';
+  if (daysLeft === -1) return `منذ يوم!`;
+  if (daysLeft === -2) return `منذ يومين`;
   if (daysLeft >= -7) return `منذ ${Math.abs(daysLeft)} أيام`;
   return `منذ ${Math.abs(daysLeft)} يوم`;
 }
@@ -719,25 +731,22 @@ const TripFormDialog = memo(function TripFormDialog({
   );
 });
 
-// ─── DeleteConfirmDialog ───
+// ─── DeleteConfirmDialog — delegates to the global ConfirmDialog (§4) ───
 const DeleteConfirmDialog = memo(function DeleteConfirmDialog({
-  open, onOpenChange, onConfirm,
+  open, onOpenChange, onConfirm, itemName, loading,
 }: {
   open: boolean; onOpenChange: (v: boolean) => void; onConfirm: () => void;
+  itemName?: string; loading?: boolean;
 }) {
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="backdrop-blur-xl bg-slate-900 border-slate-700">
-        <DialogHeader>
-          <DialogTitle className="text-white">تأكيد الحذف</DialogTitle>
-          <DialogDescription className="text-slate-400">هل أنت متأكد من حذف هذه الرحلة؟</DialogDescription>
-        </DialogHeader>
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)} className="border-slate-600 text-slate-300">إلغاء</Button>
-          <Button variant="destructive" onClick={onConfirm}>حذف</Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+    <ConfirmDialog
+      open={open}
+      onOpenChange={onOpenChange}
+      description="هل أنت متأكد من حذف هذه الرحلة؟ لا يمكن التراجع عن هذا الإجراء."
+      itemName={itemName}
+      loading={loading}
+      onConfirm={onConfirm}
+    />
   );
 });
 
@@ -827,70 +836,58 @@ const UploadDialog = memo(function UploadDialog({
   );
 });
 
-// ─── UrgentAlertBanner ───
+// ─── UrgentAlertBanner — replaced with the system-wide AttentionPanel.
+//     Same data shape (urgent trips) now flows through the unified
+//     surface; severity buckets, compact rows and persistence are
+//     inherited for free. Phase 6: each row also carries the event
+//     type (departure vs return) so the label says "السفر اليوم"
+//     vs "العودة اليوم" — never mixed. ───
+type UrgentTripRow = {
+  id: string;
+  employeeName: string;
+  dealerName: string | null;
+  destination: string;
+  departureDate: string;
+  returnDate: string | null;
+  urgentType: 'departure' | 'return';
+};
+
 const UrgentAlertBanner = memo(function UrgentAlertBanner({
   urgentTrips, onScrollToTrip,
 }: {
-  urgentTrips: Array<{ id: string; employeeName: string; dealerName: string | null; destination: string; departureDate: string }>;
+  urgentTrips: UrgentTripRow[];
   onScrollToTrip: (tripId: string) => void;
 }) {
-  const [alertOpen, setAlertOpen] = useState(true);
-
   if (urgentTrips.length === 0) return null;
-
   return (
-    <motion.div initial={{ opacity: 0, y: -5 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}>
-      <div className="rounded-xl border border-red-500/30 bg-gradient-to-l from-red-500/10 via-slate-900 to-slate-900 overflow-hidden">
-        <button
-          onClick={() => setAlertOpen(!alertOpen)}
-          className="w-full flex items-center justify-between px-4 py-3 cursor-pointer hover:bg-red-500/5 transition-colors"
-        >
-          <div className="flex items-center gap-2">
-            <motion.div animate={{ scale: [1, 1.2, 1] }} transition={{ duration: 1.5, repeat: Infinity }}>
-              <BellRing className="size-5 text-red-400" />
-            </motion.div>
-            <span className="text-red-400 font-semibold text-sm">تنبيهات: {urgentTrips.length} رحلة قريبة السفر</span>
-          </div>
-          <svg className={`size-4 text-slate-500 transition-transform duration-200 ${alertOpen ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
-          </svg>
-        </button>
-        <AnimatePresence>
-          {alertOpen && (
-            <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
-              <div className="border-t border-red-500/15 max-h-40 overflow-y-auto">
-                {urgentTrips.map((trip) => {
-                  const daysLeft = getDaysRemaining(trip.departureDate);
-                  const level = getUrgencyLevel(daysLeft);
-                  const levelStyles: Record<UrgencyLevel, string> = { critical: 'bg-red-500/15 border-red-500/30', urgent: 'bg-amber-500/10 border-amber-500/25', soon: 'bg-yellow-500/10 border-yellow-500/20', normal: 'bg-slate-800/50 border-slate-700/30' };
-                  const textColor: Record<UrgencyLevel, string> = { critical: 'text-red-400', urgent: 'text-amber-400', soon: 'text-yellow-400', normal: 'text-slate-400' };
-                  return (
-                    <motion.div key={trip.id} initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }}
-                      onClick={() => onScrollToTrip(trip.id)}
-                      className={`flex items-center justify-between px-3 py-2 mx-1 mb-1.5 rounded-lg border ${levelStyles[level]} cursor-pointer hover:brightness-125 transition-all duration-150`}
-                    >
-                      <div className="flex items-center gap-2 min-w-0">
-                        {level === 'critical' && (
-                          <motion.span className="relative flex h-2 w-2 shrink-0" animate={{ scale: [1, 1.4, 1], opacity: [1, 0.5, 1] }} transition={{ duration: 1, repeat: Infinity }}>
-                            <span className="absolute inset-0 rounded-full bg-red-500" />
-                          </motion.span>
-                        )}
-                        <span className="text-white text-xs font-medium truncate">{trip.dealerName || trip.employeeName}</span>
-                        <span className="text-slate-500 text-[10px]">🌍 {trip.destination}</span>
-                      </div>
-                      <div className="flex items-center gap-2 shrink-0">
-                        <span className="text-slate-500 text-[10px]" dir="ltr">{trip.departureDate}</span>
-                        <span className={`text-xs font-bold ${textColor[level]}`}>{getUrgencyLabel(daysLeft)}</span>
-                      </div>
-                    </motion.div>
-                  );
-                })}
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </div>
-    </motion.div>
+    <AttentionPanel
+      title="رحلات تحتاج متابعة"
+      icon={<BellRing className="size-3.5 text-red-400" />}
+      subtitle={`${urgentTrips.length} رحلة قريبة من السفر أو العودة`}
+      persistKey="travelUrgentAttention"
+      groups={[
+        { key: 'departure', label: 'سفر قادم', count: urgentTrips.filter((t) => t.urgentType === 'departure').length },
+        { key: 'return', label: 'عودة قادمة', count: urgentTrips.filter((t) => t.urgentType === 'return').length },
+      ]}
+      items={urgentTrips.map((trip) => {
+        const dateStr = trip.urgentType === 'return' ? trip.returnDate || trip.departureDate : trip.departureDate;
+        const daysLeft = getDaysRemaining(dateStr);
+        const level = getUrgencyLevel(daysLeft);
+        const severity: AttentionSeverity =
+          level === 'critical' ? 'critical' :
+          level === 'urgent' ? 'urgent' :
+          level === 'soon' ? 'warning' : 'info';
+        return {
+          id: `${trip.id}-${trip.urgentType}`,
+          severity,
+          groupKey: trip.urgentType,
+          primary: trip.dealerName || trip.employeeName,
+          secondary: `🌍 ${trip.destination}`,
+          trailing: <span className="flex items-center gap-1.5"><span dir="ltr">{dateStr}</span><span className="font-bold">{getUrgencyLabel(daysLeft, trip.urgentType)}</span></span>,
+          onClick: () => onScrollToTrip(trip.id),
+        };
+      })}
+    />
   );
 });
 
@@ -1036,6 +1033,21 @@ export default function TravelPage() {
   });
   const { data: employees = [] } = useEmployees();
 
+  // §7 inline complaint form: system users for the "المسؤول" picker —
+  // the same endpoint the quick-action host and ObservationsPage use,
+  // so the inline form offers the identical picker as the Complaints page.
+  const [systemUsers, setSystemUsers] = useState<{ id: string; name: string; email?: string; role?: string }[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    fetch('/api/dashboard/users?limit=200', {
+      headers: { Authorization: `Bearer ${localStorage.getItem('erp_access_token')}` },
+    })
+      .then((r) => (r.ok ? r.json() : []))
+      .then((list) => { if (!cancelled) setSystemUsers((list as { id: string; name: string }[]) ?? []); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+
   // Extract data from server response
   const trips = (data?.data || []) as TravelWithEmployee[];
   const pagination = data?.pagination || { page: 1, pageSize: 50, total: 0, totalPages: 1 };
@@ -1113,6 +1125,7 @@ export default function TravelPage() {
       },
     });
   }, [deleteTravel, trips]);
+  const deletingTrip = deletingId ? trips.find((t: { id: string; destination?: string }) => t.id === deletingId) : null;
 
   const openEdit = useCallback((trip: TravelWithEmployee) => {
     setEditingTrip(trip);
@@ -1133,20 +1146,16 @@ export default function TravelPage() {
     setExpandedCardId(id);
   }, []);
 
-  // ── §7 Travel → Complaint: open the EXISTING complaint workflow with
-  // the deal's known context pre-filled (never invent missing data).
-  // The complaints page owns the form/business logic — Travel only
-  // supplies a navigation intent, exactly like the CAPA integration.
+  // ── §7 Travel → Complaint (INLINE — global interaction contract):
+  // instead of navigating to the complaints page, the REAL complaint
+  // form opens inline in THIS page with the deal context prefilled.
+  // Same fields, same API, same source-trace the ComplaintsPage writes
+  // (sourcePage/sourceRecordId) — only the mounting context differs.
+  const [complaintDeal, setComplaintDeal] = useState<TravelWithEmployee | null>(null);
   const reportComplaint = useCallback((trip: TravelWithEmployee) => {
-    useAppStore.getState().navigateTo('complaints', undefined, {
-      source: 'travel',
-      sourceRecordId: trip.id,
-      dealId: trip.dealerName || '',
-      employeeId: trip.employeeId || '',
-      customerName: trip.dealerName || trip.customerNames || '',
-      description: trip.destination
-        ? `مشكلة في رحلة إلى ${trip.destination} — تاريخ السفر ${trip.departureDate}${trip.customerNames ? ` — العملاء: ${trip.customerNames}` : ''}`
-        : '',
+    setComplaintDeal(trip);
+    requestAnimationFrame(() => {
+      document.getElementById('travel-inline-complaint')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     });
   }, []);
 
@@ -1514,6 +1523,50 @@ export default function TravelPage() {
         <UrgentAlertBanner urgentTrips={urgentTrips} onScrollToTrip={scrollToTrip} />
       )}
 
+      {/* ━━━ §7 INLINE COMPLAINT FORM (global interaction contract) —
+          opens below the alerts when the user reports a problem from a
+          deal card; keeps the user inside the Travel workflow. ━━━ */}
+      <AnimatePresence>
+        {complaintDeal && (
+          <motion.div
+            id="travel-inline-complaint"
+            initial={{ opacity: 0, y: -8, scale: 0.98 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -8, scale: 0.98 }}
+            transition={{ duration: 0.22, ease: [0.4, 0, 0.2, 1] }}
+            className="rounded-2xl border border-rose-500/30 bg-slate-900/60 backdrop-blur-md shadow-2xl shadow-rose-900/20"
+          >
+            <div className="flex items-center justify-between gap-2 px-4 py-2.5 border-b border-slate-700/50">
+              <p className="text-xs font-bold text-slate-200 flex items-center gap-2">
+                <MessageSquareWarning className="size-3.5 text-rose-400" />
+                شكوى من صفقة — {complaintDeal.dealerName || complaintDeal.employeeName}
+              </p>
+              <Button variant="ghost" size="sm" onClick={() => setComplaintDeal(null)} className="h-7 text-xs text-slate-400 hover:text-white">
+                <X className="size-3.5 ml-1" />
+                إغلاق
+              </Button>
+            </div>
+            <div className="p-4">
+              <ComplaintInlineForm
+                onClose={() => setComplaintDeal(null)}
+                onCreated={() => { setComplaintDeal(null); queryClient.invalidateQueries({ queryKey: ['complaints'] }); }}
+                employees={employees as never}
+                systemUsers={systemUsers}
+                sourceContext={{ page: 'travel', recordId: complaintDeal.id }}
+                defaultValues={{
+                  dealId: complaintDeal.dealerName || '',
+                  employeeId: complaintDeal.employeeId || '',
+                  customerName: complaintDeal.dealerName || complaintDeal.customerNames || '',
+                  description: complaintDeal.destination
+                    ? `مشكلة في رحلة إلى ${complaintDeal.destination} — تاريخ السفر ${complaintDeal.departureDate}${complaintDeal.customerNames ? ` — العملاء: ${complaintDeal.customerNames}` : ''}`
+                    : '',
+                }}
+              />
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* ━━━ CATEGORY TABS ━━━ */}
       <motion.div initial={{ opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.12 }}>
         <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 sm:gap-3">
@@ -1636,7 +1689,9 @@ export default function TravelPage() {
       />
       <DeleteConfirmDialog
         open={!!deletingId}
-        onOpenChange={() => setDeletingId(null)}
+        onOpenChange={(v) => { if (!v) setDeletingId(null); }}
+        itemName={deletingTrip?.destination}
+        loading={deleteTravel.isPending}
         onConfirm={() => { if (deletingId) handleDelete(deletingId); }}
       />
       <UploadDialog open={isUploadOpen} onOpenChange={setIsUploadOpen} />

@@ -10,6 +10,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
+import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
 import { Switch } from '@/components/ui/switch';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
@@ -349,11 +350,14 @@ export default function ObservationCategoriesPage() {
     setDialogOpen(true);
   }
 
-  async function handleDelete(cat: ObservationCategory) {
-    if (!confirm(`حذف الفئة "${cat.name}"؟ الملاحظات الحالية لا تتأثر.`)) return;
+  // §4: deletion goes through the unified ConfirmDialog.
+  const [deleteTarget, setDeleteTarget] = useState<ObservationCategory | null>(null);
+  async function confirmDelete() {
+    if (!deleteTarget) return;
     try {
-      await deleteMut.mutateAsync(cat.id);
+      await deleteMut.mutateAsync(deleteTarget.id);
       toast.success('تم حذف الفئة');
+      setDeleteTarget(null);
     } catch (e) {
       toast.error('فشل الحذف', { description: e instanceof Error ? e.message : undefined });
     }
@@ -395,7 +399,7 @@ export default function ObservationCategoriesPage() {
                 cat={cat}
                 canEdit={canEdit}
                 onEdit={() => startEdit(cat)}
-                onDelete={() => handleDelete(cat)}
+                onDelete={() => setDeleteTarget(cat)}
               />
             </motion.div>
           ))}
@@ -417,6 +421,16 @@ export default function ObservationCategoriesPage() {
 
       {/* Silence unused canDelete when it's part of the permission gate */}
       {canDelete && null}
+
+      {/* §4: unified delete confirmation */}
+      <ConfirmDialog
+        open={!!deleteTarget}
+        onOpenChange={(open) => { if (!open) setDeleteTarget(null); }}
+        description="سيتم حذف الفئة. الملاحظات الحالية لا تتأثر."
+        itemName={deleteTarget?.name}
+        loading={deleteMut.isPending}
+        onConfirm={confirmDelete}
+      />
     </div>
   );
 }

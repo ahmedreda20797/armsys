@@ -50,6 +50,20 @@ export interface DashboardPreferences {
 }
 
 /**
+ * §10 GLOBAL ALERT CONTRACT — per-user UI flags (boolean only).
+ * The unified AttentionPanel stores its collapsed/expanded state
+ * under `ui.<persistKey>` so a panel the user opened/collapsed stays
+ * that way across navigation and reloads. STRICTLY boolean values —
+ * anything else is dropped by the sanitizer (fail-safe to default).
+ */
+export interface UiPreferences {
+  [flagKey: string]: boolean;
+}
+
+/** Hard cap — protects the preferences record from unbounded growth. */
+export const UI_PREFS_MAX_KEYS = 64;
+
+/**
  * Compact navigation descriptor for a favorite/pin target — the
  * OUTPUT of the existing navigation builders captured at save time,
  * so navigation NEVER needs a second router: consume with
@@ -87,6 +101,8 @@ export interface UserPreferences {
   dashboard?: DashboardPreferences;
   favorites?: FavoriteEntry[];
   pins?: PinEntry[];
+  /** §10 — per-user UI flags (AttentionPanel collapsed state, …). */
+  ui?: UiPreferences;
   updatedAt?: string;
 }
 
@@ -310,5 +326,23 @@ export function sanitizeUserPreferencesInput(body: unknown): UserPreferences | n
   if (favorites) out.favorites = favorites as FavoriteEntry[];
   const pins = sanitizeNavigationArray(raw.pins);
   if (pins) out.pins = pins as PinEntry[];
+  // §10 GLOBAL ALERT CONTRACT — the `ui` flags namespace: boolean-only,
+  // key-capped. Previously this namespace was silently stripped, which
+  // made every AttentionPanel's collapse state evaporate on refetch
+  // (panels looked "permanently expanded").
+  if (raw.ui && typeof raw.ui === 'object' && !Array.isArray(raw.ui)) {
+    const uiRaw = raw.ui as Record<string, unknown>;
+    const uiOut: UiPreferences = {};
+    let accepted = 0;
+    for (const [k, v] of Object.entries(uiRaw)) {
+      if (accepted >= UI_PREFS_MAX_KEYS) break;
+      if (typeof k !== 'string' || k.length === 0 || k.length > 64) continue;
+      if (typeof v === 'boolean') {
+        uiOut[k] = v;
+        accepted += 1;
+      }
+    }
+    if (accepted > 0) out.ui = uiOut;
+  }
   return out;
 }

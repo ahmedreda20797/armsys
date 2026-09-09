@@ -91,6 +91,7 @@ export async function GET(request: NextRequest) {
         status: (statusParam as KpiReportRowStatus | null) ?? undefined,
         minScore,
         maxScore,
+        includeArchived: searchParams.get('includeArchived') === 'true',
         scopeLimit,
       },
       sort: { key: sortByParam as KpiMonthlySortKey, direction: sortDirParam },

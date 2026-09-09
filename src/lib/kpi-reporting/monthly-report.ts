@@ -146,6 +146,14 @@ export async function buildMonthlyKpiReport(
       continue;
     }
 
+    // §10: archived employees are excluded from DEFAULT reports. They
+    // reappear only when the caller explicitly opts in
+    // (filters.includeArchived) — rows and totals stay consistent
+    // because this happens at assembly, before totals are computed.
+    if (input.filters?.includeArchived !== true && employmentStatusOf(employee) === 'archived') {
+      continue;
+    }
+
     const identity = identityOf(employee);
     rows.push(
       assembleRow({

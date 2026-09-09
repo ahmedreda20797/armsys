@@ -7,6 +7,13 @@
 //  The mocked 200 body is a contract-realistic engine result
 //  (fixtures.ts, spec §42 partial-MTD scenario).
 //
+//  NOTE (Phase 5.3): the API route's execution path is the
+//  IN-PROCESS TypeScript engine (runEmployeeAnalytics). The Python
+//  bridge (local subprocess / remote service) is still fully
+//  supported and tested here as the fallback transport, while the
+//  static route-ordering contract (21-22) now targets the engine
+//  call site that the route actually contains.
+//
 //  Covers:
 //   13. local mode default (no fetch, unchanged Phase 5 behavior)
 //   14. remote mode dispatch (URL, method, headers, body)
@@ -268,11 +275,14 @@ describe('Phase 5.2 — remote analytics bridge', () => {
     const permPos = order("verifyPermission(request, 'kpiReports', 'view')");
     const scopePos = order('resolveEmployeeScopeFromDb');
     const datasetPos = order('getEmployeePerformanceDataset({');
-    // The CALL SITE, not the import statement.
-    const pythonPos = order('await runPythonAnalytics(');
+    // The CALL SITE, not the import statement. Phase 5.3: the analytics
+    // engine is the IN-PROCESS TypeScript build (runEmployeeAnalytics) —
+    // the Python bridge remains available but is no longer the route's
+    // execution path, so the ordering contract targets the engine call.
+    const enginePos = order('await runEmployeeAnalytics(');
     for (const [name, pos] of [['auth', authPos], ['permission', permPos], ['scope', scopePos], ['dataset', datasetPos]] as Array<[string, number]>) {
       assert.ok(pos >= 0, `${name} must exist in the route`);
-      assert.ok(pos < pythonPos, `${name} must run BEFORE the Python call`);
+      assert.ok(pos < enginePos, `${name} must run BEFORE the analytics engine call`);
     }
   });
 

@@ -59,6 +59,10 @@ export function middleware(request: NextRequest) {
   // ═══════════════════════════════════════════════════
 
   // Content Security Policy
+  // Dev-only allowances: Next.js HMR needs ws://localhost and some dev
+  // tooling calls localhost over plain http. Never exposed in production.
+  const isDev = process.env.NODE_ENV !== 'production';
+  const devConnect = isDev ? ' http://localhost:* ws://localhost:*  http://127.0.0.1:* ws://127.0.0.1:*' : '';
   response.headers.set(
     'Content-Security-Policy',
     [
@@ -67,7 +71,7 @@ export function middleware(request: NextRequest) {
       "style-src 'self' 'unsafe-inline'",
       "img-src 'self' data: blob: https://firebasestorage.googleapis.com https://*.googleusercontent.com",
       "font-src 'self' data:",
-      "connect-src 'self' https://*.firebaseio.com https://*.googleapis.com wss://*.firebaseio.com",
+      "connect-src 'self' https://*.firebaseio.com https://*.firebasedatabase.app https://*.googleapis.com wss://*.firebaseio.com wss://*.firebasedatabase.app" + devConnect,
       "frame-ancestors 'none'",
       "form-action 'self'",
       "base-uri 'self'",

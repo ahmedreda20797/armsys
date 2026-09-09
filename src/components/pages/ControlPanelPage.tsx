@@ -23,6 +23,7 @@ import {
   DialogFooter,
   DialogDescription,
 } from '@/components/ui/dialog';
+import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
 import {
   Select,
   SelectContent,
@@ -152,7 +153,7 @@ interface SessionUser {
   durationLabel: string;
 }
 
-const EXCLUDED_PAGES = ['home', 'firebase'];
+const EXCLUDED_PAGES = ['home']; // §14: 'firebase' page removed
 
 // Grouped permissions for editing — static module-level derivation
 // (no reactive inputs, so no useMemo hook is needed; hoisted out of the
@@ -255,6 +256,7 @@ export default function ControlPanelPage() {
 
   // ═══ Shared state ═══
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [isDeleteOpen, setIsDeleteOpen] = useState(false);
@@ -485,10 +487,11 @@ export default function ControlPanelPage() {
 
   const handleDelete = async () => {
     if (!selectedUser) return;
+    setDeleting(true);
     try {
       const res = await authFetch(`/api/dashboard/users/${selectedUser.id}`, { method: 'DELETE' });
       if (res.ok) { await fetchUsers(); setIsDeleteOpen(false); setSelectedUser(null); }
-    } catch {}
+    } catch {} finally { setDeleting(false); }
   };
 
   const handleToggleSuspend = async (u: UserRecord) => {
@@ -1274,19 +1277,15 @@ export default function ControlPanelPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Delete Dialog */}
-      <Dialog open={isDeleteOpen} onOpenChange={setIsDeleteOpen}>
-        <DialogContent className="backdrop-blur-xl bg-slate-900 border-slate-700 max-w-sm">
-          <DialogHeader>
-            <DialogTitle className="text-red-400 flex items-center gap-2"><AlertTriangle className="size-5" /> تأكيد الحذف</DialogTitle>
-            <DialogDescription className="text-slate-400">هل أنت متأكد من حذف هذا المستخدم؟ لا يمكن التراجع عن هذا الإجراء.</DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setIsDeleteOpen(false)} className="border-slate-600 text-slate-300">إلغاء</Button>
-            <Button variant="destructive" onClick={handleDelete}>حذف</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {/* Delete Dialog — unified ConfirmDialog (§4) */}
+      <ConfirmDialog
+        open={isDeleteOpen}
+        onOpenChange={setIsDeleteOpen}
+        description="هل أنت متأكد من حذف هذا المستخدم؟ لا يمكن التراجع عن هذا الإجراء."
+        itemName={selectedUser?.name}
+        loading={deleting}
+        onConfirm={handleDelete}
+      />
 
       {/* Reset Password Dialog */}
       <Dialog open={isResetPwdOpen} onOpenChange={setIsResetPwdOpen}>

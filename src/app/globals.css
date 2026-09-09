@@ -956,3 +956,50 @@ textarea:focus {
     background: transparent !important;
   }
 }
+
+/* ═══════════════════════════════════════════════════════════
+   §ALERT-FLASH — attention flash for CRITICAL / URGENT alert
+   cards (AttentionPanel §10). A breathing box-shadow pulse on
+   the collapsed card so active critical/urgent risks call for
+   attention even before the user expands the panel. Static
+   glow for warning/info stays non-animated by design.
+   Honors prefers-reduced-motion (no perpetual motion).
+   ═══════════════════════════════════════════════════════════ */
+
+@keyframes alert-flash-critical {
+  0%, 100% {
+    box-shadow: 0 0 0 1px rgba(244, 63, 94, 0.30), 0 0 14px rgba(244, 63, 94, 0.16);
+  }
+  50% {
+    box-shadow: 0 0 0 1.5px rgba(244, 63, 94, 0.60), 0 0 28px rgba(244, 63, 94, 0.42);
+  }
+}
+
+@keyframes alert-flash-urgent {
+  0%, 100% {
+    box-shadow: 0 0 0 1px rgba(249, 115, 22, 0.26), 0 0 12px rgba(249, 115, 22, 0.14);
+  }
+  50% {
+    box-shadow: 0 0 0 1.5px rgba(249, 115, 22, 0.55), 0 0 24px rgba(249, 115, 22, 0.36);
+  }
+}
+
+.alert-flash-critical {
+  animation: alert-flash-critical 1.7s ease-in-out infinite;
+}
+
+.alert-flash-urgent {
+  animation: alert-flash-urgent 2.1s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .alert-flash-critical,
+  .alert-flash-urgent {
+    animation: none;
+    /* keep a visible static indicator without motion */
+    box-shadow: 0 0 0 1px rgba(244, 63, 94, 0.45), 0 0 18px rgba(244, 63, 94, 0.28);
+  }
+  .alert-flash-urgent {
+    box-shadow: 0 0 0 1px rgba(249, 115, 22, 0.45), 0 0 16px rgba(249, 115, 22, 0.25);
+  }
+}

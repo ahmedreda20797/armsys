@@ -15,9 +15,12 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { EmployeeLink } from '@/components/shared/EmployeeLink';
 import { PageHeaderBar } from '@/components/shared/PageHeaderBar';
+import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
 import { EmployeeSearchInput } from '@/components/shared/EmployeeSearchInput';
 import { UserSearchInput } from '@/components/shared/UserSearchInput';
 import { CAPALinkBadge } from '@/components/shared/CAPALinkBadge';
+import { AttentionPanel, type AttentionItem } from '@/components/shared/AttentionPanel';
+import { CAPAInlineForm, type CapaInlineFormState } from '@/components/shared/inline-forms';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
   DialogFooter, DialogDescription,
@@ -29,7 +32,7 @@ import { Textarea } from '@/components/ui/textarea';
 import {
   Plus, Pencil, Search, X, Trash2, CalendarDays, Users,
   CheckCircle2, AlertTriangle, Clock, ClipboardList, UserCheck,
-  ArrowUpCircle, ArrowDownCircle, ShieldAlert, Ban, Bell,
+  ArrowUpCircle, ArrowDownCircle, ShieldAlert, Ban, Bell, ShieldCheck,
   ChevronDown, ChevronUp, Filter, Eye, FileText,
   TrendingUp, AlertOctagon, LayoutList, Table2, Paperclip,
   ExternalLink,
@@ -221,6 +224,10 @@ const emptyForm = {
 export default function FollowUpsPage() {
   const { user } = useAuth();
   const { isAdmin, canView, canCreate, canUpdate, canDelete } = usePermissions('followUps');
+  // §12 GLOBAL INLINE FORM STANDARD — creating a CAPA from a follow-up
+  // opens the shared inline CAPA form HERE (no navigation). Gated by
+  // the CAPA page's own create permission, not followUps'.
+  const { canCreate: canCreateCapa } = usePermissions('capa');
   const isManagerOrAdmin = isAdmin || user?.role === 'admin' || user?.role === 'manager';
 
   const [followUps, setFollowUps] = useState<FollowUp[]>([]);
@@ -343,9 +350,11 @@ export default function FollowUpsPage() {
   const overdueFollowUps = useMemo(() =>
     followUps
       .filter(f => f.nextFollowUpDate && f.nextFollowUpDate < todayStr && (f.status === 'open' || f.status === 'under_follow_up'))
-      .sort((a, b) => (a.nextFollowUpDate || '').localeCompare(b.nextFollowUpDate || ''))
-      .slice(0, 6),
+      .sort((a, b) => (a.nextFollowUpDate || '').localeCompare(b.nextFollowUpDate || '')),
     [followUps, todayStr]
+    // §10 DATA INTEGRITY: no silent cap — the panel body scrolls
+    // (bodyMaxHeight), so the group count and rows ALWAYS match the
+    // real overdue records. The old slice(0, 6) under-counted.
   );
 
   // ═══ Departments ═══
@@ -470,8 +479,15 @@ export default function FollowUpsPage() {
   const openEdit = (item: FollowUp) => {
     setEditingItem(item);
     const empName = employees.find((e: any) => e.id === item.employeeId)?.name || '';
-    const respName = systemUsers.find((u: any) => u.id === item.responsiblePerson)?.name || '';
-    setForm({
+    setForm(formFromFollowUp(item));
+    setEmployeeSearch(empName);
+    setIsDialogOpen(true);
+  };
+
+  // AttentionPanel: reuses the same edit form for the ⋮ action.
+  const formFromFollowUp = (item: FollowUp) => {
+    const empName = employees.find((e: any) => e.id === item.employeeId)?.name || '';
+    return {
       employeeId: item.employeeId,
       date: item.date,
       followUpType: item.followUpType,
@@ -489,9 +505,27 @@ export default function FollowUpsPage() {
       followUpRequired: item.followUpRequired !== false,
       status: item.status,
       attachments: item.attachments || [],
+    };
+  };
+
+  // §12 GLOBAL INLINE FORM STANDARD: route a follow-up into the CAPA
+  // create flow WITHOUT leaving this page — the shared inline CAPA
+  // form opens below the alerts, prefilled from the follow-up
+  // (previously this navigated to the CAPA page via navParams).
+  const [capaPrefill, setCapaPrefill] = useState<Partial<CapaInlineFormState> | null>(null);
+  const openCapaFromFollowUp = (item: FollowUp) => {
+    setCapaPrefill({
+      source: 'followUp',
+      title: item.subject || TYPE_OPTIONS.find((t) => t.value === item.followUpType)?.label || '',
+      department: item.department || '',
+      priority: item.priorityLevel === 'critical' ? 'critical' : item.priorityLevel === 'high' ? 'high' : 'medium',
+      employeeId: item.employeeId || '',
+      problemDescription: item.detailedDescription || item.subject || '',
+      relatedFollowUpId: item.id,
     });
-    setEmployeeSearch(empName);
-    setIsDialogOpen(true);
+    requestAnimationFrame(() => {
+      document.getElementById('followups-inline-capa')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
   };
 
   const handleDateChange = (date: string) => {
@@ -565,7 +599,9 @@ export default function FollowUpsPage() {
     }
   };
 
+  const [deleteLoading, setDeleteLoading] = useState(false);
   const handleDelete = async (id: string) => {
+    setDeleteLoading(true);
     try {
       const item = followUps.find(f => f.id === id);
       const res = await authFetch(`/api/follow-ups/${id}`, { method: 'DELETE' });
@@ -578,6 +614,8 @@ export default function FollowUpsPage() {
       }
     } catch {
       toast.error('حدث خطأ أثناء الحذف');
+    } finally {
+      setDeleteLoading(false);
     }
   };
 
@@ -640,42 +678,106 @@ export default function FollowUpsPage() {
           Never one crowded horizontal line of names again. ═══ */}
       <AnimatePresence>
         {(todaysFollowUps.length > 0 || overdueFollowUps.length > 0) && (
+          <AttentionPanel
+            title="متابعات تحتاج انتباه"
+            icon={<Bell className="size-3.5 text-amber-300" />}
+            subtitle={`${todaysFollowUps.length} اليوم · ${overdueFollowUps.length} متأخرة`}
+            persistKey="followUpsAttention"
+            groups={[
+              { key: 'overdue', label: 'متأخرة', count: overdueFollowUps.length },
+              { key: 'due', label: 'مستحقة اليوم', count: todaysFollowUps.length },
+            ]}
+            emptyState={{
+              icon: <CheckCircle2 className="size-7 text-emerald-500/50 mb-2" />,
+              title: 'لا توجد متابعات متأخرة أو مستحقة اليوم',
+              description: 'كل المتابعات في الموعد.',
+            }}
+            items={[
+              ...overdueFollowUps.map((f) => {
+                const empName = f.employeeName || employees.find((e: any) => e.id === f.employeeId)?.name || 'غير معروف';
+                return {
+                  id: f.id,
+                  severity: f.priorityLevel === 'critical' ? 'critical' : 'urgent',
+                  groupKey: 'overdue',
+                  primary: empName,
+                  secondary: f.subject || TYPE_OPTIONS.find((t) => t.value === f.followUpType)?.label || f.followUpType,
+                  trailing: f.nextFollowUpDate && (
+                    <span className="flex items-center gap-1">
+                      <Clock className="size-2.5" /> {f.nextFollowUpDate}
+                    </span>
+                  ),
+                  onClick: () => setViewingItem(f),
+                  overflowItems: [
+                    { key: 'view', label: 'عرض التفاصيل', icon: <Eye className="size-3.5" />, onSelect: () => setViewingItem(f) },
+                    { key: 'edit', label: 'تعديل', icon: <Pencil className="size-3.5" />, separatorBefore: true, onSelect: () => { setEditingItem(f); setForm({ ...formFromFollowUp(f), date: todayStr }); } },
+                    { key: 'capa', label: 'إنشاء CAPA', icon: <ShieldCheck className="size-3.5" />, separatorBefore: true, onSelect: () => openCapaFromFollowUp(f) },
+                  ],
+                } satisfies AttentionItem;
+              }),
+              ...todaysFollowUps
+                .filter((f) => !overdueFollowUps.some((o) => o.id === f.id))
+                .map((f) => {
+                  const empName = f.employeeName || employees.find((e: any) => e.id === f.employeeId)?.name || 'غير معروف';
+                  return {
+                    id: f.id,
+                    severity: 'warning',
+                    groupKey: 'due',
+                    primary: empName,
+                    secondary: f.subject || TYPE_OPTIONS.find((t) => t.value === f.followUpType)?.label || f.followUpType,
+                    trailing: f.nextFollowUpDate && (
+                      <span className="flex items-center gap-1">
+                        <Clock className="size-2.5" /> اليوم
+                      </span>
+                    ),
+                    onClick: () => setViewingItem(f),
+                    overflowItems: [
+                      { key: 'view', label: 'عرض التفاصيل', icon: <Eye className="size-3.5" />, onSelect: () => setViewingItem(f) },
+                      { key: 'edit', label: 'تعديل', icon: <Pencil className="size-3.5" />, separatorBefore: true, onSelect: () => { setEditingItem(f); setForm({ ...formFromFollowUp(f), date: todayStr }); } },
+                      { key: 'capa', label: 'إنشاء CAPA', icon: <ShieldCheck className="size-3.5" />, separatorBefore: true, onSelect: () => openCapaFromFollowUp(f) },
+                    ],
+                  } satisfies AttentionItem;
+                }),
+            ]}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* ━━━ §12 INLINE CAPA FORM — opens here (prefilled from the
+          triggering follow-up) instead of navigating to the CAPA page;
+          same motion-card pattern as the Travel inline complaint. ━━━ */}
+      <AnimatePresence>
+        {canCreateCapa && capaPrefill && (
           <motion.div
-            initial={{ opacity: 0, y: -10, scale: 0.98 }}
+            id="followups-inline-capa"
+            initial={{ opacity: 0, y: -8, scale: 0.98 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: -10, scale: 0.98 }}
+            exit={{ opacity: 0, y: -8, scale: 0.98 }}
+            transition={{ duration: 0.22, ease: [0.4, 0, 0.2, 1] }}
+            className="rounded-2xl border border-violet-500/30 bg-slate-900/60 backdrop-blur-md shadow-2xl shadow-violet-900/20"
           >
-            <Card className="border-amber-500/40 bg-amber-500/5">
-              <CardContent className="p-3.5 space-y-2">
-                <p className="text-amber-300 text-sm font-semibold flex items-center gap-2">
-                  <Bell className="size-4 shrink-0" />
-                  متابعات تحتاج انتباه
-                  <span className="text-amber-200/60 text-[11px] font-normal">
-                    (اليوم: {todaysFollowUps.length} · متأخرة: {overdueFollowUps.length})
-                  </span>
-                </p>
-                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2">
-                  {overdueFollowUps.map((f) => (
-                    <FollowUpAlertItem
-                      key={f.id}
-                      followUp={f}
-                      employeeName={f.employeeName || employees.find((e: any) => e.id === f.employeeId)?.name || 'غير معروف'}
-                      tone="overdue"
-                      onView={() => setViewingItem(f)}
-                    />
-                  ))}
-                  {todaysFollowUps.filter(f => !overdueFollowUps.some(o => o.id === f.id)).map((f) => (
-                    <FollowUpAlertItem
-                      key={f.id}
-                      followUp={f}
-                      employeeName={f.employeeName || employees.find((e: any) => e.id === f.employeeId)?.name || 'غير معروف'}
-                      tone="due"
-                      onView={() => setViewingItem(f)}
-                    />
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
+            <div className="flex items-center justify-between gap-2 px-4 py-2.5 border-b border-slate-700/50">
+              <p className="text-xs font-bold text-slate-200 flex items-center gap-2">
+                <ShieldAlert className="size-3.5 text-violet-400" />
+                إنشاء CAPA من متابعة
+              </p>
+              <Button variant="ghost" size="sm" onClick={() => setCapaPrefill(null)} className="h-7 text-xs text-slate-400 hover:text-white">
+                <X className="size-3.5 ml-1" />
+                إغلاق
+              </Button>
+            </div>
+            <div className="p-4">
+              <CAPAInlineForm
+                key={JSON.stringify(capaPrefill)}
+                onClose={() => setCapaPrefill(null)}
+                onCreated={() => {
+                  setCapaPrefill(null);
+                  void fetchData();
+                }}
+                employees={employees}
+                systemUsers={systemUsers}
+                defaultValues={capaPrefill}
+              />
+            </div>
           </motion.div>
         )}
       </AnimatePresence>
@@ -1306,14 +1408,20 @@ export default function FollowUpsPage() {
                       size="sm"
                       className="flex-1 bg-gradient-to-l from-cyan-600 to-blue-600 hover:from-cyan-700 hover:to-blue-700 text-white text-xs shadow-lg shadow-cyan-500/20"
                       onClick={() => {
-                        useAppStore.getState().navigateTo('capa', undefined, {
+                        // §12 GLOBAL INLINE FORM STANDARD — open the shared inline CAPA
+                        // form on THIS page (prefilled); close the viewer, keep context.
+                        setViewingItem(null);
+                        setCapaPrefill({
                           title: viewingItem.subject,
                           department: viewingItem.department,
                           priority: viewingItem.priorityLevel === 'critical' ? 'critical' : viewingItem.priorityLevel === 'high' ? 'high' : 'medium',
-                          employeeId: viewingItem.employeeId,
+                          employeeId: viewingItem.employeeId || '',
                           problemDescription: viewingItem.detailedDescription,
                           source: 'manual',
                           relatedFollowUpId: viewingItem.id,
+                        });
+                        requestAnimationFrame(() => {
+                          document.getElementById('followups-inline-capa')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
                         });
                       }}
                     >
@@ -1544,99 +1652,21 @@ export default function FollowUpsPage() {
         </DialogContent>
       </Dialog>
 
-      {/* ═══ Delete Confirmation ═══ */}
-      <Dialog open={!!deletingId} onOpenChange={open => { if (!open) setDeletingId(null); }}>
-        <DialogContent className="backdrop-blur-xl bg-slate-900 border-slate-700 max-w-sm">
-          <DialogHeader>
-            <DialogTitle className="text-white">تأكيد الحذف</DialogTitle>
-            <DialogDescription className="text-slate-400">هل أنت متأكد من حذف هذه المتابعة؟ لا يمكن التراجع عن هذا الإجراء.</DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="ghost" onClick={() => setDeletingId(null)} className="text-slate-400 hover:text-white">إلغاء</Button>
-            <Button variant="destructive" onClick={() => deletingId && handleDelete(deletingId)} className="bg-red-600 hover:bg-red-700 text-white">
-              حذف
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {/* ═══ Delete Confirmation — unified ConfirmDialog (§4) ═══ */}
+      <ConfirmDialog
+        open={!!deletingId}
+        onOpenChange={(open) => { if (!open) setDeletingId(null); }}
+        description="هل أنت متأكد من حذف هذه المتابعة؟ لا يمكن التراجع عن هذا الإجراء."
+        itemName={deletingId ? followUps.find((f) => f.id === deletingId)?.subject : undefined}
+        loading={deleteLoading}
+        onConfirm={async () => { if (deletingId) await handleDelete(deletingId); }}
+      />
     </div>
   );
 }
 // ══════════════════════════════════════════════════════════════
-//  FollowUpAlertItem — §8 structured alert: icon / title / employee
-//  / issue / status / date / action, each on its own labeled line.
-//  Readable in seconds; stacks on mobile.
+//  FollowUpAlertItem — REMOVED (§X refactor): all "mتابعات تحتاج
+//  انتباه" UI now flows through the system-wide <AttentionPanel>.
+//  The 3-column card grid wasted vertical space and duplicated the
+//  design language across other attention surfaces.
 // ══════════════════════════════════════════════════════════════
-function FollowUpAlertItem({
-  followUp, employeeName, tone, onView,
-}: {
-  followUp: FollowUp;
-  employeeName: string;
-  tone: 'overdue' | 'due';
-  onView: () => void;
-}) {
-  const isOverdue = tone === 'overdue';
-  const typeLabel = TYPE_OPTIONS.find((t) => t.value === followUp.followUpType)?.label ?? followUp.followUpType;
-  const statusLabel = STATUS_OPTIONS.find((st) => st.value === followUp.status)?.label ?? followUp.status;
-
-  return (
-    <div
-      className={`rounded-xl border p-3 space-y-2 ${
-        isOverdue ? 'border-red-500/30 bg-red-500/5' : 'border-amber-500/30 bg-amber-500/5'
-      }`}
-    >
-      {/* Title row: icon + headline + status badge */}
-      <div className="flex items-center justify-between gap-2">
-        <p className={`text-xs font-semibold flex items-center gap-1.5 ${isOverdue ? 'text-red-300' : 'text-amber-300'}`}>
-          {isOverdue ? <AlertOctagon className="size-3.5 shrink-0" /> : <Bell className="size-3.5 shrink-0" />}
-          {isOverdue ? 'متابعة متأخرة' : 'متابعة مستحقة اليوم'}
-        </p>
-        <Badge
-          variant="outline"
-          className={`text-[10px] px-1.5 py-0 shrink-0 ${
-            isOverdue ? 'bg-red-500/15 text-red-400 border-red-500/30' : 'bg-amber-500/15 text-amber-400 border-amber-500/30'
-          }`}
-        >
-          {isOverdue ? 'متأخرة' : 'اليوم'}
-        </Badge>
-      </div>
-
-      {/* Employee */}
-      <div className="grid grid-cols-[auto_1fr] gap-x-2 gap-y-1 text-[11px]">
-        <span className="text-slate-500">الموظف:</span>
-        <span className="text-white font-medium truncate">{employeeName}</span>
-
-        {/* Issue */}
-        <span className="text-slate-500">الموضوع:</span>
-        <span className="text-slate-300 line-clamp-2 leading-relaxed">
-          {followUp.subject || typeLabel}
-        </span>
-
-        {/* Status */}
-        <span className="text-slate-500">الحالة:</span>
-        <span className="text-slate-300">{statusLabel}</span>
-
-        {/* Date / duration */}
-        <span className="text-slate-500">{isOverdue ? 'كان مستحقاً:' : 'الاستحقاق:'}</span>
-        <span className={`font-mono ${isOverdue ? 'text-red-400' : 'text-amber-400'}`} dir="ltr">
-          {followUp.nextFollowUpDate || '—'}
-        </span>
-      </div>
-
-      {/* Action */}
-      <Button
-        size="sm"
-        variant="outline"
-        onClick={onView}
-        className={`w-full h-7 text-[11px] ${
-          isOverdue
-            ? 'border-red-500/40 text-red-300 hover:bg-red-500/15'
-            : 'border-amber-500/40 text-amber-300 hover:bg-amber-500/15'
-        }`}
-      >
-        <Eye className="size-3 ml-1" />
-        فتح المتابعة
-      </Button>
-    </div>
-  );
-}

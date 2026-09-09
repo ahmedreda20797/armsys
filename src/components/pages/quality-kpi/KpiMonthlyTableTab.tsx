@@ -8,12 +8,19 @@
 //  row shape). Columns per spec §6; sorting + filtering per §19/§20;
 //  basis banners per §7/§8/§9; Excel export per §22 through the
 //  registered unified reports (same verified rows).
+//
+//  §10: archived employees are EXCLUDED by default — the switch
+//  below opts back in and rows stay visibly labelled (🔒 + chip).
+//  §17: each row's ⋮ opens the universal PeriodComparisonDialog.
+//  §10: the master employee report (one row per employee, deduction
+//  reasons included) exports through the registered kpi-master-employee.
 // ══════════════════════════════════════════════════════════════
 
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import {
   ArrowDownUp, ChevronDown, ChevronUp, FileSpreadsheet, Lock, AlertTriangle, Info,
+  MoreVertical, ArrowLeftRight, User as UserIcon,
 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -21,12 +28,16 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Switch } from '@/components/ui/switch';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table';
+import { OverflowMenu, type OverflowMenuItem } from '@/components/shared/OverflowMenu';
+import { PeriodComparisonDialog } from '@/components/shared/comparison/PeriodComparisonDialog';
+import { useAppStore } from '@/lib/store';
 import { useKpiReportTable } from '@/hooks/use-kpi-queries';
 import { usePageState } from '@/hooks/use-page-state';
 import type { KpiReportTableParams } from '@/hooks/use-kpi-queries';
@@ -68,6 +79,7 @@ export default function KpiMonthlyTableTab({
     status: string;
     minScore: string;
     maxScore: string;
+    includeArchived: boolean;
     sort: SortState;
   }>({
     page: 'kpiReports',
@@ -80,6 +92,7 @@ export default function KpiMonthlyTableTab({
       status: 'all',
       minScore: '',
       maxScore: '',
+      includeArchived: false,
       sort: { key: 'employeeName', dir: 'asc' },
     }),
     validate: (raw) =>
@@ -99,6 +112,9 @@ export default function KpiMonthlyTableTab({
   const setMinScore = (v: string) => setTableView((s) => ({ ...s, minScore: v }));
   const maxScore = tableView.maxScore;
   const setMaxScore = (v: string) => setTableView((s) => ({ ...s, maxScore: v }));
+  // §10 — archived employees: excluded by default, opt-in via switch.
+  const includeArchived = tableView.includeArchived ?? false;
+  const setIncludeArchived = (v: boolean) => setTableView((s) => ({ ...s, includeArchived: v }));
   const sort = tableView.sort;
   const setSort = (v: SortState) => setTableView((s) => ({ ...s, sort: v }));
   const toggleSort = (key: string) => {
@@ -117,14 +133,55 @@ export default function KpiMonthlyTableTab({
       status: status === 'all' ? undefined : status,
       minScore: minScore || undefined,
       maxScore: maxScore || undefined,
+      includeArchived,
       sortBy: sort.key,
       sortDir: sort.dir,
     }),
-    [search, department, team, status, minScore, maxScore, sort],
+    [search, department, team, status, minScore, maxScore, includeArchived, sort],
   );
 
   const query = useKpiReportTable(kind, month, params);
   const report = query.data as KpiMonthlyReport | undefined;
+
+  // §17 comparison dialog state (one dialog, opened from row ⋮)
+  const [comparison, setComparison] = useState<{ id: string; name: string } | null>(null);
+  const openEmployee360 = useAppStore((s) => s.openEmployee360);
+  const [exportingMaster, setExportingMaster] = useState(false);
+
+  const handleExportMaster = async () => {
+    setExportingMaster(true);
+    try {
+      await downloadKpiReportExcel(
+        'kpi-master-employee',
+        {
+          monthKey: month,
+          employeeScope: 'all',
+          filters: includeArchived ? { includeArchived: 'true' } : undefined,
+        },
+        `kpi_master_employee_${month}.xlsx`,
+      );
+      toast.success('تم تصدير التقرير الشامل لكل الموظفين');
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'فشل التصدير');
+    } finally {
+      setExportingMaster(false);
+    }
+  };
+
+  const rowMenu = (row: { employeeId: string; employeeName: string }): OverflowMenuItem[] => [
+    {
+      key: 'comparison',
+      label: 'مقارنة الأداء',
+      icon: <ArrowLeftRight className="size-3.5" />,
+      onSelect: () => setComparison({ id: row.employeeId, name: row.employeeName }),
+    },
+    {
+      key: 'e360',
+      label: 'فتح ملف الموظف',
+      icon: <UserIcon className="size-3.5" />,
+      onSelect: () => openEmployee360(row.employeeId),
+    },
+  ];
 
   // Filter option lists derive from the loaded (scope-authorized) rows.
   const departments = useMemo(
@@ -221,7 +278,19 @@ export default function KpiMonthlyTableTab({
               />
             </div>
           </div>
-          <div className="flex justify-end">
+          <div className="flex items-center gap-2 justify-end flex-wrap">
+            <div className="flex items-center gap-1.5">
+              <Switch
+                checked={includeArchived}
+                onCheckedChange={setIncludeArchived}
+                aria-label="تضمين الموظفين المؤرشفين"
+              />
+              <Label className="text-xs text-slate-400 whitespace-nowrap">تضمين المؤرشفين</Label>
+            </div>
+            <Button variant="outline" size="sm" className="gap-1.5" onClick={() => void handleExportMaster()} disabled={query.isLoading || exportingMaster}>
+              {exportingMaster ? <Skeleton className="size-4 rounded-full" /> : <FileSpreadsheet className="h-4 w-4" />}
+              التقرير الشامل
+            </Button>
             <Button variant="outline" size="sm" className="gap-1.5" onClick={handleExport} disabled={query.isLoading}>
               <FileSpreadsheet className="h-4 w-4" />
               تصدير Excel
@@ -284,12 +353,13 @@ export default function KpiMonthlyTableTab({
                   <SortableHead label="حالة KPI" sortKey="status" sort={sort} onToggle={toggleSort} />
                   <TableHead className="text-right">الأساس</TableHead>
                   <TableHead className="text-right">المخطط</TableHead>
+                  <TableHead className="text-right w-10"><span className="sr-only">إجراءات</span></TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {report.rows.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={10} className="text-center text-slate-500 py-8">
+                    <TableCell colSpan={11} className="text-center text-slate-500 py-8">
                       لا توجد بيانات مطابقة
                     </TableCell>
                   </TableRow>
@@ -301,8 +371,8 @@ export default function KpiMonthlyTableTab({
                         <span className="text-slate-100 flex items-center gap-1.5">
                           {row.employeeName}
                           {row.archivedButEligible && (
-                            <span title="مؤرشف — أهلية تاريخية" className="inline-flex">
-                              <Lock className="h-3 w-3 text-orange-400" />
+                            <span className="inline-flex items-center gap-1 px-1.5 py-0 rounded-full bg-orange-500/10 border border-orange-500/25 text-orange-400 text-[9px] font-bold" title="مؤرشف — أهلية تاريخية">
+                              <Lock className="h-2.5 w-2.5" /> مؤرشف
                             </span>
                           )}
                         </span>
@@ -343,6 +413,9 @@ export default function KpiMonthlyTableTab({
                         <>{row.schemeName} <span className="font-mono text-slate-500">v{row.schemeVersion}</span></>
                       ) : '—'}
                     </TableCell>
+                    <TableCell className="text-right">
+                      <OverflowMenu items={rowMenu(row)} label={`إجراءات ${row.employeeName}`} />
+                    </TableCell>
                   </TableRow>
                 ))}
               </TableBody>
@@ -350,6 +423,15 @@ export default function KpiMonthlyTableTab({
           </CardContent>
         </Card>
       )}
+
+      {/* §17 — universal period comparison (opened from row ⋮) */}
+      <PeriodComparisonDialog
+        open={!!comparison}
+        onOpenChange={(o) => { if (!o) setComparison(null); }}
+        employeeId={comparison?.id ?? null}
+        employeeName={comparison?.name}
+        defaultMonth={month}
+      />
     </div>
   );
 }

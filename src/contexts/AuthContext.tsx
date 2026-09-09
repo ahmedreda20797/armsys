@@ -13,11 +13,39 @@ import {
   shouldPollNow,
   shouldRefreshOnForeground,
 } from '@/lib/polling-policy';
+import {
+  LOGIN_ERROR_CODES,
+  LOGIN_ERROR_MESSAGES,
+  type LoginErrorCode,
+  type LoginErrorField,
+} from '@/lib/login-errors';
+
+// ─── Structured login result ───────────────────────────────────────
+// The caller maps `errorKey` to a field-specific Arabic message via
+// lib/login-errors — raw server text is never matched or displayed
+// blindly. `detail` is console-only diagnostics (never rendered).
+export interface LoginResult {
+  ok: boolean;
+  errorKey: LoginErrorCode | string | null;
+  field: LoginErrorField;
+  message: string | null;
+  detail?: string | null;
+  remainingAttempts?: number | null;
+  retryAfterSeconds?: number | null;
+}
+
+// A hung login request must never leave the user on a spinner — the
+// fetch is aborted after this window and reported as NETWORK_ERROR.
+// 45s because a COLD first login after a server restart can legitimately
+// take ~20s: Firebase Admin SDK init + first OAuth token fetch + full
+// users-table download (findFirst) + bcrypt migration rehash. Warm
+// logins complete in ~1s; the timeout is the safety net, not the norm.
+const LOGIN_TIMEOUT_MS = 45_000;
 
 interface AuthContextType {
   user: AuthUser | null;
   loading: boolean;
-  login: (email: string, password: string) => Promise<boolean>;
+  login: (email: string, password: string) => Promise<LoginResult>;
   logout: () => Promise<void>;
   error: string | null;
   errorKey: string | null;
@@ -30,7 +58,7 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType>({
   user: null,
   loading: true,
-  login: async () => false,
+  login: async () => ({ ok: false, errorKey: null, field: 'general', message: null }),
   logout: async () => {},
   error: null,
   errorKey: null,
@@ -376,30 +404,53 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setErrorKey(null);
   }, []);
 
-  const login = useCallback(async (email: string, password: string): Promise<boolean> => {
-    setLoading(true);
+  const login = useCallback(async (email: string, password: string): Promise<LoginResult> => {
     setError(null);
     setErrorKey(null);
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), LOGIN_TIMEOUT_MS);
+
     try {
       const res = await fetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: email.trim().toLowerCase(), password }),
+        signal: controller.signal,
       });
 
-      const data = await res.json().catch(() => ({}));
+      const data = await res.json().catch(() => null);
 
       if (!res.ok) {
-        setError(data.error || 'البريد الإلكتروني أو كلمة المرور غير صحيحة');
-        setErrorKey(data.errorKey || 'INVALID_CREDENTIALS');
-        return false;
+        const errorKey = (typeof data?.errorKey === 'string' && data.errorKey) || LOGIN_ERROR_CODES.SERVER_ERROR;
+        // Technical details for debugging — codes and server-side
+        // diagnostics only; credentials are never logged.
+        console.error('[Auth] Login failed:', {
+          status: res.status,
+          errorKey,
+          detail: data?.detail ?? data?.error ?? null,
+        });
+        return {
+          ok: false,
+          errorKey,
+          field: data?.field === 'email' || data?.field === 'password' ? data.field : 'general',
+          message: typeof data?.error === 'string' ? data.error : null,
+          detail: typeof data?.detail === 'string' ? data.detail : null,
+          remainingAttempts: typeof data?.remainingAttempts === 'number' ? data.remainingAttempts : null,
+          retryAfterSeconds: typeof data?.retryAfterSeconds === 'number' ? data.retryAfterSeconds : null,
+        };
       }
 
-      const { accessToken: newAccessToken, refreshToken, user: userData } = data;
+      const { accessToken: newAccessToken, refreshToken, user: userData } = data || {};
 
       if (!userData || !userData.id || !newAccessToken) {
-        setError('حدث خطأ في استجابة الخادم');
-        return false;
+        console.error('[Auth] Login returned an invalid payload:', data);
+        return {
+          ok: false,
+          errorKey: LOGIN_ERROR_CODES.SERVER_ERROR,
+          field: 'general',
+          message: LOGIN_ERROR_MESSAGES.SERVER_ERROR,
+        };
       }
 
       // Store tokens securely
@@ -413,12 +464,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setRequiresPasswordChange(userData.requiresPasswordChange || false);
       localStorage.setItem(USER_DATA_KEY, JSON.stringify(authUser));
 
-      return true;
-    } catch {
-      setError('خطأ في الاتصال بالخادم');
-      return false;
+      return { ok: true, errorKey: null, field: 'general', message: null };
+    } catch (err: any) {
+      // Network failure or the timeout abort — same safe message either way.
+      const timedOut = err?.name === 'AbortError';
+      console.error(
+        '[Auth] Login network error:',
+        timedOut ? `request aborted after ${LOGIN_TIMEOUT_MS}ms (timeout)` : err
+      );
+      return {
+        ok: false,
+        errorKey: LOGIN_ERROR_CODES.NETWORK_ERROR,
+        field: 'general',
+        message: LOGIN_ERROR_MESSAGES.NETWORK_ERROR,
+      };
     } finally {
-      setLoading(false);
+      clearTimeout(timeoutId);
+      // Deliberately NOT touching the global `loading` here — it drives
+      // the full-screen session overlay (AppShell / page.tsx) and would
+      // unmount the login form mid-request, wiping inline field errors.
+      // The LoginPage owns its submit spinner and resets it in finally.
     }
   }, []);
 

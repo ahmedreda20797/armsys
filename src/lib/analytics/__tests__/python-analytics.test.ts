@@ -352,7 +352,12 @@ describe('Phase 5 — analytics response mapping (no Python needed)', () => {
     assert.match(source, /resolveEmployeeScopeFromDb/);
     assert.match(source, /notFoundError\('الموظف غير موجود'\)/);
     assert.match(source, /getEmployeePerformanceDataset/);
-    assert.match(source, /runPythonAnalytics/);
+    // Phase 5.3: the route's execution path is the IN-PROCESS
+    // TypeScript engine (runEmployeeAnalytics) — no Python runtime in
+    // the deployment. The bridge itself stays covered by its own
+    // dedicated tests (remote-bridge.test.ts).
+    assert.match(source, /runEmployeeAnalytics/);
+    assert.doesNotMatch(source, /runPythonAnalytics/);
     // Authorization must appear BEFORE the dataset fetch in the source
     // (compare CALL sites, not import lines).
     assert.ok(

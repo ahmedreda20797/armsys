@@ -4,6 +4,7 @@ import { requireAuth } from '@/lib/verify-permission';
 import { asScopeViewer, employeeInScope, authScopeViewer, filterRowsByEmployeeScope, resolveEmployeeScopeFromDb } from '@/lib/scope/server';
 import { computeRisk, isOverdueFollowUp } from '@/lib/metrics';
 import { createSmartNotification } from '@/lib/rules-engine';
+import { dispatchAutomationEvent } from '@/lib/automation/event-bridge';
 
 const SCORE_MAP: Record<string, number> = { low: 1, medium: 3, high: 5, critical: 10 };
 const ACTIVE_FOLLOWUP_STATUSES = ['open', 'under_review', 'under_follow_up'] as const;
@@ -196,6 +197,16 @@ export async function POST(request: NextRequest) {
     });
 
     // ═══ Create notifications (using AppNotification schema) ═══
+    // §13: automation event — active followUps-module rules fire here.
+    void dispatchAutomationEvent('record_created', 'followUps', {
+      employeeId,
+      employeeName: empName,
+      department: autoDept,
+      status: status || 'open',
+      priority: priorityLevel || 'medium',
+      sourceRecordId: (followUp as any).id,
+      extra: { followUpType, subject: subject || null },
+    });
     try {
       const respRecord = employees.find((e: any) => e.id === responsiblePerson);
       const respName = respRecord?.name || 'مسؤول';

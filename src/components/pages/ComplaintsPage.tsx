@@ -60,10 +60,16 @@ import { useAppStore } from '@/lib/store';
 import { CAPALinkBadge } from '@/components/shared/CAPALinkBadge';
 import { FavoriteToggle, PinToggle } from '@/components/shared/NavigationMarks';
 import { PageHeaderBar } from '@/components/shared/PageHeaderBar';
+import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
 import { complaintPrefillFromTravelIntent, hasCreateIntent } from '@/lib/record-prefill';
 import { OverflowMenu, type OverflowMenuItem } from '@/components/shared/OverflowMenu';
 import { useMarkState, useFavoriteToggleAction, usePinToggleAction } from '@/components/shared/NavigationMarks';
 import { Star, Pin as PinIcon } from 'lucide-react';
+import {
+  ComplaintInlineForm,
+  CAPAInlineForm,
+  type CapaInlineFormState,
+} from '@/components/shared/inline-forms';
 
 type ComplaintDescriptor = {
   targetType: 'record';
@@ -208,6 +214,10 @@ function getStatusColor(status: string) {
 
 export default function ComplaintsPage() {
   const { canView, canCreate, canUpdate, canDelete } = usePermissions('complaints');
+  // §12 GLOBAL INLINE FORM STANDARD — creating a CAPA from a complaint
+  // opens the shared inline CAPA form HERE (gated by CAPA's own
+  // create permission); it never navigates to the CAPA page.
+  const { canCreate: canCreateCapa } = usePermissions('capa');
 
   // Phase 6.3 (§8): filter context persists per user (session-scoped).
   // Milestone 7 §15: OPEN vs CLOSED case separation — open cases stay
@@ -246,11 +256,14 @@ export default function ComplaintsPage() {
   const mountIntent = complaintPrefillFromTravelIntent(navParams);
   const hasMountIntent = hasCreateIntent(navParams) && navParams?.source === 'travel';
 
-  // UX Corrections §1 (ROOT CAUSE FIX): the destination page remounts
-  // per navigation, so the intent MUST open the dialog at mount — the
-  // previous render-time guard compared navParams to useState(navParams)
-  // (always equal on mount) and the dialog never auto-opened.
-  const [isDialogOpen, setIsDialogOpen] = useState(() => hasMountIntent);
+  // UX Corrections §1 (ROOT CAUSE FIX) + §12 GLOBAL INLINE FORM
+  // STANDARD: CREATE now opens the shared inline ComplaintInlineForm
+  // card IN PAGE (same component Travel and the Dashboard use) —
+  // the Dialog below is kept for EDIT only. Travel → Complaint
+  // intents open the same inline card, prefilled.
+  const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [isCreateInlineOpen, setIsCreateInlineOpen] = useState(() => hasMountIntent);
+  const [createDefaults, setCreateDefaults] = useState<Partial<ComplaintFormData>>(() => mountIntent);
   const [editingComplaint, setEditingComplaint] = useState<Complaint | null>(null);
   const [form, setForm] = useState<ComplaintFormData>(() => ({ ...emptyForm, ...mountIntent }));
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -291,6 +304,7 @@ export default function ComplaintsPage() {
   // Travel → Complaint intents arriving WHILE the page is already
   // mounted (the mount-time intent is handled by the initializers
   // above). Compiler-endorsed "adjust state during render" guard.
+  // §12: opens the INLINE create card, prefilled — never the dialog.
   const [lastHandledNav, setLastHandledNav] = useState(navParams);
   if (navParams !== lastHandledNav) {
     setLastHandledNav(navParams);
@@ -300,13 +314,27 @@ export default function ComplaintsPage() {
         page: 'travel',
         recordId: typeof navParams.sourceRecordId === 'string' ? navParams.sourceRecordId : '',
       });
-      setForm((p) => ({
-        ...p,
-        ...complaintPrefillFromTravelIntent(navParams),
-      }));
-      setIsDialogOpen(true);
+      setCreateDefaults(complaintPrefillFromTravelIntent(navParams));
+      setIsCreateInlineOpen(true);
     }
   }
+
+  // §12 — inline CAPA creation from a complaint card / overflow menu.
+  const [capaPrefill, setCapaPrefill] = useState<Partial<CapaInlineFormState> | null>(null);
+  const openCapaFromComplaint = (complaint: Complaint) => {
+    setCapaPrefill({
+      title: `شكوى عميل — ${complaint.complaintType}`,
+      department: '',
+      priority: complaint.severity === 'critical' ? 'critical' : complaint.severity === 'high' ? 'high' : 'medium',
+      employeeId: complaint.employeeId || '',
+      problemDescription: complaint.description,
+      source: 'complaint',
+      relatedComplaintId: complaint.id,
+    });
+    requestAnimationFrame(() => {
+      document.getElementById('complaints-inline-capa')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  };
 
   // §15 case classification — same vocabulary as the stats logic:
   // open = open/investigating/pending_resolution; closed = resolved/closed.
@@ -379,11 +407,17 @@ export default function ComplaintsPage() {
   }
 
   // ═══ Form handlers ═══
-  const openCreateDialog = () => {
+  // §12 GLOBAL INLINE FORM STANDARD — create opens the shared inline
+  // card (same component as Travel / Dashboard); the user stays on
+  // the Complaints page the whole time.
+  const openCreateInline = () => {
     setEditingComplaint(null);
     setSourceContext(null);
-    setForm({ ...emptyForm });
-    setIsDialogOpen(true);
+    setCreateDefaults({});
+    setIsCreateInlineOpen(true);
+    requestAnimationFrame(() => {
+      document.getElementById('complaints-inline-create')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
   };
 
   const openEditDialog = (complaint: Complaint) => {
@@ -469,8 +503,89 @@ export default function ComplaintsPage() {
         iconClassName="bg-rose-500/15 border-rose-500/30 text-rose-400"
         title="شكاوى العملاء"
         subtitle={`${filtered.length} شكوى مسجلة`}
-        primaryAction={canCreate ? { label: 'إضافة شكوى', onClick: openCreateDialog } : undefined}
+        primaryAction={canCreate ? { label: 'إضافة شكوى', onClick: openCreateInline } : undefined}
       />
+
+      {/* ━━━ §12 INLINE CREATE FORM — the SAME shared ComplaintInlineForm
+          used by Travel deal cards and the Dashboard quick action, so the
+          create experience is identical no matter where it was triggered.
+          Shows the sky "تمت التعبئة تلقائياً" banner for Travel intents. ━━━ */}
+      <AnimatePresence>
+        {canCreate && isCreateInlineOpen && (
+          <motion.div
+            id="complaints-inline-create"
+            initial={{ opacity: 0, y: -8, scale: 0.98 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -8, scale: 0.98 }}
+            transition={{ duration: 0.22, ease: [0.4, 0, 0.2, 1] }}
+            className="rounded-2xl border border-rose-500/30 bg-slate-900/60 backdrop-blur-md shadow-2xl shadow-rose-900/20"
+          >
+            <div className="flex items-center justify-between gap-2 px-4 py-2.5 border-b border-slate-700/50">
+              <p className="text-xs font-bold text-slate-200 flex items-center gap-2">
+                <Plus className="size-3.5 text-rose-400" />
+                إضافة شكوى جديدة
+              </p>
+              <Button variant="ghost" size="sm" onClick={() => { setIsCreateInlineOpen(false); setSourceContext(null); }} className="h-7 text-xs text-slate-400 hover:text-white">
+                <X className="size-3.5 ml-1" />
+                إغلاق
+              </Button>
+            </div>
+            <div className="p-4">
+              {sourceContext && (
+                <div className="mb-3 rounded-lg border border-sky-500/30 bg-sky-500/10 px-3 py-2 text-[11px] text-sky-300 flex items-center gap-1.5">
+                  <Plane className="size-3.5 shrink-0" />
+                  تمت التعبئة تلقائياً من صفحة السفر — راجع البيانات وعدّلها قبل الحفظ.
+                </div>
+              )}
+              <ComplaintInlineForm
+                key={JSON.stringify(createDefaults)}
+                onClose={() => { setIsCreateInlineOpen(false); setSourceContext(null); }}
+                onCreated={() => { setIsCreateInlineOpen(false); setSourceContext(null); }}
+                employees={employees as never}
+                systemUsers={systemUsers}
+                sourceContext={sourceContext ?? undefined}
+                defaultValues={createDefaults}
+              />
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ━━━ §12 INLINE CAPA FORM — opens here (prefilled from the
+          triggering complaint) instead of navigating to the CAPA page. ━━━ */}
+      <AnimatePresence>
+        {canCreateCapa && capaPrefill && (
+          <motion.div
+            id="complaints-inline-capa"
+            initial={{ opacity: 0, y: -8, scale: 0.98 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -8, scale: 0.98 }}
+            transition={{ duration: 0.22, ease: [0.4, 0, 0.2, 1] }}
+            className="rounded-2xl border border-violet-500/30 bg-slate-900/60 backdrop-blur-md shadow-2xl shadow-violet-900/20"
+          >
+            <div className="flex items-center justify-between gap-2 px-4 py-2.5 border-b border-slate-700/50">
+              <p className="text-xs font-bold text-slate-200 flex items-center gap-2">
+                <ShieldAlert className="size-3.5 text-violet-400" />
+                إنشاء CAPA من شكوى
+              </p>
+              <Button variant="ghost" size="sm" onClick={() => setCapaPrefill(null)} className="h-7 text-xs text-slate-400 hover:text-white">
+                <X className="size-3.5 ml-1" />
+                إغلاق
+              </Button>
+            </div>
+            <div className="p-4">
+              <CAPAInlineForm
+                key={JSON.stringify(capaPrefill)}
+                onClose={() => setCapaPrefill(null)}
+                onCreated={() => setCapaPrefill(null)}
+                employees={employees as never}
+                systemUsers={systemUsers}
+                defaultValues={capaPrefill}
+              />
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* ═══ Stats Row ═══ */}
       {complaints.length > 0 && (
@@ -669,6 +784,7 @@ export default function ComplaintsPage() {
                             canDelete={canDelete}
                             onEdit={() => openEditDialog(complaint)}
                             onDelete={() => setDeletingId(complaint.id)}
+                            onCreateCapa={() => openCapaFromComplaint(complaint)}
                           />
                         </div>
                       </div>
@@ -739,17 +855,7 @@ export default function ComplaintsPage() {
                           size="sm"
                           variant="outline"
                           className="flex-1 text-[11px] border-cyan-500/30 text-cyan-400 hover:bg-cyan-500/10 h-7"
-                          onClick={() => {
-                            useAppStore.getState().navigateTo('capa', undefined, {
-                              title: `شكوى عميل — ${complaint.complaintType}`,
-                              department: '',
-                              priority: complaint.severity === 'critical' ? 'critical' : complaint.severity === 'high' ? 'high' : 'medium',
-                              employeeId: complaint.employeeId || '',
-                              problemDescription: complaint.description,
-                              source: 'complaint',
-                              relatedComplaintId: complaint.id,
-                            });
-                          }}
+                          onClick={() => openCapaFromComplaint(complaint)}
                         >
                           <ShieldAlert className="size-3 ml-1" />
                           إنشاء CAPA من الشكوى
@@ -949,33 +1055,15 @@ export default function ComplaintsPage() {
         </DialogContent>
       </Dialog>
 
-      {/* ═══ Delete Confirmation Dialog ═══ */}
-      <Dialog open={!!deletingId} onOpenChange={(open) => { if (!open) setDeletingId(null); }}>
-        <DialogContent className="bg-slate-900 border-slate-700/60 max-w-sm">
-          <DialogHeader>
-            <DialogTitle className="text-white text-lg">تأكيد الحذف</DialogTitle>
-            <DialogDescription className="text-slate-500 text-xs">
-              هل أنت متأكد من حذف هذه الشكوى؟ لا يمكن التراجع عن هذا الإجراء.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter className="gap-2 sm:gap-0">
-            <Button
-              variant="ghost"
-              onClick={() => setDeletingId(null)}
-              className="text-slate-400 hover:text-white hover:bg-slate-800"
-            >
-              إلغاء
-            </Button>
-            <Button
-              onClick={() => deletingId && handleDelete(deletingId)}
-              disabled={deleteMutation.isPending}
-              className="bg-red-600 hover:bg-red-700 text-white"
-            >
-              {deleteMutation.isPending ? 'جاري الحذف...' : 'حذف'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {/* ═══ Delete Confirmation — unified ConfirmDialog (§4) ═══ */}
+      <ConfirmDialog
+        open={!!deletingId}
+        onOpenChange={(open) => { if (!open) setDeletingId(null); }}
+        description="هل أنت متأكد من حذف هذه الشكوى؟ لا يمكن التراجع عن هذا الإجراء."
+        itemName={deletingId ? complaints.find((c) => c.id === deletingId)?.customerName : undefined}
+        loading={deleteMutation.isPending}
+        onConfirm={async () => { if (deletingId) await handleDelete(deletingId); }}
+      />
     </div>
   );
 }
@@ -985,13 +1073,14 @@ export default function ComplaintsPage() {
 //  📌 pin / CAPA / delete are grouped in the reusable ⋮ menu.
 // ══════════════════════════════════════════════════════════════
 function ComplaintCardActions({
-  complaint, canUpdate, canDelete, onEdit, onDelete,
+  complaint, canUpdate, canDelete, onEdit, onDelete, onCreateCapa,
 }: {
   complaint: Complaint;
   canUpdate: boolean;
   canDelete: boolean;
   onEdit: () => void;
   onDelete: () => void;
+  onCreateCapa: () => void;
 }) {
   const descriptor: ComplaintDescriptor = {
     targetType: 'record',
@@ -1025,17 +1114,9 @@ function ComplaintCardActions({
       label: 'إنشاء CAPA',
       icon: <ShieldAlert className="size-3.5" />,
       separatorBefore: true,
-      onSelect: () => {
-        useAppStore.getState().navigateTo('capa', undefined, {
-          title: `شكوى عميل — ${complaint.complaintType}`,
-          department: '',
-          priority: complaint.severity === 'critical' ? 'critical' : complaint.severity === 'high' ? 'high' : 'medium',
-          employeeId: complaint.employeeId || '',
-          problemDescription: complaint.description,
-          source: 'complaint',
-          relatedComplaintId: complaint.id,
-        });
-      },
+      // §12 GLOBAL INLINE FORM STANDARD — opens the inline CAPA form on
+      // THIS page (no navigation to the CAPA page).
+      onSelect: onCreateCapa,
     },
   );
   if (canDelete) {

@@ -41,6 +41,10 @@ export async function GET(request: NextRequest) {
       dashboard: record?.dashboard ?? {},
       favorites: record?.favorites ?? [],
       pins: record?.pins ?? [],
+      // §10 GLOBAL ALERT CONTRACT — UI flags (AttentionPanel collapse
+      // state) must round-trip, otherwise every alert card re-expands
+      // on refetch and the collapse control feels broken.
+      ui: record?.ui ?? {},
       updatedAt: record?.updatedAt ?? null,
     });
   } catch (error) {
@@ -63,12 +67,14 @@ export async function PUT(request: NextRequest) {
     const existing = await getById<UserPreferences>(USER_PREFERENCES_TABLE, auth.userId);
     // Merge over the previous record so a partial PUT (sidebar only)
     // never wipes the dashboard preferences (arrays replace wholesale
-    // when present — the client owns the read-modify-write).
+    // when present — the client owns the read-modify-write). The `ui`
+    // flags namespace merges per-key (§10 alert collapse state).
     const merged: UserPreferences = {
       sidebar: { ...(existing?.sidebar ?? {}), ...(sanitized.sidebar ?? {}) },
       dashboard: { ...(existing?.dashboard ?? {}), ...(sanitized.dashboard ?? {}) },
       favorites: sanitized.favorites ?? existing?.favorites ?? [],
       pins: sanitized.pins ?? existing?.pins ?? [],
+      ui: { ...(existing?.ui ?? {}), ...(sanitized.ui ?? {}) },
       updatedAt: new Date().toISOString(),
     };
 

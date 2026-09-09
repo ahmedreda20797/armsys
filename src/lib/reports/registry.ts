@@ -27,6 +27,8 @@ import type {
 } from './types';
 import { runQualityDeductionsReport } from './runners/quality-deductions';
 import { runKpiReport } from './runners/kpi-monthly';
+import { runKpiMasterEmployeeReport } from './runners/kpi-master-employee';
+import { groupQualityDeductionsByEmployee } from './grouping/quality-deductions-grouped';
 
 // ─────────────────────────────────────────────────────────────
 //  Runner contract
@@ -255,12 +257,139 @@ const KPI_HISTORICAL_REPORT: RegisteredReport = {
   },
 };
 
+/**
+ * §11 Quality Deductions — EMPLOYEE-GROUPED variant. ONE row per
+ * employee (count · totals · chronological multi-line reasons cell)
+ * with the deductions nested for on-screen expansion. Reads the SAME
+ * verified flat rows as quality-deductions (one data path).
+ */
+export const QUALITY_DEDUCTIONS_GROUPED_REPORT: RegisteredReport<Record<string, unknown>> = {
+  definition: {
+    reportId: 'quality-deductions-grouped',
+    name: 'تقرير خصومات الجودة — مجمّع حسب الموظف',
+    description: 'صف واحد لكل موظف: عدد الخصومات وإجمالي الأيام والمبلغ مع تفاصيل الخصومات مرتبة زمنياً داخل الصف',
+    domain: 'quality-deductions',
+    reportType: 'operational',
+    enabled: true,
+    permission: {
+      pageId: 'reports',
+      action: 'view',
+      allowedEmployeeScopeModes: ['single', 'multiple', 'all'],
+    },
+    timeMechanism: 'both',
+    allowedScopes: ['selected_month', 'current_month', 'previous_month', 'last_3_months', 'last_6_months', 'current_year', 'custom_range'],
+    allowedFilters: QUALITY_DEDUCTIONS_REPORT.definition.allowedFilters,
+    visibleColumns: [
+      { key: 'employeeName', label: 'الموظف', origin: 'raw' },
+      { key: 'department', label: 'القسم', origin: 'raw' },
+      { key: 'deductionCount', label: 'عدد الخصومات', origin: 'raw' },
+      { key: 'totalDeductionDays', label: 'إجمالي أيام الخصم', origin: 'raw' },
+      { key: 'totalMonetaryAmount', label: 'إجمالي المبلغ (ج.م)', origin: 'raw' },
+      { key: 'reasons', label: 'تفاصيل الخصومات', origin: 'raw', width: 60 },
+    ],
+    availableMetrics: [
+      { metricId: 'employees', label: 'عدد الموظفين', origin: 'raw', unit: 'count' },
+      { metricId: 'deductionCount', label: 'عدد الخصومات', origin: 'raw', unit: 'count' },
+      { metricId: 'totalDeductionDays', label: 'إجمالي أيام الخصم', origin: 'raw', unit: 'days' },
+      { metricId: 'totalMonetaryAmount', label: 'إجمالي المبلغ المالي', origin: 'raw', unit: 'EGP' },
+    ],
+    exportFormats: ['view', 'print', 'excel'],
+    dataMode: 'live',
+  },
+  run: async (ctx) => {
+    const flat = await runQualityDeductionsReport(ctx.resolved);
+    const groups = groupQualityDeductionsByEmployee(
+      flat.rows as unknown as Parameters<typeof groupQualityDeductionsByEmployee>[0],
+    );
+    return {
+      rows: groups as unknown as Record<string, unknown>[],
+      summary: {
+        employees: groups.length,
+        deductionCount: flat.summary.deductionCount,
+        totalDeductionDays: flat.summary.totalDeductionDays,
+        totalMonetaryAmount: flat.summary.totalMonetaryAmount,
+      },
+      hasData: groups.length > 0,
+      dataMode: flat.dataMode,
+    } as unknown as ReportRunnerResult<Record<string, unknown>>;
+  },
+};
+
+/**
+ * §10 MASTER EMPLOYEE REPORT — one row per employee with quality
+ * scores, deduction count/reasons (bulleted multi-line cell), evidence
+ * references and a short summary. The management-grade monthly export.
+ */
+export const KPI_MASTER_EMPLOYEE_REPORT: RegisteredReport<Record<string, unknown>> = {
+  definition: {
+    reportId: 'kpi-master-employee',
+    name: 'التقرير الشامل لكل الموظفين (KPI)',
+    description: 'صف واحد لكل موظف: الدرجات والحالة وعدد الخصومات وأسبابها مع الأدلة والملخص — تقرير الإدارة الشهري الشامل',
+    domain: 'quality',
+    reportType: 'comprehensive',
+    enabled: true,
+    permission: KPI_PERMISSION,
+    timeMechanism: 'month-scope',
+    allowedScopes: ['selected_month', 'current_month', 'previous_month'],
+    allowedFilters: [
+      { key: 'monthKey', label: 'الشهر', control: 'month-select' },
+      { key: 'employeeId', label: 'الموظف', control: 'employee-single' },
+      { key: 'employeeScope', label: 'نطاق الموظفين', control: 'employee-scope' },
+      { key: 'department', label: 'القسم', control: 'department' },
+      {
+        key: 'includeArchived',
+        label: 'تضمين المؤرشفين',
+        control: 'select',
+        options: [
+          { value: 'false', label: 'بدون المؤرشفين (افتراضي)' },
+          { value: 'true', label: 'تضمين المؤرشفين' },
+        ],
+      },
+    ],
+    visibleColumns: [
+      { key: 'employeeName', label: 'الموظف', origin: 'raw' },
+      { key: 'employeeCode', label: 'الرقم الوظيفي', origin: 'raw' },
+      { key: 'department', label: 'القسم', origin: 'raw' },
+      { key: 'period', label: 'الفترة', origin: 'raw' },
+      { key: 'qualityScore', label: 'درجة الجودة %', origin: 'canonical', source: 'quality' },
+      { key: 'qualityWeight', label: 'وزن الجودة %', origin: 'canonical', source: 'kpi-scheme' },
+      { key: 'qualityContribution', label: 'مساهمة الجودة', origin: 'canonical', source: 'final-kpi' },
+      { key: 'weightedTotal', label: 'الإجمالي الموزون', origin: 'canonical', source: 'final-kpi' },
+      { key: 'qualityStatus', label: 'حالة الجودة', origin: 'canonical', source: 'quality' },
+      { key: 'kpiStatus', label: 'حالة التقرير', origin: 'canonical', source: 'final-kpi' },
+      { key: 'deductionCount', label: 'عدد الخصومات', origin: 'raw' },
+      { key: 'deductionDays', label: 'أيام الخصم', origin: 'raw' },
+      { key: 'deductionAmount', label: 'مبلغ الخصومات (ج.م)', origin: 'raw' },
+      { key: 'deductionReasons', label: 'أسباب الخصومات', origin: 'raw', width: 60 },
+      { key: 'evidenceRefs', label: 'الأدلة / المراجع', origin: 'raw', width: 28 },
+      { key: 'summary', label: 'الملخص', origin: 'raw', width: 44 },
+      { key: 'archived', label: 'مؤرشف', origin: 'raw' },
+    ],
+    availableMetrics: [
+      { metricId: 'employees', label: 'عدد الموظفين', origin: 'raw', unit: 'count' },
+      { metricId: 'withDeductions', label: 'موظفون بخصومات', origin: 'raw', unit: 'count' },
+      { metricId: 'totalDeductions', label: 'إجمالي الخصومات', origin: 'raw', unit: 'count' },
+      { metricId: 'totalDeductionDays', label: 'إجمالي أيام الخصم', origin: 'raw', unit: 'days' },
+      { metricId: 'totalDeductionAmount', label: 'إجمالي مبالغ الخصومات', origin: 'raw', unit: 'EGP' },
+      { metricId: 'avgQualityScore', label: 'متوسط درجة الجودة', origin: 'canonical', source: 'quality', unit: 'percent' },
+    ],
+    exportFormats: ['view', 'print', 'excel'],
+    dataMode: 'hybrid',
+  },
+  run: async (ctx) => {
+    const result = await runKpiMasterEmployeeReport(ctx.resolved);
+    return result as unknown as ReportRunnerResult<Record<string, unknown>>;
+  },
+};
+
 /** The registry. Future reports append here — nothing else changes. */
 const REGISTRY: RegisteredReport[] = [
   QUALITY_DEDUCTIONS_REPORT as RegisteredReport,
+  QUALITY_DEDUCTIONS_GROUPED_REPORT as RegisteredReport,
   KPI_MONTHLY_REPORT as RegisteredReport,
   KPI_MTD_REPORT as RegisteredReport,
   KPI_HISTORICAL_REPORT as RegisteredReport,
+  KPI_MASTER_EMPLOYEE_REPORT as RegisteredReport,
 ];
 
 // ─────────────────────────────────────────────────────────────

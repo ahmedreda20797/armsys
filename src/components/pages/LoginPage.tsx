@@ -2,12 +2,19 @@
 
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useAuth } from '@/contexts/AuthContext';
+import { useAuth, type LoginResult } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Lock, Mail, Eye, EyeOff } from 'lucide-react';
+import { Lock, Mail, Eye, EyeOff, AlertCircle } from 'lucide-react';
 import { toast } from 'sonner';
+import { cn } from '@/lib/utils';
+import {
+  LOGIN_ERROR_CODES,
+  LOGIN_ERROR_MESSAGES,
+  LOGIN_MESSAGES,
+  isValidEmailFormat,
+} from '@/lib/login-errors';
 
 // ── Deterministic year — rendered only on client to avoid mismatch ──
 function CopyrightYear() {
@@ -15,6 +22,23 @@ function CopyrightYear() {
   // eslint-disable-next-line react-hooks/set-state-in-effect -- hydration-safe client-only value: reading the clock during render would cause an SSR mismatch.
   useEffect(() => setYear(new Date().getFullYear()), []);
   return <>{year ?? '2024'}</>;
+}
+
+// ── Inline field error (RTL, below the input) ──
+function FieldError({ id, message }: { id: string; message: string }) {
+  return (
+    <motion.p
+      id={id}
+      role="alert"
+      initial={{ opacity: 0, y: -4 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: -4 }}
+      className="flex items-center gap-1.5 text-xs font-medium text-red-400"
+    >
+      <AlertCircle className="size-3.5 shrink-0" aria-hidden="true" />
+      <span>{message}</span>
+    </motion.p>
+  );
 }
 
 // ═══ Cosmic loading screen ═══
@@ -88,26 +112,127 @@ export function CosmicLoadingScreen() {
 // ═══ Login Page ═══
 // Foreground only — PersistentBackground is mounted once in App Shell (page.tsx)
 export default function LoginPage() {
-  const { login, error, loading, clearError } = useAuth();
+  const { login, error: sessionError, loading: sessionLoading, clearError } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const [localLoading, setLocalLoading] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [emailError, setEmailError] = useState<string | null>(null);
+  const [passwordError, setPasswordError] = useState<string | null>(null);
+  const [formError, setFormError] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (error) clearError();
-     
-  }, [email, password]);
+  // Editing any field dismisses stale errors (session banner + general
+  // form error; per-field errors clear with their own value).
+  const handleEmailChange = (value: string) => {
+    setEmail(value);
+    if (emailError) setEmailError(null);
+    if (formError) setFormError(null);
+    if (sessionError) clearError();
+  };
+
+  const handlePasswordChange = (value: string) => {
+    setPassword(value);
+    if (passwordError) setPasswordError(null);
+    if (formError) setFormError(null);
+    if (sessionError) clearError();
+  };
+
+  /** Map a structured login failure to inline field errors / general banner. */
+  const applyLoginError = (result: LoginResult) => {
+    switch (result.errorKey) {
+      case LOGIN_ERROR_CODES.EMAIL_NOT_FOUND:
+      case LOGIN_ERROR_CODES.INVALID_EMAIL:
+        setEmailError(LOGIN_ERROR_MESSAGES[result.errorKey]);
+        return;
+
+      case LOGIN_ERROR_CODES.INVALID_PASSWORD:
+        setPasswordError(LOGIN_ERROR_MESSAGES[result.errorKey]);
+        return;
+
+      case LOGIN_ERROR_CODES.VALIDATION_ERROR:
+        // Server-side defense in depth — the client normally catches
+        // these first. Show on the field the server hinted at.
+        if (result.field === 'email') {
+          setEmailError(LOGIN_MESSAGES.EMAIL_REQUIRED);
+        } else if (result.field === 'password') {
+          setPasswordError(LOGIN_MESSAGES.PASSWORD_REQUIRED);
+        } else {
+          setFormError(LOGIN_MESSAGES.GENERAL_ERROR);
+        }
+        return;
+
+      case LOGIN_ERROR_CODES.ACCOUNT_LOCKED: {
+        const minutes = result.retryAfterSeconds
+          ? Math.max(1, Math.round(result.retryAfterSeconds / 60))
+          : null;
+        setFormError(
+          minutes
+            ? `${LOGIN_MESSAGES.ACCOUNT_LOCKED} (يمكنك المحاولة بعد ${minutes} دقيقة)`
+            : LOGIN_MESSAGES.ACCOUNT_LOCKED
+        );
+        return;
+      }
+
+      case LOGIN_ERROR_CODES.ACCOUNT_SUSPENDED:
+        setFormError(LOGIN_MESSAGES.ACCOUNT_SUSPENDED);
+        return;
+
+      // NETWORK_ERROR, SERVER_ERROR, FIREBASE_CONFIG, and anything
+      // unrecognized → the safe general message (details stay in console).
+      default:
+        setFormError(LOGIN_MESSAGES.GENERAL_ERROR);
+    }
+  };
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    setLocalLoading(true);
-    const success = await login(email, password);
-    setLocalLoading(false);
-    if (success) {
-      toast.success('تم تسجيل الدخول بنجاح!');
+    if (isSubmitting) return; // double-submit guard
+
+    setEmailError(null);
+    setPasswordError(null);
+    setFormError(null);
+
+    // ─── Client-side validation — the request is never sent until
+    //     both fields are present and the email format is valid ───
+    const trimmedEmail = email.trim();
+    let hasValidationError = false;
+
+    if (!trimmedEmail) {
+      setEmailError(LOGIN_MESSAGES.EMAIL_REQUIRED);
+      hasValidationError = true;
+    } else if (!isValidEmailFormat(trimmedEmail)) {
+      setEmailError(LOGIN_MESSAGES.EMAIL_INVALID);
+      hasValidationError = true;
+    }
+
+    if (!password) {
+      setPasswordError(LOGIN_MESSAGES.PASSWORD_REQUIRED);
+      hasValidationError = true;
+    }
+
+    if (hasValidationError) return;
+
+    // Loading starts ONLY when the request actually starts, and is
+    // always reset in finally — success, failure, or timeout.
+    setIsSubmitting(true);
+    try {
+      const result = await login(trimmedEmail, password);
+      if (result.ok) {
+        toast.success('تم تسجيل الدخول بنجاح!');
+        return;
+      }
+      applyLoginError(result);
+    } catch (err) {
+      // Safety net — login() handles its own errors; this guards
+      // against anything thrown outside it (e.g. toast failure).
+      console.error('[LoginPage] Unexpected error during login:', err);
+      setFormError(LOGIN_MESSAGES.GENERAL_ERROR);
+    } finally {
+      setIsSubmitting(false);
     }
   };
+
+  const busy = isSubmitting || sessionLoading;
 
   return (
     <div className="min-h-screen w-full relative">
@@ -157,20 +282,25 @@ export default function LoginPage() {
             <h1 className="text-2xl font-bold text-white text-center mb-2">تسجيل الدخول</h1>
             <p className="text-slate-400 text-center text-sm mb-8">أدخل بياناتك للوصول إلى النظام</p>
 
+            {/* General errors — session-level (e.g. suspended account) or
+                server/network failures. Never contains technical details. */}
             <AnimatePresence>
-              {error && (
+              {(formError || sessionError) && (
                 <motion.div
                   initial={{ opacity: 0, y: -10 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: -10 }}
+                  role="alert"
                   className="mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-sm text-center"
                 >
-                  {error}
+                  {formError || sessionError}
                 </motion.div>
               )}
             </AnimatePresence>
 
-            <form onSubmit={handleLogin} className="space-y-5">
+            {/* noValidate — native browser tooltips are replaced by the
+                inline Arabic validation errors below each field */}
+            <form onSubmit={handleLogin} noValidate className="space-y-5">
               <div className="space-y-2">
                 <Label htmlFor="email" className="text-slate-300 text-sm">
                   البريد الإلكتروني
@@ -182,13 +312,20 @@ export default function LoginPage() {
                     type="email"
                     placeholder="user@arm.com"
                     value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    className="bg-white/[0.04] border-white/[0.08] text-white placeholder:text-slate-500 pr-10 focus:border-violet-500/50 focus:ring-violet-500/20"
-                    required
+                    onChange={(e) => handleEmailChange(e.target.value)}
+                    aria-invalid={!!emailError}
+                    aria-describedby={emailError ? 'email-error' : undefined}
+                    className={cn(
+                      'bg-white/[0.04] border-white/[0.08] text-white placeholder:text-slate-500 pr-10 focus:border-violet-500/50 focus:ring-violet-500/20',
+                      emailError && 'border-red-500/60 focus:border-red-500/60 focus:ring-red-500/20'
+                    )}
                     dir="ltr"
                     autoComplete="email"
                   />
                 </div>
+                <AnimatePresence>
+                  {emailError && <FieldError id="email-error" message={emailError} />}
+                </AnimatePresence>
               </div>
 
               <div className="space-y-2">
@@ -202,9 +339,13 @@ export default function LoginPage() {
                     type={showPassword ? 'text' : 'password'}
                     placeholder="••••••••"
                     value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    className="bg-white/[0.04] border-white/[0.08] text-white placeholder:text-slate-500 pr-10 pl-10 focus:border-violet-500/50 focus:ring-violet-500/20"
-                    required
+                    onChange={(e) => handlePasswordChange(e.target.value)}
+                    aria-invalid={!!passwordError}
+                    aria-describedby={passwordError ? 'password-error' : undefined}
+                    className={cn(
+                      'bg-white/[0.04] border-white/[0.08] text-white placeholder:text-slate-500 pr-10 pl-10 focus:border-violet-500/50 focus:ring-violet-500/20',
+                      passwordError && 'border-red-500/60 focus:border-red-500/60 focus:ring-red-500/20'
+                    )}
                     dir="ltr"
                     autoComplete="current-password"
                   />
@@ -216,14 +357,17 @@ export default function LoginPage() {
                     {showPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
                   </button>
                 </div>
+                <AnimatePresence>
+                  {passwordError && <FieldError id="password-error" message={passwordError} />}
+                </AnimatePresence>
               </div>
 
               <Button
                 type="submit"
-                disabled={localLoading || loading}
+                disabled={busy}
                 className="w-full h-11 bg-linear-to-l from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white font-semibold text-base rounded-xl transition-all duration-300 shadow-lg shadow-violet-500/25 hover:shadow-violet-500/40 disabled:opacity-60"
               >
-                {localLoading || loading ? (
+                {busy ? (
                   <>
                     <motion.div
                       className="size-4 border-2 border-white/30 border-t-white rounded-full"

@@ -13,6 +13,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog';
+import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Zap, Plus, Pencil, Trash2, Play, Pause, Eye, Clock, Search, X, CheckCircle2, AlertTriangle, Settings, ArrowUpDown, Filter, ShieldAlert, Activity, AlertOctagon, ChevronDown, ChevronUp, RotateCcw, History, Beaker, Wrench, Brain, Workflow, Timer, ArrowRight } from 'lucide-react';
@@ -409,6 +410,7 @@ export default function RulesEnginePage() {
     }
   };
 
+  const [confirmingDeleteId, setConfirmingDeleteId] = useState<string | null>(null);
   const handleDelete = async (id: string) => {
     setDeletingId(id);
     try {
@@ -1080,7 +1082,7 @@ export default function RulesEnginePage() {
                       <Button
                         variant="ghost"
                         size="sm"
-                        onClick={() => { if (confirm('هل أنت متأكد من حذف هذه القاعدة؟')) handleDelete(rule.id); }}
+                        onClick={() => setConfirmingDeleteId(rule.id)}
                         disabled={deletingId === rule.id}
                         className="h-8 w-8 p-0 text-red-400 hover:text-red-300 hover:bg-red-500/10"
                         title="حذف"
@@ -1744,6 +1746,16 @@ export default function RulesEnginePage() {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* ═══ Delete confirmation — unified ConfirmDialog (§4) ═══ */}
+      <ConfirmDialog
+        open={!!confirmingDeleteId}
+        onOpenChange={(open) => { if (!open) setConfirmingDeleteId(null); }}
+        description="سيتم حذف القاعدة نهائياً ولن يتم تنفيذها مرة أخرى."
+        itemName={confirmingDeleteId ? rules.find((r) => r.id === confirmingDeleteId)?.name : undefined}
+        loading={deletingId === confirmingDeleteId}
+        onConfirm={async () => { if (confirmingDeleteId) await handleDelete(confirmingDeleteId); }}
+      />
     </div>
   );
 }

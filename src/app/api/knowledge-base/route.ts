@@ -37,10 +37,12 @@ export async function GET(request: NextRequest) {
 
     records = sortByDateField(records, 'updatedAt', 'desc');
 
-    // Enrich author with employee name
+    // Enrich author with employee name — §12: the page stores the
+    // author as authorId (legacy records may carry `author` directly);
+    // both resolve to the employee's display name.
     const empMap = await getEmployeeMap();
     const recordsWithNames = records.map((r: any) => {
-      const emp = empMap.get(r.author);
+      const emp = empMap.get(r.authorId ?? r.author);
       return { ...r, authorName: emp?.name || null };
     });
 
@@ -69,9 +71,16 @@ export async function POST(request: NextRequest) {
       department,
       category,
       tags,
-      author,
       status,
     } = body;
+    // §12 root-cause fix: the page form sends authorId (the employee
+    // picker), the old route only read `author` — so the author was
+    // never persisted and the display name could never resolve.
+    const authorId = typeof body.authorId === 'string' && body.authorId.length > 0
+      ? body.authorId
+      : typeof body.author === 'string'
+        ? body.author
+        : null;
 
     if (!title || !problem || !department) {
       return NextResponse.json(
@@ -84,13 +93,13 @@ export async function POST(request: NextRequest) {
     const article = await createRecord('knowledgeBase', {
       title,
       problem,
-      rootCause: rootCause || '',
-      solution: solution || '',
-      preventionMethod: preventionMethod || '',
+      rootCause: rootCause || null,
+      solution: solution || null,
+      preventionMethod: preventionMethod || null,
       department,
-      category: category || '',
-      tags: tags || [],
-      author: author || '',
+      category: category || null,
+      tags: tags || null,
+      authorId,
       status: status || 'draft',
     });
 

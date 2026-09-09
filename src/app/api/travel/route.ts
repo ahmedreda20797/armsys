@@ -178,11 +178,30 @@ export async function GET(request: NextRequest) {
       return distA - distB;
     });
 
-    // ── Urgent trips (upcoming within 14 days, not canceled) ──
-    const urgentTrips = tripsWithCategory
-      .filter((t) => t._category === 'upcoming' && !isCanceled(t) && t._daysLeft >= 0 && t._daysLeft <= 14)
-      .sort((a, b) => a._daysLeft - b._daysLeft)
-      .map(({ _category, _daysLeft, _retDays, _monthKey, ...rest }) => rest);
+    // ── Urgent trips (Phase 6 §6) — include BOTH upcoming DEPARTURES
+    //     (within 14 days) and upcoming RETURNS (within 14 days of
+    //     returnDate, even when departure already passed — a return
+    //     in 2 days IS a real attention item, not a "long future
+    //     event"). Each urgent entry carries `urgentType: 'departure' | 'return'`
+    //     so the consumer labels the event correctly. ──
+    const urgentTripsRaw = tripsWithCategory
+      .filter((t) => !isCanceled(t))
+      .flatMap((t) => {
+        const out: Array<{ t: any; daysLeft: number; urgentType: 'departure' | 'return' }> = [];
+        if (t._daysLeft >= 0 && t._daysLeft <= 14) {
+          out.push({ t, daysLeft: t._daysLeft, urgentType: 'departure' });
+        }
+        if (typeof t._retDays === 'number' && t._retDays >= 0 && t._retDays <= 14) {
+          out.push({ t, daysLeft: t._retDays, urgentType: 'return' });
+        }
+        return out;
+      })
+      .sort((a, b) => a.daysLeft - b.daysLeft);
+
+    const urgentTrips = urgentTripsRaw.map(({ t, urgentType }) => {
+      const { _category, _daysLeft, _retDays, _monthKey, ...rest } = t;
+      return { ...rest, urgentType };
+    });
 
     // ── Pagination ──
     const totalFiltered = filtered.length;

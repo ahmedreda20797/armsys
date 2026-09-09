@@ -12,6 +12,7 @@ import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { EmployeeLink } from '@/components/shared/EmployeeLink';
+import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
 } from '@/components/ui/dialog';
@@ -449,7 +450,9 @@ export default function NotificationCenterPage() {
     }
   };
 
+  const [deleteLoading, setDeleteLoading] = useState(false);
   const handleDelete = async (id: string) => {
+    setDeleteLoading(true);
     try {
       const res = await authFetch(`/api/notifications/${id}`, { method: 'DELETE' });
       if (res.ok) {
@@ -461,6 +464,8 @@ export default function NotificationCenterPage() {
       }
     } catch {
       toast.error('حدث خطأ أثناء الحذف');
+    } finally {
+      setDeleteLoading(false);
     }
   };
 
@@ -1164,33 +1169,15 @@ export default function NotificationCenterPage() {
         </div>
       )}
 
-      {/* ═══ Delete Confirmation Dialog ═══ */}
-      <Dialog open={!!deletingId} onOpenChange={open => { if (!open) setDeletingId(null); }}>
-        <DialogContent className="backdrop-blur-xl bg-slate-900 border-slate-700 max-w-sm">
-          <DialogHeader>
-            <DialogTitle className="text-white">تأكيد الحذف</DialogTitle>
-            <DialogDescription className="text-slate-400">
-              هل أنت متأكد من حذف هذا الإشعار؟ لا يمكن التراجع عن هذا الإجراء.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter className="gap-2 sm:gap-0 mt-3">
-            <Button
-              variant="ghost"
-              onClick={() => setDeletingId(null)}
-              className="text-slate-400 hover:text-white"
-            >
-              إلغاء
-            </Button>
-            <Button
-              variant="destructive"
-              onClick={() => deletingId && handleDelete(deletingId)}
-              className="bg-red-600 hover:bg-red-700 text-white"
-            >
-              حذف
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {/* ═══ Delete Confirmation — unified ConfirmDialog (§4) ═══ */}
+      <ConfirmDialog
+        open={!!deletingId}
+        onOpenChange={(open) => { if (!open) setDeletingId(null); }}
+        description="هل أنت متأكد من حذف هذا الإشعار؟ لا يمكن التراجع عن هذا الإجراء."
+        itemName={deletingId ? notifications.find((n) => n.id === deletingId)?.title : undefined}
+        loading={deleteLoading}
+        onConfirm={async () => { if (deletingId) await handleDelete(deletingId); }}
+      />
     </div>
   );
 }

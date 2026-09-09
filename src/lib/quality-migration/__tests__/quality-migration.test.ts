@@ -9,6 +9,7 @@
 //  Run: npx tsx --test src/lib/quality-migration/__tests__/quality-migration.test.ts
 // ══════════════════════════════════════════════════════════════
 
+import './test-env';
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 

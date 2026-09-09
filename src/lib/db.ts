@@ -141,6 +141,72 @@ export async function findFirst<T = Record<string, any>>(table: string, filters:
   return results.length > 0 ? results[0] : null;
 }
 
+// ─── Targeted user lookup for authentication ────────────────────────
+// Tries the fast indexed query first, but ANY failure — missing index,
+// timeout, or a hung RTDB connection — falls back to the legacy
+// full-table scan, which is the path proven to work in this environment
+// (empirically: plain .get() completes in ~17s, while an
+// orderByChild().equalTo() query can hang indefinitely on this network).
+// The indexed attempt is therefore hard-capped so the fallback always
+// has time to run inside the route's 45s budget.
+//
+// Deliberately bypasses the table cache: freshness matters more than
+// latency for a credential check (suspension, role changes), and
+// caching one row here would poison the whole-table cache.
+const USER_QUERY_TIMEOUT_MS = 10_000;
+let userEmailFallbackWarningShown = false;
+
+function raceWithTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<never>((_, reject) =>
+      setTimeout(
+        () => reject(new Error(`[db] RTDB query exceeded ${timeoutMs}ms (hung connection)`)),
+        timeoutMs
+      )
+    ),
+  ]);
+}
+
+export async function findUserByEmail<T = Record<string, any>>(
+  email: string,
+  options?: { queryTimeoutMs?: number }
+): Promise<T | null> {
+  const normalizedEmail = email.trim().toLowerCase();
+  const queryTimeoutMs = options?.queryTimeoutMs ?? USER_QUERY_TIMEOUT_MS;
+  try {
+    const snapshot = await raceWithTimeout(
+      rtdbRef('arm_erp/users')
+        .orderByChild('email')
+        .equalTo(normalizedEmail)
+        .limitToFirst(2)
+        .get(),
+      queryTimeoutMs
+    );
+
+    if (!snapshot.exists()) return null;
+    const data = snapshot.val() as Record<string, Record<string, any>>;
+    const [id, val] = Object.entries(data)[0];
+    return { id, ...(val as Record<string, any>) } as unknown as T;
+  } catch (err: any) {
+    // Indexed lookup unavailable (missing index, hung connection, or any
+    // network failure) — the scan below is what actually serves login.
+    if (!userEmailFallbackWarningShown) {
+      userEmailFallbackWarningShown = true;
+      const reason = String(err?.message ?? err).slice(0, 140);
+      console.warn(
+        `[db] findUserByEmail: indexed lookup failed (${reason}) — ` +
+        'falling back to the full users-table scan. Login still works.\n' +
+        'Faster fix: Firebase Console → Realtime Database → Rules → add\n' +
+        '  "users": { ".indexOn": ["email"] }\n' +
+        'If queries keep hanging after that, check network/proxy access to the RTDB host.'
+      );
+    }
+    const results = await findWhere<T>('users', { email: normalizedEmail });
+    return results.length > 0 ? results[0] : null;
+  }
+}
+
 export async function createRecord<T = Record<string, any>>(table: string, data: Record<string, any>): Promise<T> {
   const id = createId();
   const now = new Date().toISOString();

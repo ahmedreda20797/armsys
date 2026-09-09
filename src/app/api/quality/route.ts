@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getAll, findWhere, createRecord, sortByDateField, withEmployeeFull } from '@/lib/db';
+import { getAll, findWhere, createRecord, sortByDateField, withEmployeeFull, getEmployeeMap } from '@/lib/db';
 import { verifyPermission, requireAuth } from '@/lib/verify-permission';
 import { asScopeViewer, employeeInScope, authScopeViewer, filterRowsByEmployeeScope, resolveEmployeeScopeFromDb } from '@/lib/scope/server';
 
@@ -70,6 +70,16 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: empValidation.error }, { status: 400 });
     }
 
+    // §8 ADDED-BY AUDIT — every quality note records WHO added it so the
+    // card can show "أضافها: {name}" without opening details. The name
+    // is resolved server-side from the authenticated caller (same
+    // pattern as quality/[id]/create-capa) — never client-supplied.
+    const empMap = await getEmployeeMap();
+    const createdBy = permCheck.user?.id || 'system';
+    const createdByName = permCheck.user
+      ? (empMap.get(permCheck.user.id)?.name || 'النظام')
+      : 'النظام';
+
     const qualityDeduction = await createRecord('qualityDeductions', {
       employeeId,
       date,
@@ -80,6 +90,8 @@ export async function POST(request: NextRequest) {
       evidence: evidence || null,
       month,
       relatedCapaId: relatedCapaId || null,
+      createdById: createdBy,
+      createdByName,
     });
 
     return NextResponse.json(qualityDeduction, { status: 201 });

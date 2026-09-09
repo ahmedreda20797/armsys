@@ -255,9 +255,26 @@ export function useUpdateKpiSettings() {
   });
 }
 
+/** Update a KPI scheme (weight changes, etc.) */
+export function useKpiSchemeUpdate() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: { id: string; components: Array<{ componentId: string; weight: number }> }) =>
+      apiFetch(`/api/kpi-schemes/${data.id}`, {
+        method: 'PUT',
+        body: JSON.stringify({ components: data.components }),
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: [...kpiQueryKeys.schemes, 'ACTIVE'] });
+      qc.invalidateQueries({ queryKey: [...kpiQueryKeys.schemes, 'DRAFT'] });
+      qc.invalidateQueries({ queryKey: [...kpiQueryKeys.schemes, 'ARCHIVED'] });
+    },
+  });
+}
+
 // ═══════════════════════════════════════════════════
 //  Month Snapshots
-// ═══════════════════════════════════════════════════
+// ══════════════════════════════════════════════════
 
 export function useMonthSnapshots(status?: string) {
   const qs = status ? `?status=${status}` : '';
@@ -418,11 +435,15 @@ export interface KpiReportTableParams {
   maxScore?: string;
   sortBy?: string;
   sortDir?: string;
+  /** §10 — archived employees are excluded by default; opt-in only. */
+  includeArchived?: boolean;
 }
 
 function kpiReportQueryString(params: KpiReportTableParams, month?: string | null): string {
+  const { includeArchived, ...rest } = params as KpiReportTableParams & Record<string, unknown>;
   return buildQueryString({
-    ...(params as Record<string, string | undefined>),
+    ...(rest as Record<string, string | undefined>),
+    ...(includeArchived ? { includeArchived: 'true' } : {}),
     month: month ?? undefined,
   });
 }
