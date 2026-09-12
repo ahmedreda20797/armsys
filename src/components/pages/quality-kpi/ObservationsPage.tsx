@@ -31,6 +31,7 @@ import { ApprovalStatusBadge } from '@/components/shared/kpi';
 import { PageHeaderBar } from '@/components/shared/PageHeaderBar';
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
 import { OverflowMenu, type OverflowMenuItem } from '@/components/shared/OverflowMenu';
+import { InlineFormPanel } from '@/components/shared/InlineFormPanel';
 import { useMarkState, useFavoriteToggleAction, usePinToggleAction } from '@/components/shared/NavigationMarks';
 import type { NavigationDescriptor } from '@/lib/personalization';
 import { Pin as PinIcon, ShieldCheck } from 'lucide-react';
@@ -403,34 +404,21 @@ export default function ObservationsPage() {
           on this page and can close back to the list. */}
       <AnimatePresence>
         {capaTarget && (
-          <motion.div
+          <InlineFormPanel
             id="observation-inline-capa"
-            initial={{ opacity: 0, y: -8, scale: 0.98 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: -8, scale: 0.98 }}
-            transition={{ duration: 0.22, ease: [0.4, 0, 0.2, 1] }}
-            className="rounded-2xl border border-violet-500/30 bg-slate-900/60 backdrop-blur-md shadow-2xl shadow-violet-900/20"
+            tone="violet"
+            icon={<ShieldCheck className="size-3.5 text-violet-400" />}
+            title={`إنشاء CAPA من ملاحظة — ${capaTarget.employeeName}`}
+            onClose={() => setCapaTarget(null)}
           >
-            <div className="flex items-center justify-between gap-2 px-4 py-2.5 border-b border-slate-700/50">
-              <p className="text-xs font-bold text-slate-200 flex items-center gap-2">
-                <ShieldCheck className="size-3.5 text-violet-400" />
-                إنشاء CAPA من ملاحظة — {capaTarget.employeeName}
-              </p>
-              <Button variant="ghost" size="sm" onClick={() => setCapaTarget(null)} className="h-7 text-xs text-slate-400 hover:text-white">
-                <X className="size-3.5 ml-1" />
-                إغلاق
-              </Button>
-            </div>
-            <div className="p-4">
-              <CAPAInlineForm
-                onClose={() => setCapaTarget(null)}
-                onCreated={() => setCapaTarget(null)}
-                employees={employeeList as never}
-                systemUsers={systemUsers}
-                defaultValues={capaDefaultsFromObservation(capaTarget)}
-              />
-            </div>
-          </motion.div>
+            <CAPAInlineForm
+              onClose={() => setCapaTarget(null)}
+              onCreated={() => setCapaTarget(null)}
+              employees={employeeList as never}
+              systemUsers={systemUsers}
+              defaultValues={capaDefaultsFromObservation(capaTarget)}
+            />
+          </InlineFormPanel>
         )}
       </AnimatePresence>
 
@@ -698,8 +686,18 @@ function ObservationCard({
                 </Button>
               </>
             )}
-            <Button size="sm" variant="ghost" className="h-7 gap-1.5 px-2 text-slate-400" onClick={onDetails}>
-              <Info className="size-3.5" /> تفاصيل
+            {/* تفاصيل is icon-only now (text removed — the card was too
+                crowded): same handler, same behavior; the aria-label +
+                title tooltip carry the meaning for accessibility. */}
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-7 w-7 p-0 text-slate-400"
+              onClick={onDetails}
+              aria-label="تفاصيل الملاحظة"
+              title="تفاصيل الملاحظة"
+            >
+              <Info className="size-3.5" />
             </Button>
             {!monthClosed && overflowItems.length > 0 && (
               <OverflowMenu items={overflowItems} label="إجراءات الملاحظة" />

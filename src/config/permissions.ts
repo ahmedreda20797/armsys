@@ -106,7 +106,9 @@ export const APP_PAGES: PageConfig[] = [
   { id: 'biometric', title: 'البصمة', icon: 'Fingerprint', permissionKey: 'biometric', availableActions: ['create', 'update', 'delete', 'upload'], groupId: 'employee_mgmt' },
   { id: 'requests', title: 'الطلبات', icon: 'FileText', permissionKey: 'requests', availableActions: ['create', 'update', 'delete', 'approve'], groupId: 'employee_mgmt' },
   // ═══ 🎯 الجودة والرقابة ═══
-  { id: 'quality', title: 'الجودة', icon: 'Award', permissionKey: 'quality', availableActions: ['create', 'update', 'delete'], groupId: 'quality_ctrl' },
+  // §WORKFLOW: 'approve' on quality = authority to approve/reject
+  // PENDING quality discounts. Quality staff create; approvers decide.
+  { id: 'quality', title: 'الجودة', icon: 'Award', permissionKey: 'quality', availableActions: ['create', 'update', 'delete', 'approve'], groupId: 'quality_ctrl' },
   { id: 'capa', title: 'نظام كابا', icon: 'ShieldCheck', permissionKey: 'capa', availableActions: ['create', 'update', 'delete'], groupId: 'quality_ctrl' },
   { id: 'riskCenter', title: 'مركز المخاطر', icon: 'AlertTriangle', permissionKey: 'riskCenter', availableActions: [], groupId: 'quality_ctrl' },
   { id: 'complaints', title: 'شكاوى العملاء', icon: 'MessageSquareWarning', permissionKey: 'complaints', availableActions: ['create', 'update', 'delete'], groupId: 'quality_ctrl' },
@@ -231,7 +233,10 @@ export const MANAGER_PERMISSIONS: PermissionsMap = {
   attendance: 'read',
   requests: makeEditWithActions(['create', 'update', 'delete', 'approve']),
   rules: 'none',
-  quality: 'read',
+  // §WORKFLOW — quality discounts: managers APPROVE pending discounts
+  // (level 'edit' is required by the action gate, but ONLY the approve
+  // action is granted — create/update/delete of discounts stay denied).
+  quality: makeEditWithActions(['approve']),
   hrDeductions: 'read',
   travel: 'read',
   reports: { level: 'edit', actions: { export: true } },
@@ -272,6 +277,9 @@ export const QUALITY_PERMISSIONS: PermissionsMap = {
   attendance: 'read',
   requests: 'read',
   rules: 'none',
+  // §WORKFLOW — quality staff CREATE discounts (they go to
+  // PENDING_APPROVAL); approving is intentionally NOT granted here.
+  // Grant `approve` on this page to any future Quality Manager.
   quality: makeEditWithActions(['create', 'update', 'delete']),
   hrDeductions: 'none',
   travel: 'read',

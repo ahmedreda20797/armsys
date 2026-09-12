@@ -132,10 +132,20 @@ export interface QualityDeduction {
   month: string;
   relatedCapaId: string | null;
   createdAt: string;
-  /** §8 Added-by audit — who recorded this deduction (optional so
-   *  legacy records stay valid; UI shows "غير مسجل" when absent). */
+  /** §AUDIT — hidden metadata. Stored on every record, returned by
+   *  the API ONLY to viewers with explicit audit permission
+   *  (qualityAuditLog) or the system owner; the employee-facing card
+   *  never renders it. */
   createdById?: string | null;
   createdByName?: string | null;
+  createdByEmail?: string | null;
+  updatedBy?: string | null;
+  updatedByName?: string | null;
+  /** §WORKFLOW — approval lifecycle. Legacy records without this
+   *  field are treated as approved. Only APPROVED discounts affect
+   *  reports/totals/payroll. */
+  approvalStatus?: 'draft' | 'pending' | 'approved' | 'rejected';
+  approvalHistory?: import('@/lib/approvals/types').ApprovalEvent[];
 }
 
 export interface HrDeduction {
@@ -203,6 +213,10 @@ export interface FollowUp {
   status: 'open' | 'under_review' | 'under_follow_up' | 'resolved' | 'closed' | 'cancelled';
   score: number;
   attachments: string[];
+  /** §EVIDENCE — dedicated evidence/link field (URL, Drive link,
+   *  document link…). Not parsed out of the description text.
+   *  Optional: legacy records predate the field. */
+  evidence?: string | null;
   createdById: string;
   createdByName: string;
   relatedDeductionId: string | null;

@@ -14,6 +14,7 @@
 import type { QualityObservation } from '@/types/quality-kpi';
 import type { QualityDeduction } from '@/types';
 import { roundTo2 } from '@/lib/kpi-framework/validation';
+import { deductionTypeLabel } from '@/lib/quality-deductions/domain';
 import { displayDateOrderKey, monthKeyOfDisplayDate, monthKeyOfStoredMonth } from './month-attribution';
 import type {
   CategoryCount,
@@ -28,6 +29,7 @@ import type {
 
 /** Canonical fallback key — the same one the engine's categoryTotals uses. */
 export const UNCLASSIFIED_KEY = '_unclassified';
+export const UNCLASSIFIED_LABEL = 'غير مصنّف';
 
 export const DEFAULT_MIN_OCCURRENCES = 2;
 
@@ -250,8 +252,15 @@ export function aggregateQualityDeductions(args: {
   for (const record of args.records) {
     totalDays += Number(record.deductionDays) || 0;
     totalAmount += Number(record.deductionAmount) || 0;
+    // §EXPORT-MAPPING — the display name is the Arabic label, never
+    // the raw stored type key (quality_issue etc. never reach the UI
+    // or an export from here).
     const typeKey = record.type || UNCLASSIFIED_KEY;
-    const entry = byType.get(typeKey) ?? { categoryId: null, categoryName: typeKey, count: 0 };
+    const entry = byType.get(typeKey) ?? {
+      categoryId: null,
+      categoryName: record.type ? deductionTypeLabel(record.type) : UNCLASSIFIED_LABEL,
+      count: 0,
+    };
     entry.count += 1;
     byType.set(typeKey, entry);
     records.push({

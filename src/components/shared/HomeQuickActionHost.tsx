@@ -26,8 +26,8 @@
 
 import { useState, useEffect } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { motion, AnimatePresence } from 'framer-motion';
-import { X, Plus } from 'lucide-react';
+import { AnimatePresence } from 'framer-motion';
+import { Plus } from 'lucide-react';
 import {
   CAPAInlineForm,
   EmployeeInlineForm,
@@ -36,8 +36,7 @@ import {
   FollowUpInlineForm,
   RequestInlineForm,
 } from '@/components/shared/inline-forms';
-import { Button } from '@/components/ui/button';
-import { cn } from '@/lib/utils';
+import { InlineFormPanel } from '@/components/shared/InlineFormPanel';
 import { useEmployees } from '@/hooks/use-queries';
 
 export type HomeQuickActionId =
@@ -66,28 +65,15 @@ export function HomeQuickActionHost({ activeAction, onClose }: HomeQuickActionHo
   if (!activeAction) return null;
   return (
     <AnimatePresence>
-      <motion.div
+      <InlineFormPanel
         key={activeAction}
-        initial={{ opacity: 0, y: -8, scale: 0.98 }}
-        animate={{ opacity: 1, y: 0, scale: 1 }}
-        exit={{ opacity: 0, y: -8, scale: 0.98 }}
-        transition={{ duration: 0.22, ease: [0.4, 0, 0.2, 1] }}
-        className="rounded-2xl border border-violet-500/30 bg-slate-900/60 backdrop-blur-md shadow-2xl shadow-violet-900/20"
+        tone="violet"
+        icon={<Plus className="size-3.5 text-violet-400" />}
+        title={HOME_QUICK_ACTIONS.find((a) => a.id === activeAction)?.label ?? 'إجراء سريع'}
+        onClose={onClose}
       >
-        <div className="flex items-center justify-between gap-2 px-4 py-2.5 border-b border-slate-700/50">
-          <p className="text-xs font-bold text-slate-200 flex items-center gap-2">
-            <Plus className="size-3.5 text-violet-400" />
-            {HOME_QUICK_ACTIONS.find((a) => a.id === activeAction)?.label ?? 'إجراء سريع'}
-          </p>
-          <Button variant="ghost" size="sm" onClick={onClose} className="h-7 text-xs text-slate-400 hover:text-white">
-            <X className="size-3.5 ml-1" />
-            إغلاق
-          </Button>
-        </div>
-        <div className="p-4">
-          <QuickActionBody id={activeAction} onClose={onClose} />
-        </div>
-      </motion.div>
+        <QuickActionBody id={activeAction} onClose={onClose} />
+      </InlineFormPanel>
     </AnimatePresence>
   );
 }

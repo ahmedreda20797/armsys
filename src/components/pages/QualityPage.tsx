@@ -45,12 +45,18 @@ import {
   CheckCircle2,
   Copy,
   ClipboardCheck,
-  User as UserIcon,
+  Clock,
+  XCircle,
 } from 'lucide-react';
 import { EmployeeSearchInput } from '@/components/shared/EmployeeSearchInput';
 import type { QualityDeduction, Employee } from '@/types';
+import {
+  deductionTypeLabel, projectDeductionStatus,
+  DEDUCTION_STATUS_LABELS,
+} from '@/lib/quality-deductions/domain';
 import { logCreate, logUpdate, logDelete } from '@/lib/activity-logger';
 import { authFetch } from '@/lib/api-fetch';
+import { toast } from 'sonner';
 import { useAppStore } from '@/lib/store';
 import { formatMonthLabelAr } from '@/lib/month-label';
 import { todayDisplayDate, currentMonthKey } from '@/lib/date-utils';
@@ -58,6 +64,8 @@ import { PagePeriodIndicator } from '@/components/shared/PagePeriodIndicator';
 import { PageHeaderBar } from '@/components/shared/PageHeaderBar';
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
 import { CAPALinkBadge } from '@/components/shared/CAPALinkBadge';
+import { InlineFormPanel } from '@/components/shared/InlineFormPanel';
+import { OverflowMenu } from '@/components/shared/OverflowMenu';
 import { CAPAInlineForm, type CapaInlineFormState } from '@/components/shared/inline-forms';
 
 interface QualityWithEmployee extends QualityDeduction {
@@ -111,6 +119,22 @@ function getTypeBadge(type: string) {
   }
 }
 
+// §WORKFLOW — approval status chip for a discount row. Legacy rows
+// (no approvalStatus) project to 'approved' and render NO chip, so
+// the familiar card look is unchanged for already-effective records.
+function getApprovalChip(status: ReturnType<typeof projectDeductionStatus>) {
+  switch (status) {
+    case 'pending':
+      return { label: DEDUCTION_STATUS_LABELS.pending, cls: 'bg-amber-500/15 text-amber-400 border-amber-500/30', icon: Clock };
+    case 'rejected':
+      return { label: DEDUCTION_STATUS_LABELS.rejected, cls: 'bg-red-500/15 text-red-400 border-red-500/30', icon: XCircle };
+    case 'draft':
+      return { label: DEDUCTION_STATUS_LABELS.draft, cls: 'bg-slate-500/15 text-slate-400 border-slate-500/30', icon: Pencil };
+    default:
+      return null; // approved — no visual noise
+  }
+}
+
 function getDaysColor(days: number): string {
   if (days >= 5) return 'bg-red-500/20 text-red-300 border-red-500/40';
   if (days >= 3) return 'bg-orange-500/20 text-orange-300 border-orange-500/40';
@@ -119,7 +143,7 @@ function getDaysColor(days: number): string {
 }
 
 function formatDeductionForCopy(deduction: QualityWithEmployee, empName: string): string {
-  const typeLabel = deduction.type === 'safety' ? 'سلامة' : deduction.type === 'compliance' ? 'التزام' : 'جودة';
+  const typeLabel = deductionTypeLabel(deduction.type);
   const dayLabel = getDayLabel(deduction.deductionDays);
   let text = `━━━━━━━━━━━━━━━━━━━\n`;
   text += `  خصم ${typeLabel}\n`;
@@ -154,7 +178,7 @@ function formatAllDeductionsForCopy(empName: string, deductions: QualityWithEmpl
   text += `\n──────────────────────────────\n\n`;
 
   deductions.forEach((d, idx) => {
-    const typeLabel = d.type === 'safety' ? 'سلامة' : d.type === 'compliance' ? 'التزام' : 'جودة';
+    const typeLabel = deductionTypeLabel(d.type);
     text += `  ${idx + 1}. خصم ${typeLabel}\n`;
     text += `     التاريخ: ${d.date}\n`;
     text += `     الخصم: ${getDayLabel(d.deductionDays)}\n`;
@@ -173,7 +197,7 @@ function formatAllDeductionsForCopy(empName: string, deductions: QualityWithEmpl
 }
 
 export default function QualityPage() {
-  const { canEdit, canCreate, canUpdate, canDelete, canUpload } = usePermissions('quality');
+  const { canEdit, canCreate, canUpdate, canDelete, canUpload, canApprove } = usePermissions('quality');
   // §12 GLOBAL INLINE FORM STANDARD — "إنشاء CAPA" from a quality note
   // opens the shared inline CAPA form HERE (gated by the CAPA page's
   // own create permission); it NEVER navigates away from Quality.
@@ -405,6 +429,38 @@ export default function QualityPage() {
     }
   };
 
+  // ═══ §WORKFLOW — approve / reject a PENDING discount ═══
+  // Only users with the 'approve' permission see these actions (the
+  // API enforces the same permission — the UI never decides alone).
+  const [approvalLoadingId, setApprovalLoadingId] = useState<string | null>(null);
+  const handleApproval = async (id: string, action: 'approve' | 'reject') => {
+    let body: Record<string, unknown> = {};
+    if (action === 'reject') {
+      const reason = window.prompt('سبب رفض الخصم (مطلوب):');
+      if (!reason || !reason.trim()) return;
+      body = { reason: reason.trim() };
+    }
+    setApprovalLoadingId(id);
+    try {
+      const res = await authFetch(`/api/quality/${id}/${action}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (res.ok) {
+        toast.success(action === 'approve' ? 'تم اعتماد الخصم — أصبح ساريًا في الحسابات' : 'تم رفض الخصم');
+        await fetchData();
+      } else {
+        const data = await res.json().catch(() => null);
+        toast.error(data?.error || 'تعذّر تنفيذ الإجراء');
+      }
+    } catch {
+      toast.error('تعذّر تنفيذ الإجراء');
+    } finally {
+      setApprovalLoadingId(null);
+    }
+  };
+
   const openEdit = (deduction: QualityWithEmployee) => {
     setEditingDeduction(deduction);
     const daysStr = String(deduction.deductionDays);
@@ -434,12 +490,15 @@ export default function QualityPage() {
   });
 
   // ═══ Group by employee ═══
+  // §WORKFLOW — totals (days/amount) count APPROVED discounts ONLY;
+  // pending records are shown with a chip but never inflate totals.
   const groupedByEmployee = filtered.reduce<Record<string, {
     name: string;
     department: string | null;
     deductions: QualityWithEmployee[];
     totalDays: number;
     totalAmount: number;
+    pendingCount: number;
   }>>((acc, d) => {
     if (!acc[d.employeeId]) {
       acc[d.employeeId] = {
@@ -448,11 +507,16 @@ export default function QualityPage() {
         deductions: [],
         totalDays: 0,
         totalAmount: 0,
+        pendingCount: 0,
       };
     }
     acc[d.employeeId].deductions.push(d);
-    acc[d.employeeId].totalDays += d.deductionDays;
-    acc[d.employeeId].totalAmount += d.deductionAmount;
+    if (projectDeductionStatus(d) === 'approved') {
+      acc[d.employeeId].totalDays += d.deductionDays;
+      acc[d.employeeId].totalAmount += d.deductionAmount;
+    } else if (projectDeductionStatus(d) === 'pending') {
+      acc[d.employeeId].pendingCount += 1;
+    }
     return acc;
   }, {});
 
@@ -484,6 +548,8 @@ export default function QualityPage() {
 
   const grandTotalDays = sortedEmployees.reduce((sum, [, e]) => sum + e.totalDays, 0);
   const grandTotalAmount = sortedEmployees.reduce((sum, [, e]) => sum + e.totalAmount, 0);
+  // §WORKFLOW — pending count across the filtered view (never totals).
+  const grandPendingCount = filtered.filter((d) => projectDeductionStatus(d) === 'pending').length;
 
   // Month options
   const now = new Date();
@@ -500,7 +566,7 @@ export default function QualityPage() {
         icon={<Award className="size-5" />}
         iconClassName="bg-violet-500/15 border-violet-500/30 text-violet-400"
         title="خصومات الجودة"
-        subtitle={`${filtered.length} سجل خصم — ${sortedEmployees.length} موظف`}
+        subtitle={`${filtered.length} سجل خصم — ${sortedEmployees.length} موظف${grandPendingCount > 0 ? ` — ${grandPendingCount} قيد الاعتماد` : ''}`}
         extras={
           <PagePeriodIndicator
             testId="quality-period-indicator"
@@ -527,7 +593,7 @@ export default function QualityPage() {
         <motion.div
           initial={{ opacity: 0, y: 5 }}
           animate={{ opacity: 1, y: 0 }}
-          className="grid grid-cols-3 gap-2.5"
+          className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2.5"
         >
           <div className="rounded-lg border border-amber-500/25 bg-amber-500/8 px-3.5 py-2.5">
             <p className="text-slate-500 text-[11px] mb-0.5">إجمالي الأيام</p>
@@ -548,6 +614,13 @@ export default function QualityPage() {
             <p className="text-cyan-400 font-bold text-lg leading-tight">{sortedEmployees.length}</p>
             <p className="text-slate-500 text-[10px]">موظف</p>
           </div>
+          {grandPendingCount > 0 && (
+            <div className="rounded-lg border border-amber-500/25 bg-amber-500/8 px-3.5 py-2.5">
+              <p className="text-slate-500 text-[11px] mb-0.5">قيد الاعتماد</p>
+              <p className="text-amber-400 font-bold text-lg leading-tight">{grandPendingCount}</p>
+              <p className="text-slate-500 text-[10px]">لا تدخل في الإجماليات</p>
+            </div>
+          )}
         </motion.div>
       )}
 
@@ -672,6 +745,17 @@ export default function QualityPage() {
                         <span className="text-[10px]">ج</span>
                       </div>
                     )}
+
+                    {/* §WORKFLOW — pending approvals awaiting a decision */}
+                    {emp.pendingCount > 0 && (
+                      <div
+                        className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-amber-500/15 text-amber-300 border border-amber-500/30"
+                        title="خصومات قيد الاعتماد — لا تدخل في الإجماليات"
+                      >
+                        <Clock className="size-3" />
+                        <span className="font-bold text-xs">{emp.pendingCount}</span>
+                      </div>
+                    )}
                   </div>
 
                   {/* Expand Arrow */}
@@ -715,6 +799,10 @@ export default function QualityPage() {
                           const badge = getTypeBadge(d.type);
                           const BadgeIcon = badge.icon;
                           const isRowExpanded = expandedRow === d.id;
+                          // §WORKFLOW — legacy rows project to 'approved' (no chip).
+                          const approvalStatus = projectDeductionStatus(d);
+                          const approvalChip = getApprovalChip(approvalStatus);
+                          const ApprovalChipIcon = approvalChip?.icon;
 
                           return (
                             <motion.div
@@ -726,7 +814,7 @@ export default function QualityPage() {
                             >
                               <div
                                 data-record-id={d.id}
-                                className="flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-700/30 bg-slate-800/30 cursor-pointer hover:bg-slate-800/50 transition-colors"
+                                className={`flex items-center gap-2 px-3 py-2 rounded-lg border bg-slate-800/30 cursor-pointer hover:bg-slate-800/50 transition-colors ${approvalStatus === 'rejected' ? 'border-red-500/20 opacity-70' : approvalStatus === 'pending' ? 'border-amber-500/25' : 'border-slate-700/30'}`}
                                 onClick={() => setExpandedRow(isRowExpanded ? null : d.id)}
                               >
                                 {/* Type Badge */}
@@ -741,16 +829,18 @@ export default function QualityPage() {
                                 {/* Date + Days */}
                                 <span className="flex-shrink-0 text-slate-500 text-[11px]" dir="ltr">{d.date}</span>
 
-                                {/* §8 Added-by metadata — visible WITHOUT opening details.
-                                    Honest for legacy rows: "غير مسجل" means the record
-                                    predates the createdBy column, never a guessed name. */}
-                                <span
-                                  className="hidden lg:inline-flex flex-shrink-0 items-center gap-1 text-[10px] text-slate-500 bg-slate-800/60 border border-slate-700/40 rounded px-1.5 py-0.5"
-                                  title="المستخدم الذي أضاف هذا الخصم"
-                                >
-                                  <UserIcon className="size-2.5" />
-                                  أضافها: {d.createdByName || 'غير مسجل'}
-                                </span>
+                                {/* §WORKFLOW — approval status chip. The creator
+                                    identity is deliberately NOT shown anywhere on
+                                    this card: it lives in the hidden audit metadata
+                                    (and is stripped server-side for non-audit
+                                    viewers), so a screenshot of the card can never
+                                    reveal which Quality employee added the discount. */}
+                                {approvalChip && ApprovalChipIcon && (
+                                  <span className={`hidden sm:inline-flex flex-shrink-0 items-center gap-1 px-1.5 py-0.5 rounded border text-[10px] font-medium ${approvalChip.cls}`}>
+                                    <ApprovalChipIcon className="size-2.5" />
+                                    {approvalChip.label}
+                                  </span>
+                                )}
 
                                 {/* Description preview */}
                                 <div className="flex-1 min-w-0">
@@ -774,30 +864,19 @@ export default function QualityPage() {
                                   <ChevronDown className="size-3" />
                                 </div>
 
-                                {/* Edit */}
-                                {canUpdate && (
-                                  <button
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      openEdit(d);
-                                    }}
-                                    className="flex-shrink-0 text-slate-600 hover:text-violet-400 transition-colors"
-                                  >
-                                    <Pencil className="size-3" />
-                                  </button>
-                                )}
-
-                                {/* Delete */}
-                                {canDelete && (
-                                  <button
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      setDeletingId(d.id);
-                                    }}
-                                    className="flex-shrink-0 text-slate-600 hover:text-red-400 transition-colors"
-                                  >
-                                    <Trash2 className="size-3" />
-                                  </button>
+                                {/* §6 — edit/delete consolidated into the shared
+                                    ⋮ menu (the thin row was crowded with 4 icons);
+                                    copy stays visible as the primary action. */}
+                                {(canUpdate || canDelete) && (
+                                  <div className="flex-shrink-0" onClick={(e) => e.stopPropagation()}>
+                                    <OverflowMenu
+                                      items={[
+                                        ...(canUpdate ? [{ key: 'edit', label: 'تعديل', icon: <Pencil className="size-3.5" />, onSelect: () => openEdit(d) }] : []),
+                                        ...(canDelete ? [{ key: 'delete', label: 'حذف', icon: <Trash2 className="size-3.5" />, destructive: true, separatorBefore: true, onSelect: () => setDeletingId(d.id) }] : []),
+                                      ]}
+                                      label="إجراءات الخصم"
+                                    />
+                                  </div>
                                 )}
 
                                 {/* Copy to Clipboard */}
@@ -855,8 +934,40 @@ export default function QualityPage() {
                                         {d.deductionAmount > 0 && (
                                           <span className="text-slate-500">المبلغ: <span className="text-rose-400" dir="ltr">{d.deductionAmount.toLocaleString()} جنيه</span></span>
                                         )}
-                                        <span className="text-slate-500">أضافها: <span className="text-slate-300">{d.createdByName || 'غير مسجل'}</span></span>
+                                        {/* §WORKFLOW — status only; WHO created/decided
+                                            stays in the hidden audit metadata. */}
+                                        {approvalChip && ApprovalChipIcon && (
+                                          <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded border text-[10px] font-medium ${approvalChip.cls}`}>
+                                            <ApprovalChipIcon className="size-2.5" />
+                                            {approvalChip.label}
+                                          </span>
+                                        )}
                                       </div>
+                                      {/* §WORKFLOW — approver actions (pending only,
+                                          permission-gated; the API enforces the same). */}
+                                      {approvalStatus === 'pending' && canApprove && (
+                                        <div className="flex items-center gap-2 mt-2">
+                                          <Button
+                                            size="sm"
+                                            className="h-7 text-[11px] bg-emerald-600/90 hover:bg-emerald-600 text-white"
+                                            disabled={approvalLoadingId === d.id}
+                                            onClick={(e) => { e.stopPropagation(); void handleApproval(d.id, 'approve'); }}
+                                          >
+                                            <CheckCircle2 className="size-3 ml-1" />
+                                            اعتماد
+                                          </Button>
+                                          <Button
+                                            size="sm"
+                                            variant="outline"
+                                            className="h-7 text-[11px] border-red-500/30 text-red-400 hover:bg-red-500/10"
+                                            disabled={approvalLoadingId === d.id}
+                                            onClick={(e) => { e.stopPropagation(); void handleApproval(d.id, 'reject'); }}
+                                          >
+                                            <XCircle className="size-3 ml-1" />
+                                            رفض
+                                          </Button>
+                                        </div>
+                                      )}
                                       {d.evidence && (
                                         <a
                                           href={d.evidence}
@@ -888,7 +999,7 @@ export default function QualityPage() {
                                             setCapaPrefill({
                                               empId: empId,
                                               defaults: {
-                                                title: `خصم جودة — ${d.type}`,
+                                                title: `خصم جودة — ${deductionTypeLabel(d.type)}`,
                                                 department: emp.department || '',
                                                 priority: d.deductionDays >= 3 ? 'high' : 'medium',
                                                 employeeId: d.employeeId,
@@ -917,37 +1028,24 @@ export default function QualityPage() {
                             selected quality note. No page navigation. ━━━ */}
                         <AnimatePresence>
                           {canCreateCapa && capaPrefill?.empId === empId && (
-                            <motion.div
-                              initial={{ opacity: 0, y: -8, scale: 0.98 }}
-                              animate={{ opacity: 1, y: 0, scale: 1 }}
-                              exit={{ opacity: 0, y: -8, scale: 0.98 }}
-                              transition={{ duration: 0.22, ease: [0.4, 0, 0.2, 1] }}
-                              className="rounded-2xl border border-violet-500/30 bg-slate-900/60 backdrop-blur-md shadow-2xl shadow-violet-900/20 overflow-hidden"
+                            <InlineFormPanel
+                              tone="violet"
+                              icon={<ShieldAlert className="size-3.5 text-violet-400" />}
+                              title="إنشاء CAPA من خصم الجودة"
+                              onClose={() => setCapaPrefill(null)}
                             >
-                              <div className="flex items-center justify-between gap-2 px-4 py-2.5 border-b border-slate-700/50">
-                                <p className="text-xs font-bold text-slate-200 flex items-center gap-2">
-                                  <ShieldAlert className="size-3.5 text-violet-400" />
-                                  إنشاء CAPA من خصم الجودة
-                                </p>
-                                <Button variant="ghost" size="sm" onClick={() => setCapaPrefill(null)} className="h-7 text-xs text-slate-400 hover:text-white">
-                                  <X className="size-3.5 ml-1" />
-                                  إغلاق
-                                </Button>
-                              </div>
-                              <div className="p-4">
-                                <CAPAInlineForm
-                                  key={capaPrefill.defaults.relatedQualityDeductionId || JSON.stringify(capaPrefill.defaults)}
-                                  onClose={() => setCapaPrefill(null)}
-                                  onCreated={() => {
-                                    setCapaPrefill(null);
-                                    void fetchData();
-                                  }}
-                                  employees={employees}
-                                  systemUsers={systemUsers}
-                                  defaultValues={capaPrefill.defaults}
-                                />
-                              </div>
-                            </motion.div>
+                              <CAPAInlineForm
+                                key={capaPrefill.defaults.relatedQualityDeductionId || JSON.stringify(capaPrefill.defaults)}
+                                onClose={() => setCapaPrefill(null)}
+                                onCreated={() => {
+                                  setCapaPrefill(null);
+                                  void fetchData();
+                                }}
+                                employees={employees}
+                                systemUsers={systemUsers}
+                                defaultValues={capaPrefill.defaults}
+                              />
+                            </InlineFormPanel>
                           )}
                         </AnimatePresence>
                       </div>
@@ -965,7 +1063,14 @@ export default function QualityPage() {
         <DialogContent className="backdrop-blur-xl bg-slate-900 border-slate-700 max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="text-white">{editingDeduction ? 'تعديل خصم جودة' : 'إضافة خصم جودة'}</DialogTitle>
-            <DialogDescription className="text-slate-400">{editingDeduction ? 'عدّل تفاصيل الخصم' : 'أدخل تفاصيل الخصم'} - يتم حساب الشهر تلقائياً من التاريخ</DialogDescription>
+            <DialogDescription className="text-slate-400">
+              {editingDeduction ? 'عدّل تفاصيل الخصم' : 'أدخل تفاصيل الخصم'} - يتم حساب الشهر تلقائياً من التاريخ
+              {!editingDeduction && !canApprove && (
+                <span className="block text-amber-400/90 text-[11px] mt-1">
+                  سيُرسل الخصم بحالة «قيد الاعتماد» ولن يؤثر في التقارير والإجماليات حتى اعتماده من المختصين.
+                </span>
+              )}
+            </DialogDescription>
           </DialogHeader>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             {!editingDeduction && (

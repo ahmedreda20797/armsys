@@ -1003,3 +1003,209 @@ textarea:focus {
     box-shadow: 0 0 0 1px rgba(249, 115, 22, 0.45), 0 0 16px rgba(249, 115, 22, 0.25);
   }
 }
+
+/* ══════════════════════════════════════════════════════════════
+   §PRINT — DEDICATED REPORT PRINT ARCHITECTURE
+   (Requirement 7 — clean report layout, NOT the app shell)
+
+   The PrintReportHost overlay renders a real A4 report document.
+   While it is open (body.print-report-open) the whole app shell is
+   display:none in print — the sidebar, header, navigation, tabs and
+   floating chrome can never reach the paper. The document itself is
+   an RTL Arabic layout with repeated table headers and page-break
+   safety. The on-screen toolbar is .no-print (preview controls only).
+   ══════════════════════════════════════════════════════════════ */
+
+@media print {
+  @page {
+    size: A4;
+    margin: 14mm 12mm;
+  }
+
+  /* Hide the ENTIRE app shell whenever the dedicated print view is
+     open — this is the anti-"printed dashboard" guarantee. */
+  body.print-report-open [data-print-hide] {
+    display: none !important;
+  }
+
+  /* Force light paper printing for the document, keep colors exact. */
+  body.print-report-open {
+    background: #ffffff !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+}
+
+/* ── Print overlay (screen = live preview, print = the report) ── */
+.print-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: rgba(2, 6, 23, 0.92);
+  display: flex;
+  flex-direction: column;
+}
+
+.print-overlay-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 20px;
+  background: #0f172a;
+  color: #e2e8f0;
+  border-bottom: 1px solid #334155;
+}
+
+.print-overlay-title {
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.print-overlay-scroll {
+  flex: 1;
+  overflow-y: auto;
+  padding: 24px 16px 48px;
+}
+
+/* ── The document itself — white A4 sheet on the preview, clean
+      layout in print. Everything is RTL + Arabic-first. ── */
+.print-doc {
+  width: min(210mm, 100%);
+  margin: 0 auto;
+  background: #ffffff;
+  color: #111827;
+  font-family: var(--font-cairo), "Segoe UI", Tahoma, sans-serif;
+  padding: 14mm 12mm;
+  box-shadow: 0 8px 40px rgba(0, 0, 0, 0.45);
+  border-radius: 4px;
+  font-size: 12px;
+  line-height: 1.7;
+}
+
+@media print {
+  .print-doc {
+    width: auto;
+    padding: 0;
+    box-shadow: none;
+    border-radius: 0;
+  }
+}
+
+.print-doc-header-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.print-doc-brand-name {
+  display: block;
+  font-size: 10px;
+  letter-spacing: 2px;
+  color: #6b7280;
+  font-weight: 700;
+}
+
+.print-doc-title {
+  font-size: 22px;
+  font-weight: 800;
+  color: #111827;
+  margin: 2px 0 0;
+}
+
+.print-doc-meta {
+  font-size: 11px;
+  color: #374151;
+  text-align: left;
+  min-width: 40%;
+}
+.print-doc-meta p { margin: 2px 0; }
+
+.print-doc-rule {
+  border: none;
+  border-top: 2px solid #111827;
+  margin: 10px 0 0;
+}
+
+/* Headline stats */
+.print-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  margin: 14px 0 6px;
+}
+
+.print-stat {
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  padding: 6px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.print-stat-label { font-size: 10px; color: #6b7280; }
+.print-stat-value { font-size: 14px; font-weight: 800; color: #111827; }
+.print-stat-hint  { font-size: 9px;  color: #9ca3af; }
+
+/* Sections */
+.print-section {
+  margin: 18px 0;
+  break-inside: auto;
+}
+
+.print-section-heading {
+  font-size: 15px;
+  font-weight: 800;
+  color: #111827;
+  border-inline-start: 4px solid #4f46e5;
+  padding-inline-start: 8px;
+  margin: 0 0 8px;
+  break-after: avoid;
+}
+
+.print-paragraph {
+  font-size: 11.5px;
+  color: #1f2937;
+  margin: 4px 0;
+}
+
+.print-muted { color: #6b7280; }
+
+/* Tables — headers REPEAT on every printed page */
+.print-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 10.5px;
+}
+
+.print-table thead { display: table-header-group; }
+.print-table tr { break-inside: avoid; }
+
+.print-table th {
+  background: #f3f4f6;
+  color: #111827;
+  font-weight: 800;
+  border: 1px solid #9ca3af;
+  padding: 5px 6px;
+  text-align: right;
+}
+
+.print-table td {
+  border: 1px solid #d1d5db;
+  padding: 4px 6px;
+  text-align: right;
+  vertical-align: top;
+  color: #1f2937;
+}
+
+.print-table tbody tr:nth-child(even) td { background: #f9fafb; }
+.print-td-ltr { direction: ltr; text-align: left; }
+
+.print-doc-footer {
+  margin-top: 24px;
+  font-size: 10px;
+  color: #6b7280;
+}
+.print-doc-footer p { margin: 6px 0 0; }

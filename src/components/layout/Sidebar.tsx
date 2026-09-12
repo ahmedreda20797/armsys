@@ -79,6 +79,7 @@ import {
 } from 'lucide-react';
 import { usePermissions } from '@/hooks/usePermissions';
 import { useSidebarPages } from '@/hooks/use-sidebar-order';
+import { useUnseenCounts, unseenCountOf } from '@/hooks/use-unseen';
 import { useAuth } from '@/contexts/AuthContext';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { SIDEBAR_GROUPS, APP_PAGES } from '@/config/permissions';
@@ -318,6 +319,19 @@ export function Sidebar({
   const { data: preferences } = useUserPreferences();
   const savePrefs = useSaveUserPreferences();
   const setSidebarCollapsed = useAppStore((s) => s.setSidebarCollapsed);
+
+  // ── §SIDEBAR-BADGES — per-user unseen counters ──
+  // ONE shared react-query for the whole sidebar: new records added by
+  // OTHER users since THIS user last opened the page. The active page
+  // is never badged (opening it marks it seen via the PageRouter).
+  const { data: unseen } = useUnseenCounts();
+  const unseenBadgeFor = useCallback(
+    (pageId: string) => {
+      if (pageId === currentPage) return 0;
+      return unseenCountOf(unseen?.counts, pageId);
+    },
+    [unseen, currentPage],
+  );
 
   // ── §3: apply the user's PINNED preference once per session ──
   const appliedPrefRef = useRef(false);
@@ -632,6 +646,7 @@ export function Sidebar({
                   {groupPages.map((page, index) => {
                     const Icon = ICON_MAP[page.icon];
                     const isActive = currentPage === page.id;
+                    const unseenBadge = unseenBadgeFor(page.id);
                     return (
                       <motion.li
                         key={page.id}
@@ -654,6 +669,16 @@ export function Sidebar({
                             <Icon className={cn('h-5 w-5 shrink-0', isActive && 'scale-110')} />
                           )}
                           <span className="truncate">{page.title}</span>
+                          {/* §SIDEBAR-BADGES — new-items counter (per user). */}
+                          {unseenBadge > 0 && (
+                            <span
+                              className="mr-auto shrink-0 inline-flex items-center justify-center min-w-5 h-5 px-1.5 rounded-full bg-violet-500/25 border border-violet-300/40 text-violet-100 text-[10px] font-bold tabular-nums"
+                              title={`${unseenBadge} عنصر جديد لم تشاهده بعد`}
+                              aria-label={`${unseenBadge} عنصر جديد`}
+                            >
+                              {unseenBadge > 99 ? '+99' : unseenBadge}
+                            </span>
+                          )}
                           {isActive && (
                             <motion.div
                               className="mr-auto w-1.5 h-1.5 rounded-full bg-violet-300"
@@ -907,6 +932,7 @@ export function Sidebar({
             onToggleGroup={toggleGroup}
             userName={userName}
             settingsMenu={settingsMenu}
+            unseenBadgeFor={unseenBadgeFor}
           />
         )}
       </div>
@@ -953,6 +979,7 @@ function CollapsedRail({
   onToggleGroup,
   userName,
   settingsMenu,
+  unseenBadgeFor,
 }: {
   currentPage: string;
   onNavigate: (page: string) => void;
@@ -962,6 +989,7 @@ function CollapsedRail({
   onToggleGroup: (groupId: string) => void;
   userName: string;
   settingsMenu: React.ReactNode;
+  unseenBadgeFor?: (pageId: string) => number;
 }) {
   // Determine which group the active page belongs to (for the active accent).
   const activeGroupId = useMemo(() => {
@@ -1048,8 +1076,9 @@ function CollapsedRail({
                       {group.pages.map((page) => {
                         const PageIcon = ICON_MAP[page.icon];
                         const isCurrent = currentPage === page.id;
+                        const unseenBadge = unseenBadgeFor?.(page.id) ?? 0;
                         return (
-                          <SidebarTooltip key={page.id} label={page.title}>
+                          <SidebarTooltip key={page.id} label={page.title + (unseenBadge > 0 ? ` — ${unseenBadge} عنصر جديد` : '')}>
                             <button
                               type="button"
                               onClick={() => onNavigate(page.id)}
@@ -1063,6 +1092,13 @@ function CollapsedRail({
                               )}
                             >
                               {PageIcon && <PageIcon className="size-4 shrink-0" />}
+                              {/* §SIDEBAR-BADGES — tiny unread dot on the rail icon. */}
+                              {unseenBadge > 0 && !isCurrent && (
+                                <span
+                                  aria-hidden="true"
+                                  className="absolute top-1 left-1 size-2 rounded-full bg-violet-400 ring-2 ring-slate-900"
+                                />
+                              )}
                               {isCurrent && (
                                 <motion.span
                                   layoutId="collapsedPageIndicator"

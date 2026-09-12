@@ -23,6 +23,7 @@ import type { CAPACase, CustomerComplaint, FollowUp, QualityDeduction, TravelDea
 import type { QualityObservation } from '@/types/quality-kpi';
 import type { KpiReportingLoaders } from '@/lib/kpi-reporting';
 import { defaultKpiReportingLoaders } from '@/lib/kpi-reporting';
+import { isEffectiveDeduction } from '@/lib/quality-deductions/domain';
 import { monthKeyOfDisplayDate, monthKeyOfStoredMonth } from './month-attribution';
 
 /** Existing collections consumed read-only (literal parity with the owning routes). */
@@ -101,7 +102,9 @@ export const defaultPerformanceIntelligenceLoaders: PerformanceIntelligenceLoade
 
   loadQualityDeductions: async (employeeId) => {
     const all = await getAll<QualityDeduction>(PERFORMANCE_INTELLIGENCE_SOURCES.deductions);
-    return all.filter((r) => r && r.employeeId === employeeId);
+    // §WORKFLOW — pending/rejected discounts never reach the
+    // performance-intelligence dataset (Smart Report / تحليل الأداء).
+    return all.filter((r) => r && r.employeeId === employeeId && isEffectiveDeduction(r));
   },
 
   loadComplaints: async (employeeId) => {

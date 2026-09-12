@@ -26,6 +26,10 @@ import {
 import { EmployeeSearchInput } from '@/components/shared/EmployeeSearchInput';
 import { useEmployees } from '@/hooks/use-queries';
 import { usePerformanceIntelligence } from '@/hooks/use-kpi-queries';
+import { Button } from '@/components/ui/button';
+import { Printer } from 'lucide-react';
+import { usePrintReportStore } from '@/components/print/print-report-store';
+import { performanceDatasetToPrintModel } from '@/components/print/print-adapters';
 import type { EmployeePerformanceDataset } from '@/lib/performance-intelligence';
 import {
   StatusBadge,
@@ -68,6 +72,8 @@ export default function PerformanceAnalysisTab({ month }: { month: string }) {
   const [employeeId, setEmployeeId] = useState<string>('');
   const employeesQuery = useEmployees();
   const datasetQuery = usePerformanceIntelligence(employeeId || null, month);
+  // §PRINT — dedicated clean A4 print view from the loaded dataset.
+  const openPrintReport = usePrintReportStore((st) => st.openPrintReport);
 
   return (
     <div className="space-y-4">
@@ -88,6 +94,17 @@ export default function PerformanceAnalysisTab({ month }: { month: string }) {
             <Info className="h-3.5 w-3.5" />
             عرض تحقّق للبيانات التحليلية المتحقق منها (حقائق منظمة فقط — بلا أي سرد أو تفسير). ستستهلكها لاحقًا طبقة التقارير الذكية.
           </p>
+          {datasetQuery.data ? (
+            <Button
+              size="sm"
+              variant="outline"
+              className="no-print h-8 gap-1.5 w-fit border-cyan-500/40 text-cyan-300 hover:bg-cyan-500/10"
+              onClick={() => openPrintReport(performanceDatasetToPrintModel(datasetQuery.data as EmployeePerformanceDataset))}
+            >
+              <Printer className="size-3.5" />
+              طباعة / PDF
+            </Button>
+          ) : null}
         </CardContent>
       </Card>
 

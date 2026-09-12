@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getAll, getById, findWhere, findWhereContains } from '@/lib/db';
 import { verifyPermission } from '@/lib/verify-permission';
 import { resolveFieldAccess, resolvePageScope } from '@/config/permissions';
+import { isEffectiveDeduction } from '@/lib/quality-deductions/domain';
 import { resolveEmployeeScope } from '@/lib/scope';
 import { ORG_NODES_TABLE, type OrgNode } from '@/lib/organization';
 // Canonical metric layer — single source of truth for risk + CAPA overdue.
@@ -95,7 +96,8 @@ export async function GET(
       findWhereContains('attendance', 'date', datePattern),
       findWhereContains('biometrics', 'date', datePattern),
       findWhereContains('requests', 'date', datePattern),
-      findWhere('qualityDeductions', { month: currentMonth }),
+      // §WORKFLOW — only APPROVED discounts affect the employee profile.
+      findWhere('qualityDeductions', { month: currentMonth }).then((rs) => rs.filter(isEffectiveDeduction)),
       findWhere('hrDeductions', { month: currentMonth }),
       getAll('followUps'),
       getAll('travelDeals'),

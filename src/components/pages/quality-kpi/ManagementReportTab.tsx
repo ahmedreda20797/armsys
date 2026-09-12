@@ -24,6 +24,10 @@ import { useManagementReport } from '@/hooks/use-kpi-queries';
 import type { ManagementReport, DepartmentManagementRow, DomainPeriodFacts } from '@/lib/management-reporting';
 import type { ManagementDomainSource } from '@/lib/management-reporting';
 import { ValueBasisBadge, formatScore } from './kpi-reports-shared';
+import { Button } from '@/components/ui/button';
+import { Printer } from 'lucide-react';
+import { usePrintReportStore } from '@/components/print/print-report-store';
+import { managementReportToPrintModel } from '@/components/print/print-adapters';
 
 const DOMAIN_ORDER: ManagementDomainSource[] = [
   'complaints',
@@ -42,6 +46,8 @@ const DOMAIN_ICONS: Record<ManagementDomainSource, React.ReactNode> = {
 export default function ManagementReportTab({ month }: { month: string }) {
   const query = useManagementReport(month);
   const report = query.data as ManagementReport | undefined;
+  // §PRINT — hook order: called unconditionally before early returns.
+  const openPrintReport = usePrintReportStore((st) => st.openPrintReport);
 
   if (query.isLoading) {
     return (
@@ -75,6 +81,15 @@ export default function ManagementReportTab({ month }: { month: string }) {
         </span>
         <span className="flex items-center gap-2">
           <ValueBasisBadge basis={report.qualitySummary.valueBasis} />
+          <Button
+            size="sm"
+            variant="outline"
+            className="no-print h-7 gap-1.5 border-amber-500/40 bg-transparent text-amber-200 hover:bg-amber-500/15"
+            onClick={() => openPrintReport(managementReportToPrintModel(report))}
+          >
+            <Printer className="size-3.5" />
+            طباعة / PDF
+          </Button>
         </span>
       </div>
 

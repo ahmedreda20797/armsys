@@ -25,7 +25,8 @@
 //   • Renders the same Row across all pages — no second design.
 // ══════════════════════════════════════════════════════════════
 
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState, memo } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   AlertTriangle, ChevronDown, ChevronLeft, Clock, Bell, AlertOctagon,
@@ -33,7 +34,8 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { OverflowMenu, type OverflowMenuItem } from '@/components/shared/OverflowMenu';
-import { useUserPreferences, useSaveUserPreferences } from '@/hooks/use-user-preferences';
+import { useUserPreferences, userPreferencesKeys } from '@/hooks/use-user-preferences';
+import { apiFetch } from '@/lib/query-provider';
 
 /* ── Severity levels (§5 — Arabic labels, never color-only) ── */
 export type AttentionSeverity = 'critical' | 'urgent' | 'warning' | 'info';
@@ -186,8 +188,13 @@ export function AttentionPanel({
   const totalCount = count ?? visibleItems.length;
 
   // ── Collapse state — persisted through the existing user-prefs ──
+  // §PERF: toggling is OPTIMISTIC — the local override flips on the
+  // click itself so the panel opens/closes instantly; the PUT to
+  // userPreferences runs in the background and the React Query cache
+  // is patched locally (setQueryData) instead of being invalidated,
+  // so a toggle costs ZERO reads and never blocks the interaction.
+  const qc = useQueryClient();
   const { data: prefs } = useUserPreferences();
-  const savePrefs = useSaveUserPreferences();
   const collapsedPref = persistKey ? (prefs as unknown as { ui?: UiPrefs } | null)?.ui?.[persistKey] : undefined;
   // §10 GLOBAL ALERT CONTRACT — CLOSED BY DEFAULT:
   //   • No stored preference yet → collapsed (the header summary shows
@@ -196,17 +203,23 @@ export function AttentionPanel({
   //     survives navigation + reloads via userPreferences.ui.
   //   • defaultCollapsed only seeds the LOCAL (no-persistKey) state.
   const [localCollapsed, setLocalCollapsed] = useState<boolean>(defaultCollapsed ?? true);
+  // Instant-ack mirror of the toggled value. The React Query cache is
+  // patched in the same click handler, so this override only guards
+  // against a stale background refetch landing mid-PUT; it follows the
+  // last stored value on persistence failure (best-effort, like before).
+  const [overrideCollapsed, setOverrideCollapsed] = useState<boolean | null>(null);
 
   // Collapsed state:
-  //   • With persistKey — stored pref if the user ever toggled,
-  //     otherwise DEFAULT COLLAPSED (undefined → collapsed).
+  //   • With persistKey — an in-flight override wins (instant), then
+  //     stored pref if the user ever toggled, otherwise DEFAULT
+  //     COLLAPSED (undefined → collapsed).
   //   • Otherwise — localCollapsed is the user-toggled value, but it
   //     is ignored when there are no items (so the empty state shows
   //     instead of a collapsed header that hides the "no items" message).
   const collapsed = persistKey
-    ? collapsedPref === undefined
-      ? true
-      : Boolean(collapsedPref)
+    ? overrideCollapsed ?? (collapsedPref === undefined
+        ? true
+        : Boolean(collapsedPref))
     : visibleItems.length === 0
       ? false
       : localCollapsed;
@@ -214,14 +227,36 @@ export function AttentionPanel({
   const toggleCollapsed = useCallback(() => {
     const next = !collapsed;
     if (persistKey) {
-      const prev = (prefs as unknown as { ui?: UiPrefs } | null)?.ui ?? {};
-      savePrefs.mutate({ ui: { ...prev, [persistKey]: next } } as never, {
-        onError: () => { /* swallow — UI persistence is best-effort */ },
+      // 1) flip NOW — the panel reacts in the same frame as the click.
+      setOverrideCollapsed(next);
+      // 2) persist in the background and patch the cache directly —
+      //    no query invalidation, therefore NO refetch/GET per toggle.
+      const current = qc.getQueryData<Record<string, unknown>>(userPreferencesKeys.all) ?? {};
+      const ui = (current as { ui?: UiPrefs }).ui ?? {};
+      const prevValue = ui[persistKey];
+      qc.setQueryData(userPreferencesKeys.all, {
+        ...current,
+        ui: { ...ui, [persistKey]: next },
+      });
+      apiFetch('/api/user-preferences', {
+        method: 'PUT',
+        body: JSON.stringify({ ui: { [persistKey]: next } }),
+      }).catch(() => {
+        // Best-effort persistence: on failure roll the optimistic cache
+        // patch back and follow the last stored value again.
+        qc.setQueryData(userPreferencesKeys.all, (prev: Record<string, unknown> | undefined) => {
+          const prevUi = (prev as { ui?: UiPrefs } | undefined)?.ui ?? {};
+          const restored = { ...prevUi };
+          if (prevValue === undefined) delete restored[persistKey];
+          else restored[persistKey] = prevValue;
+          return { ...(prev ?? {}), ui: restored };
+        });
+        setOverrideCollapsed(prevValue === undefined ? null : Boolean(prevValue));
       });
     } else {
       setLocalCollapsed(next);
     }
-  }, [collapsed, persistKey, prefs, savePrefs]);
+  }, [collapsed, persistKey, qc]);
 
   // ── Severity roll-up for the header summary ──
   const severityCounts = useMemo(() => {
@@ -474,7 +509,11 @@ function renderGroupedRows(
   return elements;
 }
 
-function DefaultAttentionRow({ item }: { item: AttentionItem }) {
+/* §PERF — memoized row: toggling the panel (or any AttentionPanel-
+   internal state change) re-renders the panel shell, but rows keep
+   their identities and skip re-rendering. Large alert lists stay
+   cheap to open/close. */
+const DefaultAttentionRow = memo(function DefaultAttentionRow({ item }: { item: AttentionItem }) {
   const meta = SEVERITY_META[item.severity];
   const SevIcon = meta.icon;
   const interactive = typeof item.onClick === 'function';
@@ -542,7 +581,7 @@ function DefaultAttentionRow({ item }: { item: AttentionItem }) {
       )}
     </div>
   );
-}
+});
 
 function EmptyAttention({ emptyState }: { emptyState?: AttentionPanelProps['emptyState'] }) {
   return (

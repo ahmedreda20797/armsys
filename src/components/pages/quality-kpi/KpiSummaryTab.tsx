@@ -9,7 +9,10 @@
 //  explicitly so they are never mistaken for company-wide KPI.
 // ══════════════════════════════════════════════════════════════
 
-import { Info, Award, TrendingDown, Users, CheckCircle2, Clock, Lock, AlertOctagon } from 'lucide-react';
+import { Info, Award, TrendingDown, Users, CheckCircle2, Clock, Lock, AlertOctagon, Printer } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { usePrintReportStore } from '@/components/print/print-report-store';
+import { qualitySummaryToPrintModel } from '@/components/print/print-adapters';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -23,6 +26,9 @@ import { ValueBasisBadge, formatScore, formatContribution } from './kpi-reports-
 export default function KpiSummaryTab({ month }: { month: string }) {
   const query = useKpiManagementSummary(month);
   const summary = query.data as KpiManagementSummary | undefined;
+  // §PRINT — hook order: called unconditionally at the top (the
+  // loading/error early-returns below must not skip it).
+  const openPrintReport = usePrintReportStore((st) => st.openPrintReport);
 
   if (query.isLoading) {
     return (
@@ -54,6 +60,15 @@ export default function KpiSummaryTab({ month }: { month: string }) {
         </span>
         <span className="flex items-center gap-2">
           <ValueBasisBadge basis={summary.valueBasis} />
+          <Button
+            size="sm"
+            variant="outline"
+            className="no-print h-7 gap-1.5 border-amber-500/40 bg-transparent text-amber-200 hover:bg-amber-500/15"
+            onClick={() => openPrintReport(qualitySummaryToPrintModel(summary))}
+          >
+            <Printer className="size-3.5" />
+            طباعة / PDF
+          </Button>
         </span>
       </div>
 

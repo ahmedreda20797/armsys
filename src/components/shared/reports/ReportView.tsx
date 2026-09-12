@@ -49,6 +49,12 @@ export interface ReportViewProps {
    * Reports that do not pass it render exactly as before.
    */
   renderExpanded?: (row: Row) => React.ReactNode;
+  /**
+   * §EXPANSION-UX — column keys whose WHOLE cell toggles the row's
+   * expansion (e.g. the "تفاصيل الخصومات / اضغط للتوسيع" cell), so
+   * the hint text and the chevron behave identically.
+   */
+  expandTriggerColumns?: ReadonlyArray<string>;
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -82,12 +88,13 @@ export function ReportSummaryCards({
 
 /** Definition-driven table (columns from visibleColumns). */
 export function ReportTable({
-  columns, rows, renderCell, renderExpanded,
+  columns, rows, renderCell, renderExpanded, expandTriggerColumns,
 }: {
   columns: ReadonlyArray<ReportColumnSpec>;
   rows: Row[];
   renderCell?: (column: ReportColumnSpec, row: Row) => React.ReactNode;
   renderExpanded?: (row: Row) => React.ReactNode;
+  expandTriggerColumns?: ReadonlyArray<string>;
 }) {
   // §11 expansion state — row id → expanded (page-local, not persisted).
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
@@ -98,6 +105,7 @@ export function ReportTable({
       return next;
     });
   };
+  const isTriggerColumn = (key: string) => !!renderExpanded && !!expandTriggerColumns?.includes(key);
 
   return (
     <div className="rounded-2xl border border-slate-700/50 bg-slate-900/40 overflow-hidden print:border-slate-300">
@@ -136,7 +144,9 @@ export function ReportTable({
                     {columns.map((col) => (
                       <TableCell
                         key={col.key}
-                        className={`text-slate-200 text-xs text-right ${typeof row[col.key] === 'string' && (row[col.key] as string).includes('\n') ? 'whitespace-pre-line leading-relaxed align-top' : 'whitespace-nowrap'}`}
+                        onClick={isTriggerColumn(col.key) ? () => toggleRow(rowId) : undefined}
+                        className={`text-slate-200 text-xs text-right ${isTriggerColumn(col.key) ? 'cursor-pointer select-none' : ''} ${typeof row[col.key] === 'string' && (row[col.key] as string).includes('\n') ? 'whitespace-pre-line leading-relaxed align-top' : 'whitespace-nowrap'}`}
+                        {...(isTriggerColumn(col.key) ? { 'aria-expanded': isExpanded } : {})}
                       >
                         {renderCell
                           ? (renderCell(col, row) ?? formatCell(row[col.key]))
@@ -181,7 +191,7 @@ export function ReportEmptyState({ label }: { label?: string }) {
 //  ReportView
 // ─────────────────────────────────────────────────────────────
 
-export function ReportView({ reportId, renderCell, renderExpanded }: ReportViewProps) {
+export function ReportView({ reportId, renderCell, renderExpanded, expandTriggerColumns }: ReportViewProps) {
   const { definition, isLoading: defLoading } = useReportDefinition(reportId);
   const { data: employees } = useEmployees();
 
@@ -420,7 +430,7 @@ export function ReportView({ reportId, renderCell, renderExpanded }: ReportViewP
           <div className="text-[11px] text-slate-500 print:text-slate-600">
             الفترة: {response.meta.period} · عدد الصفوف: {response.rows.length} · تاريخ الإنشاء: {new Date(response.meta.generatedAt).toLocaleString('ar-EG')}
           </div>
-          <ReportTable columns={definition.visibleColumns} rows={response.rows} renderCell={renderCell} renderExpanded={renderExpanded} />
+          <ReportTable columns={definition.visibleColumns} rows={response.rows} renderCell={renderCell} renderExpanded={renderExpanded} expandTriggerColumns={expandTriggerColumns} />
         </div>
       )}
 

@@ -21,10 +21,15 @@ import type { QualityDeductionReportRow } from '../runners/quality-deductions';
 export interface QualityDeductionGroupEntry {
   id: string;
   date: string;
+  /** Human-readable Arabic category label (never the raw code). */
   category: string;
   description: string;
   deductionDays: number;
   monetaryAmount: number;
+  /** Evidence URL / text when stored. */
+  evidence: string | null;
+  /** Approval status (Arabic label). */
+  status: string;
   relatedCapaId: string | null;
 }
 
@@ -45,18 +50,23 @@ const round = (n: number) => Math.round(n * 100) / 100;
 
 /**
  * Build the bulleted multi-line reasons cell. Chronological
- * (oldest → newest), one line per deduction:
- *   • DD/MM/YYYY — category — amount/days
+ * (oldest → newest), one line per deduction — the FULL human-readable
+ * detail (label · reason · impact · evidence) because this cell is
+ * what the Excel export carries:
+ *   • DD/MM/YYYY — مشكلة جودة — التفاصيل: … — 1.5 days — الدليل: <url>
  */
 export function buildReasonsCell(entries: ReadonlyArray<QualityDeductionGroupEntry>): string {
   const sorted = [...entries].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
   return sorted
     .map((e) => {
+      const parts: string[] = [e.category || 'خصم'];
+      if (e.description) parts.push(`التفاصيل: ${e.description}`);
       const impacts: string[] = [];
       if (e.monetaryAmount > 0) impacts.push(`${round(e.monetaryAmount)} EGP`);
       if (e.deductionDays > 0) impacts.push(`${round(e.deductionDays)} ${e.deductionDays === 1 ? 'day' : 'days'}`);
-      const impactText = impacts.length > 0 ? ` — ${impacts.join(' / ')}` : '';
-      return `• ${e.date} — ${e.category || 'خصم'}${impactText}`;
+      if (impacts.length > 0) parts.push(impacts.join(' / '));
+      if (e.evidence) parts.push(`الدليل: ${e.evidence}`);
+      return `• ${e.date} — ${parts.join(' — ')}`;
     })
     .join('\n');
 }
@@ -97,6 +107,8 @@ export function groupQualityDeductionsByEmployee(
       description: row.description,
       deductionDays: row.deductionDays,
       monetaryAmount: row.monetaryAmount,
+      evidence: row.evidence ?? null,
+      status: row.status ?? 'معتمد',
       relatedCapaId: row.relatedCapaId,
     });
   }

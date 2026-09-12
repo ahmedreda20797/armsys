@@ -6,6 +6,7 @@ import {
 } from '@/lib/db';
 import { requireAuth } from '@/lib/verify-permission';
 import { isOverdueFollowUp } from '@/lib/metrics';
+import { isEffectiveDeduction, deductionTypeLabel } from '@/lib/quality-deductions/domain';
 import { filterEmployeesInScope, authScopeViewer, filterRowsByEmployeeScope, resolveEmployeeScopeFromDb } from '@/lib/scope/server';
 
 function getTodayStr(): string {
@@ -120,7 +121,8 @@ function computeMonthlyPerformance(
     return dateNum >= startDateNum && dateNum <= endDateNum;
   });
 
-  const monthQuality = qualityDeductions.filter((qd: any) => qd.month === monthKey);
+  // §WORKFLOW — only APPROVED quality discounts affect dashboard stats.
+  const monthQuality = qualityDeductions.filter((qd: any) => qd.month === monthKey && isEffectiveDeduction(qd));
 
   const workingDaysSet = new Set(monthRecords.map((r: any) => r.date));
   const totalWorkingDays = workingDaysSet.size;
@@ -247,7 +249,9 @@ export async function GET(request: NextRequest) {
     const attendanceRecords = filterRowsByEmployeeScope(batch.get('attendance') || [], scopeCtx);
     const allRequests = filterRowsByEmployeeScope(batch.get('requests') || [], scopeCtx);
     const travelDeals = filterRowsByEmployeeScope(batch.get('travelDeals') || [], scopeCtx);
-    const allQualityDeductions = filterRowsByEmployeeScope(batch.get('qualityDeductions') || [], scopeCtx);
+    // §WORKFLOW — pending/rejected discounts never reach dashboard stats.
+    const allQualityDeductions = filterRowsByEmployeeScope(batch.get('qualityDeductions') || [], scopeCtx)
+      .filter(isEffectiveDeduction);
     const deductionRules = batch.get('deductionRules') || [];
     const allBiometrics = filterRowsByEmployeeScope(batch.get('biometrics') || [], scopeCtx);
     const allFollowUps = filterRowsByEmployeeScope(batch.get('followUps') || [], scopeCtx);
@@ -391,10 +395,11 @@ export async function GET(request: NextRequest) {
       totalCases: qualityThisMonth.length,
       totalAmount: qualityThisMonth.reduce((s: number, q: any) => s + (q.deductionAmount || 0), 0),
       totalDays: qualityThisMonth.reduce((s: number, q: any) => s + (q.deductionDays || 0), 0),
+      // §EXPORT-MAPPING — display labels, never the raw stored type key.
       byType: {
-        quality_issue: qualityThisMonth.filter((q: any) => q.type === 'quality_issue').length,
-        safety: qualityThisMonth.filter((q: any) => q.type === 'safety').length,
-        compliance: qualityThisMonth.filter((q: any) => q.type === 'compliance').length,
+        [deductionTypeLabel('quality_issue')]: qualityThisMonth.filter((q: any) => q.type === 'quality_issue').length,
+        [deductionTypeLabel('safety')]: qualityThisMonth.filter((q: any) => q.type === 'safety').length,
+        [deductionTypeLabel('compliance')]: qualityThisMonth.filter((q: any) => q.type === 'compliance').length,
       } as Record<string, number>,
     };
 

@@ -18,6 +18,10 @@
 
 import { getAll, getEmployeeMap } from '@/lib/db';
 import type { QualityDeduction } from '@/types';
+import {
+  isEffectiveDeduction, deductionTypeLabel, DEDUCTION_STATUS_LABELS,
+  type DeductionApprovalStatus,
+} from '@/lib/quality-deductions/domain';
 import { applyEmployeeScope } from '../scope';
 import type { ResolvedReportRequest } from '../scope';
 import type { ReportDataModeInfo, ReportRunnerResult } from '../types';
@@ -33,13 +37,19 @@ export interface QualityDeductionReportRow {
   department: string | null;
   date: string;
   month: string;
-  /** Category/reason of the deduction (stored `type`). */
+  /** Human-readable category label (Arabic) — never the raw code. */
   category: string;
+  /** Raw stored type code (kept for the category FILTER only). */
+  typeCode: string;
   description: string;
   /** Primary impact: deducted DAYS (day-first rule). */
   deductionDays: number;
   /** OPTIONAL financial impact (EGP) — independent of days. */
   monetaryAmount: number;
+  /** Evidence URL / text when stored on the discount. */
+  evidence: string | null;
+  /** Approval status (Arabic label; legacy = معتمد). */
+  status: string;
   relatedCapaId: string | null;
   createdAt: string;
 }
@@ -92,6 +102,10 @@ export function filterQualityDeductionRecords(
 
   const rows: QualityDeductionReportRow[] = [];
   for (const rec of records) {
+    // §WORKFLOW — pending/rejected discounts are excluded from the
+    // report entirely (legacy records without a status stay visible).
+    if (!isEffectiveDeduction(rec)) continue;
+
     // Employee scope + department.
     const emp = byId.get(rec.employeeId);
     if (!emp) continue;
@@ -115,10 +129,12 @@ export function filterQualityDeductionRecords(
       if (typeof rec.month !== 'string' || !monthKeys.has(rec.month)) continue;
     }
 
-    // Category/reason filter (stored `type` field).
+    // Category/reason filter — matches the raw stored code OR its
+    // Arabic label (the filter input is free text; both are legitimate).
     if (categoryFilter) {
       const recCategory = typeof rec.type === 'string' ? rec.type.toLowerCase() : '';
-      if (!recCategory.includes(categoryFilter)) continue;
+      const recLabel = deductionTypeLabel(rec.type).toLowerCase();
+      if (!recCategory.includes(categoryFilter) && !recLabel.includes(categoryFilter)) continue;
     }
 
     rows.push({
@@ -128,10 +144,16 @@ export function filterQualityDeductionRecords(
       department: emp.department ?? null,
       date: rec.date,
       month: typeof rec.month === 'string' ? rec.month : '',
-      category: typeof rec.type === 'string' ? rec.type : '',
+      // §EXPORT-MAPPING — the human-readable label, never the raw key.
+      category: deductionTypeLabel(rec.type),
+      typeCode: typeof rec.type === 'string' ? rec.type : '',
       description: typeof rec.description === 'string' ? rec.description : '',
       deductionDays: typeof rec.deductionDays === 'number' ? rec.deductionDays : 0,
       monetaryAmount: typeof rec.deductionAmount === 'number' ? rec.deductionAmount : 0,
+      evidence: typeof rec.evidence === 'string' && rec.evidence.trim() !== '' ? rec.evidence : null,
+      status: DEDUCTION_STATUS_LABELS[
+        (rec.approvalStatus as DeductionApprovalStatus) ?? 'approved'
+      ] ?? 'معتمد',
       relatedCapaId: rec.relatedCapaId ?? null,
       createdAt: rec.createdAt,
     });

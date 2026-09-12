@@ -13,6 +13,7 @@ import { APP_PAGES } from '@/config/permissions';
 import { AppShell } from '@/components/shell/AppShell';
 import LoginPage from '@/components/pages/LoginPage';
 import { ShieldX } from 'lucide-react';
+import { useMarkSeen } from '@/hooks/use-unseen';
 
 // ─── Page skeleton ────────────────────────────────────────────────────────────
 function PageSkeleton() {
@@ -108,6 +109,20 @@ function AccessDenied() {
   );
 }
 
+// ─── §SIDEBAR-BADGES: mark-on-open ────────────────────────────────────────────
+// Opening a monitored page marks THAT module seen for the CURRENT user
+// only (per-user state — other users' badges are unaffected). The call
+// is optimistic (badge clears instantly) and fires once per navigation;
+// the record data itself is fetched by the page as usual.
+function MarkSeenOnOpen({ page }: { page: string }) {
+  const markSeen = useMarkSeen();
+  React.useEffect(() => {
+    markSeen(page);
+    // One mark per navigation — the page id is the dependency.
+  }, [page]);
+  return null;
+}
+
 // ─── Page router ──────────────────────────────────────────────────────────────
 function PageRouter() {
   const currentPage = useAppStore((s) => s.currentPage);
@@ -117,6 +132,15 @@ function PageRouter() {
     return <AccessDenied key="access-denied" />;
   }
 
+  return (
+    <>
+      <MarkSeenOnOpen page={currentPage} />
+      {renderPage(currentPage)}
+    </>
+  );
+}
+
+function renderPage(currentPage: string): React.ReactNode {
   switch (currentPage) {
     case 'home':             return <HomePage             key="home" />;
     case 'employees':        return <EmployeesPage        key="employees" />;

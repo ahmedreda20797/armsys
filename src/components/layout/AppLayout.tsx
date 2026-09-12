@@ -11,6 +11,7 @@ import { useIsMobile } from '@/hooks/use-mobile';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePermissions } from '@/hooks/usePermissions';
 import { logPageVisit } from '@/lib/activity-logger';
+import { PrintReportHost } from '@/components/print/PrintReportDocument';
 
 // Lazy-load Employee360Page for overlay
 const Employee360Overlay = dynamic(() => import('@/components/pages/Employee360Page'), {
@@ -135,7 +136,7 @@ export function AppLayout({ children }: AppLayoutProps) {
   const sidebarMargin = sidebarCollapsed ? 72 : 288;
 
   return (
-    <div className="min-h-screen bg-slate-950" dir="rtl">
+    <div className="min-h-screen bg-slate-950" dir="rtl" data-print-hide>
       {/* Sidebar */}
       <Sidebar
         currentPage={currentPage}
@@ -223,6 +224,10 @@ export function AppLayout({ children }: AppLayoutProps) {
           </>
         )}
       </AnimatePresence>
+
+      {/* §PRINT — dedicated print/PDF host: mounts ONCE for the whole
+          app; report tabs push a clean A4 model into it. */}
+      <PrintReportHost />
     </div>
   );
 }

@@ -60,6 +60,7 @@ import { PagePeriodIndicator } from '@/components/shared/PagePeriodIndicator';
 import { PageHeaderBar } from '@/components/shared/PageHeaderBar';
 import { CAPALinkBadge } from '@/components/shared/CAPALinkBadge';
 import { CAPAInlineForm, type CapaInlineFormState } from '@/components/shared/inline-forms';
+import { InlineFormPanel } from '@/components/shared/InlineFormPanel';
 
 const DEDUCTION_TYPES = [
   { value: 'خصم تأخير', label: 'خصم تأخير' },
@@ -642,38 +643,25 @@ export default function HrDeductionsPage() {
           approved HR violation) instead of navigating to the CAPA page. ━━━ */}
       <AnimatePresence>
         {canCreateCapa && capaPrefill && (
-          <motion.div
+          <InlineFormPanel
             id="hr-inline-capa"
-            initial={{ opacity: 0, y: -8, scale: 0.98 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: -8, scale: 0.98 }}
-            transition={{ duration: 0.22, ease: [0.4, 0, 0.2, 1] }}
-            className="rounded-2xl border border-violet-500/30 bg-slate-900/60 backdrop-blur-md shadow-2xl shadow-violet-900/20"
+            tone="violet"
+            icon={<ShieldAlert className="size-3.5 text-violet-400" />}
+            title="إنشاء CAPA من مخالفة HR"
+            onClose={() => setCapaPrefill(null)}
           >
-            <div className="flex items-center justify-between gap-2 px-4 py-2.5 border-b border-slate-700/50">
-              <p className="text-xs font-bold text-slate-200 flex items-center gap-2">
-                <ShieldAlert className="size-3.5 text-violet-400" />
-                إنشاء CAPA من مخالفة HR
-              </p>
-              <Button variant="ghost" size="sm" onClick={() => setCapaPrefill(null)} className="h-7 text-xs text-slate-400 hover:text-white">
-                <X className="size-3.5 ml-1" />
-                إغلاق
-              </Button>
-            </div>
-            <div className="p-4">
-              <CAPAInlineForm
-                key={JSON.stringify(capaPrefill)}
-                onClose={() => setCapaPrefill(null)}
-                onCreated={() => {
-                  setCapaPrefill(null);
-                  fetchData();
-                }}
-                employees={employees}
-                systemUsers={systemUsers}
-                defaultValues={capaPrefill}
-              />
-            </div>
-          </motion.div>
+            <CAPAInlineForm
+              key={JSON.stringify(capaPrefill)}
+              onClose={() => setCapaPrefill(null)}
+              onCreated={() => {
+                setCapaPrefill(null);
+                fetchData();
+              }}
+              employees={employees}
+              systemUsers={systemUsers}
+              defaultValues={capaPrefill}
+            />
+          </InlineFormPanel>
         )}
       </AnimatePresence>
 

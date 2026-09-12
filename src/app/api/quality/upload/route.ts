@@ -3,6 +3,9 @@ import * as XLSX from 'xlsx';
 import { getAll, createRecord, findFirst } from '@/lib/db';
 import { requireAuth, verifyPermission } from '@/lib/verify-permission';
 import { asScopeViewer, hasUnrestrictedEmployeeScope } from '@/lib/scope/server';
+import { resolveActor } from '@/lib/auth/actor-resolver';
+import { makeApprovalEvent, appendApprovalEvent, projectLatestApprovalStatus } from '@/lib/approvals';
+import { getById } from '@/lib/db';
 
 // ── Column mapping for Arabic Excel headers ──
 const COLUMN_MAP: Record<string, string> = {
@@ -135,6 +138,33 @@ export async function POST(request: NextRequest) {
     if (!permCheck.allowed) {
       return NextResponse.json({ error: permCheck.error }, { status: 403 });
     }
+
+    // §WORKFLOW — bulk-imported discounts follow the SAME approval
+    // lifecycle as manual ones: an uploader without the approve
+    // permission imports them as PENDING (affecting nothing until a
+    // manager approves); an approver imports them as APPROVED.
+    // §AUDIT — every imported row is attributed to the uploading user.
+    const approveCheck = await verifyPermission(request, 'quality', 'approve');
+    const canApprove = approveCheck.allowed;
+    const actor = await resolveActor(permCheck.user?.id);
+    const uploaderRecord = permCheck.user?.id
+      ? await getById<{ name?: string; email?: string }>('users', permCheck.user.id)
+      : null;
+    const submitEvent = makeApprovalEvent({
+      action: 'submit',
+      actorId: actor.id,
+      actorName: actor.name,
+      notes: 'استيراد خصومات من ملف Excel',
+    });
+    const approvalHistory = canApprove
+      ? appendApprovalEvent([submitEvent], makeApprovalEvent({
+          action: 'approve',
+          actorId: actor.id,
+          actorName: actor.name,
+          notes: 'اعتماد تلقائي — المستورد يملك صلاحية الاعتماد',
+        }))
+      : [submitEvent];
+    const importedApprovalStatus = projectLatestApprovalStatus(approvalHistory);
 
     // ── BULK WRITE-SCOPE (M0.4) ──
     // Rows target employees matched by free-text names — arbitrary
@@ -278,6 +308,14 @@ export async function POST(request: NextRequest) {
           deductionAmount,
           evidence: evidence || null,
           month,
+          // §AUDIT — hidden creator metadata (server-resolved).
+          createdById: actor.id,
+          createdByUserId: actor.id,
+          createdByName: actor.name,
+          createdByEmail: uploaderRecord?.email || null,
+          // §WORKFLOW — same approval lifecycle as manual creation.
+          approvalStatus: importedApprovalStatus,
+          approvalHistory,
         });
         imported++;
       }

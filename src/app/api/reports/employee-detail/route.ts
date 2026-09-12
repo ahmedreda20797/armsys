@@ -3,6 +3,7 @@ import { getAll, findWhereContains, findWhere, getById } from '@/lib/db';
 import { verifyPermission } from '@/lib/verify-permission';
 import { asScopeViewer, employeeInScope } from '@/lib/scope/server';
 import { validateMonthKey } from '@/lib/month-utils';
+import { isEffectiveDeduction } from '@/lib/quality-deductions/domain';
 import {
   buildDailyBreakdown,
   computeMonthlyAttendance,
@@ -81,7 +82,8 @@ export async function POST(request: NextRequest) {
       findWhereContains('biometrics', 'date', datePattern),
       findWhereContains('attendance', 'date', datePattern),
       findWhereContains('requests', 'date', datePattern),
-      findWhere('qualityDeductions', { month }),
+      // §WORKFLOW — only APPROVED discounts affect employee reports.
+      findWhere('qualityDeductions', { month }).then((rs) => rs.filter(isEffectiveDeduction)),
       findWhere('waivedDeductions', { month }),
       findWhere('hrDeductions', { month, status: 'approved' }),
     ]);

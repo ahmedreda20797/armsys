@@ -6,18 +6,22 @@
 //  §11 EMPLOYEE-GROUPED VIEW (new default): one row per employee —
 //  count · total days · total amount — with an EXPANDABLE detail
 //  section listing that employee's deductions chronologically
-//  (date · reason · days · amount · CAPA). The flat view remains
-//  available through the toggle. Both views read the SAME verified
-//  runner data through the unified /api/reports/run path — no
-//  second calculation anywhere.
+//  (date · reason · details · days · amount · evidence · status ·
+//  CAPA). The flat view remains available through the toggle. Both
+//  views read the SAME verified runner data through the unified
+//  /api/reports/run path — no second calculation anywhere.
+//
+//  §EXPANSION-UX: the WHOLE "تفاصيل الخصومات / اضغط للتوسيع" cell is
+//  clickable (expandTriggerColumns) — the hint text and the chevron
+//  toggle the same expansion, no dead click targets.
 // ══════════════════════════════════════════════════════════════
 
 import React, { useState } from 'react';
 import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
 import { ReportView } from '@/components/shared/reports/ReportView';
 import type { ReportColumnSpec } from '@/lib/reports/types';
-import { Rows3, Layers } from 'lucide-react';
+import { Rows3, Layers, ChevronDown, ChevronLeft, Link as LinkIcon } from 'lucide-react';
+import { parseSafeHttpUrl } from '@/lib/quality-observations/evidence';
 
 type ViewMode = 'grouped' | 'flat';
 
@@ -55,6 +59,7 @@ export default function QualityDeductionsReport() {
           reportId="quality-deductions-grouped"
           renderCell={renderGroupedCell}
           renderExpanded={renderGroupedDetails}
+          expandTriggerColumns={['reasons']}
         />
       ) : (
         <ReportView
@@ -63,6 +68,25 @@ export default function QualityDeductionsReport() {
         />
       )}
     </div>
+  );
+}
+
+/** Safe evidence link — same guard as the evidence system (http/https only). */
+function EvidenceCellLink({ url }: { url: string }) {
+  const safe = parseSafeHttpUrl(url);
+  if (!safe) return <span className="text-slate-400 text-xs break-all">{url}</span>;
+  return (
+    <a
+      href={safe}
+      target="_blank"
+      rel="noopener noreferrer"
+      onClick={(e) => e.stopPropagation()}
+      className="inline-flex items-center gap-1 text-cyan-400 hover:text-cyan-300 text-[11px] bg-cyan-500/10 px-2 py-0.5 rounded-md border border-cyan-500/20 max-w-56"
+      title="فتح الدليل في تبويب جديد"
+    >
+      <LinkIcon className="size-2.5 shrink-0" />
+      <span className="truncate" dir="ltr">{url}</span>
+    </a>
   );
 }
 
@@ -94,13 +118,15 @@ function renderGroupedCell(column: ReportColumnSpec, row: Record<string, unknown
       return <span className="text-amber-400 tabular-nums font-semibold">{amount} ج.م</span>;
     }
     case 'reasons': {
-      // On-screen the reasons live in the EXPANDED section — the cell
-      // shows only a hint; the Excel export renders the full cell.
+      // §EXPANSION-UX — the WHOLE cell is a click target (the table
+      // binds onClick for this column via expandTriggerColumns); the
+      // hint states the action and the arrow mirrors the chevron.
       const count = Number(row.deductionCount) || 0;
       if (count <= 0) return <span className="text-slate-500">—</span>;
       return (
         <span className="text-[11px] text-cyan-400 inline-flex items-center gap-1">
-          ▼ اضغط للتوسيع — {count} {count === 1 ? 'خصم' : 'خصومات'} مرتبة زمنياً
+          اضغط للتوسيع — {count} {count === 1 ? 'خصم' : 'خصومات'} مرتبة زمنياً
+          <ChevronLeft className="size-3" />
         </span>
       );
     }
@@ -109,7 +135,9 @@ function renderGroupedCell(column: ReportColumnSpec, row: Record<string, unknown
   }
 }
 
-/** §11 expanded row: the employee's deductions, chronological. */
+/** §11 expanded row: the employee's deductions, chronological, with
+ *  EVERY detail visible — no truncation of reasons, details,
+ *  evidence or status. */
 function renderGroupedDetails(row: Record<string, unknown>): React.ReactNode {
   const details = Array.isArray(row.details)
     ? (row.details as Array<Record<string, unknown>>)
@@ -123,30 +151,43 @@ function renderGroupedDetails(row: Record<string, unknown>): React.ReactNode {
   return (
     <div className="space-y-1.5 max-w-3xl">
       <p className="text-[11px] font-bold text-slate-400">تفاصيل الخصومات (الأقدم أولاً):</p>
-      {chronological.map((d, i) => (
-        <div key={String(d.id ?? i)} className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border border-slate-800/80 bg-slate-900/50 px-3 py-2 text-xs">
-          <span className="font-mono text-slate-300" dir="ltr">{String(d.date ?? '—')}</span>
-          <span className="font-semibold text-slate-100">{String(d.category ?? '—')}</span>
-          {d.description ? <span className="text-slate-500 truncate max-w-xs">{String(d.description)}</span> : null}
-          <span className="flex items-center gap-2 mr-auto">
-            {Number(d.deductionDays) > 0 && (
-              <Badge className="bg-red-500/10 text-red-400 border-red-500/20 text-[10px]">{Number(d.deductionDays)} يوم</Badge>
-            )}
-            {Number(d.monetaryAmount) > 0 && (
-              <Badge className="bg-amber-500/10 text-amber-400 border-amber-500/20 text-[10px]">{Number(d.monetaryAmount)} ج.م</Badge>
-            )}
-            {d.relatedCapaId ? (
-              <Badge className="bg-cyan-500/15 text-cyan-400 border-cyan-500/25 text-[10px]">كابا</Badge>
+      {chronological.map((d, i) => {
+        const evidence = typeof d.evidence === 'string' && d.evidence.trim() !== '' ? d.evidence : null;
+        return (
+          <div key={String(d.id ?? i)} className="rounded-lg border border-slate-800/80 bg-slate-900/50 px-3 py-2 text-xs space-y-1.5">
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+              <span className="font-mono text-slate-300" dir="ltr">{String(d.date ?? '—')}</span>
+              <span className="font-semibold text-slate-100">{String(d.category ?? '—')}</span>
+              {typeof d.status === 'string' && d.status !== 'معتمد' && (
+                <Badge className="bg-amber-500/10 text-amber-400 border-amber-500/20 text-[10px]">{d.status}</Badge>
+              )}
+              <span className="flex items-center gap-2 mr-auto">
+                {Number(d.deductionDays) > 0 && (
+                  <Badge className="bg-red-500/10 text-red-400 border-red-500/20 text-[10px]">{Number(d.deductionDays)} يوم</Badge>
+                )}
+                {Number(d.monetaryAmount) > 0 && (
+                  <Badge className="bg-amber-500/10 text-amber-400 border-amber-500/20 text-[10px]">{Number(d.monetaryAmount)} ج.م</Badge>
+                )}
+                {d.relatedCapaId ? (
+                  <Badge className="bg-cyan-500/15 text-cyan-400 border-cyan-500/25 text-[10px]">كابا</Badge>
+                ) : null}
+              </span>
+            </div>
+            {/* Full reason/details — wrapped, never truncated */}
+            {d.description ? (
+              <p className="text-slate-300 text-xs leading-relaxed whitespace-pre-wrap break-words">{String(d.description)}</p>
             ) : null}
-          </span>
-        </div>
-      ))}
+            {evidence ? <EvidenceCellLink url={evidence} /> : null}
+          </div>
+        );
+      })}
     </div>
   );
 }
 
 /** Flat view presentation — day deductions highlighted (primary
- *  impact), optional monetary amount shown independently. */
+ *  impact), optional monetary amount shown independently, evidence
+ *  clickable, approval status visible. */
 function renderDeductionCell(column: ReportColumnSpec, row: Record<string, unknown>): React.ReactNode {
   switch (column.key) {
     case 'deductionDays': {
@@ -158,6 +199,20 @@ function renderDeductionCell(column: ReportColumnSpec, row: Record<string, unkno
       const amount = Number(row.monetaryAmount) || 0;
       if (amount <= 0) return <span className="text-slate-500">—</span>;
       return <span className="text-amber-400 tabular-nums">{amount} ج.م</span>;
+    }
+    case 'evidence': {
+      const url = typeof row.evidence === 'string' ? row.evidence : '';
+      if (!url) return <span className="text-slate-500">—</span>;
+      return <EvidenceCellLink url={url} />;
+    }
+    case 'status': {
+      const status = String(row.status ?? 'معتمد');
+      const cls = status === 'معتمد'
+        ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+        : status === 'قيد الاعتماد'
+          ? 'bg-amber-500/10 text-amber-400 border-amber-500/20'
+          : 'bg-red-500/10 text-red-400 border-red-500/20';
+      return <Badge className={`${cls} text-[10px]`}>{status}</Badge>;
     }
     case 'relatedCapaId': {
       const capaId = row.relatedCapaId;

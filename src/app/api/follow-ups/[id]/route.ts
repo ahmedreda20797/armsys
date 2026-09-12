@@ -43,7 +43,8 @@ export async function PUT(
       'employeeId', 'date', 'followUpType', 'subject', 'detailedDescription',
       'positiveNotes', 'negativeNotes', 'rootCause', 'actionTaken',
       'department', 'position', 'responsiblePerson', 'nextFollowUpDate',
-      'followUpRequired', 'status', 'attachments', 'relatedDeductionId', 'relatedCapaId',
+      'followUpRequired', 'status', 'attachments', 'evidence',
+      'relatedDeductionId', 'relatedCapaId',
     ] as const;
 
     for (const field of fields) {

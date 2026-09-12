@@ -162,17 +162,9 @@ export default function RiskCenterPage() {
   const [levelFilter, setLevelFilter] = useState('all');
   const [deptFilter, setDeptFilter] = useState('all');
   const [selectedEmployee, setSelectedEmployee] = useState<EmployeeRisk | null>(null);
-  // §DETAIL-DRAWER-FIX — Escape closes the details drawer (the drawer
-  // is viewport-fixed with no backdrop, so it needs an explicit
-  // keyboard exit in addition to the ✕ button).
-  useEffect(() => {
-    if (!selectedEmployee) return;
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setSelectedEmployee(null);
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [selectedEmployee]);
+  // §VIEWPORT-MODAL — the details view is now a Radix Dialog, which
+  // owns ESC + click-outside + backdrop closing itself; no manual
+  // key listener is needed (the old fixed drawer required one).
   // §6 "عرض الكل" dialog for the risk summary panel
   const [viewAllRiskyOpen, setViewAllRiskyOpen] = useState(false);
   // §8 — inline CAPA create (mounted over the same context as the
@@ -660,47 +652,37 @@ export default function RiskCenterPage() {
         </motion.div>
       )}
 
-      {/* §7 — Employee Details FLOATING CARD — §FLOATING-CARD-FIX:
-          the details card is a DETACHED floating surface anchored to
-          the VIEWPORT (never part of the page flow): wherever the
-          user has scrolled — even the bottom of a long table —
-          clicking a row opens the card right where they are,
-          vertically centered in the current viewport. Nothing is
-          glued to the page edge and nothing pushes the content.
-          · The card body has its OWN scrollbar (max-height 85vh):
-            data longer than the card scrolls INSIDE the card.
-          · Header (title + ✕) is fixed at the top of the card so
-            closing stays reachable while the body scrolls.
-          · The positioning wrapper is pointer-events-none — only the
-            card itself captures clicks, so the table stays fully
-            interactive and clicking another row re-targets the card.
-          · No dark backdrop. Escape closes it; ✕ closes it. */}
-      <AnimatePresence>
-        {selectedEmployee && (
-          <motion.div
-            initial={{ opacity: 0, x: -32 }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: -32 }}
-            transition={{ type: 'spring', damping: 26, stiffness: 280 }}
-            className="fixed inset-y-0 left-3 sm:left-5 z-40 flex items-center pointer-events-none"
-            dir="rtl"
-            role="dialog"
-            aria-label={`تفاصيل المخاطر — ${selectedEmployee.employeeName}`}
-          >
-              <div className="pointer-events-auto w-[min(28rem,calc(100vw-1.5rem))] max-h-[85vh] flex flex-col rounded-2xl border border-slate-700/60 bg-slate-900 ring-1 ring-white/5 shadow-2xl shadow-black/60 overflow-hidden">
-                {/* Card header — always visible; ✕ never scrolls away */}
-                <div className="flex items-center justify-between px-5 py-3.5 border-b border-slate-700/50 bg-slate-900 shrink-0">
-                  <h2 className="text-white text-lg font-bold">تفاصيل المخاطر</h2>
-                  <button onClick={() => setSelectedEmployee(null)} aria-label="إغلاق التفاصيل" className="p-2 rounded-lg text-slate-500 hover:text-white hover:bg-slate-800 transition-colors">
-                    <X className="size-5" />
-                  </button>
-                </div>
-
-                {/* Card body — INTERNAL scrollbar: data longer than the
-                    card scrolls here without ever leaving the viewport.
-                    Keyed by employee → switching rows resets the scroll
-                    to the top of the new employee's data. */}
-                <div key={selectedEmployee.employeeId} className="overflow-y-auto arm-scroll p-5 space-y-4">
+      {/* §7 — Employee Details MODAL — §VIEWPORT-MODAL (Requirement 5):
+          the details view is now a Radix Dialog rendered through a
+          PORTAL to <body>, so it is always positioned relative to the
+          VIEWPORT — regardless of where the user has scrolled. The old
+          position:fixed floating card silently broke: the page-
+          transition wrapper in AppLayout keeps a filter/transform,
+          which makes it the containing block for fixed descendants and
+          anchored the card to the DOCUMENT (mid-page), forcing the
+          user to scroll to it. The Dialog also gives the standard
+          modal behavior used across the system: dimmed backdrop,
+          click-outside closes, ESC closes, and the ✕ sits on the far
+          side from the title. The card keeps its own scrollbar
+          (max-h 85vh): long data scrolls INSIDE the card. Same modal
+          system as the Daily Follow-up details dialog — one UI
+          pattern, fully separate business logic. */}
+      <Dialog open={!!selectedEmployee} onOpenChange={(open) => { if (!open) { setSelectedEmployee(null); setCapaCreateOpen(false); } }}>
+        <DialogContent
+          aria-describedby={undefined}
+          dir="rtl"
+          className="backdrop-blur-xl bg-slate-900 border-slate-700/60 shadow-2xl shadow-black/60 w-[min(28rem,calc(100vw-1.5rem))] max-h-[85vh] p-0 gap-0 flex flex-col overflow-hidden"
+        >
+          <DialogHeader className="px-5 py-3.5 border-b border-slate-700/50 bg-slate-900 shrink-0 space-y-0">
+            <DialogTitle className="text-white text-lg font-bold">تفاصيل المخاطر</DialogTitle>
+          </DialogHeader>
+          {/* Card body — INTERNAL scrollbar: data longer than the card
+              scrolls here without ever leaving the viewport. Keyed by
+              employee → switching rows resets the scroll position.
+              Guarded: Radix keeps content mounted briefly while the
+              closing animation plays, after selectedEmployee cleared. */}
+          {selectedEmployee && (
+          <div key={selectedEmployee.employeeId} className="overflow-y-auto arm-scroll p-5 space-y-4">
 
                 {/* Employee Info */}
                 <div className="flex items-center gap-3 p-4 rounded-xl bg-slate-800/60 border border-slate-700/30">
@@ -891,11 +873,10 @@ export default function RiskCenterPage() {
                     </motion.div>
                   )}
                 </AnimatePresence>
-              </div>
-              </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+          </div>
+          )}
+        </DialogContent>
+      </Dialog>
 
       {/* ═══ Department Risk Analysis ═══ */}
       {deptTable.length > 0 && (

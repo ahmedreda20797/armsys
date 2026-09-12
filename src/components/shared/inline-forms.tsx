@@ -37,6 +37,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import type { Employee } from '@/types';
 import { EMPLOYEE_STATUS_LABELS_AR, EMPLOYEE_STATUSES } from '@/lib/organization/employee-status';
 import { PRIORITY_OPTIONS, DEPARTMENTS, SOURCE_OPTIONS } from '@/lib/capa-constants';
+import { addDays } from '@/lib/date-utils';
 
 /* ── Shared types ── */
 interface SystemUser { id: string; name: string; email?: string; role?: string; }
@@ -379,6 +380,7 @@ export function ComplaintInlineForm({ onClose, employees, systemUsers, onCreated
 interface FollowUpFormState {
   employeeId: string; date: string; followUpType: string; subject: string;
   detailedDescription: string; priorityLevel: string; responsiblePerson: string;
+  nextFollowUpDate: string;
 }
 
 const FOLLOWUP_EMPTY = (): FollowUpFormState => ({
@@ -389,6 +391,8 @@ const FOLLOWUP_EMPTY = (): FollowUpFormState => ({
   detailedDescription: '',
   priorityLevel: 'medium',
   responsiblePerson: '',
+  // Same default as the page-level dialog: follow-up date = today + 7.
+  nextFollowUpDate: addDays(new Date().toISOString().split('T')[0], 7),
 });
 
 export function FollowUpInlineForm({ onClose, employees, systemUsers, onCreated }: {
@@ -403,6 +407,11 @@ export function FollowUpInlineForm({ onClose, employees, systemUsers, onCreated 
   const [saving, setSaving] = useState(false);
   const upd = <K extends keyof FollowUpFormState>(k: K, v: FollowUpFormState[K]) =>
     setForm((p) => ({ ...p, [k]: v }));
+
+  // Same date→next-follow-up behavior as the page dialog: changing the
+  // record date re-seeds the next follow-up to date + 7 (still editable).
+  const handleDateChange = (date: string) =>
+    setForm((p) => ({ ...p, date, nextFollowUpDate: addDays(date, 7) }));
 
   // Auto-fill department/position when employee is selected
   const selectedEmployee = useMemo(
@@ -424,6 +433,9 @@ export function FollowUpInlineForm({ onClose, employees, systemUsers, onCreated 
           department: selectedEmployee?.department || '',
           position: selectedEmployee?.position || '',
           status: 'open',
+          // Same fallback contract as the page dialog — the field is
+          // ALWAYS saved so the record shows up in due/overdue alerts.
+          nextFollowUpDate: form.nextFollowUpDate || addDays(form.date, 7),
           createdBy: user?.id || 'system',
         }),
       });
@@ -452,7 +464,7 @@ export function FollowUpInlineForm({ onClose, employees, systemUsers, onCreated 
         </div>
         <div className="space-y-1.5">
           <Label className="text-slate-300 text-xs">التاريخ *</Label>
-          <Input type="date" value={form.date} onChange={(e) => upd('date', e.target.value)} className="bg-slate-800 border-slate-600 text-white h-9 text-sm" dir="ltr" />
+          <Input type="date" value={form.date} onChange={(e) => handleDateChange(e.target.value)} className="bg-slate-800 border-slate-600 text-white h-9 text-sm" dir="ltr" />
         </div>
         <div className="space-y-1.5">
           <Label className="text-slate-300 text-xs">نوع المتابعة *</Label>
@@ -483,6 +495,17 @@ export function FollowUpInlineForm({ onClose, employees, systemUsers, onCreated 
         <div className="space-y-1.5">
           <Label className="text-slate-300 text-xs">المسؤول</Label>
           <UserSearchInput users={systemUsers} value={form.responsiblePerson} onChange={(id) => upd('responsiblePerson', id)} placeholder="ابحث عن مستخدم..." allowClear clearLabel="— بدون —" />
+        </div>
+        <div className="space-y-1.5 sm:col-span-2">
+          <Label className="text-slate-300 text-xs">المتابعة القادمة</Label>
+          <Input
+            type="date"
+            value={form.nextFollowUpDate}
+            onChange={(e) => upd('nextFollowUpDate', e.target.value)}
+            className="bg-slate-800 border-slate-600 text-white h-9 text-sm"
+            dir="ltr"
+          />
+          <p className="text-[10px] text-slate-500">افتراضياً بعد ٧ أيام من التاريخ — عدّلها عند الحاجة.</p>
         </div>
       </div>
       <div className="flex items-center gap-2 pt-2 border-t border-slate-700/50">

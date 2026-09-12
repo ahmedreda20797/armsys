@@ -20,6 +20,9 @@ import { EmployeeSearchInput } from '@/components/shared/EmployeeSearchInput';
 import { UserSearchInput } from '@/components/shared/UserSearchInput';
 import { CAPALinkBadge } from '@/components/shared/CAPALinkBadge';
 import { AttentionPanel, type AttentionItem } from '@/components/shared/AttentionPanel';
+import { OverflowMenu, type OverflowMenuItem } from '@/components/shared/OverflowMenu';
+import { InlineFormPanel } from '@/components/shared/InlineFormPanel';
+import { EvidenceLinkButton } from '@/components/shared/EvidenceLinkButton';
 import { CAPAInlineForm, type CapaInlineFormState } from '@/components/shared/inline-forms';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
@@ -44,6 +47,7 @@ import { logCreate, logUpdate, logDelete } from '@/lib/activity-logger';
 import { toast } from 'sonner';
 import { authFetch } from '@/lib/api-fetch';
 import { useAppStore } from '@/lib/store';
+import { addDays, todayDayKey } from '@/lib/date-utils';
 
 // ═══════════════════════════════════════════════════
 //  Animation Variants
@@ -175,17 +179,13 @@ function getStatusColor(status: string) {
   return map[status] || 'border-slate-700/40';
 }
 
-function addDays(dateStr: string, days: number): string {
-  if (!dateStr) return '';
-  const d = new Date(dateStr);
-  if (isNaN(d.getTime())) return '';
-  d.setDate(d.getDate() + days);
-  return d.toISOString().split('T')[0];
-}
+// ══════════════════════════════════════════════════════════════
+//  Date helpers — shared implementations from lib/date-utils
+//  (addDays + todayDayKey) so the page dialog and the inline
+//  Home quick-action form can never drift apart.
+// ══════════════════════════════════════════════════════════════
 
-function getTodayStr(): string {
-  return new Date().toISOString().split('T')[0];
-}
+const getTodayStr = todayDayKey;
 
 function getRiskLevel(score: number): { label: string; color: string } {
   if (score >= 26) return { label: 'مرتفع', color: 'text-red-400 bg-red-500/15 border-red-500/30' };
@@ -215,6 +215,7 @@ const emptyForm = {
   followUpRequired: true,
   status: 'open',
   attachments: [] as string[],
+  evidence: '',
 };
 
 // ═══════════════════════════════════════════════════
@@ -468,6 +469,37 @@ export default function FollowUpsPage() {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
+  // ═══ Row Actions (§6) — ONE ⋮ menu per row, shared by the table and
+  //     card views so both can never drift. View is always available;
+  //     Edit/Delete stay permission-gated exactly as the old icons were.
+  const rowActionsFor = (item: FollowUp): OverflowMenuItem[] => [
+    {
+      key: 'view',
+      label: 'عرض التفاصيل',
+      icon: <Eye className="size-3.5" />,
+      onSelect: () => setViewingItem(item),
+    },
+    ...(canUpdate
+      ? [{
+          key: 'edit',
+          label: 'تعديل',
+          icon: <Pencil className="size-3.5" />,
+          separatorBefore: true,
+          onSelect: () => openEdit(item),
+        }]
+      : []),
+    ...(canDelete
+      ? [{
+          key: 'delete',
+          label: 'حذف',
+          icon: <Trash2 className="size-3.5" />,
+          destructive: true,
+          separatorBefore: true,
+          onSelect: () => setDeletingId(item.id),
+        }]
+      : []),
+  ];
+
   // ═══ Form Handlers ═══
   const openCreate = () => {
     setEditingItem(null);
@@ -505,6 +537,7 @@ export default function FollowUpsPage() {
       followUpRequired: item.followUpRequired !== false,
       status: item.status,
       attachments: item.attachments || [],
+      evidence: item.evidence || '',
     };
   };
 
@@ -561,6 +594,7 @@ export default function FollowUpsPage() {
         followUpRequired: form.followUpRequired,
         status: isManagerOrAdmin || editingItem ? form.status : 'open',
         attachments: form.attachments || [],
+        evidence: form.evidence || null,
       };
 
       if (editingItem) {
@@ -709,7 +743,7 @@ export default function FollowUpsPage() {
                   onClick: () => setViewingItem(f),
                   overflowItems: [
                     { key: 'view', label: 'عرض التفاصيل', icon: <Eye className="size-3.5" />, onSelect: () => setViewingItem(f) },
-                    { key: 'edit', label: 'تعديل', icon: <Pencil className="size-3.5" />, separatorBefore: true, onSelect: () => { setEditingItem(f); setForm({ ...formFromFollowUp(f), date: todayStr }); } },
+                    { key: 'edit', label: 'تعديل', icon: <Pencil className="size-3.5" />, separatorBefore: true, onSelect: () => openEdit(f) },
                     { key: 'capa', label: 'إنشاء CAPA', icon: <ShieldCheck className="size-3.5" />, separatorBefore: true, onSelect: () => openCapaFromFollowUp(f) },
                   ],
                 } satisfies AttentionItem;
@@ -732,7 +766,7 @@ export default function FollowUpsPage() {
                     onClick: () => setViewingItem(f),
                     overflowItems: [
                       { key: 'view', label: 'عرض التفاصيل', icon: <Eye className="size-3.5" />, onSelect: () => setViewingItem(f) },
-                      { key: 'edit', label: 'تعديل', icon: <Pencil className="size-3.5" />, separatorBefore: true, onSelect: () => { setEditingItem(f); setForm({ ...formFromFollowUp(f), date: todayStr }); } },
+                      { key: 'edit', label: 'تعديل', icon: <Pencil className="size-3.5" />, separatorBefore: true, onSelect: () => openEdit(f) },
                       { key: 'capa', label: 'إنشاء CAPA', icon: <ShieldCheck className="size-3.5" />, separatorBefore: true, onSelect: () => openCapaFromFollowUp(f) },
                     ],
                   } satisfies AttentionItem;
@@ -744,41 +778,28 @@ export default function FollowUpsPage() {
 
       {/* ━━━ §12 INLINE CAPA FORM — opens here (prefilled from the
           triggering follow-up) instead of navigating to the CAPA page;
-          same motion-card pattern as the Travel inline complaint. ━━━ */}
+          the shared InlineFormPanel keeps the header/close standard. ━━━ */}
       <AnimatePresence>
         {canCreateCapa && capaPrefill && (
-          <motion.div
+          <InlineFormPanel
             id="followups-inline-capa"
-            initial={{ opacity: 0, y: -8, scale: 0.98 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: -8, scale: 0.98 }}
-            transition={{ duration: 0.22, ease: [0.4, 0, 0.2, 1] }}
-            className="rounded-2xl border border-violet-500/30 bg-slate-900/60 backdrop-blur-md shadow-2xl shadow-violet-900/20"
+            tone="violet"
+            icon={<ShieldAlert className="size-3.5 text-violet-400" />}
+            title="إنشاء CAPA من متابعة"
+            onClose={() => setCapaPrefill(null)}
           >
-            <div className="flex items-center justify-between gap-2 px-4 py-2.5 border-b border-slate-700/50">
-              <p className="text-xs font-bold text-slate-200 flex items-center gap-2">
-                <ShieldAlert className="size-3.5 text-violet-400" />
-                إنشاء CAPA من متابعة
-              </p>
-              <Button variant="ghost" size="sm" onClick={() => setCapaPrefill(null)} className="h-7 text-xs text-slate-400 hover:text-white">
-                <X className="size-3.5 ml-1" />
-                إغلاق
-              </Button>
-            </div>
-            <div className="p-4">
-              <CAPAInlineForm
-                key={JSON.stringify(capaPrefill)}
-                onClose={() => setCapaPrefill(null)}
-                onCreated={() => {
-                  setCapaPrefill(null);
-                  void fetchData();
-                }}
-                employees={employees}
-                systemUsers={systemUsers}
-                defaultValues={capaPrefill}
-              />
-            </div>
-          </motion.div>
+            <CAPAInlineForm
+              key={JSON.stringify(capaPrefill)}
+              onClose={() => setCapaPrefill(null)}
+              onCreated={() => {
+                setCapaPrefill(null);
+                void fetchData();
+              }}
+              employees={employees}
+              systemUsers={systemUsers}
+              defaultValues={capaPrefill}
+            />
+          </InlineFormPanel>
         )}
       </AnimatePresence>
 
@@ -1021,20 +1042,13 @@ export default function FollowUpsPage() {
                             </Badge>
                           </td>
                           <td className="px-3 py-2.5 whitespace-nowrap">
-                            <div className="flex items-center gap-1 justify-center">
-                              <button onClick={() => setViewingItem(item)} className="p-1.5 rounded-md text-slate-600 hover:text-cyan-400 hover:bg-cyan-500/10 transition-colors">
-                                <Eye className="size-3.5" />
-                              </button>
-                              {canUpdate && (
-                                <button onClick={() => openEdit(item)} className="p-1.5 rounded-md text-slate-600 hover:text-violet-400 hover:bg-violet-500/10 transition-colors">
-                                  <Pencil className="size-3.5" />
-                                </button>
-                              )}
-                              {canDelete && (
-                                <button onClick={() => setDeletingId(item.id)} className="p-1.5 rounded-md text-slate-600 hover:text-red-400 hover:bg-red-500/10 transition-colors">
-                                  <Trash2 className="size-3.5" />
-                                </button>
-                              )}
+                            {/* §6 — one ⋮ menu instead of three always-visible
+                                icons; same actions, permission-gated. */}
+                            <div className="flex items-center justify-center">
+                              <OverflowMenu
+                                items={rowActionsFor(item)}
+                                label={`إجراءات المتابعة — ${empName}`}
+                              />
                             </div>
                           </td>
                         </motion.tr>
@@ -1172,20 +1186,12 @@ export default function FollowUpsPage() {
                                       </div>
                                     )}
                                     <div className="flex-1" />
-                                    <div className="flex items-center gap-1 flex-shrink-0">
-                                      <button onClick={() => setViewingItem(item)} className="p-1.5 rounded-md text-slate-600 hover:text-cyan-400 hover:bg-cyan-500/10 transition-colors">
-                                        <Eye className="size-3.5" />
-                                      </button>
-                                      {canUpdate && (
-                                        <button onClick={() => openEdit(item)} className="p-1.5 rounded-md text-slate-600 hover:text-violet-400 hover:bg-violet-500/10 transition-colors">
-                                          <Pencil className="size-3.5" />
-                                        </button>
-                                      )}
-                                      {canDelete && (
-                                        <button onClick={() => setDeletingId(item.id)} className="p-1.5 rounded-md text-slate-600 hover:text-red-400 hover:bg-red-500/10 transition-colors">
-                                          <Trash2 className="size-3.5" />
-                                        </button>
-                                      )}
+                                    {/* §6 — same shared ⋮ row actions as the table view. */}
+                                    <div className="flex items-center flex-shrink-0">
+                                      <OverflowMenu
+                                        items={rowActionsFor(item)}
+                                        label={`إجراءات المتابعة — ${empName}`}
+                                      />
                                     </div>
                                   </div>
 
@@ -1383,6 +1389,16 @@ export default function FollowUpsPage() {
                   </div>
                 </div>
 
+                {/* §EVIDENCE — dedicated evidence/link button (same shared
+                    pattern as Risk Center / Quality; opens safely in a new
+                    tab, http(s) only). */}
+                {viewingItem.evidence && (
+                  <div>
+                    <p className="text-slate-500 text-[11px] mb-1.5">الدليل / الرابط</p>
+                    <EvidenceLinkButton evidence={viewingItem.evidence} />
+                  </div>
+                )}
+
                 {/* Attachments */}
                 {viewingItem.attachments && viewingItem.attachments.length > 0 && (
                   <div>
@@ -1522,6 +1538,21 @@ export default function FollowUpsPage() {
                 className="bg-slate-800 border-slate-600 text-white min-h-[80px]"
                 placeholder="وصف تفصيلي للملاحظة أو المشكلة..."
               />
+            </div>
+
+            {/* §EVIDENCE — dedicated evidence/link field. NOT scraped from
+                the description: a real field (URL, Drive link, screenshot
+                or document link) rendered as a button in the details card. */}
+            <div className="space-y-2 sm:col-span-2">
+              <Label className="text-slate-300 text-sm">دليل / رابط</Label>
+              <Input
+                value={form.evidence}
+                onChange={e => setForm(p => ({ ...p, evidence: e.target.value }))}
+                className="bg-slate-800 border-slate-600 text-white"
+                placeholder="https://… رابط Google Drive أو مستند أو لقطة شاشة"
+                dir="ltr"
+              />
+              <p className="text-[10px] text-slate-500">رابط خارجي يظهر كزر «عرض الدليل» في بطاقة التفاصيل.</p>
             </div>
 
             {/* Priority */}

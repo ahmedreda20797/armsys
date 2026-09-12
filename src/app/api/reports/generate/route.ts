@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getAll, findWhereContains, findWhere } from '@/lib/db';
 import { verifyPermission } from '@/lib/verify-permission';
 import { validateMonthKey } from '@/lib/month-utils';
+import { isEffectiveDeduction } from '@/lib/quality-deductions/domain';
 import { asScopeViewer, filterEmployeesInScope, resolveEmployeeScopeFromDb } from '@/lib/scope/server';
 import { filterCurrentEmployees } from '@/lib/organization';
 import {
@@ -47,7 +48,8 @@ export async function POST(request: NextRequest) {
       findWhereContains('biometrics', 'date', datePattern),
       findWhereContains('attendance', 'date', datePattern),
       findWhereContains('requests', 'date', datePattern),
-      findWhere('qualityDeductions', { month }),
+      // §WORKFLOW — only APPROVED discounts affect the monthly report.
+      findWhere('qualityDeductions', { month }).then((rs) => rs.filter(isEffectiveDeduction)),
       findWhere('waivedDeductions', { month }),
       findWhere('hrDeductions', { month, status: 'approved' }),
     ]);

@@ -12,6 +12,8 @@ import { PageHeaderBar } from '@/components/shared/PageHeaderBar';
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
 import { AttentionPanel, type AttentionSeverity } from '@/components/shared/AttentionPanel';
 import { ComplaintInlineForm } from '@/components/shared/inline-forms';
+import { InlineFormPanel } from '@/components/shared/InlineFormPanel';
+import { OverflowMenu, type OverflowMenuItem } from '@/components/shared/OverflowMenu';
 import { useQueryClient } from '@tanstack/react-query';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -504,9 +506,14 @@ const TripCard = memo(function TripCard({
                 <span className="text-slate-500 text-[10px]">{countdownInfo.label}</span>
               </div>
               {canEdit && (
-                <div className="flex items-center gap-0.5" onClick={(e) => e.stopPropagation()}>
-                  <Button variant="ghost" size="icon" onClick={() => onEdit(trip)} className="text-slate-500 hover:text-violet-400 hover:bg-violet-500/10 size-7"><Pencil className="size-3.5" /></Button>
-                  <Button variant="ghost" size="icon" onClick={() => onDelete(trip.id)} className="text-slate-500 hover:text-red-400 hover:bg-red-500/10 size-7"><Trash2 className="size-3.5" /></Button>
+                <div onClick={(e) => e.stopPropagation()}>
+                  <OverflowMenu
+                    items={[
+                      { key: 'edit', label: 'تعديل', icon: <Pencil className="size-3.5" />, onSelect: () => onEdit(trip) },
+                      { key: 'delete', label: 'حذف', icon: <Trash2 className="size-3.5" />, destructive: true, separatorBefore: true, onSelect: () => onDelete(trip.id) },
+                    ]}
+                    label="إجراءات الرحلة"
+                  />
                 </div>
               )}
               <motion.div animate={{ rotate: isExpanded ? 180 : 0 }} transition={{ duration: 0.2 }} className="text-slate-500">
@@ -1011,7 +1018,15 @@ export default function TravelPage() {
   const [form, setForm] = useState<TravelFormData>(emptyForm);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [isUploadOpen, setIsUploadOpen] = useState(false);
-  const [cancelledExpanded, setCancelledExpanded] = useState(false);
+  // §MONTH-ISOLATION — expansion is PER MONTH GROUP (was a single
+  // shared boolean, so opening the canceled accordion under one month
+  // expanded the canceled tables of EVERY month at once). Each month
+  // group owns its own toggle; the server-side month filter keeps the
+  // LIST itself isolated to the selected month.
+  const [cancelledExpanded, setCancelledExpanded] = useState<Record<string, boolean>>({});
+  const toggleCancelledExpanded = useCallback((groupKey: string) => {
+    setCancelledExpanded((prev) => ({ ...prev, [groupKey]: !prev[groupKey] }));
+  }, []);
 
   // ── Debounced search (200ms) ──
   const debouncedSearch = useDebounce(searchQuery, 200);
@@ -1269,10 +1284,13 @@ export default function TravelPage() {
                       <TableCell><StatusBadge status={trip.status} /></TableCell>
                       {(canUpdate || canDelete) && (
                         <TableCell>
-                          <div className="flex gap-0.5">
-                            {canUpdate && <Button variant="ghost" size="icon" onClick={() => openEdit(trip)} className="text-slate-500 hover:text-violet-400 size-6"><Pencil className="size-2.5" /></Button>}
-                            {canDelete && <Button variant="ghost" size="icon" onClick={() => setDeletingId(trip.id)} className="text-slate-500 hover:text-red-400 size-6"><Trash2 className="size-2.5" /></Button>}
-                          </div>
+                          <OverflowMenu
+  items={[
+    ...(canUpdate ? [{ key: 'edit', label: 'تعديل', icon: <Pencil className="size-3.5" />, onSelect: () => openEdit(trip) }] : []),
+    ...(canDelete ? [{ key: 'delete', label: 'حذف', icon: <Trash2 className="size-3.5" />, destructive: true, separatorBefore: true, onSelect: () => setDeletingId(trip.id) }] : []),
+  ]}
+  label="إجراءات الرحلة"
+/>
                         </TableCell>
                       )}
                     </TableRow>
@@ -1287,17 +1305,18 @@ export default function TravelPage() {
         {canceledTrips.length > 0 && (
           <div>
             <button
-              onClick={() => setCancelledExpanded(!cancelledExpanded)}
+              onClick={() => toggleCancelledExpanded(group.key)}
+              aria-expanded={!!cancelledExpanded[group.key]}
               className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-xs font-medium hover:bg-red-500/15 transition-colors w-full cursor-pointer"
             >
               <XCircle className="size-3.5" />
               <span>الرحلات الملغاة ({canceledTrips.length})</span>
-              <svg className={`size-3.5 mr-auto transition-transform duration-200 ${cancelledExpanded ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <svg className={`size-3.5 mr-auto transition-transform duration-200 ${cancelledExpanded[group.key] ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
               </svg>
             </button>
             <AnimatePresence>
-              {cancelledExpanded && (
+              {!!cancelledExpanded[group.key] && (
                 <motion.div
                   initial={{ height: 0, opacity: 0 }}
                   animate={{ height: 'auto', opacity: 1 }}
@@ -1326,10 +1345,13 @@ export default function TravelPage() {
                               <TableCell><StatusBadge status={trip.status} /></TableCell>
                               {(canUpdate || canDelete) && (
                                 <TableCell>
-                                  <div className="flex gap-0.5">
-                                    {canUpdate && <Button variant="ghost" size="icon" onClick={() => openEdit(trip)} className="text-slate-500 hover:text-violet-400 size-6"><Pencil className="size-2.5" /></Button>}
-                                    {canDelete && <Button variant="ghost" size="icon" onClick={() => setDeletingId(trip.id)} className="text-slate-500 hover:text-red-400 size-6"><Trash2 className="size-2.5" /></Button>}
-                                  </div>
+                                  <OverflowMenu
+                                        items={[
+                                          ...(canUpdate ? [{ key: 'edit', label: 'تعديل', icon: <Pencil className="size-3.5" />, onSelect: () => openEdit(trip) }] : []),
+                                          ...(canDelete ? [{ key: 'delete', label: 'حذف', icon: <Trash2 className="size-3.5" />, destructive: true, separatorBefore: true, onSelect: () => setDeletingId(trip.id) }] : []),
+                                        ]}
+                                        label="إجراءات الرحلة"
+                                      />
                                 </TableCell>
                               )}
                             </TableRow>
@@ -1410,10 +1432,13 @@ export default function TravelPage() {
                   <TableCell><StatusBadge status={trip.status} /></TableCell>
                   {(canUpdate || canDelete) && (
                     <TableCell>
-                      <div className="flex gap-0.5">
-                        {canUpdate && <Button variant="ghost" size="icon" onClick={() => openEdit(trip)} className="text-slate-500 hover:text-violet-400 size-6"><Pencil className="size-2.5" /></Button>}
-                        {canDelete && <Button variant="ghost" size="icon" onClick={() => setDeletingId(trip.id)} className="text-slate-500 hover:text-red-400 size-6"><Trash2 className="size-2.5" /></Button>}
-                      </div>
+                      <OverflowMenu
+  items={[
+    ...(canUpdate ? [{ key: 'edit', label: 'تعديل', icon: <Pencil className="size-3.5" />, onSelect: () => openEdit(trip) }] : []),
+    ...(canDelete ? [{ key: 'delete', label: 'حذف', icon: <Trash2 className="size-3.5" />, destructive: true, separatorBefore: true, onSelect: () => setDeletingId(trip.id) }] : []),
+  ]}
+  label="إجراءات الرحلة"
+/>
                     </TableCell>
                   )}
                 </TableRow>
@@ -1475,10 +1500,13 @@ export default function TravelPage() {
                   <TableCell className="text-slate-500 text-xs hidden sm:table-cell truncate max-w-32">{trip.notes || '—'}</TableCell>
                   {(canUpdate || canDelete) && (
                     <TableCell>
-                      <div className="flex gap-0.5">
-                        {canUpdate && <Button variant="ghost" size="icon" onClick={() => openEdit(trip)} className="text-slate-500 hover:text-violet-400 size-6"><Pencil className="size-2.5" /></Button>}
-                        {canDelete && <Button variant="ghost" size="icon" onClick={() => setDeletingId(trip.id)} className="text-slate-500 hover:text-red-400 size-6"><Trash2 className="size-2.5" /></Button>}
-                      </div>
+                      <OverflowMenu
+  items={[
+    ...(canUpdate ? [{ key: 'edit', label: 'تعديل', icon: <Pencil className="size-3.5" />, onSelect: () => openEdit(trip) }] : []),
+    ...(canDelete ? [{ key: 'delete', label: 'حذف', icon: <Trash2 className="size-3.5" />, destructive: true, separatorBefore: true, onSelect: () => setDeletingId(trip.id) }] : []),
+  ]}
+  label="إجراءات الرحلة"
+/>
                     </TableCell>
                   )}
                 </TableRow>
@@ -1528,42 +1556,29 @@ export default function TravelPage() {
           deal card; keeps the user inside the Travel workflow. ━━━ */}
       <AnimatePresence>
         {complaintDeal && (
-          <motion.div
+          <InlineFormPanel
             id="travel-inline-complaint"
-            initial={{ opacity: 0, y: -8, scale: 0.98 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: -8, scale: 0.98 }}
-            transition={{ duration: 0.22, ease: [0.4, 0, 0.2, 1] }}
-            className="rounded-2xl border border-rose-500/30 bg-slate-900/60 backdrop-blur-md shadow-2xl shadow-rose-900/20"
+            tone="rose"
+            icon={<MessageSquareWarning className="size-3.5 text-rose-400" />}
+            title={`شكوى من صفقة — ${complaintDeal.dealerName || complaintDeal.employeeName}`}
+            onClose={() => setComplaintDeal(null)}
           >
-            <div className="flex items-center justify-between gap-2 px-4 py-2.5 border-b border-slate-700/50">
-              <p className="text-xs font-bold text-slate-200 flex items-center gap-2">
-                <MessageSquareWarning className="size-3.5 text-rose-400" />
-                شكوى من صفقة — {complaintDeal.dealerName || complaintDeal.employeeName}
-              </p>
-              <Button variant="ghost" size="sm" onClick={() => setComplaintDeal(null)} className="h-7 text-xs text-slate-400 hover:text-white">
-                <X className="size-3.5 ml-1" />
-                إغلاق
-              </Button>
-            </div>
-            <div className="p-4">
-              <ComplaintInlineForm
-                onClose={() => setComplaintDeal(null)}
-                onCreated={() => { setComplaintDeal(null); queryClient.invalidateQueries({ queryKey: ['complaints'] }); }}
-                employees={employees as never}
-                systemUsers={systemUsers}
-                sourceContext={{ page: 'travel', recordId: complaintDeal.id }}
-                defaultValues={{
-                  dealId: complaintDeal.dealerName || '',
-                  employeeId: complaintDeal.employeeId || '',
-                  customerName: complaintDeal.dealerName || complaintDeal.customerNames || '',
-                  description: complaintDeal.destination
-                    ? `مشكلة في رحلة إلى ${complaintDeal.destination} — تاريخ السفر ${complaintDeal.departureDate}${complaintDeal.customerNames ? ` — العملاء: ${complaintDeal.customerNames}` : ''}`
-                    : '',
-                }}
-              />
-            </div>
-          </motion.div>
+            <ComplaintInlineForm
+              onClose={() => setComplaintDeal(null)}
+              onCreated={() => { setComplaintDeal(null); queryClient.invalidateQueries({ queryKey: ['complaints'] }); }}
+              employees={employees as never}
+              systemUsers={systemUsers}
+              sourceContext={{ page: 'travel', recordId: complaintDeal.id }}
+              defaultValues={{
+                dealId: complaintDeal.dealerName || '',
+                employeeId: complaintDeal.employeeId || '',
+                customerName: complaintDeal.dealerName || complaintDeal.customerNames || '',
+                description: complaintDeal.destination
+                  ? `مشكلة في رحلة إلى ${complaintDeal.destination} — تاريخ السفر ${complaintDeal.departureDate}${complaintDeal.customerNames ? ` — العملاء: ${complaintDeal.customerNames}` : ''}`
+                  : '',
+              }}
+            />
+          </InlineFormPanel>
         )}
       </AnimatePresence>
 

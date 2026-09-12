@@ -63,6 +63,7 @@ import { PageHeaderBar } from '@/components/shared/PageHeaderBar';
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
 import { complaintPrefillFromTravelIntent, hasCreateIntent } from '@/lib/record-prefill';
 import { OverflowMenu, type OverflowMenuItem } from '@/components/shared/OverflowMenu';
+import { InlineFormPanel } from '@/components/shared/InlineFormPanel';
 import { useMarkState, useFavoriteToggleAction, usePinToggleAction } from '@/components/shared/NavigationMarks';
 import { Star, Pin as PinIcon } from 'lucide-react';
 import {
@@ -512,42 +513,29 @@ export default function ComplaintsPage() {
           Shows the sky "تمت التعبئة تلقائياً" banner for Travel intents. ━━━ */}
       <AnimatePresence>
         {canCreate && isCreateInlineOpen && (
-          <motion.div
+          <InlineFormPanel
             id="complaints-inline-create"
-            initial={{ opacity: 0, y: -8, scale: 0.98 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: -8, scale: 0.98 }}
-            transition={{ duration: 0.22, ease: [0.4, 0, 0.2, 1] }}
-            className="rounded-2xl border border-rose-500/30 bg-slate-900/60 backdrop-blur-md shadow-2xl shadow-rose-900/20"
+            tone="rose"
+            icon={<Plus className="size-3.5 text-rose-400" />}
+            title="إضافة شكوى جديدة"
+            onClose={() => { setIsCreateInlineOpen(false); setSourceContext(null); }}
           >
-            <div className="flex items-center justify-between gap-2 px-4 py-2.5 border-b border-slate-700/50">
-              <p className="text-xs font-bold text-slate-200 flex items-center gap-2">
-                <Plus className="size-3.5 text-rose-400" />
-                إضافة شكوى جديدة
-              </p>
-              <Button variant="ghost" size="sm" onClick={() => { setIsCreateInlineOpen(false); setSourceContext(null); }} className="h-7 text-xs text-slate-400 hover:text-white">
-                <X className="size-3.5 ml-1" />
-                إغلاق
-              </Button>
-            </div>
-            <div className="p-4">
-              {sourceContext && (
-                <div className="mb-3 rounded-lg border border-sky-500/30 bg-sky-500/10 px-3 py-2 text-[11px] text-sky-300 flex items-center gap-1.5">
-                  <Plane className="size-3.5 shrink-0" />
-                  تمت التعبئة تلقائياً من صفحة السفر — راجع البيانات وعدّلها قبل الحفظ.
-                </div>
-              )}
-              <ComplaintInlineForm
-                key={JSON.stringify(createDefaults)}
-                onClose={() => { setIsCreateInlineOpen(false); setSourceContext(null); }}
-                onCreated={() => { setIsCreateInlineOpen(false); setSourceContext(null); }}
-                employees={employees as never}
-                systemUsers={systemUsers}
-                sourceContext={sourceContext ?? undefined}
-                defaultValues={createDefaults}
-              />
-            </div>
-          </motion.div>
+            {sourceContext && (
+              <div className="mb-3 rounded-lg border border-sky-500/30 bg-sky-500/10 px-3 py-2 text-[11px] text-sky-300 flex items-center gap-1.5">
+                <Plane className="size-3.5 shrink-0" />
+                تمت التعبئة تلقائياً من صفحة السفر — راجع البيانات وعدّلها قبل الحفظ.
+              </div>
+            )}
+            <ComplaintInlineForm
+              key={JSON.stringify(createDefaults)}
+              onClose={() => { setIsCreateInlineOpen(false); setSourceContext(null); }}
+              onCreated={() => { setIsCreateInlineOpen(false); setSourceContext(null); }}
+              employees={employees as never}
+              systemUsers={systemUsers}
+              sourceContext={sourceContext ?? undefined}
+              defaultValues={createDefaults}
+            />
+          </InlineFormPanel>
         )}
       </AnimatePresence>
 
@@ -555,35 +543,22 @@ export default function ComplaintsPage() {
           triggering complaint) instead of navigating to the CAPA page. ━━━ */}
       <AnimatePresence>
         {canCreateCapa && capaPrefill && (
-          <motion.div
+          <InlineFormPanel
             id="complaints-inline-capa"
-            initial={{ opacity: 0, y: -8, scale: 0.98 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: -8, scale: 0.98 }}
-            transition={{ duration: 0.22, ease: [0.4, 0, 0.2, 1] }}
-            className="rounded-2xl border border-violet-500/30 bg-slate-900/60 backdrop-blur-md shadow-2xl shadow-violet-900/20"
+            tone="violet"
+            icon={<ShieldAlert className="size-3.5 text-violet-400" />}
+            title="إنشاء CAPA من شكوى"
+            onClose={() => setCapaPrefill(null)}
           >
-            <div className="flex items-center justify-between gap-2 px-4 py-2.5 border-b border-slate-700/50">
-              <p className="text-xs font-bold text-slate-200 flex items-center gap-2">
-                <ShieldAlert className="size-3.5 text-violet-400" />
-                إنشاء CAPA من شكوى
-              </p>
-              <Button variant="ghost" size="sm" onClick={() => setCapaPrefill(null)} className="h-7 text-xs text-slate-400 hover:text-white">
-                <X className="size-3.5 ml-1" />
-                إغلاق
-              </Button>
-            </div>
-            <div className="p-4">
-              <CAPAInlineForm
-                key={JSON.stringify(capaPrefill)}
-                onClose={() => setCapaPrefill(null)}
-                onCreated={() => setCapaPrefill(null)}
-                employees={employees as never}
-                systemUsers={systemUsers}
-                defaultValues={capaPrefill}
-              />
-            </div>
-          </motion.div>
+            <CAPAInlineForm
+              key={JSON.stringify(capaPrefill)}
+              onClose={() => setCapaPrefill(null)}
+              onCreated={() => setCapaPrefill(null)}
+              employees={employees as never}
+              systemUsers={systemUsers}
+              defaultValues={capaPrefill}
+            />
+          </InlineFormPanel>
         )}
       </AnimatePresence>
 

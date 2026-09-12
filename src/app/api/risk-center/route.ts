@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getAll, getAllBatch, getEmployeeMap } from '@/lib/db';
 import { requireAuth, verifyPermission } from '@/lib/verify-permission';
 import { filterEmployeesInScope, authScopeViewer, filterRowsByEmployeeScope, resolveEmployeeScopeFromDb } from '@/lib/scope/server';
+import { isEffectiveDeduction } from '@/lib/quality-deductions/domain';
 // Canonical metric layer — the ONLY risk/overdue definitions in the system.
 import {
   computeRisk,
@@ -85,7 +86,9 @@ export async function GET(request: NextRequest) {
     const scopeCtx = await resolveEmployeeScopeFromDb(authScopeViewer(auth), undefined, auth.permissions);
     const employees = filterEmployeesInScope(batch.get('employees') || [], scopeCtx);
     const attendanceRecords = filterRowsByEmployeeScope(batch.get('attendance') || [], scopeCtx);
-    const qualityDeductions = filterRowsByEmployeeScope(batch.get('qualityDeductions') || [], scopeCtx);
+    // §WORKFLOW — only APPROVED discounts raise an employee's risk.
+    const qualityDeductions = filterRowsByEmployeeScope(batch.get('qualityDeductions') || [], scopeCtx)
+      .filter(isEffectiveDeduction);
     const hrDeductions = filterRowsByEmployeeScope(batch.get('hrDeductions') || [], scopeCtx);
     const followUps = filterRowsByEmployeeScope(batch.get('followUps') || [], scopeCtx);
     const complaints = filterRowsByEmployeeScope(

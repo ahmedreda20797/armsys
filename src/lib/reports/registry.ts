@@ -99,6 +99,8 @@ export const QUALITY_DEDUCTIONS_REPORT: RegisteredReport<Record<string, unknown>
       { key: 'month', label: 'الفترة', origin: 'raw' },
       { key: 'deductionDays', label: 'أيام الخصم', origin: 'raw', source: 'quality-deductions' },
       { key: 'monetaryAmount', label: 'المبلغ المالي (اختياري)', origin: 'raw', source: 'quality-deductions' },
+      { key: 'status', label: 'حالة الاعتماد', origin: 'raw' },
+      { key: 'evidence', label: 'الدليل / الرابط', origin: 'raw', width: 28 },
       { key: 'relatedCapaId', label: 'كابا مرتبطة', origin: 'raw' },
     ],
     availableMetrics: [
@@ -317,14 +319,16 @@ export const QUALITY_DEDUCTIONS_GROUPED_REPORT: RegisteredReport<Record<string, 
 
 /**
  * §10 MASTER EMPLOYEE REPORT — one row per employee with quality
- * scores, deduction count/reasons (bulleted multi-line cell), evidence
- * references and a short summary. The management-grade monthly export.
+ * scores, KPI point-deduction count/reasons (bulleted multi-line cell
+ * with the real human-readable reasons) and the ACTUAL evidence
+ * (URL/text). §SEPARATION: KPI points only — payroll quality
+ * discounts live in the quality-deductions reports, never here.
  */
 export const KPI_MASTER_EMPLOYEE_REPORT: RegisteredReport<Record<string, unknown>> = {
   definition: {
     reportId: 'kpi-master-employee',
     name: 'التقرير الشامل لكل الموظفين (KPI)',
-    description: 'صف واحد لكل موظف: الدرجات والحالة وعدد الخصومات وأسبابها مع الأدلة والملخص — تقرير الإدارة الشهري الشامل',
+    description: 'صف واحد لكل موظف: الدرجات والحالة وخصومات النقاط (KPI) وأسبابها الحقيقية مع الأدلة — خصومات الجودة المالية في تقريرها المستقل',
     domain: 'quality',
     reportType: 'comprehensive',
     enabled: true,
@@ -357,20 +361,18 @@ export const KPI_MASTER_EMPLOYEE_REPORT: RegisteredReport<Record<string, unknown
       { key: 'weightedTotal', label: 'الإجمالي الموزون', origin: 'canonical', source: 'final-kpi' },
       { key: 'qualityStatus', label: 'حالة الجودة', origin: 'canonical', source: 'quality' },
       { key: 'kpiStatus', label: 'حالة التقرير', origin: 'canonical', source: 'final-kpi' },
-      { key: 'deductionCount', label: 'عدد الخصومات', origin: 'raw' },
-      { key: 'deductionDays', label: 'أيام الخصم', origin: 'raw' },
-      { key: 'deductionAmount', label: 'مبلغ الخصومات (ج.م)', origin: 'raw' },
-      { key: 'deductionReasons', label: 'أسباب الخصومات', origin: 'raw', width: 60 },
-      { key: 'evidenceRefs', label: 'الأدلة / المراجع', origin: 'raw', width: 28 },
+      { key: 'deductionCount', label: 'عدد خصومات النقاط', origin: 'raw' },
+      { key: 'pointsDeducted', label: 'النقاط المستقطعة', origin: 'raw' },
+      { key: 'deductionReasons', label: 'أسباب خصم النقاط (KPI)', origin: 'raw', width: 60 },
+      { key: 'evidenceRefs', label: 'الأدلة / الروابط', origin: 'raw', width: 28 },
       { key: 'summary', label: 'الملخص', origin: 'raw', width: 44 },
       { key: 'archived', label: 'مؤرشف', origin: 'raw' },
     ],
     availableMetrics: [
       { metricId: 'employees', label: 'عدد الموظفين', origin: 'raw', unit: 'count' },
-      { metricId: 'withDeductions', label: 'موظفون بخصومات', origin: 'raw', unit: 'count' },
-      { metricId: 'totalDeductions', label: 'إجمالي الخصومات', origin: 'raw', unit: 'count' },
-      { metricId: 'totalDeductionDays', label: 'إجمالي أيام الخصم', origin: 'raw', unit: 'days' },
-      { metricId: 'totalDeductionAmount', label: 'إجمالي مبالغ الخصومات', origin: 'raw', unit: 'EGP' },
+      { metricId: 'withDeductions', label: 'موظفون بخصومات نقاط', origin: 'raw', unit: 'count' },
+      { metricId: 'totalDeductions', label: 'إجمالي خصومات النقاط', origin: 'raw', unit: 'count' },
+      { metricId: 'totalPointsDeducted', label: 'إجمالي النقاط المستقطعة', origin: 'raw', unit: 'points' },
       { metricId: 'avgQualityScore', label: 'متوسط درجة الجودة', origin: 'canonical', source: 'quality', unit: 'percent' },
     ],
     exportFormats: ['view', 'print', 'excel'],

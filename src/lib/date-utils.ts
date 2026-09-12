@@ -96,3 +96,17 @@ export function todayDisplayDate(now: Date = new Date()): string {
 export function currentMonthKey(now: Date = new Date()): string {
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
 }
+
+/**
+ * Add N days to an ISO day key "YYYY-MM-DD" (input[type=date] format).
+ * Shared by every follow-up form (page dialog + inline quick action) so
+ * the "next follow-up" default (+7 days) has ONE implementation.
+ * Returns "" for empty/invalid input — safe to feed straight into state.
+ */
+export function addDays(dateStr: string, days: number): string {
+  if (!dateStr) return '';
+  const d = new Date(dateStr);
+  if (isNaN(d.getTime())) return '';
+  d.setDate(d.getDate() + days);
+  return d.toISOString().split('T')[0];
+}

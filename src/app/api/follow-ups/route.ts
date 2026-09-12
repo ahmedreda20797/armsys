@@ -121,6 +121,7 @@ export async function POST(request: NextRequest) {
       followUpRequired,
       status,
       attachments,
+      evidence,
       relatedDeductionId,
       relatedCapaId,
     } = body;
@@ -190,6 +191,9 @@ export async function POST(request: NextRequest) {
       status: status || 'open',
       score,
       attachments: attachments || [],
+      // §EVIDENCE — dedicated evidence/link field (URL, Drive link,
+      // document link). Never scraped from the description text.
+      evidence: typeof evidence === 'string' && evidence.trim() !== '' ? evidence.trim() : null,
       createdById: userId,
       createdByName: userName,
       relatedDeductionId: relatedDeductionId || null,
