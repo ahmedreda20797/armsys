@@ -1,0 +1,12 @@
+var R=require("../../../../chunks/[turbopack]_runtime.js")("server/app/api/kpi-framework/employee-scheme/route.js")
+R.c("server/chunks/[root-of-the-server]__0api7p8._.js")
+R.c("server/chunks/src_03zg4r8._.js")
+R.c("server/chunks/src_lib_0e8as9i._.js")
+R.c("server/chunks/_0bslqgp._.js")
+R.c("server/chunks/_0b57xqx._.js")
+R.c("server/chunks/[root-of-the-server]__0vxxedz._.js")
+R.c("server/chunks/src_lib_kpi-framework_0mzxenm._.js")
+R.c("server/chunks/_0-2dxey._.js")
+R.c("server/chunks/0zjb_server_app_api_kpi-framework_employee-scheme_route_actions_0eqgej4.js")
+R.m(46524)
+module.exports=R.m(46524).exports

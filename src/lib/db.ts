@@ -1,3 +1,6 @@
+// §SERVER-ONLY BOUNDARY — the RTDB data layer reaches the Firebase
+// ADMIN SDK (via ./firebase-server). Never import from client code.
+import 'server-only';
 import { createId } from '@paralleldrive/cuid2';
 import { getAdminDb } from './firebase-server';
 // firebase-admin v14: get/set/update/remove are methods on Reference objects, not standalone exports

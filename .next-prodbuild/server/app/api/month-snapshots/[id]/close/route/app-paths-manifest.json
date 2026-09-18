@@ -1,0 +1,3 @@
+{
+  "/api/month-snapshots/[id]/close/route": "app/api/month-snapshots/[id]/close/route.js"
+}

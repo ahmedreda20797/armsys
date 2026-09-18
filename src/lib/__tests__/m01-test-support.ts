@@ -14,6 +14,21 @@
 process.env.JWT_SECRET = process.env.JWT_SECRET || 'm0-1-test-jwt-secret-0123456789abcdef';
 process.env.CRON_SECRET = process.env.CRON_SECRET || 'm0-1-test-cron-secret-0123456789abcdef';
 
+// §SERVER-ONLY stub — 'server-only' throws under Node's default export
+// condition (its tripwire targets client BUNDLES, which tests are not).
+// Tests run real server modules in plain Node, so the marker module is
+// neutralized before anything imports db/auth/verify-permission.
+// (tsconfig.test.json maps the package to a stub for the test runner;
+// this in-place neutralization additionally covers direct single-file
+// `npx tsx --test` runs that bypass the runner's tsconfig.)
+const serverOnlyPath = require.resolve('server-only');
+require.cache[serverOnlyPath] = {
+  id: serverOnlyPath,
+  filename: serverOnlyPath,
+  loaded: true,
+  exports: {},
+} as any;
+
 // The compiled CJS exports use non-configurable getters, so individual
 // functions cannot be redefined. Instead the module's cache entry is
 // replaced with a stub exports object BEFORE any consumer (route

@@ -65,11 +65,18 @@ const tsFiles = collected.filter((f) => f.endsWith('.test.ts'));
 const mtsFiles = collected.filter((f) => f.endsWith('.test.mts'));
 let status = 0;
 
+// Test-only tsconfig: maps the 'server-only' boundary package to a
+// no-op stub. The REAL package throws under Node's default export
+// condition, which would fail every suite importing db/auth — its
+// tripwire semantics only apply inside the Next client bundle, and
+// the production build keeps resolving the real package.
+const TSCONFIG = '--tsconfig', TSCONFIG_FILE = 'tsconfig.test.json';
+
 // CJS test files — the default tsx path.
 if (tsFiles.length > 0) {
   const result = spawnSync(
     process.execPath,
-    ['node_modules/tsx/dist/cli.mjs', '--test', ...tsFiles, ...extraArgs],
+    ['node_modules/tsx/dist/cli.mjs', TSCONFIG, TSCONFIG_FILE, '--test', ...tsFiles, ...extraArgs],
     { stdio: 'inherit', env: process.env }
   );
   status = result.status ?? 1;
@@ -85,6 +92,7 @@ if (mtsFiles.length > 0) {
       '--import', 'tsx',
       '--test', ...mtsFiles,
       ...extraArgs,
+      TSCONFIG, TSCONFIG_FILE,
     ],
     { stdio: 'inherit', env: process.env }
   );

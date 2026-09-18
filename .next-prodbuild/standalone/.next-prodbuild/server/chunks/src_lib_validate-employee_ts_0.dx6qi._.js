@@ -1,0 +1,3 @@
+module.exports=[59791,e=>e.a(async(i,a)=>{try{var r=e.i(43793),t=i([r]);async function d(e,i=!0){if(!e)return i?{valid:!1,error:"Employee ID is required"}:{valid:!0};let a=await (0,r.getById)("employees",e);return a?a.isSuspended?{valid:!1,error:`Employee is suspended: ${a.name||e}`}:{valid:!0,employee:{id:a.id,name:a.name||"",department:a.department||"",position:a.position||"",isActive:!0}}:{valid:!1,error:`Employee not found: ${e}`}}[r]=t.then?(await t)():t,e.s(["validateEmployeeId",0,d]),a()}catch(e){a(e)}},!1)];
+
+//# sourceMappingURL=src_lib_validate-employee_ts_0.dx6qi._.js.map

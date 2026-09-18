@@ -1,0 +1,3 @@
+{
+  "/api/cron/capa-sla-check/route": "app/api/cron/capa-sla-check/route.js"
+}

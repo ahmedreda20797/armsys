@@ -1,0 +1,3 @@
+module.exports=[92184,e=>{"use strict";let t=/^(\d{4})-(\d{2})$/;function r(e){if("string"!=typeof e)return!1;let r=e.match(t);if(!r)return!1;let n=Number(r[1]),u=Number(r[2]);return!!Number.isInteger(n)&&!!Number.isInteger(u)&&!(u<1)&&!(u>12)&&!(n<1900)&&!(n>2100)}e.s(["isValidMonthKey",0,r,"validateMonthKey",0,function(e){return r(e)?null:"صيغة الشهر غير صحيحة (YYYY-MM مطلوبة، شهر من 01 إلى 12)"}])}];
+
+//# sourceMappingURL=src_lib_month-utils_ts_0d47o7l._.js.map

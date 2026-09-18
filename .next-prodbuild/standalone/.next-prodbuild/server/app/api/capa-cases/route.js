@@ -1,0 +1,13 @@
+var R=require("../../../chunks/[turbopack]_runtime.js")("server/app/api/capa-cases/route.js")
+R.c("server/chunks/src_lib_0hrti19._.js")
+R.c("server/chunks/[root-of-the-server]__0api7p8._.js")
+R.c("server/chunks/_120~k7r._.js")
+R.c("server/chunks/src_lib_01gpzzc._.js")
+R.c("server/chunks/[root-of-the-server]__0vxxedz._.js")
+R.c("server/chunks/src_03zg4r8._.js")
+R.c("server/chunks/src_lib_06eeif.._.js")
+R.c("server/chunks/_0-2dxey._.js")
+R.c("server/chunks/_0b57xqx._.js")
+R.c("server/chunks/_next-internal_server_app_api_capa-cases_route_actions_08cn9zb.js")
+R.m(52134)
+module.exports=R.m(52134).exports

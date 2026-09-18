@@ -2,6 +2,11 @@
 // Server-side permission verification for API routes
 // Now uses JWT Bearer token authentication instead of x-user-id header
 
+// §SERVER-ONLY BOUNDARY — reaches the DB layer and the Firebase ADMIN
+// SDK through @/lib/db + @/lib/auth. Client code uses the canonical
+// resolvers in @/config/permissions instead (same decision logic).
+import 'server-only';
+
 import { getById } from '@/lib/db';
 import { parsePositionTemplate, POSITIONS_TABLE } from '@/lib/organization';
 import type {

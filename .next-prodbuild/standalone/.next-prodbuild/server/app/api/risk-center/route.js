@@ -1,0 +1,12 @@
+var R=require("../../../chunks/[turbopack]_runtime.js")("server/app/api/risk-center/route.js")
+R.c("server/chunks/src_lib_0bjc3yd._.js")
+R.c("server/chunks/[root-of-the-server]__0api7p8._.js")
+R.c("server/chunks/_0riam5.._.js")
+R.c("server/chunks/src_03zg4r8._.js")
+R.c("server/chunks/_0-2dxey._.js")
+R.c("server/chunks/_0b57xqx._.js")
+R.c("server/chunks/src_lib_06eeif.._.js")
+R.c("server/chunks/[root-of-the-server]__0vxxedz._.js")
+R.c("server/chunks/_next-internal_server_app_api_risk-center_route_actions_03k1wvh.js")
+R.m(96662)
+module.exports=R.m(96662).exports

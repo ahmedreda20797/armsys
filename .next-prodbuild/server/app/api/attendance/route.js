@@ -1,0 +1,11 @@
+var R=require("../../../chunks/[turbopack]_runtime.js")("server/app/api/attendance/route.js")
+R.c("server/chunks/[root-of-the-server]__0api7p8._.js")
+R.c("server/chunks/_0b57xqx._.js")
+R.c("server/chunks/_0wh~7lh._.js")
+R.c("server/chunks/_0-2dxey._.js")
+R.c("server/chunks/[root-of-the-server]__0vxxedz._.js")
+R.c("server/chunks/src_03zg4r8._.js")
+R.c("server/chunks/src_lib_attendance_0nv4mhv._.js")
+R.c("server/chunks/_next-internal_server_app_api_attendance_route_actions_1030dcd.js")
+R.m(75136)
+module.exports=R.m(75136).exports

@@ -2,6 +2,11 @@
 // JWT Authentication System — replaces x-user-id header auth
 // Uses jose for JWT (Edge Runtime compatible) and bcryptjs for password hashing
 
+// §SERVER-ONLY BOUNDARY — password hashing/verification and the
+// refresh-token store reach the Firebase ADMIN SDK (./firebase-server).
+// Never import from client code (AuthContext uses /api/auth routes).
+import 'server-only';
+
 import { SignJWT, jwtVerify } from 'jose';
 import bcrypt from 'bcryptjs';
 

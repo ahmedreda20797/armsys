@@ -1,3 +1,8 @@
+// §SERVER-ONLY BOUNDARY — this module initializes the Firebase ADMIN
+// SDK and parses service-account credentials (node:crypto / node:fs).
+// The marker makes any client-bundle import fail the build LOUDLY at
+// the importing file instead of shipping node builtins to the browser.
+import 'server-only';
 import { initializeApp, getApps, cert, getApp } from 'firebase-admin/app';
 import { getDatabase } from 'firebase-admin/database';
 import { getAuth } from 'firebase-admin/auth';

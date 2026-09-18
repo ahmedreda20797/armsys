@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "functions": {
+    "/api/ai/health": {
+      "maxDuration": 60
+    },
+    "/api/ai/models": {
+      "maxDuration": 60
+    },
+    "/api/ai/quality-analysis": {
+      "maxDuration": 60
+    },
+    "/api/cron/capa-sla-check": {
+      "maxDuration": 60
+    }
+  }
+}

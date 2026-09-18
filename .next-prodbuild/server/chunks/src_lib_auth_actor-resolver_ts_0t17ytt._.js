@@ -1,0 +1,3 @@
+module.exports=[18632,e=>e.a(async(t,a)=>{try{var r=e.i(43793),n=t([r]);[r]=n.then?(await n)():n;let o="النظام";async function s(e){if(!e)return o;let t=await (0,r.getById)("users",e);return t?.name||o}async function c(e){let t=e||"system",a=await s(e);return{id:t,name:a}}e.s(["resolveActor",0,c,"resolveActorName",0,s]),a()}catch(e){a(e)}},!1)];
+
+//# sourceMappingURL=src_lib_auth_actor-resolver_ts_0t17ytt._.js.map

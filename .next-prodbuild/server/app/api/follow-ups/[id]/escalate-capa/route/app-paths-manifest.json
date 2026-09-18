@@ -1,0 +1,3 @@
+{
+  "/api/follow-ups/[id]/escalate-capa/route": "app/api/follow-ups/[id]/escalate-capa/route.js"
+}
