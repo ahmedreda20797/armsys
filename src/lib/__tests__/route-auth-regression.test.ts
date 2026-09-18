@@ -30,8 +30,11 @@ const PUBLIC_ROUTE_ALLOWLIST: Record<string, string> = {
   'src/app/api/health/route.ts': 'public health probe — M0.1-hardened: no user data, single-record ping',
 };
 
-/** Auth primitives a route may use (any one satisfies the guard). */
-const AUTH_MARKER = /requireAuth|verifyPermission|authenticateFromRequest|authenticateRequest|isCronRequest|getCronSecret/;
+/** Auth primitives a route may use (any one satisfies the guard).
+ *  `authorizeRequest` is the canonical authenticate+authorize entry;
+ *  bare `authorize(` deliberately does NOT count — it assumes an
+ *  already-authenticated caller. */
+const AUTH_MARKER = /requireAuth|verifyPermission|verifyAnyAction|authorizeRequest|authenticateFromRequest|authenticateRequest|isCronRequest|getCronSecret/;
 
 function collectRouteFiles(dir: string): string[] {
   const out: string[] = [];
@@ -80,9 +83,9 @@ describe('regression guard — every API route authenticates', () => {
 });
 
 describe('regression guard — auth calls are awaited', () => {
-  it('no route calls requireAuth/verifyPermission/authenticateRequest* without await', () => {
+  it('no route calls requireAuth/verifyPermission/authorizeRequest/authenticateRequest* without await', () => {
     const callRegex =
-      /(requireAuth|verifyPermission|authenticateFromRequest|authenticateRequestAsync|authenticateRequest)\s*\(/g;
+      /(requireAuth|verifyPermission|authorizeRequest|authenticateFromRequest|authenticateRequestAsync|authenticateRequest)\s*\(/g;
     const violations: string[] = [];
 
     for (const absPath of collectRouteFiles(API_ROOT)) {

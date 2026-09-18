@@ -67,7 +67,7 @@ export function ApprovalHistoryTimeline({
   );
 
   return (
-    <ol className={cn('space-y-4', className)} dir="rtl">
+    <ol className={cn('space-y-4', className)}>
       {ordered.map((ev, i) => {
         const style = ACTION_STYLE[ev.action] ?? ACTION_STYLE.submit;
         const Icon = style.icon;

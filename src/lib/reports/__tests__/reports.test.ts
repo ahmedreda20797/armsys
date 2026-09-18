@@ -45,9 +45,9 @@ import type { QualityDeduction } from '@/types';
 // ─── Fixtures ─────────────────────────────────────────────────
 
 const EMPLOYEES = [
-  { id: 'e1', name: 'أحمد', department: 'Operations' },
-  { id: 'e2', name: 'محمد', department: 'Sales' },
-  { id: 'e3', name: 'علي', department: 'Operations' },
+  { id: 'e1', name: 'أحمد', code: '101', department: 'Operations', team: null, orgNodeId: null, searchKey: 'احمد 101' },
+  { id: 'e2', name: 'محمد', code: '102', department: 'Sales', team: null, orgNodeId: null, searchKey: 'محمد 102' },
+  { id: 'e3', name: 'علي', code: '103', department: 'Operations', team: null, orgNodeId: null, searchKey: 'علي 103' },
 ];
 
 const RECORDS: QualityDeduction[] = [

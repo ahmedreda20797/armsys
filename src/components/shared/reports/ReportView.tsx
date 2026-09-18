@@ -34,13 +34,25 @@ import { EmployeeSearchInput } from '@/components/shared/EmployeeSearchInput';
 import { authFetch } from '@/lib/api-fetch';
 import { generateMonthOptions } from '@/lib/date-utils';
 import { useEmployees } from '@/hooks/use-queries';
-import { useReportDefinition, useReportRun } from '@/hooks/use-report-queries';
+import { usePageState } from '@/hooks/use-page-state';
+import { useReportDefinition, useReportFilterOptions, useReportRun } from '@/hooks/use-report-queries';
 import type { ReportColumnSpec, ReportRunRequest } from '@/lib/reports/types';
+import { openPrintReport } from '@/components/print/print-report-store';
+import { tableToPrintModel } from '@/components/print/print-adapters';
 
 type Row = Record<string, unknown>;
 
+/** Sentinel "all" value for Select-based filters (Radix rejects ''). */
+const ALL_VALUE = '__all__';
+
 export interface ReportViewProps {
   reportId: string;
+  /**
+   * §24 — deterministic-analytics honesty: when the filtered dataset
+   * is smaller than this row count, an explicit "insufficient data"
+   * notice renders above the table instead of implying significance.
+   */
+  insufficientBelow?: number;
   /** Custom cell renderer per column key (badges, links, coloring). */
   renderCell?: (column: ReportColumnSpec, row: Row) => React.ReactNode;
   /**
@@ -191,21 +203,54 @@ export function ReportEmptyState({ label }: { label?: string }) {
 //  ReportView
 // ─────────────────────────────────────────────────────────────
 
-export function ReportView({ reportId, renderCell, renderExpanded, expandTriggerColumns }: ReportViewProps) {
+export function ReportView({ reportId, renderCell, renderExpanded, expandTriggerColumns, insufficientBelow }: ReportViewProps) {
   const { definition, isLoading: defLoading } = useReportDefinition(reportId);
   const { data: employees } = useEmployees();
+  const { data: filterOptions } = useReportFilterOptions();
 
   const months = useMemo(() => generateMonthOptions('YYYY-MM'), []);
   const currentMonth = months[0];
 
-  // Filter state — only for controls the definition declares.
-  const [monthKey, setMonthKey] = useState<string>(currentMonth);
-  const [fromDate, setFromDate] = useState('');
-  const [toDate, setToDate] = useState('');
-  const [useDateRange, setUseDateRange] = useState(false);
-  const [employeeId, setEmployeeId] = useState('');
-  const [department, setDepartment] = useState('');
-  const [category, setCategory] = useState('');
+  // ── Filter state — PERSISTED per user (§PAGE-STATE) ──
+  // Every declared filter lives in ONE persisted object:
+  //   • survives navigation (restored on mount, user-scoped),
+  //   • "تصفير" resets to the page default AND clears the stored
+  //     record — cleared values can never resurrect.
+  // Keys not declared by the definition are simply ignored by the
+  // request builder (hasFilter guards the controls AND the payload).
+  const [filters, setFilters, resetFilters] = usePageState<{
+    monthKey: string;
+    fromDate: string;
+    toDate: string;
+    useDateRange: boolean;
+    employeeId: string;
+    department: string;
+    team: string;
+    search: string;
+    category: string;
+    archived: string;
+  }>({
+    page: reportId,
+    slot: 'filters',
+    version: 1,
+    initial: () => ({
+      monthKey: currentMonth,
+      fromDate: '',
+      toDate: '',
+      useDateRange: false,
+      employeeId: '',
+      department: '',
+      team: '',
+      search: '',
+      category: '',
+      archived: 'active',
+    }),
+  });
+
+  const setFilter = <K extends keyof typeof filters>(key: K, value: (typeof filters)[K]) =>
+    setFilters((prev) => ({ ...prev, [key]: value }));
+
+  // Transient export state — never persisted (§8 transient UI state).
   const [exporting, setExporting] = useState(false);
 
   const hasFilter = (key: string) => !!definition?.allowedFilters.some((f) => f.key === key);
@@ -213,19 +258,22 @@ export function ReportView({ reportId, renderCell, renderExpanded, expandTrigger
   const request = useMemo<ReportRunRequest | null>(() => {
     if (!definition) return null;
     const base: ReportRunRequest = { reportId: definition.reportId };
-    if (useDateRange && hasFilter('fromDate') && fromDate && toDate) {
-      base.fromDate = fromDate;
-      base.toDate = toDate;
-    } else if (hasFilter('monthKey') && monthKey) {
-      base.monthKey = monthKey;
+    if (filters.useDateRange && hasFilter('fromDate') && filters.fromDate && filters.toDate) {
+      base.fromDate = filters.fromDate;
+      base.toDate = filters.toDate;
+    } else if (hasFilter('monthKey') && filters.monthKey) {
+      base.monthKey = filters.monthKey;
     }
-    if (employeeId) base.employeeId = employeeId;
-    if (department.trim()) base.department = department.trim();
-    const filters: Record<string, string> = {};
-    if (category.trim() && hasFilter('category')) filters.category = category.trim();
-    if (Object.keys(filters).length > 0) base.filters = filters;
+    if (filters.employeeId) base.employeeId = filters.employeeId;
+    if (filters.department.trim() && hasFilter('department')) base.department = filters.department.trim();
+    if (filters.team.trim() && hasFilter('team')) base.team = filters.team.trim();
+    if (filters.search.trim() && hasFilter('search')) base.search = filters.search.trim();
+    const extra: Record<string, string> = {};
+    if (filters.category.trim() && hasFilter('category')) extra.category = filters.category.trim();
+    if (filters.archived && hasFilter('archived')) extra.archived = filters.archived;
+    if (Object.keys(extra).length > 0) base.filters = extra;
     return base;
-  }, [definition, useDateRange, fromDate, toDate, monthKey, employeeId, department, category]);
+  }, [definition, filters]);
 
   const run = useReportRun<Row>(reportId, request ?? { reportId }, !!definition);
   const canExport = definition && 'canExport' in definition ? Boolean((definition as { canExport?: boolean }).canExport) : false;
@@ -255,9 +303,29 @@ export function ReportView({ reportId, renderCell, renderExpanded, expandTrigger
     }
   };
 
+  // §PRINT — push the CURRENT result set into the shared clean A4
+  // report document (no live-UI printing, no navigation chrome).
+  const handlePrint = () => {
+    if (!definition || !response?.rows) return;
+    const columns = definition.visibleColumns;
+    openPrintReport(tableToPrintModel({
+      title: definition.name,
+      subject: definition.description,
+      period: response.meta?.period,
+      columns: columns.map((c) => c.label),
+      rows: (response.rows as Row[]).map((row) =>
+        columns.map((c) => {
+          const v = row[c.key];
+          return v === null || v === undefined || v === '' ? '—' : typeof v === 'number' ? v.toLocaleString('ar-EG') : String(v);
+        }),
+      ),
+      ltrColumns: columns.map((c, i) => (c.width ? i : -1)).filter((i) => i >= 0),
+    }));
+  };
+
   if (defLoading) {
     return (
-      <div className="space-y-4" dir="rtl">
+      <div className="space-y-4">
         <Skeleton className="h-10 w-64 rounded-xl bg-slate-800/60" />
         <Skeleton className="h-24 w-full rounded-2xl bg-slate-800/40" />
         <Skeleton className="h-72 w-full rounded-2xl bg-slate-800/40" />
@@ -276,12 +344,12 @@ export function ReportView({ reportId, renderCell, renderExpanded, expandTrigger
     : 'بيانات حية';
 
   return (
-    <div dir="rtl" className="space-y-5">
+    <div className="space-y-5">
       {/* ═══ Header ═══ */}
       <div className="flex flex-wrap items-start justify-between gap-3 print:hidden">
         <div className="flex items-center gap-3">
-          <div className="size-11 rounded-xl bg-violet-500/15 border border-violet-500/25 flex items-center justify-center">
-            <BarChart3 className="size-5 text-violet-400" />
+          <div className="size-11 rounded-xl bg-brand-500/15 border border-brand-500/25 flex items-center justify-center">
+            <BarChart3 className="size-5 text-brand-400" />
           </div>
           <div>
             <h1 className="text-xl font-bold text-slate-100">{definition.name}</h1>
@@ -290,7 +358,7 @@ export function ReportView({ reportId, renderCell, renderExpanded, expandTrigger
         </div>
         <div className="flex items-center gap-2">
           {response && (
-            <Badge variant="outline" className="border-violet-500/30 bg-violet-500/10 text-violet-300 text-[11px]">
+            <Badge variant="outline" className="border-brand-500/30 bg-brand-500/10 text-brand-300 text-[11px]">
               {modeBadge}
             </Badge>
           )}
@@ -301,7 +369,7 @@ export function ReportView({ reportId, renderCell, renderExpanded, expandTrigger
             </Button>
           )}
           {definition.exportFormats.includes('print') && response?.hasData && (
-            <Button size="sm" variant="secondary" onClick={() => window.print()}>
+            <Button size="sm" variant="secondary" onClick={handlePrint}>
               <Printer className="size-4" />
               طباعة
             </Button>
@@ -317,25 +385,25 @@ export function ReportView({ reportId, renderCell, renderExpanded, expandTrigger
             <div className="flex items-center gap-1 rounded-lg border border-slate-700/60 bg-slate-950/40 p-1">
               <button
                 type="button"
-                onClick={() => setUseDateRange(false)}
-                className={`px-3 py-1.5 text-xs rounded-md transition-colors ${!useDateRange ? 'bg-violet-500/20 text-violet-300' : 'text-slate-400 hover:text-slate-200'}`}
+                onClick={() => setFilter('useDateRange', false)}
+                className={`px-3 py-1.5 text-xs rounded-md transition-colors ${!filters.useDateRange ? 'bg-brand-500/20 text-brand-300' : 'text-slate-400 hover:text-slate-200'}`}
               >
                 حسب الشهر
               </button>
               <button
                 type="button"
-                onClick={() => setUseDateRange(true)}
-                className={`px-3 py-1.5 text-xs rounded-md transition-colors ${useDateRange ? 'bg-violet-500/20 text-violet-300' : 'text-slate-400 hover:text-slate-200'}`}
+                onClick={() => setFilter('useDateRange', true)}
+                className={`px-3 py-1.5 text-xs rounded-md transition-colors ${filters.useDateRange ? 'bg-brand-500/20 text-brand-300' : 'text-slate-400 hover:text-slate-200'}`}
               >
                 نطاق تاريخ
               </button>
             </div>
           )}
 
-          {!useDateRange && hasFilter('monthKey') && (
+          {!filters.useDateRange && hasFilter('monthKey') && (
             <div className="min-w-40">
               <label className="block text-[11px] text-slate-400 mb-1">الشهر</label>
-              <Select value={monthKey} onValueChange={setMonthKey}>
+              <Select value={filters.monthKey} onValueChange={(v) => setFilter('monthKey', v)}>
                 <SelectTrigger className="h-9 bg-slate-950/40 border-slate-700/60 text-slate-200 text-xs">
                   <SelectValue />
                 </SelectTrigger>
@@ -348,15 +416,15 @@ export function ReportView({ reportId, renderCell, renderExpanded, expandTrigger
             </div>
           )}
 
-          {useDateRange && hasFilter('fromDate') && (
+          {filters.useDateRange && hasFilter('fromDate') && (
             <>
               <div>
                 <label className="block text-[11px] text-slate-400 mb-1">من تاريخ</label>
-                <Input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} className="h-9 w-40 bg-slate-950/40 border-slate-700/60 text-slate-200 text-xs" />
+                <Input type="date" value={filters.fromDate} onChange={(e) => setFilter('fromDate', e.target.value)} className="h-9 w-40 bg-slate-950/40 border-slate-700/60 text-slate-200 text-xs" />
               </div>
               <div>
                 <label className="block text-[11px] text-slate-400 mb-1">إلى تاريخ</label>
-                <Input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} className="h-9 w-40 bg-slate-950/40 border-slate-700/60 text-slate-200 text-xs" />
+                <Input type="date" value={filters.toDate} onChange={(e) => setFilter('toDate', e.target.value)} className="h-9 w-40 bg-slate-950/40 border-slate-700/60 text-slate-200 text-xs" />
               </div>
             </>
           )}
@@ -366,8 +434,8 @@ export function ReportView({ reportId, renderCell, renderExpanded, expandTrigger
               <label className="block text-[11px] text-slate-400 mb-1">الموظف</label>
               <EmployeeSearchInput
                 employees={(employees ?? []) as never}
-                value={employeeId}
-                onChange={(id) => setEmployeeId(id)}
+                value={filters.employeeId}
+                onChange={(id) => setFilter('employeeId', id)}
                 placeholder="كل الموظفين"
                 variant="filter"
                 showAllOption
@@ -378,17 +446,81 @@ export function ReportView({ reportId, renderCell, renderExpanded, expandTrigger
             </div>
           )}
 
+          {hasFilter('search') && (
+            <div className="min-w-44">
+              <label className="block text-[11px] text-slate-400 mb-1">بحث باسم الموظف</label>
+              <div className="relative">
+                <Search className="absolute right-2.5 top-1/2 -translate-y-1/2 size-3.5 text-slate-500" />
+                <Input
+                  value={filters.search}
+                  onChange={(e) => setFilter('search', e.target.value)}
+                  placeholder="اسم أو رقم الموظف"
+                  className="h-9 w-44 bg-slate-950/40 border-slate-700/60 text-slate-200 text-xs pr-8"
+                />
+              </div>
+            </div>
+          )}
+
           {hasFilter('department') && (
-            <div>
+            <div className="min-w-40">
               <label className="block text-[11px] text-slate-400 mb-1">القسم</label>
-              <Input value={department} onChange={(e) => setDepartment(e.target.value)} placeholder="كل الأقسام" className="h-9 w-36 bg-slate-950/40 border-slate-700/60 text-slate-200 text-xs" />
+              <Select
+                value={filters.department || ALL_VALUE}
+                onValueChange={(v) => setFilter('department', v === ALL_VALUE ? '' : v)}
+              >
+                <SelectTrigger className="h-9 bg-slate-950/40 border-slate-700/60 text-slate-200 text-xs">
+                  <SelectValue placeholder="كل الأقسام" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={ALL_VALUE}>كل الأقسام</SelectItem>
+                  {(filterOptions?.departments ?? []).map((d) => (
+                    <SelectItem key={d} value={d}>{d}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+
+          {hasFilter('team') && (
+            <div className="min-w-40">
+              <label className="block text-[11px] text-slate-400 mb-1">الفريق</label>
+              <Select
+                value={filters.team || ALL_VALUE}
+                onValueChange={(v) => setFilter('team', v === ALL_VALUE ? '' : v)}
+              >
+                <SelectTrigger className="h-9 bg-slate-950/40 border-slate-700/60 text-slate-200 text-xs">
+                  <SelectValue placeholder="كل الفرق" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={ALL_VALUE}>كل الفرق</SelectItem>
+                  {(filterOptions?.teams ?? []).map((t) => (
+                    <SelectItem key={t} value={t}>{t}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+
+          {hasFilter('archived') && (
+            <div className="min-w-36">
+              <label className="block text-[11px] text-slate-400 mb-1">حالة الخصم</label>
+              <Select value={filters.archived} onValueChange={(v) => setFilter('archived', v)}>
+                <SelectTrigger className="h-9 bg-slate-950/40 border-slate-700/60 text-slate-200 text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="active">الخصومات النشطة</SelectItem>
+                  <SelectItem value="archived">الخصومات المؤرشفة</SelectItem>
+                  <SelectItem value="all">الكل</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
           )}
 
           {hasFilter('category') && (
             <div>
               <label className="block text-[11px] text-slate-400 mb-1">نوع الخصم</label>
-              <Input value={category} onChange={(e) => setCategory(e.target.value)} placeholder="الكل" className="h-9 w-36 bg-slate-950/40 border-slate-700/60 text-slate-200 text-xs" />
+              <Input value={filters.category} onChange={(e) => setFilter('category', e.target.value)} placeholder="الكل" className="h-9 w-36 bg-slate-950/40 border-slate-700/60 text-slate-200 text-xs" />
             </div>
           )}
 
@@ -396,15 +528,7 @@ export function ReportView({ reportId, renderCell, renderExpanded, expandTrigger
             size="sm"
             variant="ghost"
             className="text-slate-400"
-            onClick={() => {
-              setMonthKey(currentMonth);
-              setFromDate('');
-              setToDate('');
-              setUseDateRange(false);
-              setEmployeeId('');
-              setDepartment('');
-              setCategory('');
-            }}
+            onClick={resetFilters}
           >
             <RotateCcw className="size-4" />
             تصفير
@@ -427,6 +551,14 @@ export function ReportView({ reportId, renderCell, renderExpanded, expandTrigger
       ) : (
         <div className="space-y-4">
           <ReportSummaryCards metrics={definition.availableMetrics} summary={response.summary} />
+          {typeof insufficientBelow === 'number'
+            && (response.summary.totalCount ?? response.rows.length) < insufficientBelow
+            && (response.summary.totalCount ?? response.rows.length) > 0
+            && (
+              <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3.5 py-2.5 text-xs text-amber-200">
+                بيانات غير كافية للتحليل — الأرقام المعروضة مازالت مستدلة من السجلات الفعلية ولكنها لا تكفي لاستنتاج أنماط.
+              </div>
+            )}
           <div className="text-[11px] text-slate-500 print:text-slate-600">
             الفترة: {response.meta.period} · عدد الصفوف: {response.rows.length} · تاريخ الإنشاء: {new Date(response.meta.generatedAt).toLocaleString('ar-EG')}
           </div>

@@ -40,12 +40,25 @@ export interface PrintSection {
   paragraphs?: string[];
 }
 
+/** Structured subject identity for the printed header (§PRINT-HEADER).
+ *  Employee reports: real name/code/team/department from authoritative
+ *  sources. Department/organization reports: name/department only. */
+export interface PrintReportIdentity {
+  name?: string | null;
+  code?: string | null;
+  team?: string | null;
+  department?: string | null;
+  position?: string | null;
+}
+
 /** The complete, clean report document model. */
 export interface PrintReportModel {
   /** Report title (e.g. ملخص الجودة). */
   title: string;
   /** Subject line — employee name, scope, etc. */
   subject?: string;
+  /** Structured identity rendered in the header (employee reports). */
+  identity?: PrintReportIdentity;
   /** Report period label (e.g. سبتمبر 2026). */
   period?: string;
   /** When the underlying data was generated (ISO). */
@@ -68,3 +81,18 @@ export const usePrintReportStore = create<PrintReportState>((set) => ({
   openPrintReport: (report) => set({ report }),
   closePrintReport: () => set({ report: null }),
 }));
+
+/**
+ * Standalone convenience wrapper for event handlers: push a report
+ * model into the shared host WITHOUT subscribing to the store
+ * (`usePrintReportStore.getState()`), so print buttons never re-render
+ * their components.
+ */
+export function openPrintReport(report: PrintReportModel): void {
+  usePrintReportStore.getState().openPrintReport(report);
+}
+
+/** Close the print overlay from outside React (Escape wiring etc.). */
+export function closePrintReport(): void {
+  usePrintReportStore.getState().closePrintReport();
+}

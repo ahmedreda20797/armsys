@@ -32,7 +32,7 @@ export function DashboardCustomizeDialog({ open, onClose }: DashboardCustomizeDi
   // CURRENT permission-filtered widget set (permission always wins).
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
-      <DialogContent dir="rtl" className="max-w-md max-h-[85vh] flex flex-col bg-slate-900 border-slate-700/50">
+      <DialogContent className="max-w-md max-h-[85vh] flex flex-col bg-slate-900 border-slate-700/50">
         {open && <DashboardCustomizer canViewPage={canViewPage} preferences={preferences} onClose={onClose} />}
       </DialogContent>
     </Dialog>
@@ -136,7 +136,7 @@ function DashboardCustomizer({ canViewPage, preferences, onClose }: {
               <div className="flex items-center gap-1 shrink-0">
                 <Button
                   size="icon" variant="ghost"
-                  className={`h-8 w-8 ${isHidden ? 'text-slate-500 hover:text-white' : 'text-violet-400 hover:text-violet-300'}`}
+                  className={`h-8 w-8 ${isHidden ? 'text-slate-500 hover:text-white' : 'text-brand-400 hover:text-brand-300'}`}
                   onClick={() => toggleVisibility(widget.id)}
                   aria-label={isHidden ? `إظهار ${widget.title}` : `إخفاء ${widget.title}`}
                 >
@@ -180,7 +180,7 @@ function DashboardCustomizer({ canViewPage, preferences, onClose }: {
         </Button>
         <Button
           size="sm"
-          className="bg-violet-600 hover:bg-violet-700 text-white gap-1.5"
+          className="bg-brand-600 hover:bg-brand-700 text-white gap-1.5"
           disabled={saveMutation.isPending}
           onClick={() => void save(allWidgets.map((w) => w.id), hidden)}
         >

@@ -18,6 +18,7 @@ import {
   CalendarClock, Lock, Unlock, FileSpreadsheet, Clock, CheckCircle2,
   AlertTriangle, Eye, History, Users,
 } from 'lucide-react';
+import { PageIdentity } from '@/components/shared/PageIdentity';
 import { ScoreBadge, KpiSchemeSummaryCard } from '@/components/shared/kpi';
 import {
   useMonthSnapshots, useMonthSnapshot, useCloseMonth, useReopenMonth,
@@ -398,7 +399,7 @@ export default function MonthClosePage() {
 
   if (!canView) {
     return (
-      <div dir="rtl" className="flex flex-col items-center justify-center py-24 text-slate-400">
+      <div className="flex flex-col items-center justify-center py-24 text-slate-400">
         <p>ليس لديك صلاحية للوصول إلى هذه الصفحة</p>
       </div>
     );
@@ -420,23 +421,21 @@ export default function MonthClosePage() {
   }
 
   return (
-    <div dir="rtl" className="space-y-4 p-4 sm:p-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-100 flex items-center gap-2">
-            <CalendarClock className="size-6 text-blue-400" />
-            إغلاق وإعادة فتح الأشهر
-          </h1>
-          <p className="text-sm text-slate-400 mt-1">
-            إغلاق الشهر ينتج لقطة نهائية مجمدة — المصدر الرسمي للتقارير الشهرية
-          </p>
-        </div>
-        <Button variant="outline" size="sm" onClick={() => refetch()} disabled={isFetching} className="gap-2">
-          <Clock className={`size-4 ${isFetching ? 'animate-spin' : ''}`} />
-          تحديث
-        </Button>
-      </div>
+    <div className="space-y-4 p-4 sm:p-6">
+      {/* §7 — unified page identity */}
+      <PageIdentity
+        pageId="monthClose"
+        icon={<CalendarClock className="size-5" />}
+        iconClassName="bg-blue-500/15 border-blue-500/30 text-blue-400"
+        title="إغلاق وإعادة فتح الأشهر"
+        description="إغلاق الشهر ينتج لقطة نهائية مجمدة — المصدر الرسمي للتقارير الشهرية"
+        actions={
+          <Button variant="outline" size="sm" onClick={() => refetch()} disabled={isFetching} className="gap-2">
+            <Clock className={`size-4 ${isFetching ? 'animate-spin' : ''}`} />
+            تحديث
+          </Button>
+        }
+      />
 
       {/* Info banner */}
       <div className="flex items-start gap-2 text-xs text-slate-400 bg-blue-500/5 border border-blue-500/20 rounded-lg p-3">

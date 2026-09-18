@@ -51,19 +51,19 @@ export const SaveNodeTemplateDialog = memo(function SaveNodeTemplateDialog({
     onClose();
   };
 
-  const inputCls = 'w-full bg-slate-800/60 border border-slate-700/50 rounded-lg px-3 py-1.5 text-xs text-slate-200 placeholder:text-slate-500 focus:outline-none focus:border-violet-500/50';
+  const inputCls = 'w-full bg-slate-800/60 border border-slate-700/50 rounded-lg px-3 py-1.5 text-xs text-slate-200 placeholder:text-slate-500 focus:outline-none focus:border-brand-500/50';
 
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={onClose}>
       <div
         className="w-full max-w-md bg-slate-900 border border-slate-700/60 rounded-xl shadow-2xl overflow-hidden"
         onClick={(e) => e.stopPropagation()}
-        dir="rtl"
+       
       >
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-slate-800">
           <div className="flex items-center gap-2">
-            <BookmarkPlus className="w-4 h-4 text-violet-400" />
+            <BookmarkPlus className="w-4 h-4 text-brand-400" />
             <h3 className="text-sm font-bold text-slate-200">حفظ العقدة كقالب</h3>
           </div>
           <button onClick={onClose} className="text-slate-500 hover:text-slate-300 p-1 rounded hover:bg-slate-800" aria-label="إغلاق">
@@ -140,7 +140,7 @@ export const SaveNodeTemplateDialog = memo(function SaveNodeTemplateDialog({
             className={cn(
               'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors',
               name.trim()
-                ? 'bg-violet-600/30 border border-violet-500/40 text-violet-300 hover:bg-violet-600/40'
+                ? 'bg-brand-600/30 border border-brand-500/40 text-brand-300 hover:bg-brand-600/40'
                 : 'bg-slate-800/40 border border-slate-700/40 text-slate-600 cursor-not-allowed'
             )}
           >

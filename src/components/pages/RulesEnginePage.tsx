@@ -16,7 +16,9 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogD
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
+import { SmartActionMenu } from '@/components/shared/SmartActionMenu';
 import { Zap, Plus, Pencil, Trash2, Play, Pause, Eye, Clock, Search, X, CheckCircle2, AlertTriangle, Settings, ArrowUpDown, Filter, ShieldAlert, Activity, AlertOctagon, ChevronDown, ChevronUp, RotateCcw, History, Beaker, Wrench, Brain, Workflow, Timer, ArrowRight } from 'lucide-react';
+import { PageIdentity } from '@/components/shared/PageIdentity';
 import type { AutomationRule, RuleConditionGroup, RuleCondition, RuleAction, EscalationStep, RuleExecutionLog } from '@/types';
 import { authFetch } from '@/lib/api-fetch';
 import { toast } from 'sonner';
@@ -101,7 +103,7 @@ const OPERATORS = Object.keys(OPERATOR_LABELS) as Array<keyof typeof OPERATOR_LA
 const ACTION_TYPES = Object.keys(ACTION_LABELS) as Array<keyof typeof ACTION_LABELS>;
 
 const STATUS_CONFIG: Record<string, { label: string; color: string; bg: string; border: string }> = {
-  active: { label: 'نشط', color: 'text-violet-400', bg: 'bg-violet-500/15', border: 'border-violet-500/30' },
+  active: { label: 'نشط', color: 'text-brand-400', bg: 'bg-brand-500/15', border: 'border-brand-500/30' },
   inactive: { label: 'غير نشط', color: 'text-red-400', bg: 'bg-red-500/15', border: 'border-red-500/30' },
   draft: { label: 'مسودة', color: 'text-slate-400', bg: 'bg-slate-500/15', border: 'border-slate-500/30' },
 };
@@ -256,12 +258,20 @@ export default function RulesEnginePage() {
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set(['root']));
 
   // ── Data Fetching ──
+  const [serverStats, setServerStats] = useState<any>(null);
+
   const fetchRules = useCallback(async () => {
     try {
-      const res = await authFetch('/api/rules?limit=100');
+      // §RULES-CREATE-APPEARANCE — fresh reads: the list must reflect
+      // the create/patch/delete the user just performed, never a stale
+      // server-side cache snapshot.
+      const res = await authFetch('/api/rules?limit=100&fresh=1');
       if (res.ok) {
         const data = await res.json();
         setRules(Array.isArray(data.data) ? data.data : Array.isArray(data) ? data : []);
+        // §15 — the server computes stats over the FULL authorized
+        // dataset; the page never counts a paginated slice again.
+        if (data.stats) setServerStats(data.stats);
       }
     } catch {
       setRules([]);
@@ -293,15 +303,30 @@ export default function RulesEnginePage() {
   }, [canView, fetchRules]);
 
   // ── Stats ──
+  // §15 — server-side aggregate over the full authorized rule set.
+  // successRate/lastExecutedAt are NULL when no execution has ever
+  // happened — the cards render — / لم يتم التنفيذ بعد (no fake 94%).
   const stats = useMemo(() => {
+    if (serverStats) {
+      return {
+        total: serverStats.total ?? 0,
+        active: serverStats.active ?? 0,
+        inactive: serverStats.inactive ?? 0,
+        triggeredToday: serverStats.triggeredToday ?? 0,
+        successExec: serverStats.successCount ?? 0,
+        failedExec: serverStats.failureCount ?? 0,
+        successRate: (serverStats.successRate ?? null) as number | null,
+        lastExecutedAt: (serverStats.lastExecutedAt ?? null) as string | null,
+      };
+    }
     const total = rules.length;
     const active = rules.filter(r => r.status === 'active').length;
     const inactive = rules.filter(r => r.status === 'inactive').length;
     const triggeredToday = rules.filter(r => isToday(r.lastRunAt)).length;
     const successExec = rules.reduce((sum, r) => sum + r.successCount, 0);
     const failedExec = rules.reduce((sum, r) => sum + r.failCount, 0);
-    return { total, active, inactive, triggeredToday, successExec, failedExec };
-  }, [rules]);
+    return { total, active, inactive, triggeredToday, successExec, failedExec, successRate: null as number | null, lastExecutedAt: null as string | null };
+  }, [serverStats, rules]);
 
   // ── Filtered Rules ──
   const filteredRules = useMemo(() => {
@@ -395,8 +420,17 @@ export default function RulesEnginePage() {
       } else {
         const res = await authFetch('/api/rules', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
         if (res.ok) {
+          const created = await res.json().catch(() => null);
           toast.success('تم إنشاء القاعدة بنجاح');
           setFormOpen(false);
+          // §RULES-CREATE-APPEARANCE — the created rule (the server's OWN
+          // 201 response, not a client fabrication) enters the list
+          // immediately, so the list can never miss it even if the
+          // follow-up refetch races or is blocked. The refetch below
+          // then reconciles with the authoritative server state.
+          if (created && created.id) {
+            setRules((prev) => (prev.some((r) => r.id === created.id) ? prev : [created, ...prev]));
+          }
           fetchRules();
         } else {
           const err = await res.json().catch(() => ({}));
@@ -791,7 +825,7 @@ export default function RulesEnginePage() {
   // ── Permission Guard ──
   if (!canView) {
     return (
-      <div dir="rtl" className="flex flex-col items-center justify-center py-20">
+      <div className="flex flex-col items-center justify-center py-20">
         <div className="size-16 rounded-full bg-slate-800 flex items-center justify-center mb-4">
           <ShieldAlert className="size-8 text-slate-500" />
         </div>
@@ -803,35 +837,32 @@ export default function RulesEnginePage() {
 
   // ── Render ──
   return (
-    <div dir="rtl" className="space-y-5">
-      {/* ═══ Header ═══ */}
-      <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="flex items-center justify-center size-10 rounded-xl bg-violet-500/15 border border-violet-500/30">
-            <Brain className="size-5 text-violet-400" />
-          </div>
-          <div>
-            <h1 className="text-xl font-bold text-white">محرك الأتمتة والقواعد</h1>
-            <p className="text-slate-500 text-xs mt-0.5">إدارة القواعد الآلية وتنفيذها — نظام الذكاء التشغيلي</p>
-          </div>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button variant="ghost" size="sm" onClick={() => { setTestOpen(true); setTestRuleId(''); setTestEmployeeId(''); setTestResult(null); }} className="text-slate-400 hover:text-white">
-            <Beaker className="size-4 ml-1" />
-            اختبار
-          </Button>
-          <Button variant="ghost" size="sm" onClick={() => { setLogsOpen(true); fetchLogs(); }} className="text-slate-400 hover:text-white">
-            <History className="size-4 ml-1" />
-            سجل التنفيذ
-          </Button>
-          {canCreate && (
-            <Button size="sm" onClick={openCreate} className="bg-violet-600 hover:bg-violet-700 text-white">
-              <Plus className="size-4 ml-1" />
-              قاعدة جديدة
+    <div className="space-y-5">
+      {/* ═══ §7 unified page identity ═══ */}
+      <PageIdentity
+        pageId="rulesEngine"
+        icon={<Brain className="size-5" />}
+        iconClassName="bg-brand-500/15 border border-brand-500/30 text-brand-400"
+        description="إدارة القواعد الآلية وتنفيذها — نظام الذكاء التشغيلي"
+        actions={
+          <>
+            <Button variant="ghost" size="sm" onClick={() => { setTestOpen(true); setTestRuleId(''); setTestEmployeeId(''); setTestResult(null); }} className="text-slate-400 hover:text-white">
+              <Beaker className="size-4 ml-1" />
+              اختبار
             </Button>
-          )}
-        </div>
-      </motion.div>
+            <Button variant="ghost" size="sm" onClick={() => { setLogsOpen(true); fetchLogs(); }} className="text-slate-400 hover:text-white">
+              <History className="size-4 ml-1" />
+              سجل التنفيذ
+            </Button>
+            {canCreate && (
+              <Button size="sm" onClick={openCreate} className="bg-brand-600 hover:bg-brand-700 text-white">
+                <Plus className="size-4 ml-1" />
+                قاعدة جديدة
+              </Button>
+            )}
+          </>
+        }
+      />
 
       {/* ═══ Dashboard Stats ═══ */}
       <motion.div initial={{ opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }} className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5">
@@ -839,9 +870,9 @@ export default function RulesEnginePage() {
           <p className="text-slate-500 text-[11px] mb-0.5">إجمالي القواعد</p>
           <p className="text-white font-bold text-lg leading-tight">{stats.total}</p>
         </div>
-        <div className="rounded-lg border border-violet-500/30 bg-emerald-500/8 px-3.5 py-2.5">
+        <div className="rounded-lg border border-brand-500/30 bg-emerald-500/8 px-3.5 py-2.5">
           <p className="text-slate-500 text-[11px] mb-0.5">قواعد نشطة</p>
-          <p className="text-violet-400 font-bold text-lg leading-tight">{stats.active}</p>
+          <p className="text-brand-400 font-bold text-lg leading-tight">{stats.active}</p>
         </div>
         <div className="rounded-lg border border-red-500/25 bg-red-500/8 px-3.5 py-2.5">
           <p className="text-slate-500 text-[11px] mb-0.5">قواعد غير نشطة</p>
@@ -945,7 +976,7 @@ export default function RulesEnginePage() {
           <Card className="border-slate-700/40 bg-slate-800/30">
             <CardContent className="flex flex-col items-center justify-center py-16">
               <div className="size-14 rounded-full bg-slate-800 flex items-center justify-center mb-4">
-                <Workflow className="size-7 text-violet-500/60" />
+                <Workflow className="size-7 text-brand-500/60" />
               </div>
               <p className="text-slate-300 text-sm font-semibold">لا توجد قواعد أتمتة</p>
               <p className="text-slate-500 text-xs mt-1.5 max-w-sm text-center leading-relaxed">
@@ -954,7 +985,7 @@ export default function RulesEnginePage() {
                   : 'ابدأ بإنشاء أول قاعدة أتمتة لتنفيذ المهام تلقائياً بناءً على الأحداث والشروط.'}
               </p>
               {!hasFilters && canCreate && (
-                <Button size="sm" onClick={openCreate} className="mt-4 bg-violet-600 hover:bg-violet-700 text-white">
+                <Button size="sm" onClick={openCreate} className="mt-4 bg-brand-600 hover:bg-brand-700 text-white">
                   <Plus className="size-4 ml-1" />
                   إنشاء قاعدة أولى
                 </Button>
@@ -978,7 +1009,7 @@ export default function RulesEnginePage() {
                     {/* Rule Name + Description */}
                     <div className="lg:col-span-2 min-w-0">
                       <div className="flex items-center gap-2">
-                        <Zap className="size-4 text-violet-400 flex-shrink-0" />
+                        <Zap className="size-4 text-brand-400 flex-shrink-0" />
                         <p className="text-white text-sm font-semibold truncate">{rule.name}</p>
                       </div>
                       {rule.description && (
@@ -1027,7 +1058,7 @@ export default function RulesEnginePage() {
                           style={{ width: `${rate}%` }}
                         />
                       </div>
-                      <span className={`text-[11px] font-medium ${rate >= 80 ? 'text-violet-400' : rate >= 50 ? 'text-yellow-400' : 'text-red-400'}`}>
+                      <span className={`text-[11px] font-medium ${rate >= 80 ? 'text-brand-400' : rate >= 50 ? 'text-yellow-400' : 'text-red-400'}`}>
                         {rate}%
                       </span>
                     </div>
@@ -1042,7 +1073,7 @@ export default function RulesEnginePage() {
                           size="sm"
                           onClick={() => handleToggleActive(rule)}
                           disabled={togglingId === rule.id}
-                          className={`h-8 w-8 p-0 ${rule.status === 'active' ? 'text-yellow-400 hover:text-yellow-300 hover:bg-yellow-500/10' : 'text-violet-400 hover:text-violet-300 hover:bg-violet-500/10'}`}
+                          className={`h-8 w-8 p-0 ${rule.status === 'active' ? 'text-yellow-400 hover:text-yellow-300 hover:bg-yellow-500/10' : 'text-brand-400 hover:text-brand-300 hover:bg-brand-500/10'}`}
                           title={rule.status === 'active' ? 'إيقاف' : 'تفعيل'}
                         >
                           {togglingId === rule.id ? (
@@ -1067,29 +1098,15 @@ export default function RulesEnginePage() {
                             <Play className="size-3.5" />
                           )}
                         </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => openEdit(rule)}
-                          className="h-8 w-8 p-0 text-slate-400 hover:text-white hover:bg-slate-700/50"
-                          title="تعديل"
-                        >
-                          <Pencil className="size-3.5" />
-                        </Button>
                       </>
                     )}
-                    {canDelete && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => setConfirmingDeleteId(rule.id)}
-                        disabled={deletingId === rule.id}
-                        className="h-8 w-8 p-0 text-red-400 hover:text-red-300 hover:bg-red-500/10"
-                        title="حذف"
-                      >
-                        {deletingId === rule.id ? <RotateCcw className="size-3.5 animate-spin" /> : <Trash2 className="size-3.5" />}
-                      </Button>
-                    )}
+                    {/* §2 — SmartActionMenu */}
+                    <SmartActionMenu
+                      actions={[
+                        { key: 'edit', label: 'تعديل', icon: <Pencil className="size-3.5" />, onSelect: () => openEdit(rule), hidden: !canUpdate },
+                        { key: 'delete', label: 'حذف', icon: <Trash2 className="size-3.5" />, destructive: true, onSelect: () => setConfirmingDeleteId(rule.id), hidden: !canDelete },
+                      ]}
+                    />
                   </div>
                 </div>
               </motion.div>
@@ -1105,7 +1122,7 @@ export default function RulesEnginePage() {
         <DialogContent className="bg-slate-900 border-slate-700/60 text-white max-w-4xl max-h-[90vh]">
           <DialogHeader>
             <DialogTitle className="text-lg font-bold flex items-center gap-2">
-              <Wrench className="size-5 text-violet-400" />
+              <Wrench className="size-5 text-brand-400" />
               {editingRule ? 'تعديل القاعدة' : 'إنشاء قاعدة جديدة'}
             </DialogTitle>
             <DialogDescription className="text-slate-400 text-xs">
@@ -1118,7 +1135,7 @@ export default function RulesEnginePage() {
               {/* ── Basic Info ── */}
               <div className="space-y-3">
                 <h3 className="text-sm font-semibold text-slate-200 flex items-center gap-2">
-                  <Settings className="size-4 text-violet-400" />
+                  <Settings className="size-4 text-brand-400" />
                   المعلومات الأساسية
                 </h3>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -1248,7 +1265,7 @@ export default function RulesEnginePage() {
                       <Plus className="size-3 ml-1" />
                       إضافة شرط
                     </Button>
-                    <Button variant="ghost" size="sm" onClick={addGroup} className="text-violet-400 hover:text-violet-300 hover:bg-violet-500/10 h-7 text-xs px-2">
+                    <Button variant="ghost" size="sm" onClick={addGroup} className="text-brand-400 hover:text-brand-300 hover:bg-brand-500/10 h-7 text-xs px-2">
                       <Plus className="size-3 ml-1" />
                       إضافة مجموعة
                     </Button>
@@ -1326,7 +1343,7 @@ export default function RulesEnginePage() {
                     const groupId = group.conditions[0]?.id.split('-')[0] || `g${gi}`;
                     const isExpanded = expandedGroups.has(groupId);
                     return (
-                      <div key={gi} className="rounded-md border border-violet-500/20 bg-violet-500/5 p-2.5 space-y-2">
+                      <div key={gi} className="rounded-md border border-brand-500/20 bg-brand-500/5 p-2.5 space-y-2">
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-2">
                             <button
@@ -1408,10 +1425,10 @@ export default function RulesEnginePage() {
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
                   <h3 className="text-sm font-semibold text-slate-200 flex items-center gap-2">
-                    <ArrowRight className="size-4 text-violet-400" />
+                    <ArrowRight className="size-4 text-brand-400" />
                     الإجراءات
                   </h3>
-                  <Button variant="ghost" size="sm" onClick={addAction} className="text-violet-400 hover:text-violet-300 hover:bg-violet-500/10 h-7 text-xs px-2">
+                  <Button variant="ghost" size="sm" onClick={addAction} className="text-brand-400 hover:text-brand-300 hover:bg-brand-500/10 h-7 text-xs px-2">
                     <Plus className="size-3 ml-1" />
                     إضافة إجراء
                   </Button>
@@ -1562,7 +1579,7 @@ export default function RulesEnginePage() {
           </ScrollArea>
 
           <DialogFooter className="flex-row gap-2 justify-start">
-            <Button onClick={handleSave} disabled={saving} className="bg-violet-600 hover:bg-violet-700 text-white h-9">
+            <Button onClick={handleSave} disabled={saving} className="bg-brand-600 hover:bg-brand-700 text-white h-9">
               {saving ? (
                 <>
                   <RotateCcw className="size-4 ml-1 animate-spin" />
@@ -1610,7 +1627,7 @@ export default function RulesEnginePage() {
               <div className="space-y-1.5">
                 {logs.map(log => {
                   const resultCfg: Record<string, { label: string; color: string; bg: string; border: string }> = {
-                    success: { label: 'ناجح', color: 'text-violet-400', bg: 'bg-violet-500/15', border: 'border-violet-500/30' },
+                    success: { label: 'ناجح', color: 'text-brand-400', bg: 'bg-brand-500/15', border: 'border-brand-500/30' },
                     failed: { label: 'فاشل', color: 'text-red-400', bg: 'bg-red-500/15', border: 'border-red-500/30' },
                     skipped: { label: 'تم تخطيه', color: 'text-yellow-400', bg: 'bg-yellow-500/15', border: 'border-yellow-500/30' },
                   };
@@ -1730,7 +1747,7 @@ export default function RulesEnginePage() {
                   {testResult.error ? (
                     <AlertOctagon className="size-4 text-red-400" />
                   ) : (
-                    <CheckCircle2 className="size-4 text-violet-400" />
+                    <CheckCircle2 className="size-4 text-brand-400" />
                   )}
                   <span className="text-sm font-semibold text-white">
                     {testResult.error ? 'فشل الاختبار' : 'نجح الاختبار'}

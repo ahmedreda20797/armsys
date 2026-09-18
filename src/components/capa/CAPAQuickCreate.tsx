@@ -102,10 +102,10 @@ export default function CAPAQuickCreate({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="bg-slate-900 border-slate-700/70 max-w-lg" dir="rtl">
+      <DialogContent className="bg-slate-900 border-slate-700/70 max-w-lg">
         <DialogHeader>
           <DialogTitle className="text-white text-lg flex items-center gap-2">
-            <Plus className="size-5 text-violet-400" />
+            <Plus className="size-5 text-brand-400" />
             إنشاء حالة كابا جديدة
           </DialogTitle>
           <DialogDescription className="text-slate-400 text-xs">
@@ -217,7 +217,7 @@ export default function CAPAQuickCreate({
           <Button
             onClick={handleSave}
             disabled={!canSave || saving}
-            className="bg-violet-600 hover:bg-violet-700 text-white"
+            className="bg-brand-600 hover:bg-brand-700 text-white"
           >
             {saving ? <Loader2 className="size-4 animate-spin ml-1" /> : <Plus className="size-4 ml-1" />}
             إنشاء الحالة

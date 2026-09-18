@@ -20,9 +20,9 @@ export function getStatusConfig(status: string) {
     investigation: { label: 'تحقيق', color: 'bg-cyan-500/15 text-cyan-400 border-cyan-500/30', icon: Search },
     root_cause_analysis: { label: 'تحليل السبب', color: 'bg-amber-500/15 text-amber-400 border-amber-500/30', icon: Brain },
     corrective_action: { label: 'إجراء تصحيحي', color: 'bg-orange-500/15 text-orange-400 border-orange-500/30', icon: Wrench },
-    preventive_action: { label: 'إجراء وقائي', color: 'bg-violet-500/15 text-violet-400 border-violet-500/30', icon: Shield },
+    preventive_action: { label: 'إجراء وقائي', color: 'bg-brand-500/15 text-brand-400 border-brand-500/30', icon: Shield },
     verification: { label: 'التحقق', color: 'bg-sky-500/15 text-sky-400 border-sky-500/30', icon: ClipboardList },
-    closed: { label: 'مغلقة', color: 'bg-violet-500/15 text-violet-400 border-violet-500/30', icon: CheckCircle2 },
+    closed: { label: 'مغلقة', color: 'bg-brand-500/15 text-brand-400 border-brand-500/30', icon: CheckCircle2 },
     rejected: { label: 'مرفوضة', color: 'bg-red-500/15 text-red-400 border-red-500/30', icon: X },
     reopened: { label: 'أُعيد فتحها', color: 'bg-rose-500/15 text-rose-400 border-rose-500/30', icon: RefreshCw },
   };
@@ -43,7 +43,7 @@ export function getActionStatusConfig(status: string) {
   const map: Record<string, { label: string; color: string }> = {
     not_started: { label: 'لم يبدأ', color: 'bg-slate-500/15 text-slate-400 border-slate-500/30' },
     in_progress: { label: 'قيد التنفيذ', color: 'bg-amber-500/15 text-amber-400 border-amber-500/30' },
-    completed: { label: 'مكتمل', color: 'bg-violet-500/15 text-violet-400 border-violet-500/30' },
+    completed: { label: 'مكتمل', color: 'bg-brand-500/15 text-brand-400 border-brand-500/30' },
   };
   return map[status] || { label: status, color: 'bg-slate-500/15 text-slate-400 border-slate-500/30' };
 }

@@ -119,8 +119,8 @@ export const NodeLibraryPanel = memo(function NodeLibraryPanel({
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="بحث..."
-            dir="rtl"
-            className="w-full bg-slate-800/60 border border-slate-700/50 rounded-lg pr-8 pl-3 py-1.5 text-xs text-slate-200 placeholder:text-slate-500 focus:outline-none focus:border-violet-500/50 focus:ring-1 focus:ring-violet-500/20"
+           
+            className="w-full bg-slate-800/60 border border-slate-700/50 rounded-lg pr-8 pl-3 py-1.5 text-xs text-slate-200 placeholder:text-slate-500 focus:outline-none focus:border-brand-500/50 focus:ring-1 focus:ring-brand-500/20"
           />
         </div>
         {/* Tabs */}
@@ -131,7 +131,7 @@ export const NodeLibraryPanel = memo(function NodeLibraryPanel({
               onClick={() => setActiveTab(tab)}
               className={cn(
                 'flex-1 flex items-center justify-center gap-1 py-1 rounded-md text-[10px] font-medium transition-colors',
-                activeTab === tab ? 'bg-violet-600/30 text-violet-300 border border-violet-500/30' : 'text-slate-500 hover:text-slate-300'
+                activeTab === tab ? 'bg-brand-600/30 text-brand-300 border border-brand-500/30' : 'text-slate-500 hover:text-slate-300'
               )}
             >
               {tab === 'favorites' && <Star className="w-2.5 h-2.5" />}

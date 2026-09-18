@@ -18,7 +18,7 @@ const KIND_OPTIONS: { value: VBEdgeKind; label: string; color: string }[] = [
   { value: 'success',    label: 'نجاح',     color: 'text-emerald-300' },
   { value: 'error',      label: 'خطأ',      color: 'text-red-300' },
   { value: 'timeout',    label: 'مهلة',     color: 'text-amber-300' },
-  { value: 'conditional', label: 'مشروط',   color: 'text-violet-300' },
+  { value: 'conditional', label: 'مشروط',   color: 'text-brand-300' },
 ];
 
 interface EdgeInspectorProps {
@@ -31,16 +31,16 @@ export const EdgeInspector = memo(function EdgeInspector({
   edge, onUpdate, onPickCondition,
 }: EdgeInspectorProps) {
   const data = (edge.data ?? {}) as Partial<VBEdgeData>;
-  const inputCls = 'w-full bg-slate-800/60 border border-slate-700/50 rounded-lg px-3 py-1.5 text-xs text-slate-200 placeholder:text-slate-500 focus:outline-none focus:border-violet-500/50';
+  const inputCls = 'w-full bg-slate-800/60 border border-slate-700/50 rounded-lg px-3 py-1.5 text-xs text-slate-200 placeholder:text-slate-500 focus:outline-none focus:border-brand-500/50';
 
   return (
-    <div className="flex-1 overflow-y-auto arm-scroll p-3 space-y-3" dir="rtl">
+    <div className="flex-1 overflow-y-auto arm-scroll p-3 space-y-3">
       {/* Connection info */}
       <div className="p-2.5 rounded-lg bg-slate-800/40 border border-slate-700/30">
         <div className="flex items-center gap-2 text-[10px]">
-          <span className="font-mono text-violet-300 truncate">{edge.source}</span>
+          <span className="font-mono text-brand-300 truncate">{edge.source}</span>
           <ArrowRight className="w-3 h-3 text-slate-600 rotate-180" />
-          <span className="font-mono text-violet-300 truncate">{edge.target}</span>
+          <span className="font-mono text-brand-300 truncate">{edge.target}</span>
         </div>
       </div>
 
@@ -122,7 +122,7 @@ export const EdgeInspector = memo(function EdgeInspector({
           <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">الشرط</span>
           <button
             onClick={onPickCondition}
-            className="text-[9px] text-violet-400 hover:text-violet-300"
+            className="text-[9px] text-brand-400 hover:text-brand-300"
           >
             متغير
           </button>
@@ -135,7 +135,7 @@ export const EdgeInspector = memo(function EdgeInspector({
         ) : (
           <button
             onClick={() => onUpdate({ dataPatch: { condition: { id: `grp_${Date.now().toString(36)}`, type: 'group', logic: 'and', children: [] } } })}
-            className="w-full py-2 rounded-lg border border-dashed border-slate-700/50 text-[10px] text-slate-500 hover:text-violet-300 hover:border-violet-500/40 transition-colors flex items-center justify-center gap-1"
+            className="w-full py-2 rounded-lg border border-dashed border-slate-700/50 text-[10px] text-slate-500 hover:text-brand-300 hover:border-brand-500/40 transition-colors flex items-center justify-center gap-1"
           >
             <GitBranch className="w-3 h-3" /> إضافة شرط لهذا المسار
           </button>

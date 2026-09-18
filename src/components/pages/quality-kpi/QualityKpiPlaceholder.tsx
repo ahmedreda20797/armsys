@@ -16,7 +16,7 @@ export function QualityKpiPlaceholder() {
   const config = APP_PAGES.find((p) => p.id === currentPage);
 
   return (
-    <div dir="rtl" className="flex flex-col items-center justify-center py-24">
+    <div className="flex flex-col items-center justify-center py-24">
       <div className="w-20 h-20 rounded-2xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center mb-6">
         <Construction className="w-10 h-10 text-blue-400" />
       </div>

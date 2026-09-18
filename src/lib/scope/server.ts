@@ -45,7 +45,13 @@
 
 import { getAll, TTL } from '@/lib/db';
 import { resolvePageScope, type PermissionsMap } from '@/config/permissions';
-import { resolveEmployeeScope, filterEmployeesByScope, type EmployeeScopeContext, type ScopeViewer } from '@/lib/scope';
+import {
+  resolveEmployeeScope,
+  filterEmployeesByScope,
+  type EmployeeScopeContext,
+  type ScopeAssignment,
+  type ScopeViewer,
+} from '@/lib/scope';
 import { ORG_NODES_TABLE, type OrgNode } from '@/lib/organization';
 
 /**
@@ -82,6 +88,12 @@ export function asScopeViewer(user: PermCheckUser): ScopeViewer {
  * + configured 'all' entries — the majority of write-path viewers)
  * never touches the database: the engine is invoked with empty
  * inputs and short-circuits unrestricted.
+ *
+ * §ASSIGNED: the engine consumes caller-supplied assignment pairs;
+ * this loader is the ONE place that materializes them from the
+ * canonical assignment relationships (see loadScopeAssignments) —
+ * and only when the resolved scope is actually 'assigned', so no
+ * other scope pays a single extra read.
  */
 export async function resolveEmployeeScopeFromDb(
   viewer: ScopeViewer,
@@ -100,10 +112,89 @@ export async function resolveEmployeeScopeFromDb(
     getAll<OrgNode>(ORG_NODES_TABLE, TTL.MEDIUM),
     getAll<{ id: string; orgNodeId?: string | null }>('employees', TTL.MEDIUM),
   ]);
+  const assignments = scope === 'assigned' ? await loadScopeAssignments() : undefined;
   return resolveEmployeeScope(viewer, pageKey, effectivePermissions, {
     orgNodes,
     employees,
+    assignments,
   });
+}
+
+// ══════════════════════════════════════════════════════════════
+//  §ASSIGNED — canonical assignment materialization
+//
+//  The 'assigned' scope means "records EXPLICITLY assigned to the
+//  authenticated user". The two canonical assignment relationships
+//  in the data model (no invented storage):
+//
+//    1. CAPA case  — `assignedTo` holds a USER id (UserSearchInput);
+//       the case's subject employees are `employeeId` +
+//       `relatedEmployeeIds`.
+//    2. Follow-up  — `responsiblePerson` holds the responsible
+//       EMPLOYEE's id; that employee's LINKED USER (users
+//       .linkedEmployeeId — the only employee↔user relationship) is
+//       the assigned operator for the follow-up's subject employee.
+//
+//  Only ACTIVE assignments grant scope (a closed follow-up or a
+//  closed/rejected CAPA no longer does). Records created BY the
+//  viewer are deliberately NOT an assignment source — assignment is
+//  explicit, never ownership-by-creation.
+// ══════════════════════════════════════════════════════════════
+
+/** Structural slices of the assignment-bearing tables (keeps this module decoupled). */
+export interface ScopeAssignmentSourceRows {
+  users: Array<{ id: string; linkedEmployeeId?: string | null }>;
+  followUps: Array<{ employeeId?: string | null; responsiblePerson?: string | null; status?: string | null }>;
+  capaCases: Array<{ assignedTo?: string | null; employeeId?: string | null; relatedEmployeeIds?: unknown; status?: string | null }>;
+}
+
+const ACTIVE_FOLLOWUP_STATUSES: ReadonlySet<string> = new Set(['open', 'under_review', 'under_follow_up']);
+const TERMINAL_CAPA_STATUSES: ReadonlySet<string> = new Set(['closed', 'rejected']);
+
+/** Pure mapping from the canonical assignment relationships to engine pairs. */
+export function buildScopeAssignments(rows: ScopeAssignmentSourceRows): ScopeAssignment[] {
+  const out = new Map<string, ScopeAssignment>();
+  const add = (employeeId: unknown, assignedToUserId: unknown) => {
+    if (typeof employeeId !== 'string' || !employeeId) return;
+    if (typeof assignedToUserId !== 'string' || !assignedToUserId) return;
+    out.set(`${assignedToUserId}→${employeeId}`, { employeeId, assignedToUserId });
+  };
+
+  // 1. CAPA — direct user assignment on the case's subject employees.
+  for (const capa of rows.capaCases) {
+    if (!capa.assignedTo || TERMINAL_CAPA_STATUSES.has(capa.status ?? '')) continue;
+    add(capa.employeeId, capa.assignedTo);
+    if (Array.isArray(capa.relatedEmployeeIds)) {
+      for (const id of capa.relatedEmployeeIds) add(id, capa.assignedTo);
+    }
+  }
+
+  // 2. Follow-up — responsible EMPLOYEE's linked user is the assignee.
+  const usersByLinkedEmployee = new Map<string, string[]>();
+  for (const u of rows.users) {
+    if (!u.linkedEmployeeId) continue;
+    const bucket = usersByLinkedEmployee.get(u.linkedEmployeeId) ?? [];
+    bucket.push(u.id);
+    usersByLinkedEmployee.set(u.linkedEmployeeId, bucket);
+  }
+  for (const f of rows.followUps) {
+    if (!ACTIVE_FOLLOWUP_STATUSES.has(f.status ?? '')) continue;
+    for (const userId of usersByLinkedEmployee.get(f.responsiblePerson ?? '') ?? []) {
+      add(f.employeeId, userId);
+    }
+  }
+
+  return [...out.values()];
+}
+
+/** Load the assignment-bearing tables and derive engine pairs (read-only). */
+export async function loadScopeAssignments(): Promise<ScopeAssignment[]> {
+  const [users, followUps, capaCases] = await Promise.all([
+    getAll<{ id: string; linkedEmployeeId?: string | null }>('users', TTL.MEDIUM),
+    getAll<{ employeeId?: string | null; responsiblePerson?: string | null; status?: string | null }>('followUps', TTL.MEDIUM),
+    getAll<{ assignedTo?: string | null; employeeId?: string | null; relatedEmployeeIds?: unknown; status?: string | null }>('capaCases', TTL.MEDIUM),
+  ]);
+  return buildScopeAssignments({ users, followUps, capaCases });
 }
 
 /**

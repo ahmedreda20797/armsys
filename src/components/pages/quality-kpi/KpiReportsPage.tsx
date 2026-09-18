@@ -19,6 +19,7 @@
 
 import { useMemo } from 'react';
 import { FileBarChart } from 'lucide-react';
+import { PageIdentity } from '@/components/shared/PageIdentity';
 import { Card, CardContent } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -108,33 +109,33 @@ export default function KpiReportsPage() {
 
   return (
     <div className="space-y-5 p-1">
-      {/* ── Page header ── */}
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="space-y-1">
-          <h1 className="text-2xl font-bold text-slate-100 flex items-center gap-2">
-            <FileBarChart className="h-6 w-6 text-emerald-400" />
-            تقارير KPI
-          </h1>
-          <p className="text-sm text-slate-400">
+      {/* ── §7 unified page identity ── */}
+      <PageIdentity
+        pageId="kpiReports"
+        icon={<FileBarChart className="size-5" />}
+        iconClassName="bg-emerald-500/15 border-emerald-500/30 text-emerald-400"
+        description={
+          <>
             تقارير جودة KPI فوق إطار مؤشرات الأداء القابل للتهيئة — مع تمييز واضح بين MTD والقيم المجمّدة.
-          </p>
-        </div>
-        <div className="no-print space-y-1.5 min-w-[190px]">
-          <Label className="text-xs">فترة التقرير</Label>
-          <p className="text-[11px] text-slate-500">
-            الفترة الحالية: {formatMonth(effectiveMonth)}
-            {monthOptions.find((o) => o.value === effectiveMonth)?.closed ? ' — شهر مغلق (FINALIZED)' : ' — شهر مفتوح'}
-          </p>
-          <Select value={effectiveMonth} onValueChange={setMonth}>
-            <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
-            <SelectContent>
-              {monthOptions.map((o) => (
-                <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-      </div>
+            <span className="block text-[11px] text-slate-500 mt-0.5 no-print">
+              الفترة الحالية: {formatMonth(effectiveMonth)}
+              {monthOptions.find((o) => o.value === effectiveMonth)?.closed ? ' — شهر مغلق (FINALIZED)' : ' — شهر مفتوح'}
+            </span>
+          </>
+        }
+        actions={
+          <div className="no-print">
+            <Select value={effectiveMonth} onValueChange={setMonth}>
+              <SelectTrigger className="h-9 w-44"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {monthOptions.map((o) => (
+                  <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        }
+      />
 
       <Tabs value={tab} onValueChange={(v) => setTab(v as TabKey)} className="space-y-4">
         <TabsList className="no-print bg-slate-800/50 flex-wrap h-auto">
@@ -149,23 +150,40 @@ export default function KpiReportsPage() {
         <p className="no-print text-[11px] text-slate-500 -mt-2 px-1">{TAB_PURPOSE[tab]}</p>
 
         <TabsContent value="table" className="space-y-3">
-          {/* Basis switcher — the former 3 duplicated tabs (§10) */}
-          <div className="no-print flex items-center gap-1 rounded-xl border border-slate-700/60 bg-slate-950/40 p-1 w-fit">
-            {BASIS_OPTIONS.map((opt) => (
-              <button
-                key={opt.value}
-                type="button"
-                title={opt.hint}
-                onClick={() => setBasis(opt.value)}
-                className={`px-4 py-1.5 text-xs rounded-lg font-medium transition-colors ${
-                  basis === opt.value
-                    ? 'bg-violet-500/20 text-violet-200'
-                    : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
-                }`}
-              >
-                {opt.label}
-              </button>
-            ))}
+          {/* §16 — Period + Month TOGETHER: the basis switcher (the former
+              3 duplicated tabs) sits in the same filter row as the month
+              selector, so Report → Period → Month reads as one unit. */}
+          <div className="no-print flex items-center gap-2 flex-wrap">
+            <div className="flex items-center gap-1 rounded-xl border border-slate-700/60 bg-slate-950/40 p-1 w-fit">
+              {BASIS_OPTIONS.map((opt) => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  title={opt.hint}
+                  onClick={() => setBasis(opt.value)}
+                  className={`px-4 py-1.5 text-xs rounded-lg font-medium transition-colors ${
+                    basis === opt.value
+                      ? 'bg-brand-500/20 text-brand-200'
+                      : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
+                  }`}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+            <Select value={effectiveMonth} onValueChange={setMonth}>
+              <SelectTrigger className="h-8 w-44 text-xs bg-slate-900/60 border-slate-700/60">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {monthOptions.map((o) => (
+                  <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <span className="text-[10px] text-slate-500">
+              {monthOptions.find((o) => o.value === effectiveMonth)?.closed ? 'شهر مغلق (FINALIZED)' : 'شهر مفتوح'}
+            </span>
           </div>
           <KpiMonthlyTableTab kind={basis} month={effectiveMonth} />
         </TabsContent>

@@ -22,7 +22,7 @@ export const DynamicConfigForm = memo(function DynamicConfigForm({
   schema, values, onChange, onPickVariable,
 }: DynamicConfigFormProps) {
   return (
-    <div className="space-y-4" dir="rtl">
+    <div className="space-y-4">
       {schema.groups.map((group) => (
         <ConfigGroup
           key={group.id}
@@ -83,7 +83,7 @@ const FieldRenderer = memo(function FieldRenderer({
   onChange: (v: unknown) => void;
   onPickVariable?: () => void;
 }) {
-  const inputClass = 'w-full bg-slate-800/60 border border-slate-700/50 rounded-lg px-3 py-1.5 text-xs text-slate-200 placeholder:text-slate-500 focus:outline-none focus:border-violet-500/50 focus:ring-1 focus:ring-violet-500/20 transition-colors';
+  const inputClass = 'w-full bg-slate-800/60 border border-slate-700/50 rounded-lg px-3 py-1.5 text-xs text-slate-200 placeholder:text-slate-500 focus:outline-none focus:border-brand-500/50 focus:ring-1 focus:ring-brand-500/20 transition-colors';
 
   return (
     <div>
@@ -95,7 +95,7 @@ const FieldRenderer = memo(function FieldRenderer({
         {(field.type === 'variable' || field.type === 'expression') && onPickVariable && (
           <button
             onClick={onPickVariable}
-            className="flex items-center gap-1 text-[9px] text-violet-400 hover:text-violet-300 transition-colors"
+            className="flex items-center gap-1 text-[9px] text-brand-400 hover:text-brand-300 transition-colors"
           >
             <VarIcon className="w-2.5 h-2.5" />
             متغير
@@ -137,7 +137,7 @@ const FieldRenderer = memo(function FieldRenderer({
           onClick={() => onChange(!value)}
           className={cn(
             'relative w-10 h-5 rounded-full transition-colors',
-            value ? 'bg-violet-600' : 'bg-slate-700'
+            value ? 'bg-brand-600' : 'bg-slate-700'
           )}
         >
           <span className={cn(
@@ -176,7 +176,7 @@ const FieldRenderer = memo(function FieldRenderer({
           {onPickVariable && (
             <button
               onClick={onPickVariable}
-              className="flex-shrink-0 px-2 rounded-lg bg-violet-600/20 border border-violet-500/30 text-violet-300 hover:bg-violet-600/30 transition-colors"
+              className="flex-shrink-0 px-2 rounded-lg bg-brand-600/20 border border-brand-500/30 text-brand-300 hover:bg-brand-600/30 transition-colors"
               title="اختيار متغير"
             >
               <VarIcon className="w-3.5 h-3.5" />
@@ -223,7 +223,7 @@ function MultiSelectField({
           className={cn(
             'px-2 py-0.5 rounded-full text-[10px] border transition-colors',
             selected.includes(opt.value)
-              ? 'bg-violet-600/30 text-violet-300 border-violet-500/40'
+              ? 'bg-brand-600/30 text-brand-300 border-brand-500/40'
               : 'text-slate-500 border-slate-700/40 hover:text-slate-300'
           )}
         >
@@ -244,12 +244,12 @@ function DurationField({ value, onChange }: { value: unknown; onChange: (v: { am
         type="number"
         value={v.amount}
         onChange={(e) => onChange({ ...v, amount: Number(e.target.value) })}
-        className="w-20 bg-slate-800/60 border border-slate-700/50 rounded-lg px-2 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-violet-500/50"
+        className="w-20 bg-slate-800/60 border border-slate-700/50 rounded-lg px-2 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-brand-500/50"
       />
       <select
         value={v.unit}
         onChange={(e) => onChange({ ...v, unit: e.target.value })}
-        className="flex-1 bg-slate-800/60 border border-slate-700/50 rounded-lg px-2 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-violet-500/50 cursor-pointer"
+        className="flex-1 bg-slate-800/60 border border-slate-700/50 rounded-lg px-2 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-brand-500/50 cursor-pointer"
       >
         <option value="seconds">ثانية</option>
         <option value="minutes">دقيقة</option>
@@ -278,9 +278,9 @@ function TagField({ value, onChange }: { value: unknown; onChange: (v: string[])
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); add(); } }}
           placeholder="أضف وسماً..."
-          className="flex-1 bg-slate-800/60 border border-slate-700/50 rounded-lg px-2 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-violet-500/50"
+          className="flex-1 bg-slate-800/60 border border-slate-700/50 rounded-lg px-2 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-brand-500/50"
         />
-        <button onClick={add} className="px-2 rounded-lg bg-violet-600/20 border border-violet-500/30 text-violet-300 text-xs">+</button>
+        <button onClick={add} className="px-2 rounded-lg bg-brand-600/20 border border-brand-500/30 text-brand-300 text-xs">+</button>
       </div>
       {tags.length > 0 && (
         <div className="flex flex-wrap gap-1">

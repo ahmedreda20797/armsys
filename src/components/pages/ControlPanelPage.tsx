@@ -11,7 +11,6 @@ import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import { Checkbox } from '@/components/ui/checkbox';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
@@ -89,14 +88,19 @@ import {
   RefreshCw,
   MoreHorizontal,
   Copy as CopyIcon,
-  Zap,
   AlertTriangle,
   XCircle,
   Activity,
   Wifi,
   WifiOff,
 } from 'lucide-react';
-import { APP_PAGES, getPermissionsForRole, getActionLabel, resolveEffectivePermissions, resolvePageScope, type PermissionsMap, type PagePermission, type PermissionLevel, type ActionKey, type DataScope } from '@/config/permissions';
+import { toast } from 'sonner';
+import { useEmployees } from '@/hooks/use-queries';
+import { UserAvatar } from '@/components/shared/UserAvatar';
+import { APP_PAGES, type PermissionsMap } from '@/config/permissions';
+import { PermissionManagerConsole } from '@/components/permissions/PermissionManagerConsole';
+import { SmartActionMenu } from '@/components/shared/SmartActionMenu';
+import { PageIdentity } from '@/components/shared/PageIdentity';
 import { authFetch } from '@/lib/api-fetch';
 
 // ══════════════════════════════════════════════════════════════
@@ -119,6 +123,17 @@ interface UserRecord {
   positionTitle?: string | null;
   positionPermissions?: Record<string, unknown> | null;
   linkedEmployeeId?: string | null;
+  // Permission Manager console: override indicator + employee code
+  hasOverrides?: boolean;
+  linkedEmployeeCode?: string | null;
+  // §USER-PROFILE — operational identity
+  photoURL?: string | null;
+  jobTitle?: string | null;
+  mobile?: string | null;
+  responsibilities?: string | null;
+  linkedEmployeeName?: string | null;
+  team?: string | null;
+  employeePosition?: string | null;
 }
 
 interface ActivityLogItem {
@@ -153,34 +168,14 @@ interface SessionUser {
   durationLabel: string;
 }
 
-const EXCLUDED_PAGES = ['home']; // §14: 'firebase' page removed
-
-// Grouped permissions for editing — static module-level derivation
-// (no reactive inputs, so no useMemo hook is needed; hoisted out of the
-// component to keep hook order unconditional across permission guards).
-const PERMISSION_GROUPS: Record<string, typeof APP_PAGES> = (() => {
-  const groups: Record<string, typeof APP_PAGES> = {};
-  APP_PAGES.filter(p => !EXCLUDED_PAGES.includes(p.id)).forEach(p => {
-    if (!groups[p.groupId]) groups[p.groupId] = [];
-    groups[p.groupId].push(p);
-  });
-  return groups;
-})();
-
-// Milestone 10 — data scope vocabulary for the permission editor
-const SCOPE_OPTIONS: Array<{ value: DataScope; label: string }> = [
-  { value: 'all', label: 'كل البيانات' },
-  { value: 'department', label: 'القسم' },
-  { value: 'team', label: 'الفريق' },
-  { value: 'subtree', label: 'الفروع المدارة' },
-  { value: 'assigned', label: 'المسند إليّ' },
-  { value: 'own', label: 'سجله فقط' },
-];
+// §6 — the grouped page registry + scope vocabulary + per-facet
+// editing live inside the Permission Manager console
+// (src/components/permissions) now.
 
 const ROLE_OPTIONS = [
   { value: 'admin', label: 'مدير النظام', color: 'bg-red-500/15 text-red-400 border-red-500/20' },
   { value: 'hr', label: 'موارد بشرية', color: 'bg-blue-500/15 text-blue-400 border-blue-500/20' },
-  { value: 'manager', label: 'مدير', color: 'bg-purple-500/15 text-purple-400 border-purple-500/20' },
+  { value: 'manager', label: 'مدير', color: 'bg-brand-500/15 text-brand-400 border-brand-500/20' },
   { value: 'quality', label: 'جودة', color: 'bg-cyan-500/15 text-cyan-400 border-cyan-500/20' },
   { value: 'user', label: 'موظف', color: 'bg-slate-500/15 text-slate-400 border-slate-500/20' },
 ];
@@ -200,7 +195,7 @@ const ACTION_COLORS: Record<string, { bg: string; text: string; icon: any }> = {
   reject:      { bg: 'bg-orange-500/10', text: 'text-orange-400', icon: ThumbsDown },
   login:       { bg: 'bg-slate-500/10', text: 'text-slate-400', icon: LogIn },
   logout:      { bg: 'bg-slate-500/10', text: 'text-slate-400', icon: LogOut },
-  permission:  { bg: 'bg-violet-500/10', text: 'text-violet-400', icon: Shield },
+  permission:  { bg: 'bg-brand-500/10', text: 'text-brand-400', icon: Shield },
 };
 
 function getActionColor(action: string) {
@@ -232,16 +227,17 @@ export default function ControlPanelPage() {
 
   // ═══ TAB 1: Users state ═══
   const [users, setUsers] = useState<UserRecord[]>([]);
+  const { data: employeesList } = useEmployees(); // §USER-PROFILE — employee picker
   const [usersLoading, setUsersLoading] = useState(true);
   const [userSearch, setUserSearch] = useState('');
   const [userRoleFilter, setUserRoleFilter] = useState('all');
   const [userStatusFilter, setUserStatusFilter] = useState('all');
 
-  // ═══ TAB 2: Permissions state ═══
+  // ═══ TAB 2: Permissions state — the console owns profile loading,
+  //     editing and saving; this page only holds the deep-navigation
+  //     target (the selected user id from the Users tab). ═══
   const [permUserId, setPermUserId] = useState<string | null>(null);
-  const [permUser, setPermUser] = useState<UserRecord | null>(null);
-  const [tempPermissions, setTempPermissions] = useState<PermissionsMap>({});
-  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
+  const [activeTab, setActiveTab] = useState('users');
 
   // ═══ TAB 3: Activity Logs state ═══
   const [logs, setLogs] = useState<ActivityLogItem[]>([]);
@@ -263,8 +259,13 @@ export default function ControlPanelPage() {
   const [isResetPwdOpen, setIsResetPwdOpen] = useState(false);
   const [isCloneOpen, setIsCloneOpen] = useState(false);
   const [selectedUser, setSelectedUser] = useState<UserRecord | null>(null);
-  const [addForm, setAddForm] = useState({ email: '', name: '', password: '', role: 'user' });
-  const [editForm, setEditForm] = useState({ name: '', email: '', role: '', department: '' });
+  const [addForm, setAddForm] = useState({
+    email: '', name: '', password: '', role: 'user',
+    jobTitle: '', mobile: '', linkedEmployeeId: '', responsibilities: '',
+  });
+  const [formError, setFormError] = useState<string | null>(null);
+  const [photoUploading, setPhotoUploading] = useState(false);
+  const [editForm, setEditForm] = useState({ name: '', email: '', role: '', department: '', jobTitle: '', mobile: '', linkedEmployeeId: '', responsibilities: '' });
   const [resetPwdTarget, setResetPwdTarget] = useState<UserRecord | null>(null);
   const [newPassword, setNewPassword] = useState('');
   const [cloneForm, setCloneForm] = useState({ email: '', name: '', password: '', role: 'user' });
@@ -345,144 +346,85 @@ export default function ControlPanelPage() {
   }, [logs]);
 
   // ═══ Permission helpers ═══
-  const getPermLevel = (pid: string): PermissionLevel => {
-    const perm = tempPermissions[pid];
-    if (!perm) return 'none';
-    if (typeof perm === 'string') return perm as PermissionLevel;
-    return (perm as PagePermission).level || 'none';
-  };
-
-  const getActionState = (pid: string, action: ActionKey): boolean => {
-    const perm = tempPermissions[pid];
-    if (!perm) return false;
-    if (typeof perm === 'string') return perm === 'edit';
-    return (perm as PagePermission).actions?.[action] === true;
-  };
-
-  const setPermLevel = (pid: string, level: PermissionLevel) => {
-    setTempPermissions(prev => {
-      const existing = prev[pid];
-      if (typeof existing === 'string' || !existing) {
-        if (level === 'edit') {
-          const page = APP_PAGES.find(p => p.id === pid);
-          const actions: Record<string, boolean> = {};
-          page?.availableActions.forEach(a => { actions[a] = true; });
-          return { ...prev, [pid]: { level: 'edit', actions } };
-        }
-        return { ...prev, [pid]: level };
-      } else {
-        return { ...prev, [pid]: { ...existing, level } };
-      }
-    });
-  };
-
-  // Milestone 10 — DATA SCOPE editing ("on WHOSE data?"). The scope
-  // rides on the same permission entry. M0.3: an ABSENT scope no
-  // longer means 'all' — it falls through to the role preset's scope
-  // or fails closed. The editor therefore DISPLAYS the effective
-  // scope (canonical resolvePageScope over the editor map, which is
-  // initialized from the effective map) and PERSISTS every choice
-  // explicitly, including 'all'.
-  const getPermScope = (pid: string): DataScope => {
-    return resolvePageScope(tempPermissions, pid, permUser?.role);
-  };
-
-  const setPermScope = (pid: string, scope: DataScope) => {
-    setTempPermissions(prev => {
-      const existing = prev[pid];
-      const base: PagePermission = typeof existing === 'string' || !existing
-        ? { level: (existing as PermissionLevel) || 'none', actions: {} }
-        : { ...existing };
-      // Stored explicitly — 'all' included. Since M0.3 an absent
-      // scope means "inherit preset / fail closed", so dropping the
-      // field for 'all' would silently narrow a future preset.
-      const next: PagePermission = { ...base, scope };
-      return { ...prev, [pid]: next };
-    });
-  };
-
-  const toggleAction = (pid: string, action: ActionKey) => {
-    setTempPermissions(prev => {
-      const existing = prev[pid];
-      let perm: PagePermission;
-      if (typeof existing === 'string' || !existing) {
-        perm = { level: 'edit', actions: {} };
-      } else {
-        perm = { ...existing, actions: { ...existing.actions } };
-      }
-      perm.level = 'edit';
-      if (!perm.actions) perm.actions = {};
-      perm.actions[action] = !perm.actions[action];
-      return { ...prev, [pid]: perm };
-    });
-  };
-
-  const toggleGroup = (gid: string) => {
-    setExpandedGroups(prev => {
-      const next = new Set(prev);
-      if (next.has(gid)) next.delete(gid); else next.add(gid);
-      return next;
-    });
-  };
-
-  // ═══ Quick Permission Actions ═══
-  const grantAll = () => {
-    const all: PermissionsMap = {};
-    APP_PAGES.forEach(p => {
-      if (EXCLUDED_PAGES.includes(p.id)) return;
-      const actions: Record<string, boolean> = {};
-      p.availableActions.forEach(a => { actions[a] = true; });
-      all[p.id] = { level: 'edit', actions };
-    });
-    setTempPermissions(all);
-  };
-
-  const removeAll = () => {
-    const none: PermissionsMap = {};
-    APP_PAGES.forEach(p => { none[p.id] = 'none'; });
-    setTempPermissions(none);
-  };
-
-  const resetToRole = () => {
-    if (!permUser) return;
-    setTempPermissions(getPermissionsForRole(permUser.role));
-  };
-
-  const grantAllForGroup = (gid: string) => {
-    setTempPermissions(prev => {
-      const next = { ...prev };
-      APP_PAGES.filter(p => p.groupId === gid && !EXCLUDED_PAGES.includes(p.id)).forEach(p => {
-        const actions: Record<string, boolean> = {};
-        p.availableActions.forEach(a => { actions[a] = true; });
-        next[p.id] = { level: 'edit', actions };
-      });
-      return next;
-    });
-  };
+  // §6 — the per-page/per-section/per-action editing logic (levels,
+  // tri-state overrides, data scope) now lives INSIDE the Permission
+  // Manager console; this page keeps only the deep-navigation target
+  // (the selected user) and hands the user list to the console.
 
   // ═══ Handlers ═══
   const handleAddUser = async () => {
     if (!addForm.email || !addForm.password) return;
     setSaving(true);
+    setFormError(null);
     try {
       const res = await authFetch('/api/dashboard/users', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(addForm),
+        body: JSON.stringify({
+          ...addForm,
+          linkedEmployeeId: addForm.linkedEmployeeId || null,
+        }),
       });
-      if (res.ok) { await fetchUsers(); setIsAddOpen(false); setAddForm({ email: '', name: '', password: '', role: 'user' }); }
-    } catch {} finally { setSaving(false); }
+      if (res.ok) {
+        await fetchUsers();
+        setIsAddOpen(false);
+        setAddForm({ email: '', name: '', password: '', role: 'user', jobTitle: '', mobile: '', linkedEmployeeId: '', responsibilities: '' });
+      } else {
+        // §9 — the API returns a MEANINGFUL Arabic message + field;
+        // surface it in the dialog (and a toast) instead of a silent 400.
+        const data = await res.json().catch(() => null);
+        const message = data?.error || 'تعذر إنشاء المستخدم — تأكد من البيانات المدخلة';
+        setFormError(message);
+        toast.error(message);
+      }
+    } catch {
+      const message = 'تعذر الاتصال بالخادم';
+      setFormError(message);
+      toast.error(message);
+    } finally { setSaving(false); }
+  };
+
+  // §USER-PHOTO — admin uploads a profile photo for an existing user.
+  const handlePhotoUpload = async (file: File) => {
+    if (!selectedUser) return;
+    setPhotoUploading(true);
+    try {
+      const fd = new FormData();
+      fd.append('file', file);
+      const res = await authFetch(`/api/dashboard/users/${selectedUser.id}/photo`, { method: 'POST', body: fd });
+      if (res.ok) { await fetchUsers(); toast.success('تم تحديث صورة المستخدم'); }
+      else {
+        const data = await res.json().catch(() => null);
+        toast.error(data?.error || 'تعذر رفع الصورة');
+      }
+    } catch {
+      toast.error('تعذر رفع الصورة');
+    } finally { setPhotoUploading(false); }
   };
 
   const handleEditUser = async () => {
     if (!selectedUser) return;
     setSaving(true);
+    setFormError(null);
     try {
       const res = await authFetch(`/api/dashboard/users/${selectedUser.id}`, {
         method: 'PUT', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(editForm),
+        body: JSON.stringify({
+          ...editForm,
+          linkedEmployeeId: editForm.linkedEmployeeId || null,
+        }),
       });
       if (res.ok) { await fetchUsers(); setIsEditOpen(false); setSelectedUser(null); }
-    } catch {} finally { setSaving(false); }
+      else {
+        const data = await res.json().catch(() => null);
+        const message = data?.error || 'تعذر تحديث المستخدم';
+        setFormError(message);
+        toast.error(message);
+      }
+    } catch {
+      const message = 'تعذر الاتصال بالخادم';
+      setFormError(message);
+      toast.error(message);
+    } finally { setSaving(false); }
   };
 
   const handleDelete = async () => {
@@ -519,42 +461,43 @@ export default function ControlPanelPage() {
   const handleCloneUser = async () => {
     if (!selectedUser || !cloneForm.email || !cloneForm.password) return;
     setSaving(true);
+    setFormError(null);
     try {
       const res = await authFetch('/api/dashboard/users', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...cloneForm, permissions: JSON.stringify(selectedUser.permissions) }),
+        // §CLONE — send the permission MAP as an object; the API accepts
+        // an explicit admin-provided map for clones (role presets would
+        // otherwise silently replace the cloned permissions).
+        body: JSON.stringify({ ...cloneForm, permissions: selectedUser.permissions }),
       });
       if (res.ok) { await fetchUsers(); setIsCloneOpen(false); setSelectedUser(null); setCloneForm({ email: '', name: '', password: '', role: 'user' }); }
-    } catch {} finally { setSaving(false); }
+      else {
+        const data = await res.json().catch(() => null);
+        const message = data?.error || 'تعذر استنساخ المستخدم';
+        setFormError(message);
+        toast.error(message);
+      }
+    } catch {
+      toast.error('تعذر الاتصال بالخادم');
+    } finally { setSaving(false); }
   };
 
-  const savePermissions = async () => {
-    if (!permUserId) return;
-    setSaving(true);
-    try {
-      const res = await authFetch(`/api/dashboard/users/${permUserId}/permissions`, {
-        method: 'PUT', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ permissions: tempPermissions }),
-      });
-      if (res.ok) { await fetchUsers(); setPermUserId(null); setPermUser(null); }
-    } catch {} finally { setSaving(false); }
-  };
-
+  // Deep navigation from the Users tab: lands on the console with the
+  // target user loaded; the console loads, edits and saves the
+  // override tier itself (audited server-side).
   const openPermissions = (user: UserRecord) => {
     setPermUserId(user.id);
-    setPermUser(user);
-    // Initialize from the EFFECTIVE permissions (role preset + stored
-    // overrides) so the editor shows what the user actually has. Starting
-    // from the stored map alone renders pages added after the user's map
-    // was saved as "hidden", and saving would freeze that stale 'none'
-    // over the role's grant.
-    setTempPermissions(resolveEffectivePermissions(user.role, user.permissions, user.positionPermissions ?? null));
-    setExpandedGroups(new Set());
+    setActiveTab('permissions');
   };
 
   const openEdit = (u: UserRecord) => {
     setSelectedUser(u);
-    setEditForm({ name: u.name || '', email: u.email, role: u.role, department: u.department || '' });
+    setFormError(null);
+    setEditForm({
+      name: u.name || '', email: u.email, role: u.role, department: u.department || '',
+      jobTitle: u.jobTitle || '', mobile: u.mobile || '',
+      linkedEmployeeId: u.linkedEmployeeId || '', responsibilities: u.responsibilities || '',
+    });
     setIsEditOpen(true);
   };
 
@@ -569,7 +512,7 @@ export default function ControlPanelPage() {
   // ═══ Permission guard ═══
   if (!isAdmin) {
     return (
-      <div dir="rtl" className="flex flex-col items-center justify-center py-20">
+      <div className="flex flex-col items-center justify-center py-20">
         <Shield className="size-16 text-slate-600 mb-4" />
         <h2 className="text-xl font-semibold text-slate-400">صلاحية غير كافية</h2>
         <p className="text-slate-500 mt-2">هذه الصفحة متاحة لمسؤولي النظام فقط</p>
@@ -577,47 +520,33 @@ export default function ControlPanelPage() {
     );
   }
 
-  // ═══ Grouped permissions for editing ═══
-  const permissionGroups = PERMISSION_GROUPS;
-
-  const getGroupLabel = (gid: string) => {
-    const g = { daily_ops: 'العمليات اليومية', employee_mgmt: 'إدارة الموظفين', quality_ctrl: 'الجودة والرقابة', hr: 'الموارد البشرية', travel_ops: 'السفر', reports: 'التقارير', settings: 'الإعدادات' };
-    return g[gid] || gid;
-  };
-
-  const getGroupEmoji = (gid: string) => {
-    const g: Record<string, string> = { daily_ops: '📊', employee_mgmt: '👥', quality_ctrl: '🎯', hr: '🏢', travel_ops: '✈️', reports: '📈', settings: '⚙️' };
-    return g[gid] || '📁';
-  };
-
   // ═══════════════════════════════════════════════════════════
   //  Render
   // ═══════════════════════════════════════════════════════════
 
   return (
     <TooltipProvider delayDuration={300}>
-    <div dir="rtl" className="space-y-6">
-      {/* ═══ HEADER ═══ */}
-      <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }}
-        className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-white flex items-center gap-2">
-            <Settings className="size-6 text-violet-400" />
-            مركز التحكم والإدارة
-          </h1>
-          <p className="text-slate-400 mt-1 text-sm">إدارة المستخدمين والصلاحيات والمراقبة والتدقيق</p>
-        </div>
-        <Button onClick={() => setIsAddOpen(true)}
-          className="bg-linear-to-r from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white h-9 px-5 shadow-lg shadow-violet-500/20 transition-all">
-          <UserPlus className="size-4 ml-1" />
-          إنشاء مستخدم
-        </Button>
-      </motion.div>
+    <div className="space-y-6">
+      {/* ═══ HEADER (§7 — unified page identity) ═══ */}
+      <PageIdentity
+        pageId="controlPanel"
+        icon={<Settings className="size-5" />}
+        iconClassName="bg-brand-500/15 border-brand-500/30 text-brand-400"
+        title="مركز التحكم والإدارة"
+        description="إدارة المستخدمين والصلاحيات والمراقبة والتدقيق"
+        actions={
+          <Button onClick={() => setIsAddOpen(true)}
+            className="bg-linear-to-r from-brand-600 to-brand-700 hover:from-brand-700 hover:to-brand-800 text-white h-9 px-5 shadow-lg shadow-brand-500/20 transition-all">
+            <UserPlus className="size-4 ml-1" />
+            إنشاء مستخدم
+          </Button>
+        }
+      />
 
       {/* ═══ STATS BAR ═══ */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
         {[
-          { label: 'إجمالي المستخدمين', value: users.length, icon: Users, color: 'from-violet-500/20 to-indigo-500/20 text-violet-400' },
+          { label: 'إجمالي المستخدمين', value: users.length, icon: Users, color: 'from-brand-500/20 to-brand-500/20 text-brand-400' },
           { label: 'مستخدمين نشطين', value: users.filter(u => !u.isSuspended).length, icon: CheckCircle2, color: 'from-emerald-500/20 to-cyan-500/20 text-emerald-400' },
           { label: 'جلسات نشطة', value: sessions.length, icon: Wifi, color: 'from-amber-500/20 to-orange-500/20 text-amber-400' },
           { label: 'سجل الأنشطة', value: logs.length, icon: ClipboardList, color: 'from-blue-500/20 to-sky-500/20 text-blue-400' },
@@ -639,18 +568,18 @@ export default function ControlPanelPage() {
       </div>
 
       {/* ═══ MAIN TABS ═══ */}
-      <Tabs defaultValue="users" className="space-y-6">
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
         <TabsList className="bg-slate-800/60 border border-slate-700/40 p-1 h-auto">
-          <TabsTrigger value="users" className="data-[state=active]:bg-violet-600 data-[state=active]:text-white gap-2 px-4 py-2.5 text-sm rounded-lg">
+          <TabsTrigger value="users" className="data-[state=active]:bg-brand-600 data-[state=active]:text-white gap-2 px-4 py-2.5 text-sm rounded-lg">
             <Users className="size-4" /> المستخدمين
           </TabsTrigger>
-          <TabsTrigger value="permissions" className="data-[state=active]:bg-violet-600 data-[state=active]:text-white gap-2 px-4 py-2.5 text-sm rounded-lg">
+          <TabsTrigger value="permissions" className="data-[state=active]:bg-brand-600 data-[state=active]:text-white gap-2 px-4 py-2.5 text-sm rounded-lg">
             <Lock className="size-4" /> الصلاحيات
           </TabsTrigger>
-          <TabsTrigger value="logs" className="data-[state=active]:bg-violet-600 data-[state=active]:text-white gap-2 px-4 py-2.5 text-sm rounded-lg">
+          <TabsTrigger value="logs" className="data-[state=active]:bg-brand-600 data-[state=active]:text-white gap-2 px-4 py-2.5 text-sm rounded-lg">
             <ClipboardList className="size-4" /> سجل الأنشطة
           </TabsTrigger>
-          <TabsTrigger value="sessions" className="data-[state=active]:bg-violet-600 data-[state=active]:text-white gap-2 px-4 py-2.5 text-sm rounded-lg">
+          <TabsTrigger value="sessions" className="data-[state=active]:bg-brand-600 data-[state=active]:text-white gap-2 px-4 py-2.5 text-sm rounded-lg">
             <MonitorSmartphone className="size-4" /> الجلسات النشطة
           </TabsTrigger>
         </TabsList>
@@ -717,12 +646,12 @@ export default function ControlPanelPage() {
                       <TableRow key={u.id} className="border-slate-700/20 hover:bg-slate-700/20 transition-colors">
                         <TableCell>
                           <div className="flex items-center gap-2.5">
-                            <div className="size-8 rounded-full bg-linear-to-br from-violet-500/30 to-indigo-500/30 flex items-center justify-center text-white text-xs font-bold shrink-0">
+                            <div className="size-8 rounded-full bg-linear-to-br from-brand-500/30 to-brand-500/30 flex items-center justify-center text-white text-xs font-bold shrink-0">
                               {(u.name || u.email)[0].toUpperCase()}
                             </div>
                             <div>
                               <p className="text-white text-sm font-medium">{u.name || u.email.split('@')[0]}</p>
-                              {isOwnerProtected(u) && <span className="text-[10px] text-violet-400">مالك النظام</span>}
+                              {isOwnerProtected(u) && <span className="text-[10px] text-brand-400">مالك النظام</span>}
                             </div>
                           </div>
                         </TableCell>
@@ -742,50 +671,20 @@ export default function ControlPanelPage() {
                           {new Date(u.createdAt).toLocaleDateString('ar-EG')}
                         </TableCell>
                         <TableCell>
-                          <div className="flex items-center gap-1 justify-end">
-                            <Tooltip><TooltipTrigger asChild>
-                              <Button variant="ghost" size="icon" className="size-8 text-slate-400 hover:text-blue-400 hover:bg-blue-500/10"
-                                onClick={() => openPermissions(u)}>
-                                <Lock className="size-3.5" />
-                              </Button>
-                            </TooltipTrigger><TooltipContent>الصلاحيات</TooltipContent></Tooltip>
-
-                            <Tooltip><TooltipTrigger asChild>
-                              <Button variant="ghost" size="icon" className="size-8 text-slate-400 hover:text-amber-400 hover:bg-amber-500/10"
-                                onClick={() => openEdit(u)}>
-                                <Pencil className="size-3.5" />
-                              </Button>
-                            </TooltipTrigger><TooltipContent>تعديل</TooltipContent></Tooltip>
-
-                            <DropdownMenu>
-                              <DropdownMenuTrigger asChild>
-                                <Button variant="ghost" size="icon" className="size-8 text-slate-400 hover:text-white hover:bg-slate-700/50">
-                                  <MoreHorizontal className="size-4" />
-                                </Button>
-                              </DropdownMenuTrigger>
-                              <DropdownMenuContent className="bg-slate-900 border-slate-700" align="start">
-                                <DropdownMenuItem onClick={() => openClone(u)} className="text-slate-300 focus:bg-slate-800">
-                                  <CopyIcon className="size-4 ml-2 text-blue-400" /> نسخ المستخدم
-                                </DropdownMenuItem>
-                                <DropdownMenuItem onClick={() => { setResetPwdTarget(u); setIsResetPwdOpen(true); setNewPassword(''); }}
-                                  className="text-slate-300 focus:bg-slate-800">
-                                  <KeyRound className="size-4 ml-2 text-amber-400" /> إعادة كلمة المرور
-                                </DropdownMenuItem>
-                                <DropdownMenuSeparator className="bg-slate-700" />
-                                <DropdownMenuItem onClick={() => handleToggleSuspend(u)}
-                                  className="text-slate-300 focus:bg-slate-800">
-                                  {u.isSuspended ? <><CheckCircle2 className="size-4 ml-2 text-emerald-400" /> تفعيل الحساب</> : <><Ban className="size-4 ml-2 text-amber-400" /> تعليق الحساب</>}
-                                </DropdownMenuItem>
-                                {!isOwnerProtected(u) && <>
-                                  <DropdownMenuSeparator className="bg-slate-700" />
-                                  <DropdownMenuItem onClick={() => { setSelectedUser(u); setIsDeleteOpen(true); }}
-                                    className="text-red-400 focus:bg-red-500/10">
-                                    <Trash2 className="size-4 ml-2" /> حذف المستخدم
-                                  </DropdownMenuItem>
-                                </>}
-                              </DropdownMenuContent>
-                            </DropdownMenu>
-                          </div>
+                          {/* §2 — SmartActionMenu: all user-row actions as an
+                              icon fan with tooltips; System Owner rows carry
+                              no destructive/delete action (owner-protected). */}
+                          <SmartActionMenu
+                            label={`إجراءات المستخدم ${u.name || u.email}`}
+                            actions={[
+                              { key: 'permissions', label: 'الصلاحيات', icon: <Lock className="size-3.5" />, onSelect: () => openPermissions(u) },
+                              { key: 'edit', label: 'تعديل', icon: <Pencil className="size-3.5" />, onSelect: () => openEdit(u) },
+                              { key: 'clone', label: 'نسخ المستخدم', icon: <CopyIcon className="size-3.5" />, onSelect: () => openClone(u) },
+                              { key: 'password', label: 'إعادة كلمة المرور', icon: <KeyRound className="size-3.5" />, onSelect: () => { setResetPwdTarget(u); setIsResetPwdOpen(true); setNewPassword(''); } },
+                              { key: 'suspend', label: u.isSuspended ? 'تفعيل الحساب' : 'تعليق الحساب', icon: u.isSuspended ? <CheckCircle2 className="size-3.5" /> : <Ban className="size-3.5" />, onSelect: () => handleToggleSuspend(u) },
+                              { key: 'delete', label: 'حذف المستخدم', icon: <Trash2 className="size-3.5" />, destructive: true, onSelect: () => { setSelectedUser(u); setIsDeleteOpen(true); }, hidden: isOwnerProtected(u) },
+                            ]}
+                          />
                         </TableCell>
                       </TableRow>
                     ))}
@@ -797,186 +696,20 @@ export default function ControlPanelPage() {
         </TabsContent>
 
         {/* ═══════════════════════════════════════════════════════
-            TAB 2: PERMISSIONS
+            TAB 2: PERMISSIONS — the Permission Manager console.
+            One component owns the user list (search + persisted
+            filters + override indicators), the canonical profile
+            (sources → effective → scope/section/action/field) and
+            the audited override editing. Deep navigation from the
+            Users tab lands on the selected user.
         ═══════════════════════════════════════════════════════ */}
         <TabsContent value="permissions" className="space-y-4">
-          {/* User selector + quick actions */}
-          <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center">
-            <Select value={permUserId || ''} onValueChange={(v) => {
-              const u = users.find(x => x.id === v);
-              if (u) openPermissions(u);
-            }}>
-              <SelectTrigger className="bg-slate-800/60 border-slate-700/50 text-white w-64 h-10">
-                <Users className="size-4 ml-1 text-slate-400" />
-                <SelectValue placeholder="اختر مستخدم لتعديل صلاحياته" />
-              </SelectTrigger>
-              <SelectContent>
-                {users.filter(u => !isOwnerProtected(u)).map(u => (
-                  <SelectItem key={u.id} value={u.id} className="text-white">
-                    {u.name || u.email} — {ROLE_OPTIONS.find(r => r.value === u.role)?.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            {permUser && (
-              <div className="flex items-center gap-2 flex-wrap">
-                <Tooltip><TooltipTrigger asChild>
-                  <Button variant="outline" size="sm" className="border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10 text-xs gap-1.5 h-8"
-                    onClick={grantAll}>
-                    <ShieldCheck className="size-3.5" /> منح الكل
-                  </Button>
-                </TooltipTrigger><TooltipContent>منح كل الصلاحيات</TooltipContent></Tooltip>
-
-                <Tooltip><TooltipTrigger asChild>
-                  <Button variant="outline" size="sm" className="border-red-500/30 text-red-400 hover:bg-red-500/10 text-xs gap-1.5 h-8"
-                    onClick={removeAll}>
-                    <ShieldX className="size-3.5" /> إزالة الكل
-                  </Button>
-                </TooltipTrigger><TooltipContent>إزالة كل الصلاحيات</TooltipContent></Tooltip>
-
-                <Tooltip><TooltipTrigger asChild>
-                  <Button variant="outline" size="sm" className="border-blue-500/30 text-blue-400 hover:bg-blue-500/10 text-xs gap-1.5 h-8"
-                    onClick={resetToRole}>
-                    <RotateCcw className="size-3.5" /> افتراضي الدور
-                  </Button>
-                </TooltipTrigger><TooltipContent>إعادة صلاحيات الدور الافتراضية</TooltipContent></Tooltip>
-
-                <Button size="sm" onClick={savePermissions} disabled={saving}
-                  className="bg-violet-600 hover:bg-violet-700 text-white text-xs gap-1.5 h-8">
-                  {saving ? 'جاري الحفظ...' : <><Zap className="size-3.5" /> حفظ الصلاحيات</>}
-                </Button>
-              </div>
-            )}
-          </div>
-
-          {/* Permissions Editor */}
-          {permUser ? (
-            <Card className="border-slate-700/30 bg-slate-800/30 backdrop-blur-sm">
-              <CardHeader className="pb-3">
-                <CardTitle className="text-white text-sm flex items-center gap-2">
-                  <Lock className="size-4 text-violet-400" />
-                  صلاحيات: {permUser.name || permUser.email}
-                  <Badge className={`${ROLE_OPTIONS.find(r => r.value === permUser.role)?.color} text-[10px] border`}>
-                    {ROLE_OPTIONS.find(r => r.value === permUser.role)?.label}
-                  </Badge>
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="pt-0">
-                <ScrollArea className="max-h-[65vh]">
-                  <div className="space-y-4 pr-3 pb-3">
-                    {Object.entries(permissionGroups).map(([gid, pages]) => {
-                      const isExpanded = expandedGroups.has(gid);
-                      const allEdit = pages.every(p => getPermLevel(p.id) === 'edit');
-                      return (
-                        <div key={gid} className="rounded-xl border border-slate-700/30 overflow-hidden">
-                          {/* Group Header */}
-                          <button onClick={() => toggleGroup(gid)}
-                            className="w-full flex items-center justify-between p-3.5 hover:bg-slate-700/20 transition-colors">
-                            <div className="flex items-center gap-2.5">
-                              <span className="text-base">{getGroupEmoji(gid)}</span>
-                              <span className="text-white text-sm font-semibold">{getGroupLabel(gid)}</span>
-                              <Badge variant="outline" className="text-[10px] border-slate-600 text-slate-400">
-                                {pages.filter(p => getPermLevel(p.id) !== 'none').length}/{pages.length}
-                              </Badge>
-                            </div>
-                            <div className="flex items-center gap-2">
-                              <Tooltip><TooltipTrigger asChild>
-                                <Button variant="ghost" size="icon" className="size-7 text-slate-500 hover:text-emerald-400 hover:bg-emerald-500/10"
-                                  onClick={(e) => { e.stopPropagation(); grantAllForGroup(gid); }}>
-                                  <ShieldCheck className="size-3.5" />
-                                </Button>
-                              </TooltipTrigger><TooltipContent>منح صلاحيات القسم</TooltipContent></Tooltip>
-                              {isExpanded ? <ChevronUp className="size-4 text-slate-500" /> : <ChevronDown className="size-4 text-slate-500" />}
-                            </div>
-                          </button>
-
-                          {/* Pages in group */}
-                          <AnimatePresence>
-                            {isExpanded && (
-                              <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }}
-                                className="overflow-hidden">
-                                <div className="border-t border-slate-700/20 space-y-0">
-                                  {pages.map(page => {
-                                    const level = getPermLevel(page.id);
-                                    const hasActions = page.availableActions.length > 0;
-                                    return (
-                                      <div key={page.id} className="border-b border-slate-700/10 last:border-0">
-                                        <div className="flex items-center justify-between p-3 px-4">
-                                          <span className="text-slate-300 text-xs font-medium">{page.title}</span>
-                                          <RadioGroup value={level} onValueChange={(v) => setPermLevel(page.id, v as PermissionLevel)}
-                                            className="flex gap-3" dir="rtl">
-                                            <div className="flex items-center gap-1">
-                                              <RadioGroupItem value="none" id={`p-none-${page.id}`} className="border-slate-600" />
-                                              <Label htmlFor={`p-none-${page.id}`} className="text-slate-500 text-[10px] cursor-pointer">مخفي</Label>
-                                            </div>
-                                            <div className="flex items-center gap-1">
-                                              <RadioGroupItem value="read" id={`p-read-${page.id}`} className="border-slate-600" />
-                                              <Label htmlFor={`p-read-${page.id}`} className="text-slate-400 text-[10px] cursor-pointer">قراءة</Label>
-                                            </div>
-                                            <div className="flex items-center gap-1">
-                                              <RadioGroupItem value="edit" id={`p-edit-${page.id}`} className="border-slate-600" />
-                                              <Label htmlFor={`p-edit-${page.id}`} className="text-blue-400 text-[10px] cursor-pointer">تعديل</Label>
-                                            </div>
-                                          </RadioGroup>
-                                        </div>
-                                        {/* Action toggles */}
-                                        {hasActions && level === 'edit' && (
-                                          <div className="px-4 pb-3 pt-0">
-                                            <div className="flex flex-wrap gap-x-4 gap-y-1.5">
-                                              {page.availableActions.map(action => (
-                                                <div key={action} className="flex items-center gap-1.5">
-                                                  <Checkbox id={`a-${page.id}-${action}`}
-                                                    checked={getActionState(page.id, action)}
-                                                    onCheckedChange={() => toggleAction(page.id, action)}
-                                                    className="border-slate-600 data-[state=checked]:bg-violet-600 data-[state=checked]:border-violet-600 size-3.5" />
-                                                  <Label htmlFor={`a-${page.id}-${action}`}
-                                                    className="text-slate-400 text-[10px] cursor-pointer">{getActionLabel(action)}</Label>
-                                                </div>
-                                              ))}
-                                            </div>
-                                          </div>
-                                        )}
-                                        {/* Milestone 10 — data scope ("on whose data?") */}
-                                        {level !== 'none' && (
-                                          <div className="px-4 pb-3 pt-0 flex items-center gap-2 flex-wrap">
-                                            <span className="text-slate-500 text-[10px]">نطاق البيانات:</span>
-                                            <Select value={getPermScope(page.id)} onValueChange={(v) => setPermScope(page.id, v as DataScope)}>
-                                              <SelectTrigger className="h-7 w-[130px] text-[10px] border-slate-600/60 bg-slate-800/40 text-slate-300" dir="rtl">
-                                                <SelectValue />
-                                              </SelectTrigger>
-                                              <SelectContent className="bg-slate-800 border-slate-600/60 text-slate-200">
-                                                {SCOPE_OPTIONS.map((opt) => (
-                                                  <SelectItem key={opt.value} value={opt.value} className="text-[11px]">
-                                                    {opt.label}
-                                                  </SelectItem>
-                                                ))}
-                                              </SelectContent>
-                                            </Select>
-                                          </div>
-                                        )}
-                                      </div>
-                                    );
-                                  })}
-                                </div>
-                              </motion.div>
-                            )}
-                          </AnimatePresence>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </ScrollArea>
-              </CardContent>
-            </Card>
-          ) : (
-            <Card className="border-slate-700/30 bg-slate-800/30 backdrop-blur-sm">
-              <CardContent className="flex flex-col items-center justify-center py-20">
-                <Lock className="size-12 text-slate-600 mb-3" />
-                <p className="text-slate-400 font-medium">اختر مستخدماً لتعديل صلاحياته</p>
-                <p className="text-slate-500 text-sm mt-1">يمكنك تخصيص صلاحيات كل مستخدم بشكل مستقل عن دوره</p>
-              </CardContent>
-            </Card>
-          )}
+          <PermissionManagerConsole
+            users={users}
+            selectedUserId={permUserId}
+            onSelectUser={(u) => setPermUserId(u ? u.id : null)}
+            onSaved={fetchUsers}
+          />
         </TabsContent>
 
         {/* ═══════════════════════════════════════════════════════
@@ -1191,71 +924,177 @@ export default function ControlPanelPage() {
           DIALOGS
       ═══════════════════════════════════════════════════════ */}
 
-      {/* Add User Dialog */}
-      <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
-        <DialogContent className="backdrop-blur-xl bg-slate-900 border-slate-700 max-w-md">
+      {/* Add User Dialog — §USER-PROFILE: full operational identity +
+          explicit link to an EXISTING employee record. */}
+      <Dialog open={isAddOpen} onOpenChange={(o) => { setIsAddOpen(o); if (o) setFormError(null); }}>
+        <DialogContent className="backdrop-blur-xl bg-slate-900 border-slate-700 max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle className="text-white flex items-center gap-2"><UserPlus className="size-5 text-violet-400" /> إنشاء مستخدم جديد</DialogTitle>
-            <DialogDescription className="text-slate-400">أدخل بيانات المستخدم الجديد</DialogDescription>
+            <DialogTitle className="text-white flex items-center gap-2"><UserPlus className="size-5 text-brand-400" /> إنشاء مستخدم جديد</DialogTitle>
+            <DialogDescription className="text-slate-400">أدخل بيانات المستخدم الجديد — يمكن ربطه بسجل موظف قائم</DialogDescription>
           </DialogHeader>
+          {formError && (
+            <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-300" role="alert">
+              {formError}
+            </div>
+          )}
           <div className="grid gap-4">
-            <div className="space-y-2">
-              <Label className="text-slate-300 text-xs">الاسم</Label>
-              <Input value={addForm.name} onChange={e => setAddForm(p => ({ ...p, name: e.target.value }))}
-                className="bg-slate-800 border-slate-600 text-white h-10" placeholder="الاسم الكامل" />
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-2">
+                <Label className="text-slate-300 text-xs">الاسم</Label>
+                <Input value={addForm.name} onChange={e => setAddForm(p => ({ ...p, name: e.target.value }))}
+                  className="bg-slate-800 border-slate-600 text-white h-10" placeholder="الاسم الكامل" />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-slate-300 text-xs">البريد الإلكتروني</Label>
+                <Input type="email" value={addForm.email} onChange={e => setAddForm(p => ({ ...p, email: e.target.value }))}
+                  className="bg-slate-800 border-slate-600 text-white h-10" placeholder="user@company.com" dir="ltr" required />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-2">
+                <Label className="text-slate-300 text-xs">كلمة المرور</Label>
+                <Input type="password" value={addForm.password} onChange={e => setAddForm(p => ({ ...p, password: e.target.value }))}
+                  className="bg-slate-800 border-slate-600 text-white h-10" placeholder="8 أحرف على الأقل" dir="ltr" required />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-slate-300 text-xs">الدور</Label>
+                <Select value={addForm.role} onValueChange={v => setAddForm(p => ({ ...p, role: v }))}>
+                  <SelectTrigger className="bg-slate-800 border-slate-600 text-white h-10"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {ROLE_OPTIONS.map(r => <SelectItem key={r.value} value={r.value} className="text-white">{r.label}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-2">
+                <Label className="text-slate-300 text-xs">المسمى الوظيفي</Label>
+                <Input value={addForm.jobTitle} onChange={e => setAddForm(p => ({ ...p, jobTitle: e.target.value }))}
+                  className="bg-slate-800 border-slate-600 text-white h-10" placeholder="مثال: مشرف جودة" />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-slate-300 text-xs">الهاتف</Label>
+                <Input value={addForm.mobile} onChange={e => setAddForm(p => ({ ...p, mobile: e.target.value }))}
+                  className="bg-slate-800 border-slate-600 text-white h-10" placeholder="اختياري" dir="ltr" />
+              </div>
             </div>
             <div className="space-y-2">
-              <Label className="text-slate-300 text-xs">البريد الإلكتروني</Label>
-              <Input type="email" value={addForm.email} onChange={e => setAddForm(p => ({ ...p, email: e.target.value }))}
-                className="bg-slate-800 border-slate-600 text-white h-10" placeholder="user@company.com" dir="ltr" required />
-            </div>
-            <div className="space-y-2">
-              <Label className="text-slate-300 text-xs">كلمة المرور</Label>
-              <Input type="password" value={addForm.password} onChange={e => setAddForm(p => ({ ...p, password: e.target.value }))}
-                className="bg-slate-800 border-slate-600 text-white h-10" placeholder="كلمة المرور" dir="ltr" required />
-            </div>
-            <div className="space-y-2">
-              <Label className="text-slate-300 text-xs">الدور</Label>
-              <Select value={addForm.role} onValueChange={v => setAddForm(p => ({ ...p, role: v }))}>
-                <SelectTrigger className="bg-slate-800 border-slate-600 text-white h-10"><SelectValue /></SelectTrigger>
+              <Label className="text-slate-300 text-xs">ربط بسجل موظف قائم</Label>
+              <Select value={addForm.linkedEmployeeId || '__none__'} onValueChange={v => setAddForm(p => ({ ...p, linkedEmployeeId: v === '__none__' ? '' : v }))}>
+                <SelectTrigger className="bg-slate-800 border-slate-600 text-white h-10"><SelectValue placeholder="بدون ربط" /></SelectTrigger>
                 <SelectContent>
-                  {ROLE_OPTIONS.map(r => <SelectItem key={r.value} value={r.value} className="text-white">{r.label}</SelectItem>)}
+                  <SelectItem value="__none__" className="text-white">بدون ربط</SelectItem>
+                  {((employeesList ?? []) as Array<{ id: string; name: string; code?: string | null; department?: string | null }>).map(emp => (
+                    <SelectItem key={emp.id} value={emp.id} className="text-white">
+                      {emp.name}{emp.code ? ` — ${emp.code}` : ''}{emp.department ? ` (${emp.department})` : ''}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
+              <p className="text-slate-500 text-[10px]">القسم والفريق يتم الحصول عليهما تلقائياً من موضع الموظف في الهيكل التنظيمي</p>
+            </div>
+            <div className="space-y-2">
+              <Label className="text-slate-300 text-xs">المسؤوليات</Label>
+              <Input value={addForm.responsibilities} onChange={e => setAddForm(p => ({ ...p, responsibilities: e.target.value }))}
+                className="bg-slate-800 border-slate-600 text-white h-10" placeholder="اختياري" />
             </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsAddOpen(false)} className="border-slate-600 text-slate-300">إلغاء</Button>
             <Button onClick={handleAddUser} disabled={saving || !addForm.email || !addForm.password}
-              className="bg-linear-to-r from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white h-9 px-5">
+              className="bg-linear-to-r from-brand-600 to-brand-700 hover:from-brand-700 hover:to-brand-800 text-white h-9 px-5">
               {saving ? 'جاري الإنشاء...' : 'إنشاء'}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* Edit User Dialog */}
-      <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>
-        <DialogContent className="backdrop-blur-xl bg-slate-900 border-slate-700 max-w-md">
+      {/* Edit User Dialog — §USER-PROFILE: identity, photo, employee link */}
+      <Dialog open={isEditOpen} onOpenChange={(o) => { setIsEditOpen(o); if (o) setFormError(null); }}>
+        <DialogContent className="backdrop-blur-xl bg-slate-900 border-slate-700 max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="text-white flex items-center gap-2"><Pencil className="size-5 text-amber-400" /> تعديل المستخدم</DialogTitle>
-            <DialogDescription className="text-slate-400">تعديل بيانات المستخدم</DialogDescription>
+            <DialogDescription className="text-slate-400">تعديل بيانات المستخدم وصورته وربطه بسجل موظف</DialogDescription>
           </DialogHeader>
+          {formError && (
+            <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-300" role="alert">
+              {formError}
+            </div>
+          )}
           <div className="grid gap-4">
+            {/* §USER-PHOTO — avatar + upload for the selected user */}
+            {selectedUser && (
+              <div className="flex items-center gap-4">
+                <UserAvatar name={selectedUser.name} src={selectedUser.photoURL} className="size-16 text-lg" />
+                <div className="space-y-1.5">
+                  <Label className="text-slate-300 text-xs block">صورة المستخدم</Label>
+                  <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-slate-600 px-3 py-1.5 text-xs text-slate-300 hover:bg-slate-800 transition-colors">
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      disabled={photoUploading}
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) void handlePhotoUpload(file);
+                        e.target.value = '';
+                      }}
+                    />
+                    {photoUploading ? 'جاري الرفع...' : 'رفع صورة'}
+                  </label>
+                  <p className="text-slate-500 text-[10px]">تُقص إلى مربع 256×256 تلقائياً</p>
+                </div>
+              </div>
+            )}
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-2">
+                <Label className="text-slate-300 text-xs">الاسم</Label>
+                <Input value={editForm.name} onChange={e => setEditForm(p => ({ ...p, name: e.target.value }))}
+                  className="bg-slate-800 border-slate-600 text-white h-10" />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-slate-300 text-xs">البريد الإلكتروني</Label>
+                <Input type="email" value={editForm.email} onChange={e => setEditForm(p => ({ ...p, email: e.target.value }))}
+                  className="bg-slate-800 border-slate-600 text-white h-10" dir="ltr" />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-2">
+                <Label className="text-slate-300 text-xs">المسمى الوظيفي</Label>
+                <Input value={editForm.jobTitle} onChange={e => setEditForm(p => ({ ...p, jobTitle: e.target.value }))}
+                  className="bg-slate-800 border-slate-600 text-white h-10" />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-slate-300 text-xs">الهاتف</Label>
+                <Input value={editForm.mobile} onChange={e => setEditForm(p => ({ ...p, mobile: e.target.value }))}
+                  className="bg-slate-800 border-slate-600 text-white h-10" dir="ltr" />
+              </div>
+            </div>
             <div className="space-y-2">
-              <Label className="text-slate-300 text-xs">الاسم</Label>
-              <Input value={editForm.name} onChange={e => setEditForm(p => ({ ...p, name: e.target.value }))}
+              <Label className="text-slate-300 text-xs">ربط بسجل موظف قائم</Label>
+              <Select value={editForm.linkedEmployeeId || '__none__'} onValueChange={v => setEditForm(p => ({ ...p, linkedEmployeeId: v === '__none__' ? '' : v }))}>
+                <SelectTrigger className="bg-slate-800 border-slate-600 text-white h-10"><SelectValue placeholder="بدون ربط" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none__" className="text-white">بدون ربط</SelectItem>
+                  {((employeesList ?? []) as Array<{ id: string; name: string; code?: string | null; department?: string | null }>).map(emp => (
+                    <SelectItem key={emp.id} value={emp.id} className="text-white">
+                      {emp.name}{emp.code ? ` — ${emp.code}` : ''}{emp.department ? ` (${emp.department})` : ''}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {selectedUser?.department && (
+                <p className="text-slate-500 text-[10px]">
+                  القسم الحالي: <span className="text-slate-400">{selectedUser.department}</span>
+                  {selectedUser.team ? ` · الفريق: ${selectedUser.team}` : ''}
+                  {' '}(مشتق من الهيكل التنظيمي)
+                </p>
+              )}
+            </div>
+            <div className="space-y-2">
+              <Label className="text-slate-300 text-xs">المسؤوليات</Label>
+              <Input value={editForm.responsibilities} onChange={e => setEditForm(p => ({ ...p, responsibilities: e.target.value }))}
                 className="bg-slate-800 border-slate-600 text-white h-10" />
-            </div>
-            <div className="space-y-2">
-              <Label className="text-slate-300 text-xs">البريد الإلكتروني</Label>
-              <Input type="email" value={editForm.email} onChange={e => setEditForm(p => ({ ...p, email: e.target.value }))}
-                className="bg-slate-800 border-slate-600 text-white h-10" dir="ltr" />
-            </div>
-            <div className="space-y-2">
-              <Label className="text-slate-300 text-xs">القسم</Label>
-              <Input value={editForm.department} onChange={e => setEditForm(p => ({ ...p, department: e.target.value }))}
-                className="bg-slate-800 border-slate-600 text-white h-10" placeholder="مثال: قسم الجودة" />
             </div>
             {selectedUser && !isOwnerProtected(selectedUser) && (
               <div className="space-y-2">

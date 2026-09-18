@@ -10,6 +10,15 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
+    // §28 SECURITY — explicit page-permission gate on GET as well: the
+    // employee-scope filter below remains the DATA boundary; this gate
+    // keeps a viewer without the hrDeductions page from reading the
+    // collection at all (server-side authorization, not UI hiding).
+    const viewCheck = await verifyPermission(request, 'hrDeductions', 'view');
+    if (!viewCheck.allowed) {
+      return NextResponse.json({ error: viewCheck.error }, { status: 403 });
+    }
+
     const { searchParams } = new URL(request.url);
     const status = searchParams.get('status') || '';
 
@@ -25,6 +34,13 @@ export async function GET(request: NextRequest) {
 
     if (status) {
       records = records.filter((r: any) => r.status === status);
+    }
+
+    // §ARCHIVE — archived deductions never appear in the ACTIVE list.
+    // Historical views opt in explicitly with ?includeArchived=1.
+    const includeArchived = searchParams.get('includeArchived') === '1';
+    if (!includeArchived) {
+      records = records.filter((r: any) => r.archived !== true);
     }
 
     records = sortByDateField(records, 'createdAt', 'desc');

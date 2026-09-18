@@ -38,6 +38,7 @@ import {
 } from '@/components/shared/inline-forms';
 import { InlineFormPanel } from '@/components/shared/InlineFormPanel';
 import { useEmployees } from '@/hooks/use-queries';
+import { authFetch } from '@/lib/api-fetch';
 
 export type HomeQuickActionId =
   | 'employees'
@@ -68,7 +69,7 @@ export function HomeQuickActionHost({ activeAction, onClose }: HomeQuickActionHo
       <InlineFormPanel
         key={activeAction}
         tone="violet"
-        icon={<Plus className="size-3.5 text-violet-400" />}
+        icon={<Plus className="size-3.5 text-brand-400" />}
         title={HOME_QUICK_ACTIONS.find((a) => a.id === activeAction)?.label ?? 'إجراء سريع'}
         onClose={onClose}
       >
@@ -108,9 +109,7 @@ function useCapaInputs() {
   const [usersList, setUsersList] = useState<{ id: string; name: string; email?: string; role?: string }[]>([]);
   useEffect(() => {
     let cancelled = false;
-    fetch('/api/dashboard/users?limit=200', {
-      headers: { Authorization: `Bearer ${localStorage.getItem('erp_access_token')}` },
-    })
+    authFetch('/api/dashboard/users?basic=1')
       .then((r) => (r.ok ? r.json() : []))
       .then((list) => {
         if (cancelled) return;
@@ -133,9 +132,7 @@ function useSystemUsers(): { id: string; name: string; email?: string; role?: st
   const [usersList, setUsersList] = useState<{ id: string; name: string; email?: string; role?: string }[]>([]);
   useEffect(() => {
     let cancelled = false;
-    fetch('/api/dashboard/users?limit=200', {
-      headers: { Authorization: `Bearer ${localStorage.getItem('erp_access_token')}` },
-    })
+    authFetch('/api/dashboard/users?basic=1')
       .then((r) => (r.ok ? r.json() : []))
       .then((list) => {
         if (cancelled) return;

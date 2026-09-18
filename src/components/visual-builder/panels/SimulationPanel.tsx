@@ -54,7 +54,7 @@ export const SimulationPanel = memo(function SimulationPanel({
   );
 
   return (
-    <div className="flex flex-col h-full" dir="rtl">
+    <div className="flex flex-col h-full">
       {/* Tabs */}
       <div className="flex border-b border-slate-800">
         {([
@@ -67,7 +67,7 @@ export const SimulationPanel = memo(function SimulationPanel({
             onClick={() => setTab(t.id)}
             className={cn(
               'flex-1 flex items-center justify-center gap-1 py-2 text-[11px] font-medium border-b-2 transition-colors',
-              tab === t.id ? 'border-violet-500 text-violet-300 bg-violet-500/5' : 'border-transparent text-slate-500 hover:text-slate-300'
+              tab === t.id ? 'border-brand-500 text-brand-300 bg-brand-500/5' : 'border-transparent text-slate-500 hover:text-slate-300'
             )}
           >
             <t.icon className="w-3.5 h-3.5" />
@@ -88,7 +88,7 @@ export const SimulationPanel = memo(function SimulationPanel({
               rows={3}
               placeholder='{"employee.name": "أحمد"}'
               dir="ltr"
-              className="w-full bg-slate-800/60 border border-slate-700/50 rounded-lg px-3 py-1.5 text-[10px] font-mono text-slate-200 placeholder:text-slate-500 focus:outline-none focus:border-violet-500/50 resize-none"
+              className="w-full bg-slate-800/60 border border-slate-700/50 rounded-lg px-3 py-1.5 text-[10px] font-mono text-slate-200 placeholder:text-slate-500 focus:outline-none focus:border-brand-500/50 resize-none"
             />
           </div>
 
@@ -111,7 +111,7 @@ export const SimulationPanel = memo(function SimulationPanel({
             <span className={cn(
               'px-2 py-0.5 rounded-full border',
               sim.status === 'completed' ? 'bg-emerald-500/10 text-emerald-300 border-emerald-500/20' :
-              sim.status === 'running' ? 'bg-violet-500/10 text-violet-300 border-violet-500/20' :
+              sim.status === 'running' ? 'bg-brand-500/10 text-brand-300 border-brand-500/20' :
               sim.status === 'idle' ? 'bg-slate-700/30 text-slate-400 border-slate-700/40' :
               'bg-amber-500/10 text-amber-300 border-amber-500/20'
             )}>
@@ -122,10 +122,10 @@ export const SimulationPanel = memo(function SimulationPanel({
 
           {/* Current frame detail */}
           {currentFrame && (
-            <div className="p-3 rounded-lg bg-violet-500/10 border border-violet-500/20">
+            <div className="p-3 rounded-lg bg-brand-500/10 border border-brand-500/20">
               <div className="flex items-center gap-2 mb-2">
-                <div className="w-7 h-7 rounded-lg bg-violet-600/30 flex items-center justify-center">
-                  <span className="text-[10px] font-bold text-violet-200">{currentFrame.stepIndex + 1}</span>
+                <div className="w-7 h-7 rounded-lg bg-brand-600/30 flex items-center justify-center">
+                  <span className="text-[10px] font-bold text-brand-200">{currentFrame.stepIndex + 1}</span>
                 </div>
                 <div>
                   <p className="text-xs font-bold text-slate-200">{currentFrame.nodeName}</p>
@@ -148,7 +148,7 @@ export const SimulationPanel = memo(function SimulationPanel({
               <div className="space-y-1">
                 {Object.entries(currentFrame.variablesSnapshot).slice(0, 8).map(([k, v]) => (
                   <div key={k} className="flex items-center justify-between px-2 py-1 rounded bg-slate-900/60 border border-slate-800">
-                    <span className="text-[10px] font-mono text-violet-300 truncate">{k}</span>
+                    <span className="text-[10px] font-mono text-brand-300 truncate">{k}</span>
                     <span className="text-[10px] text-slate-300 truncate mr-2">{String(v)}</span>
                   </div>
                 ))}
@@ -167,7 +167,7 @@ export const SimulationPanel = memo(function SimulationPanel({
                     onClick={() => setSim({ ...sim, currentFrame: i, status: 'paused' })}
                     className={cn(
                       'w-full flex items-center gap-2 px-2 py-1 rounded-md text-right transition-colors',
-                      i === sim.currentFrame ? 'bg-violet-600/20' : i < sim.currentFrame ? 'opacity-50' : 'hover:bg-slate-800/50'
+                      i === sim.currentFrame ? 'bg-brand-600/20' : i < sim.currentFrame ? 'opacity-50' : 'hover:bg-slate-800/50'
                     )}
                   >
                     <span className="w-4 h-4 rounded-full bg-slate-800 flex items-center justify-center text-[9px] text-slate-400 flex-shrink-0">{f.stepIndex + 1}</span>
@@ -185,7 +185,7 @@ export const SimulationPanel = memo(function SimulationPanel({
       {tab === 'preview' && (
         <div className="flex-1 overflow-y-auto arm-scroll p-3">
           <div className="flex items-center gap-2 mb-3">
-            <Activity className="w-3.5 h-3.5 text-violet-400" />
+            <Activity className="w-3.5 h-3.5 text-brand-400" />
             <p className="text-[10px] font-bold text-slate-400 uppercase">ترتيب التنفيذ المتوقع</p>
           </div>
           <div className="space-y-1">
@@ -193,10 +193,10 @@ export const SimulationPanel = memo(function SimulationPanel({
               <div
                 key={step.nodeId}
                 onClick={() => onHighlightNode?.(step.nodeId)}
-                className="flex items-center gap-2 p-2 rounded-lg bg-slate-900/60 border border-slate-800 hover:border-violet-500/40 cursor-pointer transition-colors"
+                className="flex items-center gap-2 p-2 rounded-lg bg-slate-900/60 border border-slate-800 hover:border-brand-500/40 cursor-pointer transition-colors"
               >
-                <div className="w-6 h-6 rounded-full bg-violet-600/20 border border-violet-500/30 flex items-center justify-center flex-shrink-0">
-                  <span className="text-[10px] font-bold text-violet-300">{step.order}</span>
+                <div className="w-6 h-6 rounded-full bg-brand-600/20 border border-brand-500/30 flex items-center justify-center flex-shrink-0">
+                  <span className="text-[10px] font-bold text-brand-300">{step.order}</span>
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="text-xs text-slate-200 truncate">{step.nodeName}</p>
@@ -208,7 +208,7 @@ export const SimulationPanel = memo(function SimulationPanel({
                   </span>
                 )}
                 {step.branchLabel && (
-                  <span className="text-[9px] text-violet-400 bg-violet-500/10 px-1.5 py-0.5 rounded-full">{step.branchLabel}</span>
+                  <span className="text-[9px] text-brand-400 bg-brand-500/10 px-1.5 py-0.5 rounded-full">{step.branchLabel}</span>
                 )}
               </div>
             ))}
@@ -235,7 +235,7 @@ function AnalyticsView({ nodes, edges }: { nodes: VBNode[]; edges: VBEdge[] }) {
   }, [nodes, edges]) as VBWorkflowMetrics;
 
   const stats = [
-    { label: 'العقد', value: metrics.nodeCount, icon: Flag, color: 'text-violet-300' },
+    { label: 'العقد', value: metrics.nodeCount, icon: Flag, color: 'text-brand-300' },
     { label: 'الاتصالات', value: metrics.edgeCount, icon: GitBranch, color: 'text-emerald-300' },
     { label: 'العمق', value: metrics.depth, icon: Activity, color: 'text-blue-300' },
     { label: 'القرارات', value: metrics.decisionCount, icon: GitBranch, color: 'text-amber-300' },
@@ -246,7 +246,7 @@ function AnalyticsView({ nodes, edges }: { nodes: VBNode[]; edges: VBEdge[] }) {
   return (
     <div className="flex-1 overflow-y-auto arm-scroll p-3 space-y-3">
       <div className="flex items-center gap-2 mb-1">
-        <Gauge className="w-3.5 h-3.5 text-violet-400" />
+        <Gauge className="w-3.5 h-3.5 text-brand-400" />
         <p className="text-[10px] font-bold text-slate-400 uppercase">تحليلات المسار</p>
       </div>
       <div className="grid grid-cols-2 gap-2">
@@ -312,7 +312,7 @@ function SimBtn({
       className={cn(
         'flex items-center justify-center w-8 h-8 rounded-lg transition-colors',
         disabled ? 'opacity-30 cursor-not-allowed' :
-        primary ? 'bg-violet-600/30 text-violet-300 hover:bg-violet-600/40 border border-violet-500/30' :
+        primary ? 'bg-brand-600/30 text-brand-300 hover:bg-brand-600/40 border border-brand-500/30' :
         'text-slate-400 hover:text-slate-200 hover:bg-slate-800'
       )}
     >

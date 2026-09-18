@@ -19,6 +19,8 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
 import { Tags, Plus, Pencil, Trash2, Sparkles, TrendingUp, ShieldAlert } from 'lucide-react';
+import { SmartActionMenu } from '@/components/shared/SmartActionMenu';
+import { PageIdentity } from '@/components/shared/PageIdentity';
 import {
   useObservationCategories, useCreateCategory, useUpdateCategory, useDeleteCategory,
 } from '@/hooks/use-kpi-queries';
@@ -44,7 +46,7 @@ const COLOR_TOKENS = [
 // Color token → tailwind classes for preview chips
 const TOKEN_BG: Record<string, string> = {
   blue: 'bg-blue-500', emerald: 'bg-emerald-500', amber: 'bg-amber-500',
-  rose: 'bg-rose-500', orange: 'bg-orange-500', violet: 'bg-violet-500',
+  rose: 'bg-rose-500', orange: 'bg-orange-500', violet: 'bg-brand-500',
   cyan: 'bg-cyan-500', pink: 'bg-pink-500', slate: 'bg-slate-500', teal: 'bg-teal-500',
 };
 
@@ -242,15 +244,15 @@ function CategoryCard({
               <p className="text-xs text-slate-500 font-mono truncate">{cat.key}</p>
             </div>
           </div>
+          {/* §2 — SmartActionMenu */}
           {canEdit && (
-            <div className="flex gap-1 shrink-0">
-              <Button variant="ghost" size="icon" className="size-7" onClick={onEdit}>
-                <Pencil className="size-3.5" />
-              </Button>
-              <Button variant="ghost" size="icon" className="size-7 text-rose-400" onClick={onDelete}>
-                <Trash2 className="size-3.5" />
-              </Button>
-            </div>
+            <SmartActionMenu
+              size="sm"
+              actions={[
+                { key: 'edit', label: 'تعديل الفئة', icon: <Pencil className="size-3.5" />, onSelect: onEdit },
+                { key: 'delete', label: 'حذف', icon: <Trash2 className="size-3.5" />, destructive: true, onSelect: onDelete },
+              ]}
+            />
           )}
         </div>
 
@@ -284,12 +286,16 @@ export default function ObservationCategoriesPage() {
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<CategoryFormData | null>(null);
+  // §4: deletion goes through the unified ConfirmDialog.
+  // (Hooks must run unconditionally — declared BEFORE the canView early
+  // return so flipping the permission can never change hook order.)
+  const [deleteTarget, setDeleteTarget] = useState<ObservationCategory | null>(null);
 
   const categories = (Array.isArray(data) ? data : []) as ObservationCategory[];
 
   if (!canView) {
     return (
-      <div dir="rtl" className="flex flex-col items-center justify-center py-24 text-slate-400">
+      <div className="flex flex-col items-center justify-center py-24 text-slate-400">
         <p>ليس لديك صلاحية للوصول إلى هذه الصفحة</p>
       </div>
     );
@@ -350,8 +356,6 @@ export default function ObservationCategoriesPage() {
     setDialogOpen(true);
   }
 
-  // §4: deletion goes through the unified ConfirmDialog.
-  const [deleteTarget, setDeleteTarget] = useState<ObservationCategory | null>(null);
   async function confirmDelete() {
     if (!deleteTarget) return;
     try {
@@ -366,25 +370,21 @@ export default function ObservationCategoriesPage() {
   const canEdit = canUpdate || canCreate;
 
   return (
-    <div dir="rtl" className="space-y-4 p-4 sm:p-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-100 flex items-center gap-2">
-            <Tags className="size-6 text-blue-400" />
-            فئات ملاحظات الجودة
-          </h1>
-          <p className="text-sm text-slate-400 mt-1">
-            فئات قابلة للتكوين تتحكم في النقاط والوزن والأولوية — مصدر تكوين المؤشرات
-          </p>
-        </div>
-        {canCreate && (
+    <div className="space-y-4 p-4 sm:p-6">
+      {/* §7 — unified page identity */}
+      <PageIdentity
+        pageId="observationCategories"
+        icon={<Tags className="size-5" />}
+        iconClassName="bg-blue-500/15 border-blue-500/30 text-blue-400"
+        title="فئات ملاحظات الجودة"
+        description="فئات قابلة للتكوين تتحكم في النقاط والوزن والأولوية — مصدر تكوين المؤشرات"
+        actions={canCreate && (
           <Button onClick={() => { setEditing(null); setDialogOpen(true); }} className="gap-2">
             <Plus className="size-4" />
             فئة جديدة
           </Button>
         )}
-      </div>
+      />
 
       {/* Grid */}
       {isLoading ? (

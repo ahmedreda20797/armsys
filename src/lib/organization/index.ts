@@ -6,3 +6,4 @@ export * from './employee-status';
 export * from './membership-events';
 export * from './employment-periods';
 export * from './integrity';
+export * from './responsible-team';

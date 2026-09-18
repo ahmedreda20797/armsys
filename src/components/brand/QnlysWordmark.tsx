@@ -1,0 +1,101 @@
+'use client';
+
+import { memo } from 'react';
+
+// ══════════════════════════════════════════════════════════════
+//  QnlysWordmark — the letters-only "nlys" wordmark as an INLINE
+//  SVG so each letter is an individually animatable element.
+//
+//  §BRAND-LETTERS: the glyph geometry below is the EXACT path data
+//  of public/nlys-wordmark.svg (n · l · y · s — the asset contains
+//  no Q glyph) inlined verbatim, not redrawn. Inlining is what makes
+//  the per-letter rise/settle choreography possible: an <img> can
+//  only animate as one rectangular block, which is precisely the
+//  "bounding box" feeling the loading redesign removes. The theme
+//  gradients mirror the existing assets: silver (#F5F6F8→#C9CDD4,
+//  nlys-wordmark.svg) for dark surfaces, charcoal (#3a4454→#121826,
+//  nlys-wordmark-light.svg) for light.
+// ══════════════════════════════════════════════════════════════
+
+/** viewBox of the original wordmark asset — do not change: the
+    letter paths are authored in this exact coordinate space. */
+const WORDMARK_VIEWBOX = '830 203 950 485';
+const WORDMARK_RATIO = 950 / 485;
+
+/** Exact letter outlines from public/nlys-wordmark.svg, in lockup
+    order. Each renders in its own <g class="qnlys-letter-*"> so
+    the CSS letter engine (globals.css §BRAND-LETTERS) can move it. */
+const LETTER_PATHS = [
+  {
+    letter: 'n',
+    d: 'M 844.00,344.50 Q 838.00,350.00 835.00,356.50 Q 832.00,363.00 831.00,374.50 Q 830.00,386.00 830.50,483.50 Q 831.00,581.00 832.00,582.00 Q 833.00,583.00 873.00,583.00 Q 913.00,583.00 914.00,495.00 Q 915.00,407.00 923.50,402.50 Q 932.00,398.00 949.00,394.00 Q 966.00,390.00 976.00,390.00 Q 986.00,390.00 994.00,392.50 Q 1002.00,395.00 1007.00,399.50 Q 1012.00,404.00 1015.00,410.50 Q 1018.00,417.00 1019.00,423.00 Q 1020.00,429.00 1020.00,505.00 Q 1020.00,581.00 1022.00,582.50 Q 1024.00,584.00 1064.00,584.00 Q 1104.00,584.00 1106.00,582.50 Q 1108.00,581.00 1108.00,491.50 Q 1108.00,402.00 1103.00,387.00 Q 1098.00,372.00 1088.50,359.50 Q 1079.00,347.00 1071.50,341.50 Q 1064.00,336.00 1045.50,328.50 Q 1027.00,321.00 1013.00,318.50 Q 999.00,316.00 980.50,315.50 Q 962.00,315.00 943.50,317.00 Q 925.00,319.00 902.50,323.50 Q 880.00,328.00 865.00,333.50 Q 850.00,339.00 844.00,344.50 Z',
+  },
+  {
+    letter: 'l',
+    d: 'M 1178.00,203.00 Q 1136.00,203.00 1134.00,204.50 Q 1132.00,206.00 1131.50,247.50 Q 1131.00,289.00 1131.50,435.00 Q 1132.00,581.00 1134.00,582.50 Q 1136.00,584.00 1178.00,584.00 Q 1220.00,584.00 1222.00,582.00 Q 1224.00,580.00 1224.00,393.50 Q 1224.00,207.00 1222.00,205.00 Q 1220.00,203.00 1178.00,203.00 Z',
+  },
+  {
+    letter: 'y',
+    d: 'M 1537.00,321.50 Q 1536.00,319.00 1495.00,318.50 Q 1454.00,318.00 1449.50,321.00 Q 1445.00,324.00 1414.50,401.00 Q 1384.00,478.00 1382.50,477.50 Q 1381.00,477.00 1351.00,399.50 Q 1321.00,322.00 1317.00,320.00 Q 1313.00,318.00 1273.50,318.00 Q 1234.00,318.00 1232.00,319.00 Q 1230.00,320.00 1249.00,368.00 Q 1268.00,416.00 1300.00,489.00 Q 1332.00,562.00 1332.00,565.50 Q 1332.00,569.00 1329.50,574.00 Q 1327.00,579.00 1316.00,591.00 Q 1305.00,603.00 1294.00,608.50 Q 1283.00,614.00 1268.50,615.50 Q 1254.00,617.00 1251.00,619.00 Q 1248.00,621.00 1248.00,653.50 Q 1248.00,686.00 1249.00,687.00 Q 1250.00,688.00 1270.50,688.50 Q 1291.00,689.00 1309.50,685.00 Q 1328.00,681.00 1343.00,672.50 Q 1358.00,664.00 1372.00,650.00 Q 1386.00,636.00 1401.00,612.00 Q 1416.00,588.00 1432.00,556.50 Q 1448.00,525.00 1493.00,424.50 Q 1538.00,324.00 1537.00,321.50 Z',
+  },
+  {
+    letter: 's',
+    d: 'M 1770.00,336.00 Q 1769.00,330.00 1759.00,326.00 Q 1749.00,322.00 1730.00,317.50 Q 1711.00,313.00 1686.50,311.00 Q 1662.00,309.00 1647.50,310.00 Q 1633.00,311.00 1611.00,316.50 Q 1589.00,322.00 1575.50,330.00 Q 1562.00,338.00 1554.00,347.50 Q 1546.00,357.00 1541.00,371.50 Q 1536.00,386.00 1536.50,402.00 Q 1537.00,418.00 1543.00,431.00 Q 1549.00,444.00 1556.00,451.00 Q 1563.00,458.00 1573.00,464.00 Q 1583.00,470.00 1626.50,483.50 Q 1670.00,497.00 1675.00,501.00 Q 1680.00,505.00 1681.50,511.50 Q 1683.00,518.00 1679.00,524.00 Q 1675.00,530.00 1670.50,532.00 Q 1666.00,534.00 1645.00,535.00 Q 1624.00,536.00 1606.50,532.50 Q 1589.00,529.00 1570.00,520.50 Q 1551.00,512.00 1548.00,512.00 Q 1545.00,512.00 1542.00,516.00 Q 1539.00,520.00 1531.00,541.50 Q 1523.00,563.00 1523.50,567.00 Q 1524.00,571.00 1532.00,575.50 Q 1540.00,580.00 1556.00,586.00 Q 1572.00,592.00 1601.50,597.50 Q 1631.00,603.00 1648.00,603.00 Q 1665.00,603.00 1681.50,600.50 Q 1698.00,598.00 1710.00,594.00 Q 1722.00,590.00 1737.50,580.50 Q 1753.00,571.00 1760.50,562.00 Q 1768.00,553.00 1773.50,537.50 Q 1779.00,522.00 1778.50,506.00 Q 1778.00,490.00 1773.00,478.00 Q 1768.00,466.00 1760.50,458.00 Q 1753.00,450.00 1742.00,443.50 Q 1731.00,437.00 1717.50,432.00 Q 1704.00,427.00 1670.50,418.00 Q 1637.00,409.00 1633.00,405.00 Q 1629.00,401.00 1628.50,395.50 Q 1628.00,390.00 1631.00,385.50 Q 1634.00,381.00 1638.00,379.00 Q 1642.00,377.00 1658.00,375.50 Q 1674.00,374.00 1692.00,377.00 Q 1710.00,380.00 1731.50,387.50 Q 1753.00,395.00 1755.50,394.50 Q 1758.00,394.00 1760.00,390.00 Q 1762.00,386.00 1766.50,364.00 Q 1771.00,342.00 1770.00,336.00 Z',
+  },
+] as const;
+
+interface QnlysWordmarkProps {
+  /** Rendered height in px (width follows the asset's aspect ratio). */
+  height: number;
+  /** Gradient family — mirrors the existing dark/light wordmark assets. */
+  theme?: 'dark' | 'light';
+  className?: string;
+}
+
+export const QnlysWordmark = memo(function QnlysWordmark({
+  height,
+  theme = 'dark',
+  className = '',
+}: QnlysWordmarkProps) {
+  // Same vertical gradient mapping as the two public wordmark assets.
+  const stops =
+    theme === 'light' ? (
+      <>
+        <stop stopColor="#3a4454" />
+        <stop offset="1" stopColor="#121826" />
+      </>
+    ) : (
+      <>
+        <stop stopColor="#F5F6F8" />
+        <stop offset="1" stopColor="#C9CDD4" />
+      </>
+    );
+  const gradId = theme === 'light' ? 'qnlys-word-grad-light' : 'qnlys-word-grad-dark';
+
+  return (
+    <svg
+      viewBox={WORDMARK_VIEWBOX}
+      width={height * WORDMARK_RATIO}
+      height={height}
+      className={className}
+      aria-hidden="true"
+      focusable="false"
+    >
+      <defs>
+        <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
+          {stops}
+        </linearGradient>
+      </defs>
+      {LETTER_PATHS.map(({ letter, d }) => (
+        <g
+          key={letter}
+          className={`qnlys-letter qnlys-letter-${letter}`}
+          fill={`url(#${gradId})`}
+          fillRule="evenodd"
+        >
+          <path d={d} />
+        </g>
+      ))}
+    </svg>
+  );
+});

@@ -47,6 +47,7 @@ import {
   Filter,
   ChevronDown,
 } from 'lucide-react';
+import { PageIdentity } from '@/components/shared/PageIdentity';
 import type { BiometricRecord, Employee } from '@/types';
 import { logCreate } from '@/lib/activity-logger';
 import { authFetch } from '@/lib/api-fetch';
@@ -256,60 +257,57 @@ export default function BiometricPage() {
   const selectedMonthLabel = MONTH_OPTIONS.find(m => m.value === selectedMonth)?.label || 'جميع الأشهر';
 
   return (
-    <div dir="rtl" className="space-y-6">
-      {/* Header */}
-      <motion.div
-        initial={{ opacity: 0, y: -10 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="flex flex-col sm:flex-row sm:items-center justify-between gap-4"
-      >
-        <div>
-          <h1 className="text-2xl font-bold text-white flex items-center gap-2">
-            <Fingerprint className="size-6 text-violet-400" />
-            بيانات البصمة
-          </h1>
-          <p className="text-slate-400 mt-1 text-sm">
+    <div className="space-y-6">
+      {/* §7 — unified page identity */}
+      <PageIdentity
+        pageId="biometric"
+        icon={<Fingerprint className="size-5" />}
+        iconClassName="bg-brand-500/15 border-brand-500/30 text-brand-400"
+        description={
+          <>
             {filtered.length} سجل بصري
             {selectedMonth !== 'all' && (
-              <Badge variant="outline" className="border-violet-500/30 bg-violet-500/10 text-violet-400 mr-2 text-[10px]">
+              <Badge variant="outline" className="border-brand-500/30 bg-brand-500/10 text-brand-400 mr-2 text-[10px]">
                 <Filter className="size-3 ml-1" />
                 {selectedMonthLabel}
               </Badge>
             )}
-          </p>
-        </div>
-        <div className="flex items-center gap-2 flex-wrap">
-          {canUpload && (
-            <>
+          </>
+        }
+        actions={
+          <>
+            {canUpload && (
+              <>
+                <Button
+                  variant="outline"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={uploading}
+                  className="border-slate-600 text-slate-300 hover:bg-slate-700"
+                >
+                  {uploading ? 'جاري الرفع...' : <><Upload className="size-4" /> رفع Excel</>}
+                </Button>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".xlsx,.xls"
+                  onChange={handleUpload}
+                  className="hidden"
+                />
+              </>
+            )}
+            {canDelete && (
               <Button
                 variant="outline"
-                onClick={() => fileInputRef.current?.click()}
-                disabled={uploading}
-                className="border-slate-600 text-slate-300 hover:bg-slate-700"
+                onClick={() => setIsClearOpen(true)}
+                className="border-red-500/30 text-red-400 hover:bg-red-500/10"
               >
-                {uploading ? 'جاري الرفع...' : <><Upload className="size-4" /> رفع Excel</>}
+                <Trash2 className="size-4" />
+                مسح شهر
               </Button>
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept=".xlsx,.xls"
-                onChange={handleUpload}
-                className="hidden"
-              />
-            </>
-          )}
-          {canDelete && (
-            <Button
-              variant="outline"
-              onClick={() => setIsClearOpen(true)}
-              className="border-red-500/30 text-red-400 hover:bg-red-500/10"
-            >
-              <Trash2 className="size-4" />
-              مسح شهر
-            </Button>
-          )}
-        </div>
-      </motion.div>
+            )}
+          </>
+        }
+      />
 
       {/* Month Filter + Employee Filter + Search */}
       <div className="flex flex-col sm:flex-row gap-3">
@@ -402,7 +400,7 @@ export default function BiometricPage() {
               {/* Month Header */}
               <div className="flex items-center justify-between px-4 py-2.5 bg-slate-900/60 border-b border-slate-700/30">
                 <div className="flex items-center gap-2">
-                  <Calendar className="size-4 text-violet-400" />
+                  <Calendar className="size-4 text-brand-400" />
                   <span className="text-white text-sm font-bold">{group.label}</span>
                 </div>
                 <Badge variant="outline" className="border-slate-600 text-slate-400 text-[10px]">

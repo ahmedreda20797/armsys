@@ -145,7 +145,7 @@ function MenuShell({
   return (
     <div
       ref={ref}
-      dir="rtl"
+     
       className="fixed z-[100] min-w-[180px] py-1 bg-slate-900/95 backdrop-blur-md border border-slate-700/60 rounded-lg shadow-2xl"
       style={{ left: adjusted.x, top: adjusted.y }}
       onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); }}

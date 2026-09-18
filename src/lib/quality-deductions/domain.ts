@@ -75,12 +75,26 @@ export function projectDeductionStatus(
  * report, KPI master) must pass records through this predicate so a
  * pending/rejected discount never affects any number.
  *
+ * §ARCHIVE — an ARCHIVED discount is history, not an active
+ * liability: it is excluded from every ACTIVE/current total and
+ * KPI-affecting aggregation by default. Historical views that
+ * explicitly request archived records use dedicated period-scoped
+ * paths (report 'archived' filter).
+ *
  * Legacy records (no approvalStatus) remain effective.
  */
 export function isEffectiveDeduction(
-  record: { approvalStatus?: string | null } | null | undefined,
+  record: { approvalStatus?: string | null; archived?: boolean } | null | undefined,
 ): boolean {
+  if (record?.archived === true) return false;
   return projectDeductionStatus(record) === 'approved';
+}
+
+/** §ARCHIVE — archived discounts stay auditable, never active. */
+export function isArchivedDeduction(
+  record: { archived?: boolean } | null | undefined,
+): boolean {
+  return record?.archived === true;
 }
 
 /** True when the record still awaits a decision (new workflow only). */

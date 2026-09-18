@@ -96,7 +96,7 @@ export default function KpiSettingsPage() {
 
   if (!canView) {
     return (
-      <div dir="rtl" className="flex flex-col items-center justify-center py-24 text-slate-400">
+      <div className="flex flex-col items-center justify-center py-24 text-slate-400">
         <p>ليس لديك صلاحية للوصول إلى هذه الصفحة</p>
       </div>
     );
@@ -126,7 +126,7 @@ export default function KpiSettingsPage() {
   const dirty = JSON.stringify(form) !== JSON.stringify(toForm(settings));
 
   return (
-    <div dir="rtl" className="space-y-4 p-4 sm:p-6 max-w-3xl">
+    <div className="space-y-4 p-4 sm:p-6 max-w-3xl">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>

@@ -106,7 +106,9 @@ describe('QualityPage deep-link container handling (§25, §49-33/34)', () => {
   });
 
   it('filter context persists via usePageState (§8)', () => {
-    assert.match(src, /usePageState<\{ search: string; monthFilter: string \}>/);
+    // §ARCHIVE — the persisted filter shape gained the optional
+    // showArchived historical toggle; persistence behavior unchanged.
+    assert.match(src, /usePageState<\{ search: string; monthFilter: string(; showArchived\?: boolean)? \}>/);
     assert.match(src, /page: 'quality'/);
   });
 

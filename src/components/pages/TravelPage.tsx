@@ -6,6 +6,12 @@ import { usePermissions } from '@/hooks/usePermissions';
 import { useAppStore } from '@/lib/store';
 import { useRecordHighlight } from '@/hooks/use-record-highlight';
 import { getDaysRemaining } from '@/lib/date-utils';
+import {
+  getDepartureUrgency,
+  getTravelPhase,
+  isNearDeparture,
+  type DepartureUrgency,
+} from '@/lib/travel-status';
 import { useTravel, useEmployees, useCreateTravel, useUpdateTravel, useDeleteTravel } from '@/hooks/use-queries';
 import { usePageState } from '@/hooks/use-page-state';
 import { PageHeaderBar } from '@/components/shared/PageHeaderBar';
@@ -13,7 +19,8 @@ import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
 import { AttentionPanel, type AttentionSeverity } from '@/components/shared/AttentionPanel';
 import { ComplaintInlineForm } from '@/components/shared/inline-forms';
 import { InlineFormPanel } from '@/components/shared/InlineFormPanel';
-import { OverflowMenu, type OverflowMenuItem } from '@/components/shared/OverflowMenu';
+import { SmartActionMenu, type SmartAction } from '@/components/shared/SmartActionMenu';
+import type { OverflowMenuItem } from '@/components/shared/OverflowMenu';
 import { useQueryClient } from '@tanstack/react-query';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -49,6 +56,8 @@ import {
 } from '@/components/ui/table';
 import {
   Plane,
+  PlaneTakeoff,
+  PlaneLanding,
   Plus,
   Pencil,
   Trash2,
@@ -151,15 +160,15 @@ const categoryConfig: Record<CategoryTab, {
 }> = {
   all: {
     label: 'الكل', icon: Layers,
-    activeClass: 'border-violet-500/40 bg-gradient-to-br from-violet-500/15 to-violet-500/5 text-violet-400 shadow-lg shadow-violet-500/5',
-    badgeClass: 'bg-violet-500/25 text-violet-300',
+    activeClass: 'border-brand-500/40 bg-gradient-to-br from-brand-500/15 to-brand-500/5 text-brand-400 shadow-lg shadow-brand-500/5',
+    badgeClass: 'bg-brand-500/25 text-brand-300',
     emptyTitle: 'لا توجد رحلات', emptySubtitle: 'أضف رحلات السفر الجديدة أو ارفع شيت حجوزات',
   },
   upcoming: {
-    label: 'قريب السفر', icon: Plane,
-    activeClass: 'border-violet-500/30 bg-gradient-to-br from-emerald-500/15 to-emerald-500/5 text-violet-400 shadow-lg shadow-violet-500/20',
-    badgeClass: 'bg-emerald-500/25 text-violet-300',
-    emptyTitle: 'لا توجد رحلات قريبة', emptySubtitle: 'لا توجد رحلات خلال الـ 14 يوم القادمة',
+    label: 'الرحلات القادمة', icon: Plane,
+    activeClass: 'border-brand-500/30 bg-gradient-to-br from-emerald-500/15 to-emerald-500/5 text-brand-400 shadow-lg shadow-brand-500/20',
+    badgeClass: 'bg-emerald-500/25 text-brand-300',
+    emptyTitle: 'لا توجد رحلات قادمة', emptySubtitle: 'لا توجد رحلات مستقبلية مجدولة — الرحلات خلال 10 أيام تظهر بعلامة «قريب»',
   },
   in_progress: {
     label: 'في الرحلة', icon: Globe,
@@ -229,12 +238,12 @@ function getMonthLabelFromKey(key: string): string {
   return `${arabicMonths[parts[1]] || parts[1]} ${parts[0]}`;
 }
 
+// §TRAVEL-THRESHOLD — urgency derives from the ONE canonical rule
+// (src/lib/travel-status.ts): عاجل ≤3, urgent ≤7, قريب window ≤10.
+// The old local copy used a 14-day 'soon' window that overlapped the
+// قريب label with trips 11-14 days out.
 function getUrgencyLevel(daysLeft: number): UrgencyLevel {
-  if (daysLeft === 0) return 'critical';
-  if (daysLeft > 0 && daysLeft <= 3) return 'critical';
-  if (daysLeft > 0 && daysLeft <= 7) return 'urgent';
-  if (daysLeft > 0 && daysLeft <= 14) return 'soon';
-  return 'normal';
+  return getDepartureUrgency(daysLeft) as UrgencyLevel;
 }
 
 // Phase 6 §6 — return events get their own labels so the row
@@ -264,6 +273,15 @@ function getTripCategory(depDate: string, retDate: string | null): 'upcoming' | 
   return 'upcoming';
 }
 
+// §TRAVEL-THRESHOLD — the per-trip STATUS LABEL rule: "قريب" ONLY when
+// departure is within the 10-day window; anything further out is
+// "مجدولة" (scheduled). Return state is untouched (separate concept).
+function getProximityLabel(category: 'upcoming' | 'in_progress' | 'returned', daysLeft: number): 'near' | 'scheduled' | 'in_progress' | 'returned' {
+  if (category === 'returned') return 'returned';
+  if (category === 'in_progress') return 'in_progress';
+  return isNearDeparture(daysLeft) ? 'near' : 'scheduled';
+}
+
 // ═══════════════════════════════════════════════════════════════
 //  HOOKS
 // ═══════════════════════════════════════════════════════════════
@@ -285,7 +303,7 @@ function useDebounce<T>(value: T, delay: number): T {
 /** Stable status badge — no re-render unless status changes */
 const StatusBadge = memo(function StatusBadge({ status }: { status: string }) {
   switch (status) {
-    case 'upcoming': return <Badge className="bg-blue-500/15 text-blue-400 border-blue-500/20">تعديل</Badge>;
+    case 'upcoming': return <Badge className="bg-blue-500/15 text-blue-400 border-blue-500/20">قادمة</Badge>;
     case 'in_progress': return <Badge className="bg-amber-500/15 text-amber-400 border-amber-500/20">جاري</Badge>;
     case 'completed': return <Badge className="bg-green-500/15 text-green-400 border-green-500/20">مكتمل</Badge>;
     case 'canceled': return <Badge className="bg-red-500/15 text-red-400 border-red-500/20">ملغي</Badge>;
@@ -293,11 +311,15 @@ const StatusBadge = memo(function StatusBadge({ status }: { status: string }) {
   }
 });
 
-/** Stable category badge */
-const CategoryBadge = memo(function CategoryBadge({ category }: { category: 'upcoming' | 'in_progress' | 'returned' }) {
+/** Stable category badge — §TRAVEL-THRESHOLD: "قريب" ONLY inside the
+    10-day window; a further-out future trip is "مجدولة" (scheduled). */
+const CategoryBadge = memo(function CategoryBadge({ category, daysLeft }: { category: 'upcoming' | 'in_progress' | 'returned'; daysLeft?: number }) {
   if (category === 'in_progress') return <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-500/15 text-amber-400 font-medium">🌍 في الرحلة</span>;
   if (category === 'returned') return <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-500/15 text-slate-400 font-medium">✅ رجع</span>;
-  return <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-violet-500/15 text-violet-400 font-medium">✈ قريب</span>;
+  if (daysLeft !== undefined && !isNearDeparture(daysLeft)) {
+    return <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-500/15 text-slate-400 font-medium">📅 مجدولة</span>;
+  }
+  return <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-brand-500/15 text-brand-400 font-medium">✈ قريب</span>;
 });
 
 /** Service toggle button inside expanded card */
@@ -460,7 +482,7 @@ const TripCard = memo(function TripCard({
                   {dealerName && <span className="text-cyan-400 text-[10px] shrink-0">👤</span>}
                   <span className="text-white font-semibold text-sm truncate">{displayName}</span>
                   <StatusBadge status={trip.status} />
-                  {showCategoryBadge && <CategoryBadge category={category} />}
+                  {showCategoryBadge && <CategoryBadge category={category} daysLeft={daysLeft} />}
                   {category === 'in_progress' && (
                     <motion.span className="relative flex h-2 w-2 shrink-0" animate={{ scale: [1, 1.2, 1], opacity: [0.7, 1, 0.7] }} transition={{ duration: 2, repeat: Infinity }}>
                       <span className="absolute inset-0 rounded-full bg-amber-500" />
@@ -507,8 +529,8 @@ const TripCard = memo(function TripCard({
               </div>
               {canEdit && (
                 <div onClick={(e) => e.stopPropagation()}>
-                  <OverflowMenu
-                    items={[
+                  <SmartActionMenu
+                    actions={[
                       { key: 'edit', label: 'تعديل', icon: <Pencil className="size-3.5" />, onSelect: () => onEdit(trip) },
                       { key: 'delete', label: 'حذف', icon: <Trash2 className="size-3.5" />, destructive: true, separatorBefore: true, onSelect: () => onDelete(trip.id) },
                     ]}
@@ -554,7 +576,7 @@ const TripCard = memo(function TripCard({
                         <span className="text-white font-medium" dir="ltr">{trip.returnDate}</span>
                         {retDays !== null && (
                           <Badge variant="outline" className={`text-[10px] px-1.5 ${
-                            retDays < 0 ? 'text-violet-400 border-violet-500/30' : 'text-cyan-400 border-cyan-500/30'
+                            retDays < 0 ? 'text-brand-400 border-brand-500/30' : 'text-cyan-400 border-cyan-500/30'
                           }`}>
                             {retDays < 0 ? 'رجعوا' : `${retDays} يوم`}
                           </Badge>
@@ -580,7 +602,7 @@ const TripCard = memo(function TripCard({
                       )}
                       {trip.customerNames && (
                         <div className="flex items-start gap-2 text-sm bg-slate-800/50 rounded-lg p-2.5 border border-slate-700/20">
-                          <span className="text-violet-400 text-xs shrink-0">👥</span>
+                          <span className="text-brand-400 text-xs shrink-0">👥</span>
                           <span className="text-slate-500 shrink-0">المسافرين:</span>
                           <span className="text-white text-right">{trip.customerNames}</span>
                         </div>
@@ -731,7 +753,7 @@ const TripFormDialog = memo(function TripFormDialog({
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => { onOpenChange(false); setForm(emptyForm); }} className="border-slate-600 text-slate-300">إلغاء</Button>
-          <Button onClick={onSave} disabled={saving || !form.employeeId || !form.destination || !form.departureDate} className="bg-linear-to-r from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white">{saving ? 'جاري الحفظ...' : 'حفظ'}</Button>
+          <Button onClick={onSave} disabled={saving || !form.employeeId || !form.destination || !form.departureDate} className="bg-linear-to-r from-brand-600 to-brand-700 hover:from-brand-700 hover:to-brand-800 text-white">{saving ? 'جاري الحفظ...' : 'حفظ'}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -806,11 +828,11 @@ const UploadDialog = memo(function UploadDialog({
         <div className="space-y-4">
           <div className="space-y-2">
             <Label className="text-slate-300">ملف الإكسل</Label>
-            <div onClick={() => uploadInputRef.current?.click()} className={`border-2 border-dashed rounded-lg p-6 text-center cursor-pointer transition-colors ${uploadFile ? 'border-violet-500/30 bg-emerald-500/5' : 'border-slate-600 hover:border-amber-500/50 hover:bg-amber-500/5'}`}>
+            <div onClick={() => uploadInputRef.current?.click()} className={`border-2 border-dashed rounded-lg p-6 text-center cursor-pointer transition-colors ${uploadFile ? 'border-brand-500/30 bg-emerald-500/5' : 'border-slate-600 hover:border-amber-500/50 hover:bg-amber-500/5'}`}>
               <input ref={uploadInputRef} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={(e) => { setUploadFile(e.target.files?.[0] || null); setUploadResult(null); }} />
               {uploadFile ? (
                 <div className="flex items-center justify-center gap-2">
-                  <Check className="size-5 text-violet-400" /><span className="text-violet-400 font-medium text-sm">{uploadFile.name}</span><span className="text-slate-500 text-xs">({(uploadFile.size / 1024).toFixed(0)} KB)</span>
+                  <Check className="size-5 text-brand-400" /><span className="text-brand-400 font-medium text-sm">{uploadFile.name}</span><span className="text-slate-500 text-xs">({(uploadFile.size / 1024).toFixed(0)} KB)</span>
                 </div>
               ) : (
                 <div className="space-y-2"><Upload className="size-8 text-slate-500 mx-auto" /><p className="text-slate-400 text-sm">اضغط لاختيار ملف</p><p className="text-slate-600 text-xs">.xlsx أو .xls أو .csv</p></div>
@@ -820,12 +842,12 @@ const UploadDialog = memo(function UploadDialog({
           <div className="rounded-lg bg-slate-800/50 border border-slate-700/50 p-3">
             <p className="text-slate-400 text-xs font-medium mb-1">📋 شكل عمود DEAL:</p>
             <p className="text-slate-500 text-[11px] leading-relaxed">
-              <span className="text-violet-400">اسم العميل</span> / <span className="text-cyan-400">اسم الموظف</span> / <span className="text-violet-400">الوجهة</span> / <span className="text-amber-400">التاريخ</span>
+              <span className="text-brand-400">اسم العميل</span> / <span className="text-cyan-400">اسم الموظف</span> / <span className="text-brand-400">الوجهة</span> / <span className="text-amber-400">التاريخ</span>
             </p>
           </div>
           {uploadResult && (
-            <motion.div initial={{ opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }} className={`rounded-lg border p-3 ${uploadResult.success > 0 ? 'border-violet-500/30 bg-emerald-500/5' : 'border-red-500/30 bg-red-500/5'}`}>
-              <p className={`font-medium text-sm ${uploadResult.success > 0 ? 'text-violet-400' : 'text-red-400'}`}>{uploadResult.message}</p>
+            <motion.div initial={{ opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }} className={`rounded-lg border p-3 ${uploadResult.success > 0 ? 'border-brand-500/30 bg-emerald-500/5' : 'border-red-500/30 bg-red-500/5'}`}>
+              <p className={`font-medium text-sm ${uploadResult.success > 0 ? 'text-brand-400' : 'text-red-400'}`}>{uploadResult.message}</p>
               {uploadResult.errors.length > 0 && (
                 <div className="mt-2 max-h-24 overflow-y-auto">
                   {uploadResult.errors.slice(0, 5).map((err, i) => <p key={i} className="text-red-400/70 text-[11px]">• {err}</p>)}
@@ -953,7 +975,7 @@ const PaginationBar = memo(function PaginationBar({
             variant={page === p ? 'default' : 'ghost'}
             size="icon"
             onClick={() => onPageChange(p)}
-            className={`size-7 text-xs ${page === p ? 'bg-violet-600 text-white hover:bg-violet-700' : 'text-slate-500 hover:text-white'}`}
+            className={`size-7 text-xs ${page === p ? 'bg-brand-600 text-white hover:bg-brand-700' : 'text-slate-500 hover:text-white'}`}
           >
             {p}
           </Button>
@@ -993,6 +1015,8 @@ export default function TravelPage() {
     filterMonth: string;
     filterEmployee: string;
     searchQuery: string;
+    tomorrowDeparture?: boolean;
+    tomorrowReturn?: boolean;
   }>({
     page: 'travel',
     slot: 'filters',
@@ -1010,6 +1034,12 @@ export default function TravelPage() {
   const setSearchQuery = (value: string) => setTravelView((v) => ({ ...v, searchQuery: value }));
   const filterEmployee = travelView.filterEmployee;
   const setFilterEmployee = (value: string) => setTravelView((v) => ({ ...v, filterEmployee: value }));
+  // §TRAVEL-TOMORROW — real filters (server-side), persisted with the
+  // rest of the filter context; active state is always visible.
+  const tomorrowDeparture = travelView.tomorrowDeparture === true;
+  const tomorrowReturn = travelView.tomorrowReturn === true;
+  const setTomorrowDeparture = (value: boolean) => setTravelView((v) => ({ ...v, tomorrowDeparture: value }));
+  const setTomorrowReturn = (value: boolean) => setTravelView((v) => ({ ...v, tomorrowReturn: value }));
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(50);
   const [expandedCardId, setExpandedCardId] = useState<string | null>(null);
@@ -1045,6 +1075,8 @@ export default function TravelPage() {
     search: deferredSearch,
     page,
     pageSize,
+    tomorrowDeparture,
+    tomorrowReturn,
   });
   const { data: employees = [] } = useEmployees();
 
@@ -1054,9 +1086,7 @@ export default function TravelPage() {
   const [systemUsers, setSystemUsers] = useState<{ id: string; name: string; email?: string; role?: string }[]>([]);
   useEffect(() => {
     let cancelled = false;
-    fetch('/api/dashboard/users?limit=200', {
-      headers: { Authorization: `Bearer ${localStorage.getItem('erp_access_token')}` },
-    })
+    authFetch('/api/dashboard/users?basic=1')
       .then((r) => (r.ok ? r.json() : []))
       .then((list) => { if (!cancelled) setSystemUsers((list as { id: string; name: string }[]) ?? []); })
       .catch(() => {});
@@ -1094,7 +1124,7 @@ export default function TravelPage() {
 
   // ── Reset page when filters change — compiler-endorsed "adjust state during render"
   // guard (no effect + setState cascade) ──
-  const pageFilterTuple = [activeTab, filterEmployee, filterMonth, deferredSearch] as const;
+  const pageFilterTuple = [activeTab, filterEmployee, filterMonth, deferredSearch, tomorrowDeparture, tomorrowReturn] as const;
   const [lastPageFilterTuple, setLastPageFilterTuple] = useState<readonly unknown[]>(pageFilterTuple);
   if (pageFilterTuple.some((v, i) => v !== lastPageFilterTuple[i])) {
     setLastPageFilterTuple(pageFilterTuple);
@@ -1191,8 +1221,9 @@ export default function TravelPage() {
 
   const clearFilters = useCallback(() => {
     // §9: clear = RESET TO PAGE DEFAULT + remove the persisted state.
+    // §TRAVEL-TOMORROW: the tomorrow toggles clear with everything else.
     resetTravelView();
-    setTravelView({ filterMonth: 'all', filterEmployee: 'all', searchQuery: '' });
+    setTravelView({ filterMonth: 'all', filterEmployee: 'all', searchQuery: '', tomorrowDeparture: false, tomorrowReturn: false });
   }, [resetTravelView, setTravelView]);
 
   const handlePageSizeChange = useCallback((newSize: number) => {
@@ -1220,7 +1251,7 @@ export default function TravelPage() {
   }, [trips, activeTab]);
 
   // ── Derived ──
-  const activeFiltersCount = (filterEmployee !== 'all' ? 1 : 0) + (filterMonth !== 'all' ? 1 : 0);
+  const activeFiltersCount = (filterEmployee !== 'all' ? 1 : 0) + (filterMonth !== 'all' ? 1 : 0) + (tomorrowDeparture ? 1 : 0) + (tomorrowReturn ? 1 : 0);
 
   // ── Month group renderers ──
   const renderAllMonthGroup = (group: { key: string; label: string; trips: TravelWithEmployee[] }) => {
@@ -1232,11 +1263,11 @@ export default function TravelPage() {
       <motion.div key={group.key} initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} className="space-y-3">
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-800/80 border border-slate-700/50">
-            <CalendarDays className="size-4 text-violet-400" />
+            <CalendarDays className="size-4 text-brand-400" />
             <span className="text-white font-semibold text-sm">{group.label}</span>
           </div>
           <div className="flex gap-1.5">
-            {cardTrips.length > 0 && <span className="text-[11px] px-2 py-0.5 rounded-full bg-violet-500/10 text-violet-400 border border-violet-500/30">{cardTrips.length} نشط</span>}
+            {cardTrips.length > 0 && <span className="text-[11px] px-2 py-0.5 rounded-full bg-brand-500/10 text-brand-400 border border-brand-500/30">{cardTrips.length} نشط</span>}
             {returnedTrips.length > 0 && <span className="text-[11px] px-2 py-0.5 rounded-full bg-slate-500/10 text-slate-400 border border-slate-500/20">{returnedTrips.length} رجع</span>}
             {canceledTrips.length > 0 && <span className="text-[11px] px-2 py-0.5 rounded-full bg-red-500/10 text-red-400 border border-red-500/20">{canceledTrips.length} ملغاة</span>}
           </div>
@@ -1284,8 +1315,8 @@ export default function TravelPage() {
                       <TableCell><StatusBadge status={trip.status} /></TableCell>
                       {(canUpdate || canDelete) && (
                         <TableCell>
-                          <OverflowMenu
-  items={[
+                          <SmartActionMenu
+  actions={[
     ...(canUpdate ? [{ key: 'edit', label: 'تعديل', icon: <Pencil className="size-3.5" />, onSelect: () => openEdit(trip) }] : []),
     ...(canDelete ? [{ key: 'delete', label: 'حذف', icon: <Trash2 className="size-3.5" />, destructive: true, separatorBefore: true, onSelect: () => setDeletingId(trip.id) }] : []),
   ]}
@@ -1345,8 +1376,8 @@ export default function TravelPage() {
                               <TableCell><StatusBadge status={trip.status} /></TableCell>
                               {(canUpdate || canDelete) && (
                                 <TableCell>
-                                  <OverflowMenu
-                                        items={[
+                                  <SmartActionMenu
+                                        actions={[
                                           ...(canUpdate ? [{ key: 'edit', label: 'تعديل', icon: <Pencil className="size-3.5" />, onSelect: () => openEdit(trip) }] : []),
                                           ...(canDelete ? [{ key: 'delete', label: 'حذف', icon: <Trash2 className="size-3.5" />, destructive: true, separatorBefore: true, onSelect: () => setDeletingId(trip.id) }] : []),
                                         ]}
@@ -1375,10 +1406,10 @@ export default function TravelPage() {
       <motion.div key={group.key} initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} className="space-y-3">
         <div className="flex items-center gap-3">
           <div className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border ${isInProgress ? 'bg-amber-500/10 border-amber-500/30' : 'bg-slate-800/80 border-slate-700/50'}`}>
-            <CalendarDays className={`size-4 ${isInProgress ? 'text-amber-400' : 'text-violet-400'}`} />
+            <CalendarDays className={`size-4 ${isInProgress ? 'text-amber-400' : 'text-brand-400'}`} />
             <span className="text-white font-semibold text-sm">{group.label}</span>
           </div>
-          <span className={`text-[11px] px-2 py-0.5 rounded-full border ${isInProgress ? 'bg-amber-500/10 text-amber-400 border-amber-500/20' : 'bg-violet-500/10 text-violet-400 border-violet-500/30'}`}>{group.trips.length} {isInProgress ? 'في الرحلة' : 'قريب السفر'}</span>
+          <span className={`text-[11px] px-2 py-0.5 rounded-full border ${isInProgress ? 'bg-amber-500/10 text-amber-400 border-amber-500/20' : 'bg-brand-500/10 text-brand-400 border-brand-500/30'}`}>{group.trips.length} {isInProgress ? 'في الرحلة' : 'رحلات مجدولة'}</span>
           <div className="flex-1 h-px bg-slate-700/50" />
           <span className="text-slate-500 text-xs">{group.trips.length} رحلة</span>
         </div>
@@ -1432,8 +1463,8 @@ export default function TravelPage() {
                   <TableCell><StatusBadge status={trip.status} /></TableCell>
                   {(canUpdate || canDelete) && (
                     <TableCell>
-                      <OverflowMenu
-  items={[
+                      <SmartActionMenu
+  actions={[
     ...(canUpdate ? [{ key: 'edit', label: 'تعديل', icon: <Pencil className="size-3.5" />, onSelect: () => openEdit(trip) }] : []),
     ...(canDelete ? [{ key: 'delete', label: 'حذف', icon: <Trash2 className="size-3.5" />, destructive: true, separatorBefore: true, onSelect: () => setDeletingId(trip.id) }] : []),
   ]}
@@ -1500,8 +1531,8 @@ export default function TravelPage() {
                   <TableCell className="text-slate-500 text-xs hidden sm:table-cell truncate max-w-32">{trip.notes || '—'}</TableCell>
                   {(canUpdate || canDelete) && (
                     <TableCell>
-                      <OverflowMenu
-  items={[
+                      <SmartActionMenu
+  actions={[
     ...(canUpdate ? [{ key: 'edit', label: 'تعديل', icon: <Pencil className="size-3.5" />, onSelect: () => openEdit(trip) }] : []),
     ...(canDelete ? [{ key: 'delete', label: 'حذف', icon: <Trash2 className="size-3.5" />, destructive: true, separatorBefore: true, onSelect: () => setDeletingId(trip.id) }] : []),
   ]}
@@ -1523,16 +1554,16 @@ export default function TravelPage() {
   // ═══════════════════════════════════════════════════════════════
 
   return (
-    <div dir="rtl" className="space-y-5">
+    <div className="space-y-5">
       {/* Header (§25/§26 — sticky) */}
       <PageHeaderBar
         icon={<Plane className="size-5" />}
-        iconClassName="bg-violet-500/15 border-violet-500/30 text-violet-400"
+        iconClassName="bg-brand-500/15 border-brand-500/30 text-brand-400"
         title="إدارة السفر"
-        subtitle={
+        description={
           <>
             {tabCounts.upcoming + tabCounts.in_progress} رحلة نشطة • {tabCounts.all} إجمالي
-            {isFetching && <span className="inline-block size-3 border-2 border-violet-400 border-t-transparent rounded-full animate-spin mr-2 align-middle" />}
+            {isFetching && <span className="inline-block size-3 border-2 border-brand-400 border-t-transparent rounded-full animate-spin mr-2 align-middle" />}
           </>
         }
         primaryAction={canCreate ? {
@@ -1638,6 +1669,36 @@ export default function TravelPage() {
               {availableMonths.map((m) => <SelectItem key={m} value={m} className="text-white text-xs">{getMonthLabelFromKey(m)}</SelectItem>)}
             </SelectContent>
           </Select>
+          {/* §TRAVEL-TOMORROW — real, combinable, persisted filters with
+              a visible active state */}
+          <button
+            type="button"
+            onClick={() => setTomorrowDeparture(!tomorrowDeparture)}
+            aria-pressed={tomorrowDeparture}
+            title="رحلات يبدأ سفرها غدًا"
+            className={`flex items-center gap-1.5 h-8 px-2.5 rounded-lg border text-xs font-semibold transition-colors ${
+              tomorrowDeparture
+                ? 'bg-brand-500/20 border-brand-500/50 text-brand-200'
+                : 'bg-slate-800/50 border-slate-700/50 text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <PlaneTakeoff className="size-3.5" />
+            العملاء المسافرون غدًا
+          </button>
+          <button
+            type="button"
+            onClick={() => setTomorrowReturn(!tomorrowReturn)}
+            aria-pressed={tomorrowReturn}
+            title="رحلات يعود عملاؤها غدًا"
+            className={`flex items-center gap-1.5 h-8 px-2.5 rounded-lg border text-xs font-semibold transition-colors ${
+              tomorrowReturn
+                ? 'bg-cyan-500/20 border-cyan-500/50 text-cyan-200'
+                : 'bg-slate-800/50 border-slate-700/50 text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <PlaneLanding className="size-3.5" />
+            العملاء العائدون غدًا
+          </button>
           {activeFiltersCount > 0 && (
             <Button variant="ghost" onClick={clearFilters} className="text-slate-500 hover:text-red-400 text-xs h-8 px-2">
               <XCircle className="size-3" /> مسح الفلاتر

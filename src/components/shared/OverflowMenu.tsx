@@ -55,7 +55,7 @@ export function OverflowMenu({
           onClick={(e) => {
             if (stopPropagation) e.stopPropagation();
           }}
-          className="p-1.5 rounded-md text-slate-500 hover:text-white hover:bg-slate-700/60 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/50"
+          className="p-1.5 rounded-md text-slate-500 hover:text-white hover:bg-slate-700/60 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50"
         >
           <MoreVertical className="size-4" />
         </button>

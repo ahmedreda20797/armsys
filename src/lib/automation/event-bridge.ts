@@ -23,6 +23,7 @@
 
 import { getAll, TTL } from '@/lib/db';
 import { runRule } from '@/lib/rules-engine';
+import { isAutomationEnabled } from '@/lib/automation/stats';
 import type { AutomationRule } from '@/types';
 
 /** The record lifecycle events routes can emit (rule triggerTypes). */
@@ -56,6 +57,10 @@ export async function dispatchAutomationEvent(
   payload: AutomationEventPayload,
 ): Promise<void> {
   try {
+    // §15 — the master switch is REAL: when automation is disabled in
+    // settings, no rule runs at all (the toggle actually persists).
+    if (!(await isAutomationEnabled())) return;
+
     const rules = await getAll<AutomationRule>('automationRules', TTL.LONG);
     const matching = rules.filter(
       (r) => r && r.status === 'active' && r.triggerType === triggerType && r.module === module,

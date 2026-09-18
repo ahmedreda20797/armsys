@@ -66,6 +66,24 @@ export async function PATCH(
       return NextResponse.json({ error: 'HR deduction not found' }, { status: 404 });
     }
 
+    // §ARCHIVE — archive/restore is its own audited operation: the
+    // archived record stops counting toward ACTIVE totals (canonical
+    // isEffectiveHrDeduction gate) while remaining fully auditable.
+    if (body.archived !== undefined) {
+      const { resolveActor } = await import('@/lib/auth/actor-resolver');
+      const archiveActor = await resolveActor(permCheck.user?.id);
+      const archiveUpdates: Record<string, unknown> = body.archived === true
+        ? {
+            archived: true,
+            archivedAt: new Date().toISOString(),
+            archivedBy: archiveActor.id,
+            archivedByName: archiveActor.name,
+          }
+        : { archived: false, archivedAt: null, archivedBy: null, archivedByName: null };
+      const updatedArchived = await updateRecord('hrDeductions', id, archiveUpdates);
+      return NextResponse.json(updatedArchived);
+    }
+
     const updated = await updateRecord('hrDeductions', id, body);
     return NextResponse.json(updated);
   } catch (error) {

@@ -199,10 +199,10 @@ export function PeriodComparisonDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent dir="rtl" className="bg-slate-900 border-slate-700/60 max-w-xl max-h-[85vh] overflow-hidden flex flex-col">
+      <DialogContent className="bg-slate-900 border-slate-700/60 max-w-xl max-h-[85vh] overflow-hidden flex flex-col">
         <DialogHeader className="text-right shrink-0">
           <DialogTitle className="text-white text-base flex items-center gap-2">
-            <ArrowLeftRight className="size-4 text-violet-400" />
+            <ArrowLeftRight className="size-4 text-brand-400" />
             مقارنة الأداء{employeeName ? ` — ${employeeName}` : ''}
           </DialogTitle>
           <DialogDescription className="text-slate-500 text-xs">
@@ -257,7 +257,7 @@ export function PeriodComparisonDialog({
               </p>
             </div>
           ) : (
-            <table className="w-full text-xs" dir="rtl">
+            <table className="w-full text-xs">
               <thead>
                 <tr className="text-slate-500 border-b border-slate-700/60">
                   <th className="text-right font-medium py-2">المكوّن</th>

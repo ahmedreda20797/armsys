@@ -28,7 +28,7 @@ import { cn } from '@/lib/utils';
 
 /** Static tailwind tone classes (never build class names dynamically). */
 const TONE_CLASSES = {
-  violet: 'border-violet-500/30 shadow-violet-900/20',
+  violet: 'border-brand-500/30 shadow-brand-900/20',
   rose: 'border-rose-500/30 shadow-rose-900/20',
   cyan: 'border-cyan-500/30 shadow-cyan-900/20',
   amber: 'border-amber-500/30 shadow-amber-900/20',

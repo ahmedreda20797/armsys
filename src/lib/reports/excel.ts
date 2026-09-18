@@ -27,7 +27,7 @@ export async function buildReportExcel(
   response: ReportRunResponse<Record<string, unknown>>,
 ): Promise<Buffer> {
   const workbook = new ExcelJS.Workbook();
-  workbook.creator = 'ARM ERP System';
+  workbook.creator = 'Qnlys';
   workbook.created = new Date();
 
   const sheet = workbook.addWorksheet(definition.name, {

@@ -35,6 +35,18 @@ export interface SidebarPreferences {
   /** Page ids in the user's preferred order (permission-filtered at read). */
   order?: string[];
   /**
+   * §21 — group ids in the user's preferred order (groups without an
+   * entry keep registry order at the end). Permissions ALWAYS win:
+   * unknown/inaccessible groups simply never render.
+   */
+  groupOrder?: string[];
+  /**
+   * §21 — pageId → groupId override: an item moved BETWEEN groups.
+   * A page whose target group is not visible falls back to its
+   * configured group (the override just stops applying).
+   */
+  itemGroups?: Record<string, string>;
+  /**
    * UX Corrections §3 — the user's PINNED sidebar state: true = keep
    * expanded, false = keep collapsed (hover still expands temporarily).
    * Absent = system default (collapsed + hover expand).
@@ -303,10 +315,29 @@ export function sanitizeUserPreferencesInput(body: unknown): UserPreferences | n
     const order = sanitizeIdArray(sidebarRaw.order);
     // §3: boolean-only; anything else is dropped (fail-safe to default).
     const pinOpen = typeof sidebarRaw.pinOpen === 'boolean' ? sidebarRaw.pinOpen : undefined;
-    if (order || pinOpen !== undefined) {
+    const groupOrder = sanitizeIdArray(sidebarRaw.groupOrder);
+    // §21: string→string map, capped like the other arrays.
+    let itemGroups: Record<string, string> | undefined;
+    if (sidebarRaw.itemGroups && typeof sidebarRaw.itemGroups === 'object' && !Array.isArray(sidebarRaw.itemGroups)) {
+      const mapRaw = sidebarRaw.itemGroups as Record<string, unknown>;
+      const mapOut: Record<string, string> = {};
+      let accepted = 0;
+      for (const [pageId, groupId] of Object.entries(mapRaw)) {
+        if (accepted >= 200) break;
+        if (typeof pageId === 'string' && pageId.length > 0 && pageId.length <= 64
+          && typeof groupId === 'string' && groupId.length > 0 && groupId.length <= 64) {
+          mapOut[pageId] = groupId;
+          accepted += 1;
+        }
+      }
+      if (accepted > 0) itemGroups = mapOut;
+    }
+    if (order || pinOpen !== undefined || groupOrder || itemGroups) {
       out.sidebar = {
         ...(order ? { order } : {}),
         ...(pinOpen !== undefined ? { pinOpen } : {}),
+        ...(groupOrder ? { groupOrder } : {}),
+        ...(itemGroups ? { itemGroups } : {}),
       };
     }
   }

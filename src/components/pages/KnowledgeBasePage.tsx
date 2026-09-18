@@ -47,6 +47,8 @@ import {
   FileText,
   Building2,
 } from 'lucide-react';
+import { SmartActionMenu } from '@/components/shared/SmartActionMenu';
+import { PageIdentity } from '@/components/shared/PageIdentity';
 import { logCreate, logUpdate, logDelete } from '@/lib/activity-logger';
 
 // ═══════════════════════════════════════════════════════════════
@@ -128,8 +130,8 @@ function getDepartmentBadge(dept: string) {
 function getDepartmentColor(dept: string) {
   switch (dept) {
     case 'operations': return 'bg-cyan-500/15 text-cyan-400 border-cyan-500/30';
-    case 'quality': return 'bg-violet-500/15 text-violet-400 border-violet-500/30';
-    case 'hr': return 'bg-violet-500/15 text-violet-400 border-violet-500/30';
+    case 'quality': return 'bg-brand-500/15 text-brand-400 border-brand-500/30';
+    case 'hr': return 'bg-brand-500/15 text-brand-400 border-brand-500/30';
     case 'sales': return 'bg-amber-500/15 text-amber-400 border-amber-500/30';
     case 'it': return 'bg-blue-500/15 text-blue-400 border-blue-500/30';
     case 'finance': return 'bg-rose-500/15 text-rose-400 border-rose-500/30';
@@ -145,7 +147,7 @@ function getStatusBadge(status: string) {
 function getStatusColor(status: string) {
   switch (status) {
     case 'draft': return 'bg-amber-500/15 text-amber-400 border-amber-500/30';
-    case 'published': return 'bg-violet-500/15 text-violet-400 border-violet-500/30';
+    case 'published': return 'bg-brand-500/15 text-brand-400 border-brand-500/30';
     case 'archived': return 'bg-slate-500/15 text-slate-400 border-slate-500/30';
     default: return 'bg-slate-500/15 text-slate-400 border-slate-500/30';
   }
@@ -232,7 +234,7 @@ export default function KnowledgeBasePage() {
   // ═══ Access denied guard ═══
   if (!canView) {
     return (
-      <div dir="rtl" className="flex flex-col items-center justify-center py-20">
+      <div className="flex flex-col items-center justify-center py-20">
         <ShieldCheck className="size-16 text-slate-600 mb-4" />
         <h2 className="text-xl font-semibold text-slate-400">صلاحية غير كافية</h2>
         <p className="text-slate-500 mt-2">هذه الصفحة غير متاحة لحسابك</p>
@@ -312,31 +314,24 @@ export default function KnowledgeBasePage() {
   const isSaving = createMutation.isPending || updateMutation.isPending;
 
   return (
-    <div dir="rtl" className="space-y-5">
-      {/* ═══ Header ═══ */}
-      <motion.div
-        initial={{ opacity: 0, y: -10 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="flex flex-col sm:flex-row sm:items-center justify-between gap-3"
-      >
-        <div className="flex items-center gap-3">
-          <div className="flex items-center justify-center size-10 rounded-xl bg-cyan-500/15 border border-cyan-500/30">
-            <BookOpen className="size-5 text-cyan-400" />
-          </div>
-          <div>
-            <h1 className="text-xl font-bold text-white">قاعدة المعرفة</h1>
-            <p className="text-slate-500 text-xs mt-0.5">
-              دروس مستفادة من المشاكل: المشكلة، السبب الجذري، الحل، وطريقة الوقاية — {filtered.length} مقال
-            </p>
+    <div className="space-y-5">
+      {/* ═══ §7 unified page identity ═══ */}
+      <PageIdentity
+        pageId="knowledgeBase"
+        icon={<BookOpen className="size-5" />}
+        iconClassName="bg-cyan-500/15 border border-cyan-500/30 text-cyan-400"
+        description={
+          <>
+            دروس مستفادة من المشاكل: المشكلة، السبب الجذري، الحل، وطريقة الوقاية — {filtered.length} مقال
             {/* §12: purpose statement — the page documents recurring
                 problems and their fixes (SOPs / work instructions grow
                 out of these lessons). */}
-            <p className="text-slate-600 text-[10px] mt-0.5 leading-relaxed">
+            <span className="block text-slate-600 text-[10px] mt-0.5 leading-relaxed">
               الغرض: عند تكرار مشكلة، ابحث هنا أولاً — كل مقال يوثّق ما حدث ولماذا وكيف حُلّ وكيف نمنع تكراره.
-            </p>
-          </div>
-        </div>
-        {canCreate && (
+            </span>
+          </>
+        }
+        actions={canCreate && (
           <Button
             onClick={openCreateDialog}
             size="sm"
@@ -346,7 +341,7 @@ export default function KnowledgeBasePage() {
             إضافة مقال
           </Button>
         )}
-      </motion.div>
+      />
 
       {/* ═══ Stats Row ═══ */}
       {articles.length > 0 && (
@@ -359,9 +354,9 @@ export default function KnowledgeBasePage() {
             <p className="text-slate-500 text-[11px] mb-0.5">إجمالي المقالات</p>
             <p className="text-slate-300 font-bold text-lg leading-tight">{stats.total}</p>
           </div>
-          <div className="rounded-lg border border-violet-500/30 bg-emerald-500/8 px-3.5 py-2.5">
+          <div className="rounded-lg border border-brand-500/30 bg-emerald-500/8 px-3.5 py-2.5">
             <p className="text-slate-500 text-[11px] mb-0.5">منشورة</p>
-            <p className="text-violet-400 font-bold text-lg leading-tight">{stats.publishedCount}</p>
+            <p className="text-brand-400 font-bold text-lg leading-tight">{stats.publishedCount}</p>
           </div>
           <div className="rounded-lg border border-amber-500/25 bg-amber-500/8 px-3.5 py-2.5">
             <p className="text-slate-500 text-[11px] mb-0.5">مسودات</p>
@@ -499,26 +494,13 @@ export default function KnowledgeBasePage() {
                           </Badge>
                         </div>
                         <div className="flex items-center gap-1.5">
-                          {canUpdate && (
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="h-7 w-7 p-0 text-slate-400 hover:text-white hover:bg-slate-700/50"
-                              onClick={() => openEditDialog(article)}
-                            >
-                              <Pencil className="size-3.5" />
-                            </Button>
-                          )}
-                          {canDelete && (
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="h-7 w-7 p-0 text-slate-400 hover:text-red-400 hover:bg-red-500/10"
-                              onClick={() => setDeletingId(article.id)}
-                            >
-                              <Trash2 className="size-3.5" />
-                            </Button>
-                          )}
+                          {/* §2 — SmartActionMenu */}
+                          <SmartActionMenu
+                            actions={[
+                              { key: 'edit', label: 'تعديل', icon: <Pencil className="size-3.5" />, onSelect: () => openEditDialog(article), hidden: !canUpdate },
+                              { key: 'delete', label: 'حذف', icon: <Trash2 className="size-3.5" />, destructive: true, onSelect: () => setDeletingId(article.id), hidden: !canDelete },
+                            ]}
+                          />
                         </div>
                       </div>
 

@@ -56,7 +56,7 @@ export function TimelineView({
   );
 
   return (
-    <ol className={cn('relative space-y-4 ps-4', className)} dir="rtl">
+    <ol className={cn('relative space-y-4 ps-4', className)}>
       <span className="absolute top-1 bottom-1 end-[5px] w-px bg-slate-700/60" aria-hidden />
       {ordered.map((p) => {
         const style = TONE_STYLE[p.tone] ?? TONE_STYLE.neutral;

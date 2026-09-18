@@ -768,10 +768,12 @@ export function generateRecommendations(
         affectedDepartment: d.name,
         actionLabel: 'مراجعة القسم',
         actionUrl: null,
-        targetPage: 'attendance',
+        // §AOCC-ROUTING — the recommendation REPRESENTS the department's
+        // health context → the department details dialog, not attendance.
+        targetPage: 'departmentHealth',
         evidence: d.warnings.join('، ') || `صحة القسم: ${d.healthScore}%`,
         evidenceCount: d.criticalCount,
-        linkedRecordIds: [],
+        linkedRecordIds: [d.name],
       });
     });
 
@@ -853,14 +855,14 @@ export function generateRecommendations(
 
 const MODULE_FEED_CONFIG: Record<string, { iconType: string; colorClass: string }> = {
   attendance: { iconType: 'clock', colorClass: 'text-amber-400' },
-  biometric: { iconType: 'fingerprint', colorClass: 'text-violet-400' },
-  capa: { iconType: 'shield', colorClass: 'text-purple-400' },
+  biometric: { iconType: 'fingerprint', colorClass: 'text-brand-400' },
+  capa: { iconType: 'shield', colorClass: 'text-brand-400' },
   complaints: { iconType: 'alert', colorClass: 'text-orange-400' },
   quality: { iconType: 'award', colorClass: 'text-emerald-400' },
   hrDeductions: { iconType: 'banknote', colorClass: 'text-rose-400' },
   travel: { iconType: 'plane', colorClass: 'text-sky-400' },
   followUps: { iconType: 'clipboard', colorClass: 'text-rose-400' },
-  notifications: { iconType: 'bell', colorClass: 'text-violet-400' },
+  notifications: { iconType: 'bell', colorClass: 'text-brand-400' },
   riskCenter: { iconType: 'shield-alert', colorClass: 'text-amber-400' },
   requests: { iconType: 'file', colorClass: 'text-sky-400' },
   rulesEngine: { iconType: 'zap', colorClass: 'text-yellow-400' },

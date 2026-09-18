@@ -87,7 +87,7 @@ export const WorkflowOutline = memo(function WorkflowOutline({
         <div
           className={cn(
             'group flex items-center gap-1 px-1.5 py-1 rounded-md cursor-pointer transition-colors',
-            isSelected ? 'bg-violet-600/20 text-violet-200' : 'hover:bg-slate-800/50 text-slate-400'
+            isSelected ? 'bg-brand-600/20 text-brand-200' : 'hover:bg-slate-800/50 text-slate-400'
           )}
           style={{ paddingRight: `${depth * 12 + 6}px` }}
           onClick={() => onSelectNode(nodeId)}
@@ -117,7 +117,7 @@ export const WorkflowOutline = memo(function WorkflowOutline({
   };
 
   return (
-    <div className="flex flex-col h-full" dir="rtl">
+    <div className="flex flex-col h-full">
       <div className="p-2 border-b border-slate-800">
         <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider px-1">المخطط الشجري</span>
       </div>
@@ -128,7 +128,7 @@ export const WorkflowOutline = memo(function WorkflowOutline({
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="بحث في العقد..."
-            className="w-full bg-slate-800/60 border border-slate-700/50 rounded-lg pr-8 pl-3 py-1.5 text-xs text-slate-200 placeholder:text-slate-500 focus:outline-none focus:border-violet-500/50"
+            className="w-full bg-slate-800/60 border border-slate-700/50 rounded-lg pr-8 pl-3 py-1.5 text-xs text-slate-200 placeholder:text-slate-500 focus:outline-none focus:border-brand-500/50"
           />
         </div>
       </div>
@@ -141,7 +141,7 @@ export const WorkflowOutline = memo(function WorkflowOutline({
                 onClick={() => onSelectNode(n.id)}
                 className={cn(
                   'flex items-center gap-1.5 px-2 py-1 rounded-md cursor-pointer transition-colors',
-                  selectedId === n.id ? 'bg-violet-600/20 text-violet-200' : 'hover:bg-slate-800/50 text-slate-400'
+                  selectedId === n.id ? 'bg-brand-600/20 text-brand-200' : 'hover:bg-slate-800/50 text-slate-400'
                 )}
               >
                 <Hash className="w-3 h-3 text-slate-500" />

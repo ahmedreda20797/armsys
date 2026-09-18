@@ -85,19 +85,52 @@ function SectionBlock({ section }: { section: PrintSection }) {
 
 export function PrintReportDocument({ model }: { model: PrintReportModel }) {
   const generated = fmtGenerated(model.generatedAt) || fmtGenerated(new Date().toISOString());
+  // §PRINT-HEADER — RTL professional report header:
+  //   RIGHT (first flex child in RTL): report title + the subject's
+  //   real identity STACKED on its own lines (employee name, then
+  //   department, then position — never joined inline) + metadata
+  //   (period, generated date). Identity fields render only when the
+  //   model actually carries them.
+  //   LEFT: the Qnlys print logo ALONE — /qnlys-print.svg already
+  //   contains the full wordmark; no second "Qnlys" text under it.
+  const identity = model.identity;
+  const identitySecondary = [
+    identity?.code ? `كود الموظف: ${identity.code}` : null,
+    identity?.team ? `الفريق: ${identity.team}` : null,
+  ].filter(Boolean);
   return (
-    <div className="print-doc" dir="rtl" lang="ar">
+    <div className="print-doc" lang="ar">
       {/* Header — report identity + period */}
       <header className="print-doc-header">
         <div className="print-doc-header-row">
-          <div className="print-doc-brand">
-            <span className="print-doc-brand-name">ARM ERP</span>
+          {/* RIGHT: title + stacked identity + meta */}
+          <div className="print-doc-identity">
             <h1 className="print-doc-title">{model.title}</h1>
+            {identity?.name ? (
+              <div className="print-doc-subject">
+                <p className="print-doc-subject-name">{identity.name}</p>
+                {identity.department ? (
+                  <p className="print-doc-subject-line">القسم: {identity.department}</p>
+                ) : null}
+                {identity.position ? (
+                  <p className="print-doc-subject-line">الوظيفة: {identity.position}</p>
+                ) : null}
+                {identitySecondary.length > 0 ? (
+                  <p className="print-doc-subject-extra">{identitySecondary.join(' · ')}</p>
+                ) : null}
+              </div>
+            ) : model.subject ? (
+              <p className="print-doc-subject-meta"><strong>النطاق:</strong> {model.subject}</p>
+            ) : null}
+            <div className="print-doc-meta-inline">
+              {model.period ? <span><strong>الفترة:</strong> {model.period}</span> : null}
+              <span><strong>تاريخ الإنشاء:</strong> {generated}</span>
+            </div>
           </div>
-          <div className="print-doc-meta" dir="rtl">
-            {model.period ? <p><strong>الفترة:</strong> {model.period}</p> : null}
-            {model.subject ? <p><strong>النطاق:</strong> {model.subject}</p> : null}
-            <p><strong>تاريخ الإنشاء:</strong> {generated}</p>
+          {/* LEFT: the Qnlys print logo (dark wordmark for white paper) —
+              the asset IS the complete brand mark; nothing under it. */}
+          <div className="print-doc-logo" dir="ltr">
+            <img src="/qnlys-print.svg" alt="Qnlys" style={{ height: 44, width: 'auto', objectFit: 'contain' }} />
           </div>
         </div>
         <hr className="print-doc-rule" />
@@ -110,11 +143,11 @@ export function PrintReportDocument({ model }: { model: PrintReportModel }) {
       ))}
 
       <footer className="print-doc-footer">
-        <hr className="print-doc-rule" />
-        <p>
-          {model.footerNote ? `${model.footerNote} — ` : ''}
-          تم إنشاؤه بواسطة نظام ARM ERP — تقرير رسمي بمحتوى البيانات المعروضة للفترة المحددة.
-        </p>
+        <hr className="print-doc-rule print-doc-footer-rule" />
+        <div className="print-doc-footer-row">
+          <span>{model.footerNote ?? 'تقرير رسمي — يعكس البيانات المعروضة على الشاشة للفترة المحددة.'}</span>
+          <span className="print-doc-footer-brand" dir="ltr">Qnlys</span>
+        </div>
       </footer>
     </div>
   );

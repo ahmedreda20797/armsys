@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useMemo, useEffect } from 'react';
+import { authFetch } from '@/lib/api-fetch';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
 import { usePermissions } from '@/hooks/usePermissions';
@@ -30,7 +31,8 @@ import { formatMonth } from './kpi-reports-shared';
 import { ApprovalStatusBadge } from '@/components/shared/kpi';
 import { PageHeaderBar } from '@/components/shared/PageHeaderBar';
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
-import { OverflowMenu, type OverflowMenuItem } from '@/components/shared/OverflowMenu';
+import { SmartActionMenu, type SmartAction } from '@/components/shared/SmartActionMenu';
+import type { OverflowMenuItem } from '@/components/shared/OverflowMenu';
 import { InlineFormPanel } from '@/components/shared/InlineFormPanel';
 import { useMarkState, useFavoriteToggleAction, usePinToggleAction } from '@/components/shared/NavigationMarks';
 import type { NavigationDescriptor } from '@/lib/personalization';
@@ -207,9 +209,7 @@ export default function ObservationsPage() {
   const [systemUsers, setSystemUsers] = useState<{ id: string; name: string; email?: string; role?: string }[]>([]);
   useEffect(() => {
     let cancelled = false;
-    fetch('/api/dashboard/users?limit=200', {
-      headers: { Authorization: `Bearer ${localStorage.getItem('erp_access_token')}` },
-    })
+    authFetch('/api/dashboard/users?basic=1')
       .then((r) => (r.ok ? r.json() : []))
       .then((list) => { if (!cancelled) setSystemUsers((list as { id: string; name: string }[]) ?? []); })
       .catch(() => {});
@@ -228,20 +228,20 @@ export default function ObservationsPage() {
 
   if (!canView) {
     return (
-      <div dir="rtl" className="flex flex-col items-center justify-center py-24 text-slate-400">
+      <div className="flex flex-col items-center justify-center py-24 text-slate-400">
         <p>ليس لديك صلاحية للوصول إلى هذه الصفحة</p>
       </div>
     );
   }
 
   return (
-    <div dir="rtl" className="space-y-4 p-4 sm:p-6">
+    <div className="space-y-4 p-4 sm:p-6">
       {/* Header (§25/§26 — sticky, primary action always accessible) */}
       <PageHeaderBar
         icon={<Eye className="size-5" />}
         iconClassName="bg-blue-500/15 border-blue-500/30 text-blue-400"
         title="ملاحظات الجودة"
-        subtitle="إدارة ملاحظات الجودة واعتمادها — المصدر الأساسي لمؤشرات الأداء"
+        description="إدارة ملاحظات الجودة واعتمادها — المصدر الأساسي لمؤشرات الأداء"
         primaryAction={canCreate ? { label: 'ملاحظة جديدة', onClick: () => setCreateOpen(true) } : undefined}
       />
 
@@ -407,7 +407,7 @@ export default function ObservationsPage() {
           <InlineFormPanel
             id="observation-inline-capa"
             tone="violet"
-            icon={<ShieldCheck className="size-3.5 text-violet-400" />}
+            icon={<ShieldCheck className="size-3.5 text-brand-400" />}
             title={`إنشاء CAPA من ملاحظة — ${capaTarget.employeeName}`}
             onClose={() => setCapaTarget(null)}
           >
@@ -660,7 +660,11 @@ function ObservationCard({
               <span>{obs.categoryName}</span><span>•</span>
               <span>{obs.observationDate}</span><span>•</span>
               <span>{SEVERITY_LABELS[obs.severity] ?? obs.severity}</span>
-              {/* §8 — "Added by" visible on the card itself (no click needed). */}
+              {/* §2 — "Added by" appears HERE ONLY (card level, no click
+                  needed) and ONLY for viewers the server authorized: the
+                  API strips observerName for everyone without the
+                  audit-identity permission, so this renders nothing for
+                  unauthorized users — no client-side guessing. */}
               {obs.observerName && (
                 <>
                   <span>•</span>
@@ -700,7 +704,7 @@ function ObservationCard({
               <Info className="size-3.5" />
             </Button>
             {!monthClosed && overflowItems.length > 0 && (
-              <OverflowMenu items={overflowItems} label="إجراءات الملاحظة" />
+              <SmartActionMenu actions={overflowItems} label="إجراءات الملاحظة" />
             )}
             {monthClosed && (
               <Badge variant="outline" className="justify-center gap-1 text-blue-400 border-blue-500/30 text-[10px]">
@@ -749,7 +753,7 @@ function ObservationDetailDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto" dir="rtl">
+      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>تفاصيل الملاحظة</DialogTitle>
           <DialogDescription>{obs.employeeName} — {obs.observationDate}</DialogDescription>
@@ -765,7 +769,9 @@ function ObservationDetailDialog({
             <InfoCell label="الحالة" value={STATUS_LABELS[obs.status] ?? obs.status} />
             <InfoCell label="الاعتماد" value={obs.approvalStatus} />
             <InfoCell label="النقاط" value={obs.applyPointDeduction ? `${obs.isBonus ? '+' : '-'}${obs.points}` : '—'} />
-            <InfoCell label="الملاحظ" value={obs.observerName} />
+            {/* §2 — «بواسطة» is NOT repeated here: it already appears ONCE
+                on the card row (and only reaches authorized viewers — the
+                API strips the identity for everyone else). */}
             <InfoCell label="تاريخ الإنشاء" value={new Date(obs.createdAt).toLocaleDateString('ar-EG')} />
             {obs.correctiveAction && <InfoCell label="الإجراء التصحيحي" value={obs.correctiveAction} />}
             {obs.dueDate && <InfoCell label="تاريخ الاستحقاق" value={obs.dueDate} />}
@@ -949,7 +955,7 @@ function EvidencePreviewDialog({
 }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto" dir="rtl">
+      <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-1.5">
             <Link2 className="size-4 text-cyan-400" /> الدليل / الإثبات
@@ -1063,7 +1069,7 @@ function CreateObservationDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto" dir="rtl">
+      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>ملاحظة جودة جديدة</DialogTitle>
           <DialogDescription>إنشاء ملاحظة جودة جديدة للموظف</DialogDescription>
@@ -1209,7 +1215,7 @@ function EditObservationDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg" dir="rtl">
+      <DialogContent className="max-w-lg">
         <DialogHeader>
           <DialogTitle>تعديل الملاحظة</DialogTitle>
           <DialogDescription>{obs.employeeName} — {obs.observationDate}</DialogDescription>
@@ -1297,7 +1303,7 @@ function ApproveDialog({ obs, open, onOpenChange }: { obs: QualityObservation; o
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md" dir="rtl">
+      <DialogContent className="max-w-md">
         <DialogHeader>
           <DialogTitle>اعتماد الملاحظة</DialogTitle>
           <DialogDescription>{obs.employeeName} — النقاط الحالية: {obs.points}</DialogDescription>
@@ -1343,7 +1349,7 @@ function RejectDialog({ obs, open, onOpenChange }: { obs: QualityObservation; op
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md" dir="rtl">
+      <DialogContent className="max-w-md">
         <DialogHeader>
           <DialogTitle>رفض الملاحظة</DialogTitle>
           <DialogDescription>{obs.employeeName}</DialogDescription>

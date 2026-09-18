@@ -352,7 +352,7 @@ export function EmployeeSearchInput({
               {showAllOption && (
                 <button
                   onClick={() => handleSelect(allOptionValue, allOptionLabel)}
-                  className="w-full text-right px-3 py-2 text-slate-400 text-xs hover:bg-violet-500/10 hover:text-violet-400 transition-colors border-b border-slate-700/50"
+                  className="w-full text-right px-3 py-2 text-slate-400 text-xs hover:bg-brand-500/10 hover:text-brand-400 transition-colors border-b border-slate-700/50"
                 >
                   {allOptionLabel}
                 </button>
@@ -381,8 +381,8 @@ export function EmployeeSearchInput({
                     onMouseEnter={() => setActiveIndex(i)}
                     className={`w-full text-right px-3 py-2 text-xs transition-colors flex items-center gap-2 ${
                       isActive
-                        ? 'bg-violet-500/15 text-violet-300'
-                        : 'text-white hover:bg-violet-500/10'
+                        ? 'bg-brand-500/15 text-brand-300'
+                        : 'text-white hover:bg-brand-500/10'
                     }`}
                   >
                     <div className="size-5 rounded-full bg-slate-700 flex items-center justify-center flex-shrink-0">
@@ -455,7 +455,7 @@ export function EmployeeSearchInput({
             {showAllOption && (
               <button
                 onClick={() => handleSelect(allOptionValue, allOptionLabel)}
-                className="w-full text-right px-3 py-2 text-slate-400 text-sm hover:bg-violet-500/10 hover:text-violet-400 transition-colors border-b border-slate-700/50"
+                className="w-full text-right px-3 py-2 text-slate-400 text-sm hover:bg-brand-500/10 hover:text-brand-400 transition-colors border-b border-slate-700/50"
               >
                 {allOptionLabel}
               </button>
@@ -477,8 +477,8 @@ export function EmployeeSearchInput({
                     onMouseEnter={() => setActiveIndex(i)}
                     className={`w-full text-right px-3 py-2 text-sm transition-colors flex items-center gap-2 ${
                       isActive
-                        ? 'bg-violet-500/15 text-violet-300'
-                        : 'text-white hover:bg-violet-500/10'
+                        ? 'bg-brand-500/15 text-brand-300'
+                        : 'text-white hover:bg-brand-500/10'
                     }`}
                   >
                     <div className="size-6 rounded-full bg-slate-700 flex items-center justify-center flex-shrink-0">

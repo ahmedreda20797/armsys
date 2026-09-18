@@ -41,6 +41,7 @@ import {
 } from '@/components/ui/table';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
+import { useLanguage } from '@/lib/i18n/language-context';
 import {
   EVIDENCE_COLLECTIONS,
   isEvidenceCollection,
@@ -84,7 +85,7 @@ const TONE_CLASSES: Record<Tone, string> = {
   warn: 'bg-amber-500/15 text-amber-300 border-amber-500/30',
   bad: 'bg-red-500/15 text-red-300 border-red-500/30',
   info: 'bg-sky-500/15 text-sky-300 border-sky-500/30',
-  accent: 'bg-violet-500/15 text-violet-300 border-violet-500/30',
+  accent: 'bg-brand-500/15 text-brand-300 border-brand-500/30',
 };
 
 /** Compact count chip — a fact with its stored count (no re-aggregation). */
@@ -157,8 +158,9 @@ export function SectionCard({
 }
 
 /** Inline empty state for a section with zero stored records. */
-export function SectionEmpty({ message = 'لا توجد سجلات لهذه الفترة' }: { message?: string }) {
-  return <p className="text-xs text-slate-500 py-2">{message}</p>;
+export function SectionEmpty({ message }: { message?: string }) {
+  const { t } = useLanguage();
+  return <p className="text-xs text-slate-500 py-2">{message ?? t('smart.empty')}</p>;
 }
 
 function ChipRow({ chips }: { chips: ChipFact[] }) {
@@ -229,8 +231,9 @@ export function ReportHeaderSection({ view }: { view: ReportHeaderView }) {
 // ─────────────────────────────────────────────────────────────
 
 export function KpiHeroSection({ view }: { view: KpiHeroView }) {
+  const { t } = useLanguage();
   return (
-    <SectionCard icon={Gauge} title="موقع جودة KPI" subtitle="درجة الجودة مقابل المساهمة الموزونة">
+    <SectionCard icon={Gauge} title={t('smart.section.kpi')} subtitle={t('smart.section.kpiSub')}>
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div className="rounded-xl bg-slate-900/40 border border-slate-700/40 p-4 space-y-1">
           <div className="text-[11px] text-slate-500">درجة الجودة (خام)</div>
@@ -288,6 +291,15 @@ export function KpiHeroSection({ view }: { view: KpiHeroView }) {
       {view.outcomeMessage && (
         <p className="text-xs text-amber-300/90 border-r-2 border-amber-500/40 pr-2">{view.outcomeMessage}</p>
       )}
+
+      {/* §6 STATE DISTINCTION — real quality evidence exists while the
+          KPI engine returned no value. The evidence sections below stay
+          fully populated; the KPI gap is explained, never hidden. */}
+      {view.evidenceNote && (
+        <p className="text-xs text-emerald-300/90 border border-emerald-500/25 bg-emerald-500/[0.06] rounded-lg px-3 py-2">
+          {view.evidenceNote}
+        </p>
+      )}
     </SectionCard>
   );
 }
@@ -297,8 +309,9 @@ export function KpiHeroSection({ view }: { view: KpiHeroView }) {
 // ─────────────────────────────────────────────────────────────
 
 export function KpiComponentsSection({ view }: { view: KpiComponentsView }) {
+  const { t } = useLanguage();
   return (
-    <SectionCard icon={Layers} title="مكونات مخطط KPI" subtitle="عرض معلوماتي — لا يُحسب أي مكون ناقص هنا">
+    <SectionCard icon={Layers} title={t('smart.section.components')} subtitle={t('smart.section.componentsSub')}>
       <Table>
         <TableHeader>
           <TableRow className="border-slate-700/50">
@@ -342,8 +355,9 @@ export function KpiComponentsSection({ view }: { view: KpiComponentsView }) {
 // ─────────────────────────────────────────────────────────────
 
 export function TrendSection({ view }: { view: TrendView }) {
+  const { t } = useLanguage();
   return (
-    <SectionCard icon={Activity} title="اتجاه الأداء" subtitle="درجة الجودة الخام عبر نافذة التحليل">
+    <SectionCard icon={Activity} title={t('smart.section.trend')} subtitle={t('smart.section.trendSub')}>
       {view.insufficient ? (
         <p className="text-sm text-slate-400 py-3 text-center">لا توجد بيانات تاريخية كافية لعرض الاتجاه</p>
       ) : (
@@ -399,13 +413,14 @@ export function TrendSection({ view }: { view: TrendView }) {
 // ─────────────────────────────────────────────────────────────
 
 export function ObservationsSection({ view }: { view: ObservationsView }) {
+  const { t } = useLanguage();
   return (
-    <SectionCard icon={Eye} title="ملاحظات الجودة" subtitle="تجميعات المحرك التحليلي كما هي">
+    <SectionCard icon={Eye} title={t('smart.section.observations')} subtitle={t('smart.section.observationsSub')}>
       <div className="flex flex-wrap gap-1.5">
-        <CountChip label="الإجمالي" count={view.total} tone="info" />
-        <CountChip label="معتمدة" count={view.approved} tone="good" />
-        <CountChip label="معلّقة" count={view.pending} tone="warn" />
-        <CountChip label="مرفوضة" count={view.rejected} tone="bad" />
+        <CountChip label={t('smart.col.total')} count={view.total} tone="info" />
+        <CountChip label={t('smart.col.approved')} count={view.approved} tone="good" />
+        <CountChip label={t('smart.col.pending')} count={view.pending} tone="warn" />
+        <CountChip label={t('smart.col.rejected')} count={view.rejected} tone="bad" />
       </div>
       <ChipRow chips={view.severityChips} />
       <ChipRow chips={view.resolutionChips} />
@@ -448,10 +463,11 @@ export function ObservationsSection({ view }: { view: ObservationsView }) {
 // ─────────────────────────────────────────────────────────────
 
 export function RepeatedIssuesSection({ view }: { view: RepeatedIssuesView }) {
+  const { t } = useLanguage();
   return (
     <SectionCard
       icon={Repeat}
-      title="المشكلات المتكررة"
+      title={t('smart.section.repeated')}
       subtitle={`تجميع حتمي حسب الفئة/النوع — حد أدنى ${view.minOccurrences} تكرارات`}
     >
       {view.empty ? (
@@ -503,8 +519,9 @@ export function RepeatedIssuesSection({ view }: { view: RepeatedIssuesView }) {
 // ─────────────────────────────────────────────────────────────
 
 export function DeductionsSection({ view }: { view: DeductionsView }) {
+  const { t } = useLanguage();
   return (
-    <SectionCard icon={Scale} title="خصومات الجودة" subtitle="أيام ومبالغ — وحدات منفصلة">
+    <SectionCard icon={Scale} title={t('smart.section.deductions')} subtitle={t('smart.section.deductionsSub')}>
       {view.empty ? (
         <SectionEmpty />
       ) : (
@@ -561,11 +578,12 @@ export function DeductionsSection({ view }: { view: DeductionsView }) {
 // ─────────────────────────────────────────────────────────────
 
 export function ComplaintsSection({ view }: { view: ComplaintsView }) {
+  const { t } = useLanguage();
   const indirect = view.relationship === 'INDIRECT';
   return (
     <SectionCard
       icon={MessageSquareWarning}
-      title="شكاوى العملاء"
+      title={t('smart.section.complaints')}
       subtitle={`إسناد ${view.relationshipLabel}`}
     >
       {indirect ? (
@@ -578,7 +596,7 @@ export function ComplaintsSection({ view }: { view: ComplaintsView }) {
       ) : (
         <>
           <div className="flex flex-wrap gap-1.5">
-            <CountChip label="الإجمالي" count={view.total} tone="info" />
+            <CountChip label={t('smart.col.total')} count={view.total} tone="info" />
             <CountChip label="محلولة/مغلقة" count={view.resolvedOrClosed} tone="good" />
             <CountChip label="مفتوحة" count={view.stillOpen} tone="warn" />
             {view.viaDealCount > 0 && <CountChip label="عبر صفقة" count={view.viaDealCount} tone="neutral" />}
@@ -605,14 +623,15 @@ export function ComplaintsSection({ view }: { view: ComplaintsView }) {
 // ─────────────────────────────────────────────────────────────
 
 export function CapaSection({ view }: { view: CapaView }) {
+  const { t } = useLanguage();
   return (
-    <SectionCard icon={ShieldCheck} title="إجراءات CAPA" subtitle={`إسناد: ${view.relationshipLabel}`}>
+    <SectionCard icon={ShieldCheck} title={t('smart.section.capa')} subtitle={`${t('smart.section.capaSub')}: ${view.relationshipLabel}`}>
       {view.total === 0 ? (
         <SectionEmpty />
       ) : (
         <>
           <div className="flex flex-wrap gap-1.5">
-            <CountChip label="الإجمالي" count={view.total} tone="info" />
+            <CountChip label={t('smart.col.total')} count={view.total} tone="info" />
             <CountChip label="نشطة" count={view.active} tone="warn" />
             <CountChip label="مغلقة/نهائية" count={view.terminal} tone="good" />
             <CountChip label="متأخرة (SLA النظام)" count={view.overdue} tone="bad" />
@@ -653,14 +672,15 @@ export function CapaSection({ view }: { view: CapaView }) {
 // ─────────────────────────────────────────────────────────────
 
 export function FollowUpsSection({ view }: { view: FollowUpsView }) {
+  const { t } = useLanguage();
   return (
-    <SectionCard icon={ClipboardCheck} title="المتابعات" subtitle="تعريف التوقيت القانوني للنظام كما هو">
+    <SectionCard icon={ClipboardCheck} title={t('smart.section.followUps')} subtitle={t('smart.section.followUpsSub')}>
       {view.total === 0 ? (
         <SectionEmpty />
       ) : (
         <>
           <div className="flex flex-wrap gap-1.5">
-            <CountChip label="الإجمالي" count={view.total} tone="info" />
+            <CountChip label={t('smart.col.total')} count={view.total} tone="info" />
             <CountChip label="مكتملة" count={view.completed} tone="good" />
             <CountChip label="معلّقة (نشطة)" count={view.active} tone="warn" />
             <CountChip label="متأخرة (قاعدة النظام)" count={view.overdue} tone="bad" />
@@ -688,14 +708,15 @@ export function FollowUpsSection({ view }: { view: FollowUpsView }) {
 // ─────────────────────────────────────────────────────────────
 
 export function DealsSection({ view }: { view: DealsView }) {
+  const { t } = useLanguage();
   return (
-    <SectionCard icon={Plane} title="صفقات السفر" subtitle="سياق تشغيلي فقط — بلا حسابات مستهدفات">
+    <SectionCard icon={Plane} title={t('smart.section.deals')} subtitle={t('smart.section.dealsSub')}>
       {view.total === 0 ? (
         <SectionEmpty />
       ) : (
         <>
           <div className="flex flex-wrap gap-1.5">
-            <CountChip label="الإجمالي" count={view.total} tone="info" />
+            <CountChip label={t('smart.col.total')} count={view.total} tone="info" />
           </div>
           <ChipRow chips={view.statusChips} />
           <div className="flex flex-wrap gap-x-6 gap-y-1 text-xs text-slate-400 border-t border-slate-700/40 pt-2">
@@ -714,8 +735,9 @@ export function DealsSection({ view }: { view: DealsView }) {
 // ─────────────────────────────────────────────────────────────
 
 export function AttendanceSection({ view }: { view: AttendanceView }) {
+  const { t } = useLanguage();
   return (
-    <SectionCard icon={Clock} title="الحضور" subtitle="سياقي فقط — خارج KPI الجودة">
+    <SectionCard icon={Clock} title={t('smart.section.attendance')} subtitle={t('smart.section.attendanceSub')}>
       {!view.available ? (
         <p className="text-xs text-slate-500 py-2">
           لا توجد نتيجة شهرية مخزّنة لهذه الفترة (غير متاح — لا يُعرض كصفر)
@@ -850,11 +872,12 @@ export function EvidenceSection({
   onOpenPage: (page: string) => void;
   onViewEvidence: (selection: EvidenceDetailSelection) => void;
 }) {
+  const { t } = useLanguage();
   const totalEvidence = groups.reduce((sum, g) => sum + g.count, 0);
   return (
     <SectionCard
       icon={Link2}
-      title="الأدلة والمراجع (Evidence)"
+      title={t('smart.section.evidence')}
       subtitle={`إجمالي السجلات المرجعية: ${totalEvidence}`}
     >
       <div className="flex flex-wrap gap-1.5">
@@ -930,6 +953,7 @@ export function EvidenceSection({
 // ─────────────────────────────────────────────────────────────
 
 export function DataQualitySection({ view }: { view: DataQualityView }) {
+  const { t } = useLanguage();
   if (!view.hasIssues) return null;
   return (
     <Card data-report-card className="bg-amber-950/20 border-amber-800/40 print:border-amber-400">

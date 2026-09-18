@@ -1,11 +1,24 @@
 // ══════════════════════════════════════════════════════════════
 //  /api/unseen — per-user "new items" summary + mark-seen
 //
-//  GET  → { counts: { [pageId]: number }, serverTime }
-//         NEW = records created AFTER the viewer's last-seen stamp
-//         for that module AND created by someone ELSE, inside the
-//         viewer's employee scope. First visit initializes silently
-//         (no retroactive badge flood): no stored stamp ⇒ 0.
+//  GET  → { counts: { [pageId]: number }, pending: { [pageId]: number },
+//           serverTime }
+//         counts[pageId]  — NEW = records created AFTER the viewer's
+//         last-seen stamp for that module AND created by someone
+//         ELSE, inside the viewer's employee scope. First visit
+//         initializes silently (no retroactive badge flood): no
+//         stored stamp ⇒ 0.
+//         pending.quality — PENDING APPROVAL discounts visible in
+//         the viewer's scope (§APPROVAL-NOTIFY). This is NOT a
+//         "seen" counter — it is an action-needed count for users
+//         holding the quality approve/reject authority, so mark-seen
+//         never clears it (only the decision does).
+//
+//  §UNSEEN-PERMISSION — every module count is gated by the viewer's
+//  EFFECTIVE permission for that page (level !== 'none'): a user
+//  without module access never receives a badge for it. The admin
+//  bypass flows through the same effective map.
+//
 //  POST { page } → stores lastSeenAt=now for that module (O(1)
 //         upsert of the viewer's own tiny state record).
 // ══════════════════════════════════════════════════════════════
@@ -16,6 +29,8 @@ import { getById, createRecordWithId, updateRecord, getAllBatch } from '@/lib/db
 import {
   authScopeViewer, filterRowsByEmployeeScope, resolveEmployeeScopeFromDb,
 } from '@/lib/scope/server';
+import { migratePermission } from '@/config/permissions';
+import { isPendingDeduction, QUALITY_DEDUCTIONS_TABLE } from '@/lib/quality-deductions/domain';
 import { UNSEEN_MONITORED_TABLES, USER_SEEN_STATE_TABLE } from '@/lib/unseen';
 
 /** Employee-linked tables that respect the read scope; every OTHER
@@ -41,6 +56,7 @@ export async function GET(request: NextRequest) {
     // the server's TTL cache, so a summary call usually costs ZERO
     // additional RTDB reads beyond the tiny per-user record.
     const tables = Object.values(UNSEEN_MONITORED_TABLES);
+    if (!tables.includes(QUALITY_DEDUCTIONS_TABLE)) tables.push(QUALITY_DEDUCTIONS_TABLE);
     const [batch, scopeCtx] = await Promise.all([
       getAllBatch(tables),
       resolveEmployeeScopeFromDb(authScopeViewer(auth), undefined, auth.permissions),
@@ -48,6 +64,13 @@ export async function GET(request: NextRequest) {
 
     const counts: Record<string, number> = {};
     for (const [pageId, table] of Object.entries(UNSEEN_MONITORED_TABLES)) {
+      // §UNSEEN-PERMISSION — a module the viewer cannot access never
+      // badges (hiding in the sidebar is not enough; the count is
+      // withheld server-side).
+      if (migratePermission(auth.permissions?.[pageId]).level === 'none') {
+        counts[pageId] = 0;
+        continue;
+      }
       const lastSeenAt = seen?.modules?.[pageId]?.lastSeenAt;
       // No stamp yet → first-ever summary call for this module:
       // report 0 and let the state initialize going forward.
@@ -78,7 +101,28 @@ export async function GET(request: NextRequest) {
       counts[pageId] = n;
     }
 
-    return NextResponse.json({ counts, serverTime: new Date().toISOString() });
+    // ── §APPROVAL-NOTIFY — pending decision counts ──
+    // Users holding the quality approve/reject ACTION see how many
+    // pending discounts await a decision (scope-filtered). Everyone
+    // else gets none — the badge is actionable, not decorative.
+    const pending: Record<string, number> = {};
+    const qualityPerm = migratePermission(auth.permissions?.['quality']);
+    const mayDecide =
+      auth.role === 'admin' ||
+      (qualityPerm.level === 'edit' &&
+        (qualityPerm.actions?.approve === true || qualityPerm.actions?.reject === true));
+    if (mayDecide) {
+      let deductionRows = batch.get(QUALITY_DEDUCTIONS_TABLE) || [];
+      deductionRows = filterRowsByEmployeeScope(
+        deductionRows as Array<{ employeeId?: string | null }>,
+        scopeCtx,
+      );
+      pending['quality'] = (deductionRows as Array<Record<string, unknown>>)
+        .filter((row) => isPendingDeduction(row))
+        .length;
+    }
+
+    return NextResponse.json({ counts, pending, serverTime: new Date().toISOString() });
   } catch (error) {
     console.error('Unseen summary error:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });

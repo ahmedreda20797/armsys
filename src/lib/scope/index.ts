@@ -26,12 +26,21 @@
 //  Anchor semantics (viewer = user with optional linkedEmployeeId):
 //    all        — unrestricted
 //    own        — only the linked employee record
-//    team       — subtree of the linked employee's TEAM node
-//                 (nearest team-type ancestor, else the node itself)
+//    team       — subtree of the viewer's canonical TEAM anchor
+//                 ∪ subtrees of TEAM/SUBTEAM nodes the viewer MANAGES
+//                 The anchor = nearest team-typed ancestor of the
+//                 linked employee's node (the node itself when it is
+//                 team-typed; else the node itself as fallback). A
+//                 managed subteam is a team-level branch (the type
+//                 vocabulary is "vocabulary, not structure").
 //    department — subtree of the linked employee's DEPARTMENT node
 //                 (nearest department-type ancestor, else the node)
-//    subtree    — union of subtrees of nodes the viewer MANAGES
+//                 ∪ subtrees of DEPARTMENT nodes the viewer MANAGES
+//    subtree    — subtree of the viewer's OWN organization node
+//                 ∪ subtrees of nodes the viewer MANAGES
 //                 (managerUserId === viewer.userId) ∪ own
+//                 (§SUBTREE = own node + descendants; §MANAGED-BRANCHES
+//                 = managed nodes — both resolve here)
 //    assigned   — employees with an active assignment to the viewer
 //                 (caller-supplied) ∪ own
 //
@@ -138,11 +147,28 @@ export function resolveEmployeeScope(
 
     case 'team':
     case 'department': {
+      const anchorType = scope === 'team' ? 'team' : 'department';
+
+      // §ORG-SCOPE (milestone §18): a manager ASSIGNED to an org node
+      // (node.managerUserId === viewer) resolves that node's subtree —
+      // "assigned to Team A + scope Team → sees Team A" works through
+      // the org tree assignment itself, even when the manager is not
+      // an employee INSIDE that team. A managed SUBTEAM node is a
+      // team-level branch (type vocabulary, not structure) and
+      // matches the team anchor too.
+      for (const node of index.byId.values()) {
+        const typeMatches =
+          node.type === anchorType || (anchorType === 'team' && node.type === 'subteam');
+        if (node.managerUserId === viewer.userId && typeMatches) {
+          for (const id of employeeIdsInSubtree(index, node.id, byNode)) ids.add(id);
+        }
+      }
+
+      // Viewer's own org anchor: the nearest {team|department}-type
+      // ancestor of the linked employee's node (subteams roll up).
       if (employeeNode) {
         const anchor =
-          scope === 'team'
-            ? findAncestorOfType(index, employeeNode, 'team') ?? index.byId.get(employeeNode) ?? null
-            : findAncestorOfType(index, employeeNode, 'department') ?? index.byId.get(employeeNode) ?? null;
+          findAncestorOfType(index, employeeNode, anchorType) ?? index.byId.get(employeeNode) ?? null;
         if (anchor) {
           for (const id of employeeIdsInSubtree(index, anchor.id, byNode)) ids.add(id);
         }
@@ -151,11 +177,19 @@ export function resolveEmployeeScope(
     }
 
     case 'subtree': {
-      // Every node the viewer manages — their whole subtree.
+      // §SUBTREE — the viewer's OWN organization node plus all valid
+      // descendants, UNION §MANAGED-BRANCHES — every node the viewer
+      // manages (their whole subtree). A user who manages no nodes
+      // still resolves their own node's subtree — never a silent
+      // downgrade to 'own'; a user with no resolvable node keeps the
+      // fail-closed minimum.
       for (const node of index.byId.values()) {
         if (node.managerUserId === viewer.userId) {
           for (const id of employeeIdsInSubtree(index, node.id, byNode)) ids.add(id);
         }
+      }
+      if (employeeNode) {
+        for (const id of employeeIdsInSubtree(index, employeeNode, byNode)) ids.add(id);
       }
       break;
     }

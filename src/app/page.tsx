@@ -7,6 +7,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { AuthProvider, useAuth } from '@/contexts/AuthContext';
 import { NotificationProvider } from '@/contexts/NotificationContext';
 import { useAppStore } from '@/lib/store';
+import { LanguageProvider } from '@/lib/i18n/language-context';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { usePermissions } from '@/hooks/usePermissions';
 import { APP_PAGES } from '@/config/permissions';
@@ -52,11 +53,12 @@ const ComplaintsPage       = dynamic(() => import('@/components/pages/Complaints
 const KnowledgeBasePage    = dynamic(() => import('@/components/pages/KnowledgeBasePage'),    { loading: () => <PageSkeleton />, ssr: false });
 const RiskCenterPage       = dynamic(() => import('@/components/pages/RiskCenterPage'),       { loading: () => <PageSkeleton />, ssr: false });
 const OperationsCenterPage = dynamic(() => import('@/components/pages/OperationsCenterPage'), { loading: () => <PageSkeleton />, ssr: false });
-const NotificationCenterPage = dynamic(() => import('@/components/pages/NotificationCenterPage'), { loading: () => <PageSkeleton />, ssr: false });
 const RulesEnginePage      = dynamic(() => import('@/components/pages/RulesEnginePage'),      { loading: () => <PageSkeleton />, ssr: false });
 const WorkflowDesignerPage = dynamic(() => import('@/components/pages/workflow-designer/WorkflowDesignerPage'), { loading: () => <PageSkeleton />, ssr: false });
 const QualityDeductionsReportPage = dynamic(() => import('@/components/pages/reports/QualityDeductionsReport'), { loading: () => <PageSkeleton />, ssr: false });
 const OrganizationPage     = dynamic(() => import('@/components/pages/organization/OrganizationPage'),          { loading: () => <PageSkeleton />, ssr: false });
+const SettingsPage         = dynamic(() => import('@/components/pages/SettingsPage'),                           { loading: () => <PageSkeleton />, ssr: false });
+const ProfilePage          = dynamic(() => import('@/components/pages/ProfilePage'),                            { loading: () => <PageSkeleton />, ssr: false });
 // ── Quality KPI (Phase 1) ──
 const ObservationsPage         = dynamic(() => import('@/components/pages/quality-kpi/ObservationsPage'),         { loading: () => <PageSkeleton />, ssr: false });
 const ObservationCategoriesPage = dynamic(() => import('@/components/pages/quality-kpi/ObservationCategoriesPage'), { loading: () => <PageSkeleton />, ssr: false });
@@ -96,7 +98,7 @@ function PreloadPages() {
 function AccessDenied() {
   const pageConfig = APP_PAGES.find((p) => p.id === useAppStore.getState().currentPage);
   return (
-    <div dir="rtl" className="flex flex-col items-center justify-center py-24">
+    <div className="flex flex-col items-center justify-center py-24">
       <div className="w-20 h-20 rounded-2xl bg-red-500/10 border border-red-500/20 flex items-center justify-center mb-6">
         <ShieldX className="w-10 h-10 text-red-400" />
       </div>
@@ -128,7 +130,15 @@ function PageRouter() {
   const currentPage = useAppStore((s) => s.currentPage);
   const { canViewPage } = usePermissions();
 
-  if (currentPage !== 'home' && !canViewPage(currentPage)) {
+  // §USER-PROFILE — 'profile' is admitted like 'home': every
+  // authenticated user owns their profile, and /api/profile is
+  // self-scoped server-side (requireAuth), so there is nothing to
+  // escalate. Everything else stays permission-gated.
+  if (
+    currentPage !== 'home' &&
+    currentPage !== 'profile' &&
+    !canViewPage(currentPage)
+  ) {
     return <AccessDenied key="access-denied" />;
   }
 
@@ -155,13 +165,17 @@ function renderPage(currentPage: string): React.ReactNode {
     case 'qualityDeductionsReport': return <QualityDeductionsReportPage key="qualityDeductionsReport" />;
     case 'controlPanel':     return <ControlPanelPage     key="controlPanel" />;
     case 'organization':     return <OrganizationPage     key="organization" />;
+    case 'settings':         return <SettingsPage         key="settings" />;
+    case 'profile':          return <ProfilePage          key="profile" />;
     case 'followUps':        return <FollowUpsPage        key="followUps" />;
     case 'capa':             return <CAPAPage             key="capa" />;
     case 'complaints':       return <ComplaintsPage       key="complaints" />;
     case 'knowledgeBase':    return <KnowledgeBasePage    key="knowledgeBase" />;
     case 'riskCenter':       return <RiskCenterPage       key="riskCenter" />;
     case 'operationsCenter': return <OperationsCenterPage key="operationsCenter" />;
-    case 'notifications':    return <NotificationCenterPage key="notifications" />;
+    // §NOTIFICATIONS-V2: no 'notifications' case — the standalone page
+    // was removed; store.navigateTo intercepts the id and opens the
+    // Header bell panel instead.
     case 'rulesEngine':      return <RulesEnginePage      key="rulesEngine" />;
     case 'workflowDesigner': return <WorkflowDesignerPage key="workflowDesigner" />;
     // ── Quality KPI (Phase 1) ──
@@ -213,7 +227,8 @@ function AppContent() {
 // ─── Root ─────────────────────────────────────────────────────────────────────
 export default function Home() {
   return (
-    <AuthProvider>
+    <LanguageProvider>
+      <AuthProvider>
       {/*
        * AppShell mounts once. It owns:
        *   - PersistentBackground (z-0, React.memo, never re-renders)
@@ -225,6 +240,7 @@ export default function Home() {
       <AppShell>
         <AppContent />
       </AppShell>
-    </AuthProvider>
+      </AuthProvider>
+    </LanguageProvider>
   );
 }

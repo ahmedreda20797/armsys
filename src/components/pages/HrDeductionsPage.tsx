@@ -48,7 +48,11 @@ import {
   ShieldAlert,
   Loader2,
   CalendarDays,
+  Archive,
 } from 'lucide-react';
+import { toast } from 'sonner';
+import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
+import { SmartActionMenu } from '@/components/shared/SmartActionMenu';
 import { EmployeeSearchInput } from '@/components/shared/EmployeeSearchInput';
 import type { HrDeduction, Employee } from '@/types';
 import { useAppStore } from '@/lib/store';
@@ -123,6 +127,7 @@ export default function HrDeductionsPage() {
   // bumped to 2: the shape grows monthFilter and old state orphans
   // cleanly instead of silently missing the field.
   const [hrView, setHrView] = usePageState<{
+    showArchived?: boolean;
     search: string;
     statusFilter: 'all' | 'pending' | 'approved' | 'rejected';
     monthFilter: string;
@@ -144,6 +149,9 @@ export default function HrDeductionsPage() {
     setHrView((s) => ({ ...s, statusFilter: v }));
   const monthFilter = hrView.monthFilter;
   const setMonthFilter = (v: string) => setHrView((s) => ({ ...s, monthFilter: v }));
+  // §ARCHIVE — optional historical view of archived HR deductions.
+  const showArchived = hrView.showArchived === true;
+  const setShowArchived = (v: boolean) => setHrView((s) => ({ ...s, showArchived: v }));
   // Phase 6.1 (Global Search §8): exact-record deep-link highlight via
   // the shared evidence mechanism — records carry data-record-id below.
   useRecordHighlight({ ready: !loading });
@@ -161,7 +169,7 @@ export default function HrDeductionsPage() {
   useEffect(() => {
     fetchData();
     // System users for the inline CAPA form (assigned-to field).
-    authFetch('/api/dashboard/users')
+    authFetch('/api/dashboard/users?basic=1')
       .then((r) => (r.ok ? r.json() : []))
       .then((list) => setSystemUsers(Array.isArray(list) ? list : []))
       .catch(() => setSystemUsers([]));
@@ -170,7 +178,7 @@ export default function HrDeductionsPage() {
   async function fetchData() {
     try {
       const [dedRes, empRes] = await Promise.all([
-        authFetch('/api/hr-deductions'),
+        authFetch(`/api/hr-deductions${showArchived ? '?includeArchived=1' : ''}`),
         authFetch('/api/employees'),
       ]);
       if (dedRes.ok) {
@@ -264,14 +272,48 @@ export default function HrDeductionsPage() {
     }
   };
 
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [archivingId, setArchivingId] = useState<string | null>(null);
+  const [archiveLoading, setArchiveLoading] = useState(false);
+  const [deleteLoading, setDeleteLoading] = useState(false);
+
+  // §ARCHIVE — archive/restore an HR deduction (audited server-side).
+  // Archived = historical: excluded from every active total.
+  const handleArchive = async (id: string, archived: boolean) => {
+    setArchiveLoading(true);
+    try {
+      const res = await authFetch(`/api/hr-deductions/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ archived }),
+      });
+      if (res.ok) {
+        toast.success(archived ? 'تم أرشفة الخصم — لن يأثر على الإجماليات النشطة' : 'تم استعادة الخصم من الأرشيف');
+        setArchivingId(null);
+        await fetchData();
+      } else {
+        const data = await res.json().catch(() => null);
+        toast.error(data?.error || 'تعذّر تغيير حالة الأرشيف');
+      }
+    } catch {
+      toast.error('تعذّر الاتصال بالخادم');
+    } finally {
+      setArchiveLoading(false);
+    }
+  };
+
   const handleDelete = async (id: string) => {
+    setDeleteLoading(true);
     try {
       const res = await authFetch(`/api/hr-deductions/${id}`, { method: 'DELETE' });
       if (res.ok) {
+        setDeletingId(null);
         await fetchData();
       }
     } catch {
       // Error handled silently
+    } finally {
+      setDeleteLoading(false);
     }
   };
 
@@ -348,13 +390,13 @@ export default function HrDeductionsPage() {
   ];
 
   return (
-    <div dir="rtl" className="space-y-6">
+    <div className="space-y-6">
       {/* Header (§25/§26 — sticky, primary action always accessible) */}
       <PageHeaderBar
         icon={<Banknote className="size-5" />}
-        iconClassName="bg-violet-500/15 border-violet-500/30 text-violet-400"
+        iconClassName="bg-brand-500/15 border-brand-500/30 text-brand-400"
         title="خصومات الموارد البشرية"
-        subtitle={`${allPendingCount} خصم معلق`}
+        description={`${allPendingCount} خصم معلق`}
         extras={
           <PagePeriodIndicator
             testId="hr-period-indicator"
@@ -392,6 +434,20 @@ export default function HrDeductionsPage() {
             ))}
           </SelectContent>
         </Select>
+        {/* §ARCHIVE — optional historical view */}
+        <button
+          type="button"
+          onClick={() => setShowArchived(!showArchived)}
+          aria-pressed={showArchived}
+          className={`inline-flex items-center gap-1.5 px-3 h-10 rounded-lg border text-xs font-medium transition-colors ${
+            showArchived
+              ? 'bg-brand-500/15 text-brand-300 border-brand-500/30'
+              : 'bg-slate-800/50 text-slate-400 border-slate-700/50 hover:text-slate-200'
+          }`}
+        >
+          <Archive className="size-3.5" />
+          المؤرشفة
+        </button>
       </div>
 
       {/* Filter Tabs */}
@@ -404,7 +460,7 @@ export default function HrDeductionsPage() {
             onClick={() => setStatusFilter(tab.key)}
             className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-all duration-200 ${
               statusFilter === tab.key
-                ? 'from-violet-600 to-indigo-600 text-white shadow-lg shadow-violet-900/30'
+                ? 'from-brand-600 to-brand-700 text-white shadow-lg shadow-brand-900/30'
                 : 'bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-white border border-slate-700/50'
             }`}
           >
@@ -462,7 +518,7 @@ export default function HrDeductionsPage() {
                           <div className="flex items-center gap-3 mb-2 flex-wrap">
                             <EmployeeLink employeeId={ded.employeeId} name={ded.employeeName} compact />
                             <Badge className="bg-slate-600/40 text-slate-300 border-slate-500/30">{ded.type}</Badge>
-                            <span className="text-violet-400 font-semibold text-sm" dir="ltr">
+                            <span className="text-brand-400 font-semibold text-sm" dir="ltr">
                               {ded.amount} {getUnitLabel(ded.unit)}
                             </span>
                             <span className="text-slate-500 text-sm">{MONTH_OPTIONS.find((m) => m.value === ded.month)?.label || ded.month}</span>
@@ -507,15 +563,15 @@ export default function HrDeductionsPage() {
                               </Button>
                             </>
                           )}
+                          {/* §2 — SmartActionMenu (primary decision buttons stay visible);
+                              delete requires confirmation (§20) */}
                           {canDelete && (
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => handleDelete(ded.id)}
-                              className="border-red-500/30 text-red-400 hover:bg-red-500/10"
-                            >
-                              <Trash2 className="size-3.5" />
-                            </Button>
+                            <SmartActionMenu
+                              actions={[
+                                { key: 'archive', label: (ded as any).archived ? 'استعادة من الأرشيف' : 'أرشفة', icon: <Archive className="size-3.5" />, onSelect: () => ((ded as any).archived ? void handleArchive(ded.id, false) : setArchivingId(ded.id)), hidden: !canUpdate },
+                                { key: 'delete', label: 'حذف', icon: <Trash2 className="size-3.5" />, destructive: true, onSelect: () => setDeletingId(ded.id) },
+                              ]}
+                            />
                           )}
                         </div>
                       </div>
@@ -580,53 +636,18 @@ export default function HrDeductionsPage() {
                                 <CAPALinkBadge capaId={(ded as any).relatedCapaId} compact />
                               </div>
                             )}
-                            {canUpdate && canCreateCapa && !(ded as any).relatedCapaId && ded.status === 'approved' && (
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                onClick={() => {
-                                  // §12 GLOBAL INLINE FORM STANDARD — open the CAPA form
-                                  // INLINE on this page (prefilled from the violation);
-                                  // the user never leaves HR Deductions.
-                                  setCapaPrefill({
-                                    title: `مخالفة HR — ${ded.type}`,
-                                    department: '',
-                                    priority: ded.amount >= 3 ? 'high' : 'medium',
-                                    employeeId: ded.employeeId,
-                                    problemDescription: ded.reason,
-                                    source: 'automation',
-                                    relatedHrDeductionId: ded.id,
-                                  });
-                                  requestAnimationFrame(() => {
-                                    document.getElementById('hr-inline-capa')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                                  });
-                                }}
-                                className="text-cyan-400/60 hover:text-cyan-300 hover:bg-cyan-500/10"
-                                title="إنشاء CAPA من هذه المخالفة"
-                              >
-                                <ShieldAlert className="size-3.5" />
-                              </Button>
-                            )}
-                            {canUpdate && (
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                onClick={() => openEditDialog(ded)}
-                                className="text-slate-400 hover:text-violet-400 hover:bg-violet-500/10"
-                              >
-                                <Pencil className="size-3.5" />
-                              </Button>
-                            )}
-                            {canDelete && (
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                onClick={() => handleDelete(ded.id)}
-                                className="text-slate-400 hover:text-red-400 hover:bg-red-500/10"
-                              >
-                                <Trash2 className="size-3.5" />
-                              </Button>
-                            )}
+                            {/* §20 — ALL row actions live inside the ONE
+                                SmartActionMenu; the duplicate external CAPA
+                                button was removed. Delete now requires the
+                                unified ConfirmDialog (no accidental deletes). */}
+                            <SmartActionMenu
+                              actions={[
+                                { key: 'capa', label: 'إنشاء CAPA من هذه المخالفة', icon: <ShieldAlert className="size-3.5" />, onSelect: () => requestAnimationFrame(() => { document.getElementById('hr-inline-capa')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }), hidden: !(canCreateCapa && !(ded as any).relatedCapaId && ded.status === 'approved') },
+                                { key: 'edit', label: 'تعديل', icon: <Pencil className="size-3.5" />, onSelect: () => openEditDialog(ded), hidden: !canUpdate },
+                                { key: 'archive', label: (ded as any).archived ? 'استعادة من الأرشيف' : 'أرشفة', icon: <Archive className="size-3.5" />, onSelect: () => ((ded as any).archived ? void handleArchive(ded.id, false) : setArchivingId(ded.id)), hidden: !canUpdate },
+                                { key: 'delete', label: 'حذف', icon: <Trash2 className="size-3.5" />, destructive: true, onSelect: () => setDeletingId(ded.id), hidden: !canDelete },
+                              ]}
+                            />
                           </div>
                         </TableCell>
                       </TableRow>
@@ -639,6 +660,27 @@ export default function HrDeductionsPage() {
       </div>
       )}
 
+      {/* §ARCHIVE — archive confirmation (not destructive: history kept) */}
+      <ConfirmDialog
+        open={!!archivingId}
+        onOpenChange={(o) => { if (!o) setArchivingId(null); }}
+        title="أرشفة الخصم"
+        description="الخصم المؤرشف يصبح سجلاً تاريخياً: لن يحسب في الإجماليات النشطة أو مؤشرات KPI الحالية، ويبقى قابلاً للتدقيق في الأرشيف."
+        confirmLabel="أرشفة"
+        destructive={false}
+        loading={archiveLoading}
+        onConfirm={async () => { if (archivingId) await handleArchive(archivingId, true); }}
+      />
+
+      {/* §20 — delete REQUIRES confirmation (no accidental deletes) */}
+      <ConfirmDialog
+        open={!!deletingId}
+        onOpenChange={(o) => { if (!o) setDeletingId(null); }}
+        description="سيتم حذف خصم الموارد البشرية نهائياً من النظام."
+        loading={deleteLoading}
+        onConfirm={async () => { if (deletingId) await handleDelete(deletingId); }}
+      />
+
       {/* ━━━ §12 INLINE CAPA FORM — opens here (prefilled from the
           approved HR violation) instead of navigating to the CAPA page. ━━━ */}
       <AnimatePresence>
@@ -646,7 +688,7 @@ export default function HrDeductionsPage() {
           <InlineFormPanel
             id="hr-inline-capa"
             tone="violet"
-            icon={<ShieldAlert className="size-3.5 text-violet-400" />}
+            icon={<ShieldAlert className="size-3.5 text-brand-400" />}
             title="إنشاء CAPA من مخالفة HR"
             onClose={() => setCapaPrefill(null)}
           >
@@ -778,7 +820,7 @@ export default function HrDeductionsPage() {
             <Button
               onClick={handleAdd}
               disabled={saving || !addForm.employeeId || !addForm.amount || !addForm.month || !addForm.reason}
-              className="bg-linear-to-r from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white h-9 px-5 shadow-lg shadow-violet-500/20 transition-all"
+              className="bg-linear-to-r from-brand-600 to-brand-700 hover:from-brand-700 hover:to-brand-800 text-white h-9 px-5 shadow-lg shadow-brand-500/20 transition-all"
             >
               {saving ? 'جاري الحفظ...' : 'إضافة'}
             </Button>
@@ -890,7 +932,7 @@ export default function HrDeductionsPage() {
             <Button
               onClick={handleEdit}
               disabled={saving || !editForm.amount || !editForm.reason}
-              className="bg-linear-to-r from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white h-9 px-5 shadow-lg shadow-violet-500/20 transition-all"
+              className="bg-linear-to-r from-brand-600 to-brand-700 hover:from-brand-700 hover:to-brand-800 text-white h-9 px-5 shadow-lg shadow-brand-500/20 transition-all"
             >
               {saving ? 'جاري الحفظ...' : 'حفظ التعديلات'}
             </Button>

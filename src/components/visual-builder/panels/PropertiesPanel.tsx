@@ -85,7 +85,7 @@ export const PropertiesPanel = memo(function PropertiesPanel({
             className={cn(
               'flex items-center gap-1 px-2.5 py-2 text-[10px] font-medium whitespace-nowrap transition-colors border-b-2 -mb-px',
               activeTab === id
-                ? 'border-violet-500 text-violet-300'
+                ? 'border-brand-500 text-brand-300'
                 : 'border-transparent text-slate-500 hover:text-slate-300'
             )}
           >
@@ -124,12 +124,12 @@ export const PropertiesPanel = memo(function PropertiesPanel({
 
 function GeneralTab({ node, onUpdate }: { node: VBNode; onUpdate: (id: string, data: Partial<VBNode['data']>) => void }) {
   return (
-    <div className="space-y-4" dir="rtl">
+    <div className="space-y-4">
       <Field label="الاسم">
         <input
           value={node.data.label}
           onChange={(e) => onUpdate(node.id, { label: e.target.value })}
-          className="w-full bg-slate-800/60 border border-slate-700/50 rounded-lg px-3 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-violet-500/50"
+          className="w-full bg-slate-800/60 border border-slate-700/50 rounded-lg px-3 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-brand-500/50"
         />
       </Field>
       <Field label="الوصف">
@@ -137,7 +137,7 @@ function GeneralTab({ node, onUpdate }: { node: VBNode; onUpdate: (id: string, d
           value={node.data.description ?? ''}
           onChange={(e) => onUpdate(node.id, { description: e.target.value })}
           rows={2}
-          className="w-full bg-slate-800/60 border border-slate-700/50 rounded-lg px-3 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-violet-500/50 resize-none"
+          className="w-full bg-slate-800/60 border border-slate-700/50 rounded-lg px-3 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-brand-500/50 resize-none"
         />
       </Field>
       <Field label="النوع">
@@ -169,12 +169,12 @@ function VariablesTab({ variables }: { variables: WorkflowVariable[] }) {
   const filtered = variables.filter((v) => !search || v.name.toLowerCase().includes(search.toLowerCase()));
 
   return (
-    <div className="space-y-3" dir="rtl">
+    <div className="space-y-3">
       <input
         value={search}
         onChange={(e) => setSearch(e.target.value)}
         placeholder="بحث في المتغيرات..."
-        className="w-full bg-slate-800/60 border border-slate-700/50 rounded-lg px-3 py-1.5 text-xs text-slate-200 placeholder:text-slate-500 focus:outline-none focus:border-violet-500/50"
+        className="w-full bg-slate-800/60 border border-slate-700/50 rounded-lg px-3 py-1.5 text-xs text-slate-200 placeholder:text-slate-500 focus:outline-none focus:border-brand-500/50"
       />
       {filtered.length === 0 && (
         <p className="text-xs text-slate-500 text-center py-4">لا توجد متغيرات</p>
@@ -183,7 +183,7 @@ function VariablesTab({ variables }: { variables: WorkflowVariable[] }) {
         <div key={v.id} className="p-2.5 rounded-lg bg-slate-800/40 border border-slate-700/30">
           <div className="flex items-center justify-between mb-1">
             <span className="text-xs font-medium text-slate-200 font-mono">{v.name}</span>
-            <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-violet-600/20 text-violet-400 border border-violet-500/20">
+            <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-brand-600/20 text-brand-400 border border-brand-500/20">
               {SCOPE_LABELS[v.scope] ?? v.scope}
             </span>
           </div>
@@ -210,7 +210,7 @@ function ValidationTab({
   const allGlobalWarnings = globalWarnings.filter((w) => !w.nodeId);
 
   return (
-    <div className="space-y-3" dir="rtl">
+    <div className="space-y-3">
       {errors.length === 0 && warnings.length === 0 && allGlobalErrors.length === 0 && allGlobalWarnings.length === 0 && (
         <div className="flex flex-col items-center py-8 text-emerald-500">
           <AlertCircle className="w-8 h-8 opacity-40 mb-2" />

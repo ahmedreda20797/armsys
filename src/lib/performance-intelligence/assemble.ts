@@ -40,6 +40,11 @@ export interface AssembleEmployeePerformanceDatasetInput {
   minOccurrences?: number;
   /** Loaded canonical inputs (service or tests provide these). */
   identity: EmployeeIdentityRecord | null;
+  /**
+   * The employee's team resolved from the ORGANIZATION TREE by the
+   * caller (service). Null when unassigned — never invented here.
+   */
+  orgTeam?: string | null;
   kpiReport: EmployeeKpiReport;
   observations: ReadonlyArray<QualityObservation>;
   deductions: ReadonlyArray<QualityDeduction>;
@@ -58,9 +63,11 @@ export interface AssembleEmployeePerformanceDatasetInput {
 function buildIdentityFacts(args: {
   employeeId: string;
   identity: EmployeeIdentityRecord | null;
+  /** Org-tree team label resolved by the service (null when unassigned). */
+  orgTeam: string | null;
   kpiReport: EmployeeKpiReport;
 }): EmployeeIdentityFacts {
-  const { employeeId, identity, kpiReport } = args;
+  const { employeeId, identity, orgTeam, kpiReport } = args;
   const eligible =
     kpiReport.outcomeStatus !== 'NOT_ELIGIBLE_PERIOD' && kpiReport.outcomeStatus !== 'EMPLOYEE_NOT_FOUND';
 
@@ -70,6 +77,7 @@ function buildIdentityFacts(args: {
       employeeName: kpiReport.employee.employeeName,
       employeeCode: kpiReport.employee.employeeCode,
       department: kpiReport.employee.department,
+      team: null,
       position: kpiReport.employee.position,
       employmentStatus: 'unknown',
       eligibleForPeriod: eligible,
@@ -89,6 +97,7 @@ function buildIdentityFacts(args: {
     employeeName: identity.name,
     employeeCode: identity.code,
     department: identity.department,
+    team: orgTeam,
     position: identity.position,
     employmentStatus: status,
     eligibleForPeriod: eligible,
@@ -254,7 +263,12 @@ export function assembleEmployeePerformanceDataset(
 
   return {
     datasetKind: 'EMPLOYEE_PERFORMANCE_INTELLIGENCE',
-    employee: buildIdentityFacts({ employeeId, identity: input.identity, kpiReport: input.kpiReport }),
+    employee: buildIdentityFacts({
+      employeeId,
+      identity: input.identity,
+      orgTeam: input.orgTeam ?? null,
+      kpiReport: input.kpiReport,
+    }),
     period: {
       monthKey,
       valueBasis: input.kpiReport.period.valueBasis,

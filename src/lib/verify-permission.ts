@@ -4,8 +4,16 @@
 
 import { getById } from '@/lib/db';
 import { parsePositionTemplate, POSITIONS_TABLE } from '@/lib/organization';
-import type { ActionKey, PagePermission, PermissionLevel, PermissionsMap } from '@/config/permissions';
-import { migratePermission, resolveEffectivePermissions } from '@/config/permissions';
+import type {
+  ActionKey, DataScope, FieldAccess, PagePermission, PermissionLevel,
+  PermissionsMap, ScopeResolutionSource, AccessSource,
+} from '@/config/permissions';
+import {
+  FAIL_CLOSED_SCOPE,
+  explainAuthorization, explainScopeResolution,
+  migratePermission, resolveFieldAccess, resolveSectionAccess,
+  resolveEffectivePermissions,
+} from '@/config/permissions';
 import { authenticateRequestAsync } from '@/lib/auth';
 
 export interface VerifyResult {
@@ -45,6 +53,14 @@ export interface AuthenticatedCaller {
   permissions: PermissionsMap;
   linkedEmployeeId?: string | null;
   positionId?: string | null;
+  /**
+   * RAW permission tiers the effective map was resolved from — kept
+   * (optional, additive) so authorize() can produce a TRUE tier trace
+   * instead of guessing from the merged map. Never used for the
+   * decision itself: the decision reads only the effective map.
+   */
+  storedPermissions?: Record<string, unknown> | null;
+  positionTemplate?: Record<string, unknown> | null;
 }
 
 /**
@@ -85,73 +101,278 @@ export async function authenticateFromRequest(request: Request): Promise<Authent
     permissions,
     linkedEmployeeId: user.linkedEmployeeId ?? null,
     positionId: user.positionId ?? null,
+    storedPermissions: stored,
+    positionTemplate,
   };
+}
+
+// ══════════════════════════════════════════════════════════════
+//  CANONICAL AUTHORIZATION — authorize()
+//
+//  THE single decision function of the authorization architecture:
+//
+//    authenticate → effective permissions → page → section →
+//    action → field → (data scope / record checks stay with the
+//    canonical scope engine at the route layer) → allow/deny
+//
+//  Every gate composes from ONE vocabulary (PermissionLevel,
+//  ActionKey, PagePermission.sections) and ONE resolver
+//  (resolveEffectivePermissions). There is no second permission
+//  engine and no role-name logic: the admin bypass is the only
+//  role-based rule and it lives HERE (and in the scope engine's
+//  explainScopeResolution — the same single tier, mirrored).
+//
+//  PRECEDENCE (documented contract, §deny-beats-grant): the stored
+//  per-user override tier always wins — an explicit stored 'none'
+//  level or an explicit actions flag of false is a valid RESTRICTION
+//  that outranks broader position/role grants. A narrower direct
+//  restriction is never accidentally overridden by a broader
+//  inherited grant, because the entry (including its actions map)
+//  is replaced wholesale by the winning tier.
+//
+//  DATA SCOPE is reported on the decision (scope + scopeSource) but
+//  is NOT an allow/deny gate here: scope filters WHICH records a
+//  granted operation may touch, and its canonical resolver is
+//  resolveEmployeeScope / resolvePageScope (src/lib/scope) — a
+//  second scope decision here would fork the architecture.
+// ══════════════════════════════════════════════════════════════
+
+/** What is being authorized — any combination of page/section/action/field. */
+export interface AuthorizeInput {
+  /** Page permission key (APP_PAGES.permissionKey). */
+  page: string;
+  /** 'view' | 'edit' pseudo-actions or a concrete ActionKey. */
+  action?: ActionKey | 'view' | 'edit';
+  /** Section id (PAGE_SECTIONS) — gates the whole request when denied. */
+  section?: string;
+  /** Field name — hidden sensitive fields deny the request. */
+  field?: string;
+}
+
+/** Machine-readable decision of the canonical authorizer. */
+export interface AuthorizationDecision {
+  allowed: boolean;
+  /** Human-readable Arabic reason (also the API error text on denial). */
+  reason: string;
+  /** Stable machine key of the deciding rule (e.g. 'page:none'). */
+  matchedRule: string;
+  page: string;
+  request: AuthorizeInput;
+  effectiveLevel: PermissionLevel;
+  /** Configured scope for the page + where it came from. */
+  scope: DataScope;
+  scopeSource: ScopeResolutionSource;
+  /** The tier that produced the effective level. */
+  source: AccessSource;
+  isAdminBypass: boolean;
+  /** Present when input.section was requested. */
+  sectionLevel?: PermissionLevel;
+  /** Present when input.field was requested. */
+  fieldAccess?: FieldAccess;
+  /** Full tier-traced explanation from the SAME resolver (no divergence). */
+  explanation: ReturnType<typeof explainAuthorization>;
+}
+
+/**
+ * Authorize an ALREADY-AUTHENTICATED caller against a page (+
+ * optional section/action/field). Pure over the loaded effective
+ * map — no database reads, safe to call per-element. The raw tiers
+ * on the caller (optional) feed the explanation trace; absent tiers
+ * degrade only the TRACE, never the decision.
+ */
+export function authorize(caller: AuthenticatedCaller, input: AuthorizeInput): AuthorizationDecision {
+  const pageKey = input.page;
+  const isAdmin = caller.role === 'admin';
+
+  // The explanation runs through the SAME resolver chain the decision
+  // reads (resolveEffectivePermissions → explainPageAccess →
+  // explainScopeResolution → resolveSectionAccess → canDoAction).
+  const explanation = explainAuthorization(
+    caller.role,
+    caller.storedPermissions ?? null,
+    pageKey,
+    caller.positionTemplate ?? null,
+  );
+
+  const perm: PagePermission = migratePermission(caller.permissions[pageKey]);
+  const scopeResolution = explainScopeResolution(caller.permissions, pageKey, caller.role);
+  const base = {
+    page: pageKey,
+    request: input,
+    effectiveLevel: perm.level,
+    scope: scopeResolution.scope,
+    scopeSource: scopeResolution.source,
+    source: explanation.winner,
+    isAdminBypass: isAdmin,
+    explanation,
+  };
+
+  // Admin bypass — the ONE role-based rule in the architecture.
+  if (isAdmin) {
+    return { allowed: true, reason: 'مسموح — مدير النظام', matchedRule: 'admin-bypass', ...base };
+  }
+
+  // 1. PAGE gate: level 'none' denies everything on the page.
+  if (perm.level === 'none') {
+    return { allowed: false, reason: 'صلاحية غير كافية', matchedRule: 'page:none', ...base };
+  }
+
+  // 2. SECTION gate: a denied section withholds the request. When an
+  //    action accompanies the section, the section must ALSO be at
+  //    page-edit ceiling (mutations are never implied by page edit on
+  //    a section restricted to read).
+  let sectionLevel: PermissionLevel | undefined;
+  if (input.section !== undefined) {
+    sectionLevel = resolveSectionAccess(caller.permissions, pageKey, input.section);
+    if (sectionLevel === 'none') {
+      return {
+        allowed: false, reason: 'صلاحية غير كافية لهذا القسم',
+        matchedRule: 'section:none', sectionLevel, ...base,
+      };
+    }
+  }
+
+  // 3. ACTION gate. 'view' passes on the page/section gates; 'edit'
+  //    requires page level edit; a concrete ActionKey requires page
+  //    level edit AND the explicit flag in the effective actions map
+  //    (absent flag = denied — fail-closed).
+  if (input.action === 'edit') {
+    if (perm.level !== 'edit') {
+      return {
+        allowed: false, reason: 'صلاحية غير كافية - يتطلب صلاحية تعديل',
+        matchedRule: 'edit:page-not-edit', sectionLevel, ...base,
+      };
+    }
+  } else if (input.action !== undefined && input.action !== 'view') {
+    const action = input.action;
+    if (perm.level !== 'edit') {
+      return {
+        allowed: false, reason: `صلاحية غير كافية لتنفيذ ${action}`,
+        matchedRule: 'action:page-not-edit', sectionLevel, ...base,
+      };
+    }
+    if (sectionLevel !== undefined && sectionLevel !== 'edit') {
+      return {
+        allowed: false, reason: `صلاحية غير كافية لتنفيذ ${action} على هذا القسم`,
+        matchedRule: 'section:not-edit', sectionLevel, ...base,
+      };
+    }
+    if (perm.actions?.[action as ActionKey] !== true) {
+      return {
+        allowed: false, reason: `ليس لديك صلاحية ${action} على هذه الصفحة`,
+        matchedRule: 'action:flag-denied', sectionLevel, ...base,
+      };
+    }
+  }
+
+  // 4. FIELD gate: a hidden sensitive field denies the request —
+  //    client-side hiding is UX, never authorization.
+  let fieldAccess: FieldAccess | undefined;
+  if (input.field !== undefined) {
+    fieldAccess = resolveFieldAccess(caller.permissions, pageKey, input.field);
+    if (fieldAccess === 'hidden') {
+      return {
+        allowed: false, reason: 'ليس لديك صلاحية لعرض هذا الحقل',
+        matchedRule: 'field:hidden', sectionLevel, fieldAccess, ...base,
+      };
+    }
+  }
+
+  const actionLabel = input.action === undefined || input.action === 'view'
+    ? 'العرض'
+    : input.action === 'edit' ? 'التعديل' : input.action;
+  return {
+    allowed: true,
+    reason: `مسموح (${perm.level}) — ${actionLabel} عبر ${explanation.reason}`,
+    matchedRule: 'allow',
+    sectionLevel,
+    fieldAccess,
+    ...base,
+  };
+}
+
+/**
+ * Canonical request-level authorization: authenticate from the Bearer
+ * token, then run the single authorize() decision. Routes that need
+ * page/section/action/field composition in ONE check use this;
+ * verifyPermission remains the compatible adapter for existing gates.
+ */
+export async function authorizeRequest(
+  request: Request,
+  input: AuthorizeInput,
+): Promise<{ caller: AuthenticatedCaller | null; decision: AuthorizationDecision }> {
+  const caller = await authenticateFromRequest(request);
+  if (!caller) {
+    const explanation = explainAuthorization(null, null, input.page, null);
+    return {
+      caller: null,
+      decision: {
+        allowed: false,
+        reason: 'لم يتم المصادقة على المستخدم',
+        matchedRule: 'unauthenticated',
+        page: input.page,
+        request: input,
+        effectiveLevel: 'none',
+        scope: FAIL_CLOSED_SCOPE,
+        scopeSource: 'fail-closed',
+        source: 'default-deny',
+        isAdminBypass: false,
+        explanation,
+      },
+    };
+  }
+  return { caller, decision: authorize(caller, input) };
 }
 
 /**
  * Check if a user has permission for a specific action on a page.
  * Verifies JWT Bearer token from the Authorization header.
+ *
+ * COMPATIBLE ADAPTER over authorize() — the canonical decision. The
+ * denial messages are the exact strings this gate has always
+ * returned, so every existing route and UI keeps its behavior.
  */
 export async function verifyPermission(
   request: Request,
   pageId: string,
   action?: ActionKey | 'view' | 'edit'
 ): Promise<VerifyResult> {
-  // Authenticate via JWT
   const auth = await authenticateFromRequest(request);
 
   if (!auth) {
     return { allowed: false, error: 'لم يتم المصادقة على المستخدم' };
   }
 
-  // Admin always has full access
-  if (auth.role === 'admin') {
-    return {
-      allowed: true,
-      user: { id: auth.userId, role: auth.role, permissions: auth.permissions, linkedEmployeeId: auth.linkedEmployeeId ?? null },
-    };
-  }
-
-  // Get permission for the specific page
-  const raw = auth.permissions[pageId];
-  const perm: PagePermission = migratePermission(raw);
-
-  // Check view permission (level !== 'none')
-  if (action === 'view' || !action) {
-    if (perm.level === 'none') {
-      return { allowed: false, error: 'صلاحية غير كافية' };
-    }
-    return {
-      allowed: true,
-      user: { id: auth.userId, role: auth.role, permissions: auth.permissions, linkedEmployeeId: auth.linkedEmployeeId ?? null },
-    };
-  }
-
-  // Check edit permission
-  if (action === 'edit') {
-    if (perm.level !== 'edit') {
-      return { allowed: false, error: 'صلاحية غير كافية - يتطلب صلاحية تعديل' };
-    }
-    return {
-      allowed: true,
-      user: { id: auth.userId, role: auth.role, permissions: auth.permissions, linkedEmployeeId: auth.linkedEmployeeId ?? null },
-    };
-  }
-
-  // Check specific action permission (create, update, delete, etc.)
-  if (perm.level !== 'edit') {
-    return { allowed: false, error: `صلاحية غير كافية لتنفيذ ${action}` };
-  }
-
-  const actionAllowed = perm.actions?.[action as ActionKey] === true;
-  if (!actionAllowed) {
-    return { allowed: false, error: `ليس لديك صلاحية ${action} على هذه الصفحة` };
+  const decision = authorize(auth, { page: pageId, action });
+  if (!decision.allowed) {
+    return { allowed: false, error: decision.reason };
   }
 
   return {
     allowed: true,
     user: { id: auth.userId, role: auth.role, permissions: auth.permissions, linkedEmployeeId: auth.linkedEmployeeId ?? null },
   };
+}
+
+/**
+ * Action-ALTERNATIVE check: allowed when the caller holds ANY of the
+ * listed actions on the page (e.g. quality reject accepts 'reject'
+ * OR the legacy 'approve' grant so pre-existing approver maps keep
+ * working — §WORKFLOW). Same authentication contract as
+ * verifyPermission; the first listed action wins for the error text.
+ */
+export async function verifyAnyAction(
+  request: Request,
+  pageId: string,
+  actions: ActionKey[],
+): Promise<VerifyResult> {
+  let last: VerifyResult = { allowed: false, error: 'صلاحية غير كافية' };
+  for (const action of actions) {
+    const result = await verifyPermission(request, pageId, action);
+    if (result.allowed) return result;
+    last = result;
+  }
+  return last;
 }
 
 /**

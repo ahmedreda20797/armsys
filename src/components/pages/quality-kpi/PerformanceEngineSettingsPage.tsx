@@ -42,6 +42,9 @@ import {
   Settings2, Save, Shield, TrendingUp, Award, Lock, BarChart3,
   Zap, Scale, Users, ShieldCheck, AlertTriangle, Cog,
 } from 'lucide-react';
+import { PageIdentity } from '@/components/shared/PageIdentity';
+import { authFetch } from '@/lib/api-fetch';
+import type { AutomationStats } from '@/lib/automation/stats';
 import { cn } from '@/lib/utils';
 
 // ─── Trend options ────────────────────────────────────────────
@@ -198,7 +201,7 @@ interface WeightEditorProps {
 function WeightEditor({ form, onChange, disabled, weightTotal, isValid, schemeName }: WeightEditorProps) {
   const weights = [
     { key: 'weightQuality', label: 'الجودة', color: 'text-orange-400', bg: 'bg-orange-500/10' },
-    { key: 'weightDirectManager', label: 'المدير المباشر', color: 'text-violet-400', bg: 'bg-violet-500/10' },
+    { key: 'weightDirectManager', label: 'المدير المباشر', color: 'text-brand-400', bg: 'bg-brand-500/10' },
     { key: 'weightHR', label: 'الموارد البشرية', color: 'text-emerald-400', bg: 'bg-emerald-500/10' },
     { key: 'weightTarget', label: 'المستهدف', color: 'text-cyan-400', bg: 'bg-cyan-500/10' },
   ] as const;
@@ -259,6 +262,24 @@ export default function PerformanceEngineSettingsPage() {
   const [form, setForm] = useState<SettingsForm>(() => toForm(settings, activeScheme));
   const [initialized, setInitialized] = useState(false);
 
+  // §15 AUTOMATION — REAL metrics from /api/rules/stats. Every number
+  // on this page comes from actual execution data; when nothing has
+  // run yet the cards show — / لم يتم التنفيذ بعد (no fake 94%).
+  const [automationStats, setAutomationStats] = useState<AutomationStats | null>(null);
+  const [automationEnabled, setAutomationEnabledState] = useState<boolean | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    authFetch('/api/rules/stats')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (cancelled || !data) return;
+        setAutomationStats(data.stats ?? null);
+        setAutomationEnabledState(data.enabled !== false);
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+
   // After first render, promote to fully-initialized form.
   if (!initialized && settingsData) {
     setForm(toForm(settings, activeScheme));
@@ -267,7 +288,7 @@ export default function PerformanceEngineSettingsPage() {
 
   if (!canView) {
     return (
-      <div dir="rtl" className="flex flex-col items-center justify-center py-24 text-slate-400">
+      <div className="flex flex-col items-center justify-center py-24 text-slate-400">
         <p>ليس لديك صلاحية للوصول إلى هذه الصفحة</p>
       </div>
     );
@@ -319,6 +340,19 @@ export default function PerformanceEngineSettingsPage() {
         });
       }
 
+      // 3) §15 — persist the automation master switch (REAL toggle).
+      if (automationEnabled !== null) {
+        const res = await authFetch('/api/rules/stats', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ enabled: automationEnabled }),
+        });
+        if (!res.ok) {
+          const data = await res.json().catch(() => null);
+          throw new Error(data?.error || 'تعذّر حفظ حالة الأتمتة');
+        }
+      }
+
       toast.success('تم حفظ إعدادات محرك الأداء');
     } catch (e) {
       toast.error('فشل الحفظ', { description: e instanceof Error ? e.message : undefined });
@@ -329,25 +363,21 @@ export default function PerformanceEngineSettingsPage() {
   const loading = settingsLoading || schemesLoading;
 
   return (
-    <div dir="rtl" className="space-y-4 p-4 sm:p-6 max-w-4xl">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-100 flex items-center gap-2">
-            <Settings2 className="size-6 text-blue-400" />
-            إعدادات محرك الأداء
-          </h1>
-          <p className="text-sm text-slate-400 mt-1">
-            تكوين مركزي لمحرك المؤشرات بالكامل — الجودة، الأوزان، الموارد البشرية، الحساب، الأتمتة
-          </p>
-        </div>
-        {canUpdate && (
+    <div className="space-y-4 p-4 sm:p-6 max-w-4xl">
+      {/* §7 — unified page identity */}
+      <PageIdentity
+        pageId="kpiSettings"
+        icon={<Settings2 className="size-5" />}
+        iconClassName="bg-blue-500/15 border-blue-500/30 text-blue-400"
+        title="إعدادات محرك الأداء"
+        description="تكوين مركزي لمحرك المؤشرات بالكامل — الجودة، الأوزان، الموارد البشرية، الحساب، الأتمتة"
+        actions={canUpdate && (
           <Button onClick={handleSave} disabled={!canSave || updateSettings.isPending} className="gap-2">
             <Save className="size-4" />
             {updateSettings.isPending ? 'جارٍ الحفظ...' : 'حفظ التغييرات'}
           </Button>
         )}
-      </div>
+      />
 
       {loading ? (
         <div className="space-y-3">
@@ -406,7 +436,7 @@ export default function PerformanceEngineSettingsPage() {
             title="أوزان مؤشرات الأداء (KPI)"
             description="تكوين أوزان مكونات المخطط النشط — يجب أن يساوي المجموع 100%"
             badge={
-              <Badge variant="outline" className="bg-violet-500/10 text-violet-400 border-violet-500/30 text-[10px]">
+              <Badge variant="outline" className="bg-brand-500/10 text-brand-400 border-brand-500/30 text-[10px]">
                 مخطط: {activeScheme?.name ?? "غير محدد"}
               </Badge>
             }
@@ -484,25 +514,28 @@ export default function PerformanceEngineSettingsPage() {
             <div className="space-y-3">
               <SettingRow icon={Zap} title="تفعيل محرك الأتمتة"
                 description="عند التعطيل، لا يتم تنفيذ أي قاعدة آلية حتى مع كونها نشطة"
-              ><Switch checked={form.automationEnabled} onCheckedChange={v => setForm(f => ({ ...f, automationEnabled: v }))} disabled={!canUpdate} /></SettingRow>
+              ><Switch checked={automationEnabled !== false} onCheckedChange={v => setAutomationEnabledState(v)} disabled={!canUpdate} /></SettingRow>
 
+              {/* §15 — REAL metrics only. — و لم يتم التنفيذ بعد عندما لا يوجد سجل تنفيذ. */}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div className="space-y-1">
                   <Label>قواعد نشطة</Label>
                   <Badge variant="outline" className="bg-blue-500/15 text-blue-400 border-blue-500/30 text-sm">
-                    3 قواعد نشطة
+                    {automationStats ? `${automationStats.active} قواعد نشطة` : '—'}
                   </Badge>
                 </div>
                 <div className="space-y-1">
                   <Label>معدل النجاح</Label>
                   <Badge variant="outline" className="bg-emerald-500/15 text-emerald-400 border-emerald-500/30 text-sm">
-                    94%
+                    {automationStats?.successRate != null ? `${automationStats.successRate}%` : '—'}
                   </Badge>
                 </div>
                 <div className="space-y-1">
                   <Label>آخر تنفيذ</Label>
                   <Badge variant="outline" className="bg-slate-500/15 text-slate-400 border-slate-500/30 text-sm">
-                    قبل 5 دقائق
+                    {automationStats?.lastExecutedAt
+                      ? new Date(automationStats.lastExecutedAt).toLocaleString('ar-EG')
+                      : 'لم يتم التنفيذ بعد'}
                   </Badge>
                 </div>
               </div>

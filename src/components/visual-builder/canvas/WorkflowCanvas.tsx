@@ -94,12 +94,11 @@ function createsCycle(source: string, target: string, edges: VBEdge[]): boolean 
 const MINIMAP_COLOR_MAP: Record<string, string> = {
   'bg-emerald-500': '#10b981',
   'bg-red-500': '#ef4444',
-  'bg-violet-500': '#8b5cf6',
+  'bg-brand-500': '#db4a58',
   'bg-amber-500': '#f59e0b',
   'bg-cyan-600': '#06b6d4',
   'bg-emerald-600': '#059669',
   'bg-blue-500': '#3b82f6',
-  'bg-indigo-500': '#6366f1',
   'bg-slate-500': '#64748b',
   'bg-orange-500': '#f97316',
   'bg-yellow-600': '#ca8a04',
@@ -109,7 +108,7 @@ const MINIMAP_COLOR_MAP: Record<string, string> = {
   'bg-pink-600': '#db2777',
   'bg-green-600': '#16a34a',
   'bg-slate-600': '#475569',
-  'bg-indigo-600': '#4f46e5',
+  'bg-brand-700': '#a01a2b',
   'bg-amber-600': '#d97706',
   'bg-red-600': '#dc2626',
 };
@@ -214,8 +213,8 @@ function WorkflowCanvasInner({
       data-workflow-canvas="true"
       className={cn(
         'flex-1 relative transition-shadow',
-        isPointerOver && 'ring-2 ring-inset shadow-[inset_0_0_60px_rgba(139,92,246,0.08)]',
-        isPointerOver && (dropIsAllowed ? 'ring-violet-500/60' : 'ring-red-500/70'),
+        isPointerOver && 'ring-2 ring-inset shadow-[inset_0_0_60px_rgba(194,35,52,0.08)]',
+        isPointerOver && (dropIsAllowed ? 'ring-brand-500/60' : 'ring-red-500/70'),
         isPointerOver && (dropIsAllowed ? 'cursor-copy' : 'cursor-not-allowed'),
       )}
     >
@@ -275,12 +274,12 @@ function WorkflowCanvasInner({
             className={cn(
               'absolute -translate-x-1/2 -translate-y-1/2 flex items-center gap-2 px-3 py-2 rounded-lg border backdrop-blur-sm text-xs font-medium shadow-xl transition-colors',
               dropIsAllowed
-                ? 'bg-violet-600/30 border-violet-400/60 text-violet-100'
+                ? 'bg-brand-600/30 border-brand-400/60 text-brand-100'
                 : 'bg-red-600/25 border-red-400/60 text-red-100',
             )}
             style={{ left: dragPosition.x, top: dragPosition.y }}
           >
-            <span className={cn('w-2 h-2 rounded-full', dropIsAllowed ? 'bg-violet-300' : 'bg-red-300')} />
+            <span className={cn('w-2 h-2 rounded-full', dropIsAllowed ? 'bg-brand-300' : 'bg-red-300')} />
             {dropIsAllowed ? `إفلات لإضافة: ${draggingDefinition.label}` : `غير مسموح: ${draggingDefinition.label} موجودة بالفعل`}
           </div>
         </div>

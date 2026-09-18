@@ -21,6 +21,7 @@ import { Badge } from '@/components/ui/badge';
 import { ReportView } from '@/components/shared/reports/ReportView';
 import type { ReportColumnSpec } from '@/lib/reports/types';
 import { Rows3, Layers, ChevronDown, ChevronLeft, Link as LinkIcon } from 'lucide-react';
+import { PageIdentity } from '@/components/shared/PageIdentity';
 import { parseSafeHttpUrl } from '@/lib/quality-observations/evidence';
 
 type ViewMode = 'grouped' | 'flat';
@@ -30,13 +31,15 @@ export default function QualityDeductionsReport() {
 
   return (
     <div className="space-y-4">
+      {/* §7 unified page identity */}
+      <PageIdentity pageId="qualityDeductionsReport" className="mb-1" />
       {/* §11 view-mode switcher — grouped is the default reading mode */}
       <div className="flex items-center gap-1 rounded-xl border border-slate-700/60 bg-slate-950/40 p-1 w-fit print:hidden">
         <button
           type="button"
           onClick={() => setViewMode('grouped')}
           className={`flex items-center gap-1.5 px-4 py-1.5 text-xs rounded-lg font-medium transition-colors ${
-            viewMode === 'grouped' ? 'bg-violet-500/20 text-violet-200' : 'text-slate-400 hover:text-slate-200'
+            viewMode === 'grouped' ? 'bg-brand-500/20 text-brand-200' : 'text-slate-400 hover:text-slate-200'
           }`}
         >
           <Layers className="size-3.5" />
@@ -46,7 +49,7 @@ export default function QualityDeductionsReport() {
           type="button"
           onClick={() => setViewMode('flat')}
           className={`flex items-center gap-1.5 px-4 py-1.5 text-xs rounded-lg font-medium transition-colors ${
-            viewMode === 'flat' ? 'bg-violet-500/20 text-violet-200' : 'text-slate-400 hover:text-slate-200'
+            viewMode === 'flat' ? 'bg-brand-500/20 text-brand-200' : 'text-slate-400 hover:text-slate-200'
           }`}
         >
           <Rows3 className="size-3.5" />

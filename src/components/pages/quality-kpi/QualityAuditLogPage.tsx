@@ -12,6 +12,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
 import { History, Search, Download, RefreshCw } from 'lucide-react';
+import { PageIdentity } from '@/components/shared/PageIdentity';
 import { AuditTrailList } from '@/components/shared/audit';
 import { useQualityAuditLog, type AuditLogParams } from '@/hooks/use-kpi-queries';
 import type { QualityAuditLogEntry, QualityAuditEntityType } from '@/types/quality-kpi';
@@ -75,26 +76,22 @@ export default function QualityAuditLogPage() {
 
   if (!canView) {
     return (
-      <div dir="rtl" className="flex flex-col items-center justify-center py-24 text-slate-400">
+      <div className="flex flex-col items-center justify-center py-24 text-slate-400">
         <p>ليس لديك صلاحية للوصول إلى هذه الصفحة</p>
       </div>
     );
   }
 
   return (
-    <div dir="rtl" className="space-y-4 p-4 sm:p-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-100 flex items-center gap-2">
-            <History className="size-6 text-blue-400" />
-            سجل المراجعة
-          </h1>
-          <p className="text-sm text-slate-400 mt-1">
-            سجل كامل بجميع التغييرات والعمليات في نظام جودة المؤشرات
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
+    <div className="space-y-4 p-4 sm:p-6">
+      {/* §7 — unified page identity */}
+      <PageIdentity
+        pageId="qualityAuditLog"
+        icon={<History className="size-5" />}
+        iconClassName="bg-blue-500/15 border-blue-500/30 text-blue-400"
+        title="سجل المراجعة"
+        description="سجل كامل بجميع التغييرات والعمليات في نظام جودة المؤشرات"
+        actions={
           <Button
             variant="outline"
             size="icon"
@@ -104,8 +101,8 @@ export default function QualityAuditLogPage() {
           >
             <RefreshCw className={`size-4 ${isFetching ? 'animate-spin' : ''}`} />
           </Button>
-        </div>
-      </div>
+        }
+      />
 
       {/* Filters */}
       <Card className="border-slate-700/40 bg-slate-800/30">

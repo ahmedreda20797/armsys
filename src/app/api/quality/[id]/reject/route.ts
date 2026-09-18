@@ -5,13 +5,15 @@
 //  quality discount. Rejected discounts NEVER affect reports,
 //  totals, payroll or employee records.
 //
-//  Permission: 'approve' action on 'quality' (permission-based —
-//  same authority that approves). Blocked when the month is closed.
+//  Permission: 'reject' action on 'quality' — with the legacy
+//  'approve' grant accepted as an equivalent authority so existing
+//  approver permission maps keep working (verifyAnyAction). Blocked
+//  when the month is closed.
 // ══════════════════════════════════════════════════════════════
 
 import { NextRequest } from 'next/server';
 import { getById, updateRecord } from '@/lib/db';
-import { verifyPermission } from '@/lib/verify-permission';
+import { verifyAnyAction } from '@/lib/verify-permission';
 import {
   forbiddenError, notFoundError, lockedError, validationError,
   internalError, logServerFailure,
@@ -22,6 +24,7 @@ import { asScopeViewer, employeeInScope } from '@/lib/scope/server';
 import { dispatchAutomationEvent } from '@/lib/automation/event-bridge';
 import { makeApprovalEvent, appendApprovalEvent, projectLatestApprovalStatus } from '@/lib/approvals';
 import { writeAudit } from '@/lib/audit';
+import { notifyQualityDiscountDecided } from '@/lib/notifications/quality-approval-events';
 import { QUALITY_DEDUCTIONS_TABLE } from '@/lib/quality-deductions/domain';
 import { AUDIT_LOG_TABLE } from '../../route';
 
@@ -30,7 +33,7 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
-    const permCheck = await verifyPermission(request, 'quality', 'approve');
+    const permCheck = await verifyAnyAction(request, 'quality', ['reject', 'approve']);
     if (!permCheck.allowed) return forbiddenError(permCheck.error);
 
     const { id } = await params;
@@ -98,6 +101,17 @@ export async function POST(
       category: existing.type,
       sourceRecordId: id,
       extra: { month: existing.month, previousStatus: existing.approvalStatus ?? 'pending', reason },
+    });
+
+    // §APPROVAL-NOTIFY — directed outcome notification for the creator.
+    void notifyQualityDiscountDecided({
+      recordId: id,
+      decision: 'rejected',
+      employeeId: existing.employeeId,
+      actorId: actor.id,
+      actorName: actor.name,
+      creatorUserId: existing.createdById ?? existing.createdByUserId ?? null,
+      reason,
     });
 
     return Response.json(updated);

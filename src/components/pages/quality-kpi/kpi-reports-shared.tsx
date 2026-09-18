@@ -76,9 +76,9 @@ const STATUS_STYLES: Record<string, string> = {
   PENDING: 'bg-slate-500/15 text-slate-300 border-slate-500/30',
   ZERO: 'bg-red-500/15 text-red-300 border-red-500/30',
   NOT_ELIGIBLE: 'bg-slate-600/20 text-slate-400 border-slate-600/40',
-  NO_SCHEME: 'bg-purple-500/15 text-purple-300 border-purple-500/30',
-  AMBIGUOUS: 'bg-purple-500/15 text-purple-300 border-purple-500/30',
-  OVERRIDE_NOT_RESOLVABLE: 'bg-purple-500/15 text-purple-300 border-purple-500/30',
+  NO_SCHEME: 'bg-brand-500/15 text-brand-300 border-brand-500/30',
+  AMBIGUOUS: 'bg-brand-500/15 text-brand-300 border-brand-500/30',
+  OVERRIDE_NOT_RESOLVABLE: 'bg-brand-500/15 text-brand-300 border-brand-500/30',
   COMPLETE: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30',
 };
 

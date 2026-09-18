@@ -38,6 +38,8 @@ import {
   Pencil,
   Trash2,
 } from 'lucide-react';
+import { SmartActionMenu } from '@/components/shared/SmartActionMenu';
+import { PageIdentity } from '@/components/shared/PageIdentity';
 import type { DeductionRule } from '@/types';
 import { logCreate, logUpdate, logDelete } from '@/lib/activity-logger';
 import { authFetch } from '@/lib/api-fetch';
@@ -264,7 +266,7 @@ export default function RulesPage() {
           <Button
             onClick={handleSave}
             disabled={saving || !form.key || !form.label || !form.amount}
-            className="bg-linear-to-r from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white h-9 px-5 shadow-lg shadow-violet-500/20 transition-all"
+            className="bg-linear-to-r from-brand-600 to-brand-700 hover:from-brand-700 hover:to-brand-800 text-white h-9 px-5 shadow-lg shadow-brand-500/20 transition-all"
           >
             {saving ? 'جاري الحفظ...' : 'حفظ'}
           </Button>
@@ -274,47 +276,40 @@ export default function RulesPage() {
   );
 
   return (
-    <div dir="rtl" className="space-y-6">
-      {/* Header */}
-      <motion.div
-        initial={{ opacity: 0, y: -10 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="flex flex-col sm:flex-row sm:items-center justify-between gap-4"
-      >
-        <div>
-          <h1 className="text-2xl font-bold text-white flex items-center gap-2">
-            <Scale className="size-6 text-violet-400" />
-            قواعد الخصم
-          </h1>
-          <p className="text-slate-400 mt-1 text-sm">
-            {rules.length} قاعدة خصم
-          </p>
-        </div>
-        <div className="flex items-center gap-2 flex-wrap">
-          {canEdit && (
-            <Button
-              variant="outline"
-              onClick={handleLoadDefaults}
-              className="border-slate-600 text-slate-300 hover:bg-slate-700"
-            >
-              مزامنة القواعد
-            </Button>
-          )}
-          {canCreate && (
-            <Button
-                onClick={() => {
-                  setForm(emptyForm);
-                  setEditingRule(null);
-                  setIsAddOpen(true);
-                }}
-                className="bg-linear-to-r from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white h-9 px-5 shadow-lg shadow-violet-500/20 transition-all"
+    <div className="space-y-6">
+      {/* §7 — unified page identity */}
+      <PageIdentity
+        pageId="rules"
+        icon={<Scale className="size-5" />}
+        iconClassName="bg-brand-500/15 border-brand-500/30 text-brand-400"
+        description={`${rules.length} قاعدة خصم`}
+        actions={
+          <>
+            {canEdit && (
+              <Button
+                variant="outline"
+                onClick={handleLoadDefaults}
+                className="border-slate-600 text-slate-300 hover:bg-slate-700"
               >
-                <Plus className="size-4" />
-                إضافة قاعدة
+                مزامنة القواعد
               </Button>
-          )}
-        </div>
-      </motion.div>
+            )}
+            {canCreate && (
+              <Button
+                  onClick={() => {
+                    setForm(emptyForm);
+                    setEditingRule(null);
+                    setIsAddOpen(true);
+                  }}
+                  className="bg-linear-to-r from-brand-600 to-brand-700 hover:from-brand-700 hover:to-brand-800 text-white h-9 px-5 shadow-lg shadow-brand-500/20 transition-all"
+                >
+                  <Plus className="size-4" />
+                  إضافة قاعدة
+                </Button>
+            )}
+          </>
+        }
+      />
 
       {/* Loading */}
       {loading ? (
@@ -334,7 +329,7 @@ export default function RulesPage() {
             {canCreate && (
               <Button
                 onClick={handleLoadDefaults}
-                className="mt-4 bg-linear-to-r from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white"
+                className="mt-4 bg-linear-to-r from-brand-600 to-brand-700 hover:from-brand-700 hover:to-brand-800 text-white"
               >
                 تحميل القواعد الافتراضية
               </Button>
@@ -365,7 +360,7 @@ export default function RulesPage() {
                     className="border-slate-700/50 hover:bg-slate-700/30"
                   >
                     <TableCell>
-                      <span className="text-violet-400 font-mono text-sm" dir="ltr">{rule.key}</span>
+                      <span className="text-brand-400 font-mono text-sm" dir="ltr">{rule.key}</span>
                     </TableCell>
                     <TableCell className="text-white font-medium">{rule.label}</TableCell>
                     <TableCell className="text-slate-300" dir="ltr">
@@ -377,26 +372,12 @@ export default function RulesPage() {
                     {(canUpdate || canDelete) && (
                       <TableCell>
                         <div className="flex items-center gap-1">
-                          {canUpdate && (
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => openEdit(rule)}
-                            className="text-slate-400 hover:text-blue-400 hover:bg-blue-500/10"
-                          >
-                            <Pencil className="size-4" />
-                          </Button>
-                          )}
-                          {canDelete && (
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => setDeletingId(rule.id)}
-                            className="text-slate-400 hover:text-red-400 hover:bg-red-500/10"
-                          >
-                            <Trash2 className="size-4" />
-                          </Button>
-                          )}
+                          <SmartActionMenu
+                            actions={[
+                              { key: 'edit', label: 'تعديل', icon: <Pencil className="size-3.5" />, onSelect: () => openEdit(rule), hidden: !canUpdate },
+                              { key: 'delete', label: 'حذف', icon: <Trash2 className="size-3.5" />, destructive: true, onSelect: () => setDeletingId(rule.id), hidden: !canDelete },
+                            ]}
+                          />
                         </div>
                       </TableCell>
                     )}

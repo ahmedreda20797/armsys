@@ -170,7 +170,7 @@ export function AIAnalysisSection({
             size="sm"
             data-testid="ai-run-analysis"
             onClick={runAnalysis}
-            className="gap-2 bg-violet-600 hover:bg-violet-700 text-white"
+            className="gap-2 bg-brand-600 hover:bg-brand-700 text-white"
             disabled={!employeeId}
           >
             <Sparkles className="h-4 w-4" />
@@ -201,7 +201,7 @@ export function AIAnalysisSection({
 // ── header badge (§23: clearly AI GENERATED) ────────────────────
 function AiGeneratedBadge() {
   return (
-    <Badge variant="outline" className="border-violet-500/30 bg-violet-500/10 font-normal text-[10px] text-violet-300">
+    <Badge variant="outline" className="border-brand-500/30 bg-brand-500/10 font-normal text-[10px] text-brand-300">
       <Brain className="ml-1 h-3 w-3" />
       AI GENERATED
     </Badge>
@@ -215,7 +215,7 @@ function ToneBadge({ level, label }: { level: string; label: string }) {
     warn: 'bg-amber-500/15 text-amber-300 border-amber-500/30',
     bad: 'bg-red-500/15 text-red-300 border-red-500/30',
     info: 'bg-sky-500/15 text-sky-300 border-sky-500/30',
-    accent: 'bg-violet-500/15 text-violet-300 border-violet-500/30',
+    accent: 'bg-brand-500/15 text-brand-300 border-brand-500/30',
   };
   return (
     <Badge variant="outline" className={cn('font-normal text-[10px]', TONE[aiBadgeTone(level)])}>
@@ -283,7 +283,7 @@ function ReadyView({
       {/* Insights — §11: FACTS vs INTERPRETATION visibly separated */}
       <div className="space-y-3">
         <h4 className="flex items-center gap-1.5 text-[13px] font-semibold text-slate-200">
-          <Sparkles className="h-3.5 w-3.5 text-violet-400" />
+          <Sparkles className="h-3.5 w-3.5 text-brand-400" />
           أبرز الاستنتاجات
         </h4>
         {result.insights.length === 0 && (
@@ -309,7 +309,7 @@ function ReadyView({
                 {insight.factBasis}
               </p>
               <p className="text-[11px] leading-5 text-slate-400">
-                <span className="font-semibold text-violet-300">التفسير: </span>
+                <span className="font-semibold text-brand-300">التفسير: </span>
                 {insight.interpretation}
               </p>
             </div>
@@ -328,7 +328,7 @@ function ReadyView({
       {/* Recommendations — §15/§39: PROPOSED + "لماذا؟" always visible */}
       <div className="space-y-3">
         <h4 className="flex items-center gap-1.5 text-[13px] font-semibold text-slate-200">
-          <ClipboardCheck className="h-3.5 w-3.5 text-violet-400" />
+          <ClipboardCheck className="h-3.5 w-3.5 text-brand-400" />
           التوصيات المقترحة (لا تُنفَّذ آليًا)
         </h4>
         {result.recommendations.length === 0 && (
@@ -347,7 +347,7 @@ function ReadyView({
               </Badge>
               <ToneBadge level={rec.priority} label={`أولوية ${AI_PRIORITY_LABELS[rec.priority]}`} />
               <ToneBadge level={rec.confidence} label={`ثقة ${AI_CONFIDENCE_LABELS[rec.confidence]}`} />
-              <Badge variant="outline" className="border-violet-500/30 bg-violet-500/10 font-normal text-[10px] text-violet-300">
+              <Badge variant="outline" className="border-brand-500/30 bg-brand-500/10 font-normal text-[10px] text-brand-300">
                 مقترحة — بانتظار قرار إداري
               </Badge>
             </div>
@@ -359,7 +359,7 @@ function ReadyView({
                 {rec.reason}
               </p>
               <p className="text-[11px] leading-5 text-slate-400">
-                <span className="font-semibold text-violet-300">الأثر المتوقع: </span>
+                <span className="font-semibold text-brand-300">الأثر المتوقع: </span>
                 {AI_IMPACT_LABELS[rec.expectedImpact.direction] ?? rec.expectedImpact.direction} — {rec.expectedImpact.description}
               </p>
             </div>

@@ -4,6 +4,35 @@
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
+  /* ═══════════════════════════════════════════════════════════
+     QNLYS BRAND TOKENS — single source of truth.
+     Sophisticated red scale (crimson → burgundy → near-black red)
+     on a charcoal foundation. Every brand color in the app MUST
+     come from this scale (`bg-brand-600`, `text-brand-300`,
+     `from-brand-600 to-brand-800`, `ring-brand-500/30`, …).
+     Danger red (--destructive / red-*) stays semantically separate.
+     ═══════════════════════════════════════════════════════════ */
+  --color-brand-50: #fdf3f4;
+  --color-brand-100: #fce6e8;
+  --color-brand-200: #f9c9cd;
+  --color-brand-300: #f2a0a7;
+  --color-brand-400: #e9757f;
+  --color-brand-500: #db4a58;
+  --color-brand-600: #c22334;
+  --color-brand-700: #a01a2b;
+  --color-brand-800: #7c1624;
+  --color-brand-900: #5c1220;
+  --color-brand-950: #350a12;
+
+  /* Semantic surface/ink tokens (Qnlys foundation) */
+  --color-surface: var(--qnlys-surface);
+  --color-surface-hover: var(--qnlys-surface-hover);
+  --color-surface-active: var(--qnlys-surface-active);
+  --color-surface-elevated: var(--qnlys-surface-elevated);
+  --color-border-hover: var(--qnlys-border-hover);
+  --color-text-secondary: var(--qnlys-text-secondary);
+  --color-text-muted: var(--qnlys-text-muted);
+
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
@@ -57,6 +86,14 @@
 
 :root {
   --radius: 0.625rem;
+  /* Qnlys semantic foundation (light fallback — app ships dark-only) */
+  --qnlys-surface: #ffffff;
+  --qnlys-surface-hover: #f8f7f8;
+  --qnlys-surface-active: #f1eff0;
+  --qnlys-surface-elevated: #ffffff;
+  --qnlys-border-hover: #c9c5c7;
+  --qnlys-text-secondary: #44474d;
+  --qnlys-text-muted: #6d7178;
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);
   --card: oklch(1 0 0);
@@ -91,6 +128,15 @@
 }
 
 .dark {
+  /* Qnlys charcoal foundation — deep neutral surfaces, red reserved
+     for brand accents and semantic states. */
+  --qnlys-surface: #0f1216;
+  --qnlys-surface-hover: #161a20;
+  --qnlys-surface-active: #1c2129;
+  --qnlys-surface-elevated: #12161b;
+  --qnlys-border-hover: #2e3540;
+  --qnlys-text-secondary: #a7adb8;
+  --qnlys-text-muted: #6d7480;
   --background: oklch(0.145 0 0);
   --foreground: oklch(0.985 0 0);
   --card: oklch(0.205 0 0);
@@ -108,20 +154,21 @@
   --destructive: oklch(0.704 0.191 22.216);
   --border: oklch(1 0 0 / 10%);
   --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
-  --chart-1: oklch(0.488 0.243 264.376);
-  --chart-2: oklch(0.696 0.17 162.48);
-  --chart-3: oklch(0.769 0.188 70.08);
-  --chart-4: oklch(0.627 0.265 303.9);
-  --chart-5: oklch(0.645 0.246 16.439);
+  --ring: oklch(0.62 0.14 20);
+  /* Analytical chart palette: Qnlys red + neutral + semantic support */
+  --chart-1: oklch(0.58 0.17 22);
+  --chart-2: oklch(0.72 0.12 210);
+  --chart-3: oklch(0.78 0.14 75);
+  --chart-4: oklch(0.62 0.02 260);
+  --chart-5: oklch(0.66 0.15 155);
   --sidebar: oklch(0.205 0 0);
   --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
+  --sidebar-primary: oklch(0.52 0.15 22);
   --sidebar-primary-foreground: oklch(0.985 0 0);
   --sidebar-accent: oklch(0.269 0 0);
   --sidebar-accent-foreground: oklch(0.985 0 0);
   --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
+  --sidebar-ring: oklch(0.55 0.12 22);
 }
 
 @layer base {
@@ -259,6 +306,218 @@
   to { transform: rotate(360deg); }
 }
 
+/* ═══════════════════════════════════════════════════════════
+   §BRAND — Qnlys logo reveal system (Q.svg + nlys.svg)
+   Q anchors; nlys EMERGES from underneath it toward the word
+   side. GPU-only properties (opacity / transform / clip-path);
+   each animation runs ONCE per mount — no loops, no JS timing.
+   ═══════════════════════════════════════════════════════════ */
+
+/* Q settles in first (fast, no bounce). */
+@keyframes qnlys-q-in {
+  from { opacity: 0; transform: scale(0.92); }
+  to   { opacity: 1; transform: scale(1); }
+}
+
+/* nlys: tucked under the Q (translateX toward the Q) and clipped
+   from its own trailing edge; reveals left→right out of the Q.
+   (dir="ltr" logo row: the Q sits at the left edge of the mark.) */
+@keyframes qnlys-word-emerge {
+  0% {
+    opacity: 0;
+    transform: translateX(-10px);
+    clip-path: inset(0 100% 0 0);
+  }
+  35% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(0);
+    clip-path: inset(0 0 0 0%);
+  }
+}
+
+.qnlys-q-in {
+  opacity: 0;
+  animation: qnlys-q-in 180ms cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+
+.qnlys-word-emerge {
+  opacity: 0;
+  animation: qnlys-word-emerge 260ms cubic-bezier(0.22, 1, 0.36, 1) 90ms forwards;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   §BRAND-LETTERS — per-letter loading/reveal engine (n→l→y→s).
+   The letters are inline SVG groups (QnlysWordmark) so EACH one
+   can rise out from behind the Q, overshoot slightly and settle
+   back to its natural baseline — transform + opacity only, no
+   clipping region, no rectangular mask: the movement is free.
+   Translations are in the wordmark's 950×485 user units, so the
+   choreography scales proportionally with the lockup size.
+   ═══════════════════════════════════════════════════════════ */
+
+/* One-shot: emerge from behind the Q → rise → overshoot →
+   settle dip → natural baseline. */
+@keyframes qnlys-letter-rise {
+  0%   { opacity: 0; transform: translate(-72px, 24px); }
+  24%  { opacity: 1; }
+  58%  { transform: translate(0, -34px); }
+  80%  { transform: translate(0, 9px); }
+  100% { opacity: 1; transform: translate(0, 0); }
+}
+
+/* Readiness loop: a soft crest travels n→l→y→s like a signal
+   passing through the mark (loading mode only). Starts after the
+   rise settles; while it waits, the rise's forwards fill holds
+   the baseline. Listed last so it takes over the transform. */
+@keyframes qnlys-letter-wave {
+  0%, 100% { transform: translateY(0); }
+  50%      { transform: translateY(-22px); }
+}
+
+.qnlys-letter {
+  opacity: 0;
+  animation: qnlys-letter-rise 640ms cubic-bezier(0.32, 0.72, 0.24, 1) var(--rise-delay, 140ms) forwards;
+}
+
+.qnlys-lockup-loading .qnlys-letter {
+  animation:
+    qnlys-letter-rise 640ms cubic-bezier(0.32, 0.72, 0.24, 1) var(--rise-delay, 540ms) forwards,
+    qnlys-letter-wave 2.3s ease-in-out var(--wave-delay, 2.6s) infinite;
+}
+
+/* Stagger — n leads, s lands last; the wave crest follows the
+   same order so the loop reads as one traveling signal. */
+.qnlys-letter-n { --rise-delay: var(--rise-base, 140ms);                        --wave-delay: calc(var(--rise-base, 540ms) + 1.9s); }
+.qnlys-letter-l { --rise-delay: calc(var(--rise-base, 140ms) + 115ms);          --wave-delay: calc(var(--rise-base, 540ms) + 2.05s); }
+.qnlys-letter-y { --rise-delay: calc(var(--rise-base, 140ms) + 230ms);          --wave-delay: calc(var(--rise-base, 540ms) + 2.2s); }
+.qnlys-letter-s { --rise-delay: calc(var(--rise-base, 140ms) + 345ms);          --wave-delay: calc(var(--rise-base, 540ms) + 2.35s); }
+
+/* Loading mode gives the Q a beat to anchor before the letters move. */
+.qnlys-lockup-loading { --rise-base: 540ms; }
+
+/* §LOADING — the Q breathes: a slow scale + brand-red glow pulse.
+   The logo itself is the loading indicator — no bar, no spinner. */
+@keyframes qnlys-q-breathe {
+  0%, 100% { transform: scale(1);    filter: drop-shadow(0 0 0px  rgba(194, 35, 52, 0)); }
+  50%      { transform: scale(1.02); filter: drop-shadow(0 0 12px rgba(219, 74, 88, 0.5)); }
+}
+
+.qnlys-q-breathe {
+  animation: qnlys-q-breathe 2.6s ease-in-out 0.3s infinite;
+}
+
+/* A restrained red light sweeps once per cycle THROUGH the whole
+   mark (over the Q and the letters) — transform + opacity only. */
+@keyframes qnlys-signal-sweep {
+  0%   { transform: translateX(-120%); opacity: 0; }
+  12%  { opacity: 1; }
+  48%  { opacity: 1; }
+  60%  { transform: translateX(900%); opacity: 0; }
+  100% { transform: translateX(900%); opacity: 0; }
+}
+
+.qnlys-signal-sweep {
+  opacity: 0;
+  animation: qnlys-signal-sweep 3.6s ease-in-out 1.7s infinite;
+}
+
+.qnlys-sweep-light {
+  background: linear-gradient(90deg, transparent, rgba(255, 96, 110, 0.5), transparent);
+  filter: blur(6px);
+  mix-blend-mode: screen;
+}
+
+html.light .qnlys-sweep-light {
+  background: linear-gradient(90deg, transparent, rgba(160, 26, 43, 0.3), transparent);
+  mix-blend-mode: normal;
+}
+
+/* Breathing halo behind the loading lockup (synced with the Q). */
+@keyframes qnlys-halo-breathe {
+  0%, 100% { opacity: 0.55; transform: scale(0.97); }
+  50%      { opacity: 1;    transform: scale(1.04); }
+}
+
+.qnlys-loading-halo {
+  background: radial-gradient(circle, rgba(194, 35, 52, 0.20) 0%, rgba(124, 22, 36, 0.12) 45%, transparent 70%);
+  animation: qnlys-halo-breathe 2.6s ease-in-out infinite;
+}
+
+html.light .qnlys-loading-halo {
+  background: radial-gradient(circle, rgba(160, 26, 43, 0.12) 0%, rgba(160, 26, 43, 0.06) 45%, transparent 70%);
+}
+
+/* Reduced motion: everything appears settled — the logo is shown
+   normally, no letter motion, no breathing, no sweep, no ambient
+   background motion. */
+@media (prefers-reduced-motion: reduce) {
+  .qnlys-letter,
+  .qnlys-q-breathe,
+  .qnlys-signal-sweep,
+  .qnlys-loading-halo,
+  .qnlys-amb-dot,
+  .qnlys-amb-curve,
+  .qnlys-connect-path,
+  .qnlys-node {
+    animation: none;
+  }
+  .qnlys-letter { opacity: 1; transform: none; }
+  .qnlys-signal-sweep { display: none; }
+}
+
+/* Reduced motion: show the final state, animate nothing. */
+@media (prefers-reduced-motion: reduce) {
+  .qnlys-q-in,
+  .qnlys-word-emerge {
+    animation: none;
+    opacity: 1;
+    clip-path: none;
+    transform: none;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════
+   §SIDEBAR-NAV — page names EMERGE from their icons when the
+   sidebar expands (§7). The row is the clip: the label starts
+   hidden behind the icon column (shifted toward the icon) and
+   slides left into place — transform + opacity only.
+   ═══════════════════════════════════════════════════════════ */
+
+@keyframes sidebar-label-emerge {
+  from {
+    opacity: 0;
+    transform: translateX(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.sidebar-label-emerge {
+  opacity: 0;
+  animation: sidebar-label-emerge 220ms cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+
+/* Badge + chevron trail the label slightly so the row reads
+   icon → label → meta. */
+.sidebar-meta-emerge {
+  opacity: 0;
+  animation: sidebar-label-emerge 200ms cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sidebar-label-emerge,
+  .sidebar-meta-emerge {
+    animation: none;
+    opacity: 1;
+    transform: none;
+  }
+}
+
 .animate-float {
   animation: float 3s ease-in-out infinite;
 }
@@ -333,7 +592,7 @@
   content: '';
   position: absolute;
   inset: 0;
-  background-image: radial-gradient(circle at 1px 1px, oklch(0.5 0.03 260 / 20%) 1px, transparent 1px);
+  background-image: radial-gradient(circle at 1px 1px, oklch(0.45 0.01 260 / 14%) 1px, transparent 1px);
   background-size: 32px 32px;
   pointer-events: none;
   z-index: 0;
@@ -344,9 +603,9 @@
   position: absolute;
   inset: 0;
   background:
-    radial-gradient(ellipse 600px 400px at 10% 20%, oklch(0.596 0.145 163 / 0.04), transparent),
-    radial-gradient(ellipse 500px 500px at 80% 60%, oklch(0.488 0.243 264 / 0.03), transparent),
-    radial-gradient(ellipse 400px 300px at 50% 80%, oklch(0.696 0.17 162 / 0.025), transparent);
+    radial-gradient(ellipse 700px 460px at 88% 12%, oklch(0.45 0.10 22 / 0.05), transparent),
+    radial-gradient(ellipse 520px 420px at 8% 70%, oklch(0.38 0.06 22 / 0.04), transparent),
+    radial-gradient(ellipse 400px 300px at 50% 90%, oklch(0.35 0.01 260 / 0.03), transparent);
   pointer-events: none;
   z-index: 0;
 }
@@ -364,6 +623,18 @@ html {
   /* Reserve scrollbar space to prevent layout shift when content overflows */
   scrollbar-gutter: stable;
   scroll-behavior: smooth;
+  /* ═══ CANVAS PAINT — viewport-edge correctness ═══
+     scrollbar-gutter: stable carves a strip at the viewport edge that
+     sits OUTSIDE every fixed/absolute background layer (fixed anchors
+     to the layout viewport, which excludes the gutter). That strip is
+     painted by the CANVAS (html background, propagated from body when
+     html has none). It must be the Qnlys foundation — charcoal (dark)
+     / paper (light) — never a navy body utility leaking at the edge. */
+  background-color: #0b0d11;
+}
+
+html.light {
+  background-color: #f7f8fb;
 }
 
 /* ═══════════════════════════════════════════════════════════
@@ -371,9 +642,9 @@ html {
    ═══════════════════════════════════════════════════════════ */
 
 :root {
-  --scroll-thumb: oklch(0.38 0.06 270 / 0.35);
-  --scroll-thumb-hover: oklch(0.48 0.08 270 / 0.55);
-  --scroll-thumb-active: oklch(0.55 0.10 270 / 0.70);
+  --scroll-thumb: oklch(0.40 0.03 22 / 0.40);
+  --scroll-thumb-hover: oklch(0.50 0.05 22 / 0.60);
+  --scroll-thumb-active: oklch(0.58 0.08 22 / 0.75);
   --scroll-track: transparent;
   --scroll-width: 5px;
 }
@@ -547,7 +818,7 @@ html {
   inset: -2px;
   border-radius: inherit;
   padding: 2px;
-  background: linear-gradient(to left, oklch(0.541 0.281 293), oklch(0.511 0.262 276));
+  background: linear-gradient(to left, oklch(0.58 0.17 24), oklch(0.50 0.15 20));
   -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
   -webkit-mask-composite: xor;
   mask-composite: exclude;
@@ -563,8 +834,8 @@ textarea:focus-visible {
   border-radius: 8px;
   transition: box-shadow 0.2s ease;
   box-shadow:
-    0 0 0 4px oklch(0.541 0.281 293 / 0.08),
-    0 0 0 8px oklch(0.511 0.262 276 / 0.05);
+    0 0 0 4px oklch(0.58 0.17 24 / 0.10),
+    0 0 0 8px oklch(0.50 0.15 20 / 0.06);
 }
 
 /* Remove number input spinners */
@@ -606,7 +877,7 @@ input:focus::placeholder {
 }
 .hover-glow:hover {
   transform: translateY(-2px);
-  box-shadow: 0 8px 32px rgba(16, 185, 129, 0.08), 0 0 0 1px rgba(16, 185, 129, 0.08);
+  box-shadow: 0 8px 32px oklch(0.52 0.15 22 / 0.10), 0 0 0 1px oklch(0.52 0.15 22 / 0.12);
 }
 
 /* ═══════════════════════════════════════════════════════════
@@ -627,9 +898,9 @@ input:focus::placeholder {
   height: 1px;
   background: linear-gradient(90deg,
     transparent 0%,
-    oklch(0.696 0.170 162 / 0.1) 15%,
-    oklch(0.696 0.170 162 / 0.5) 50%,
-    oklch(0.696 0.170 162 / 0.1) 85%,
+    oklch(0.52 0.15 22 / 0.10) 15%,
+    oklch(0.55 0.17 23 / 0.55) 50%,
+    oklch(0.52 0.15 22 / 0.10) 85%,
     transparent 100%
   );
   background-size: 200% 100%;
@@ -644,8 +915,8 @@ input:focus::placeholder {
   transition: all 0.2s ease;
 }
 .table-row-glow tr:hover {
-  background-color: rgba(16, 185, 129, 0.06) !important;
-  box-shadow: inset 2px 0 0 rgba(16, 185, 129, 0.3), 0 0 16px rgba(16, 185, 129, 0.04);
+  background-color: oklch(0.52 0.15 22 / 0.06) !important;
+  box-shadow: inset 2px 0 0 oklch(0.52 0.15 22 / 0.35), 0 0 16px oklch(0.52 0.15 22 / 0.05);
 }
 
 /* ═══════════════════════════════════════════════════════════
@@ -662,12 +933,12 @@ input:focus::placeholder {
   border-radius: inherit;
   padding: 1px;
   background: linear-gradient(135deg,
-    oklch(0.696 0.170 162 / 0.2),
-    oklch(0.596 0.145 163 / 0.08),
+    oklch(0.52 0.15 22 / 0.22),
+    oklch(0.44 0.12 20 / 0.08),
     transparent 40%,
     transparent 60%,
-    oklch(0.432 0.095 166 / 0.08),
-    oklch(0.696 0.170 162 / 0.2)
+    oklch(0.38 0.10 18 / 0.10),
+    oklch(0.52 0.15 22 / 0.22)
   );
   -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
   -webkit-mask-composite: xor;
@@ -680,7 +951,7 @@ input:focus::placeholder {
    ═══════════════════════════════════════════════════════════ */
 
 ::selection {
-  background: oklch(0.696 0.170 162 / 0.3);
+  background: oklch(0.52 0.15 22 / 0.35);
   color: white;
 }
 
@@ -700,8 +971,8 @@ input:focus::placeholder {
    GRADIENT TEXT HELPER
    ═══════════════════════════════════════════════════════════ */
 
-.gradient-text-emerald {
-  background: linear-gradient(135deg, oklch(0.796 0.157 160), oklch(0.596 0.145 163));
+.gradient-text-brand {
+  background: linear-gradient(135deg, oklch(0.62 0.16 24), oklch(0.48 0.13 20));
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
@@ -747,28 +1018,28 @@ input:focus::placeholder {
 
 .floating-particle:nth-child(1) {
   width: 4px; height: 4px;
-  background: oklch(0.696 0.170 162 / 0.4);
+  background: oklch(0.55 0.15 22 / 0.40);
   animation: particle-float-1 8s ease-in-out infinite;
   animation-delay: 0s;
 }
 
 .floating-particle:nth-child(2) {
   width: 3px; height: 3px;
-  background: oklch(0.596 0.145 163 / 0.35);
+  background: oklch(0.48 0.13 20 / 0.35);
   animation: particle-float-2 10s ease-in-out infinite;
   animation-delay: 2s;
 }
 
 .floating-particle:nth-child(3) {
   width: 5px; height: 5px;
-  background: oklch(0.796 0.157 160 / 0.3);
+  background: oklch(0.62 0.16 24 / 0.30);
   animation: particle-float-3 12s ease-in-out infinite;
   animation-delay: 4s;
 }
 
 .floating-particle:nth-child(4) {
   width: 3px; height: 3px;
-  background: oklch(0.696 0.170 162 / 0.3);
+  background: oklch(0.55 0.15 22 / 0.30);
   animation: particle-float-1 9s ease-in-out infinite;
   animation-delay: 1s;
   left: 20%;
@@ -776,7 +1047,7 @@ input:focus::placeholder {
 
 .floating-particle:nth-child(5) {
   width: 4px; height: 4px;
-  background: oklch(0.596 0.145 163 / 0.25);
+  background: oklch(0.48 0.13 20 / 0.25);
   animation: particle-float-2 11s ease-in-out infinite;
   animation-delay: 3s;
   left: 70%;
@@ -784,7 +1055,7 @@ input:focus::placeholder {
 
 .floating-particle:nth-child(6) {
   width: 3px; height: 3px;
-  background: oklch(0.796 0.157 160 / 0.35);
+  background: oklch(0.62 0.16 24 / 0.35);
   animation: particle-float-3 7s ease-in-out infinite;
   animation-delay: 5s;
   left: 85%;
@@ -792,7 +1063,7 @@ input:focus::placeholder {
 
 .floating-particle:nth-child(7) {
   width: 2px; height: 2px;
-  background: oklch(0.696 0.170 162 / 0.3);
+  background: oklch(0.55 0.15 22 / 0.30);
   animation: particle-float-1 13s ease-in-out infinite;
   animation-delay: 6s;
   left: 40%;
@@ -800,7 +1071,7 @@ input:focus::placeholder {
 
 .floating-particle:nth-child(8) {
   width: 3px; height: 3px;
-  background: oklch(0.596 0.145 163 / 0.4);
+  background: oklch(0.48 0.13 20 / 0.40);
   animation: particle-float-2 9s ease-in-out infinite;
   animation-delay: 1.5s;
   left: 60%;
@@ -812,7 +1083,7 @@ input:focus::placeholder {
 
 .empty-state-icon {
   animation: float 3s ease-in-out infinite;
-  filter: drop-shadow(0 0 12px oklch(0.696 0.170 162 / 0.15));
+  filter: drop-shadow(0 0 12px oklch(0.55 0.15 22 / 0.15));
 }
 
 /* ═══════════════════════════════════════════════════════════
@@ -934,6 +1205,11 @@ textarea:focus {
 
 @media print {
   .no-print { display: none !important; }
+  /* §PRINT — decorative app layers (PersistentBackground charcoal
+     canvas, glows, vignette) never print on ANY path: as a fixed
+     layer it painted ABOVE the static-positioned print document and
+     blacked out the report data. */
+  .print-never { display: none !important; }
   body { background: white !important; color: black !important; }
   .glass, .glass-dark, .glass-card, .glass-dialog, .glass-header {
     background: white !important;
@@ -941,8 +1217,12 @@ textarea:focus {
     border: 1px solid #e5e7eb !important;
   }
   /* Phase 4 (§24): the Smart Quality Report prints report content
-     only — shell navigation and header chrome never print. */
-  nav, header { display: none !important; }
+     only — shell navigation and header chrome never print. The
+     print document's own header (.print-doc-header) is excluded:
+     it carries the logo/title/identity that MUST reach the paper
+     (root-cause fix for the "missing logo on print" defect). */
+  nav,
+  header:not(.print-doc-header) { display: none !important; }
   .app-main-offset { margin-right: 0 !important; margin-left: 0 !important; }
   /* Report cards print on white with light borders; text colors
      (incl. status accent colors) pass through untouched. */
@@ -1028,11 +1308,58 @@ textarea:focus {
     display: none !important;
   }
 
+  /* Legacy in-place page printing (no dedicated document): hide app
+     chrome — but NEVER the print document's own header, which carries
+     the logo/report identity. The blanket `header` hide was the root
+     cause of the missing logo/title/period on paper. */
+  nav,
+  header:not(.print-doc-header) {
+    display: none !important;
+  }
+
   /* Force light paper printing for the document, keep colors exact. */
   body.print-report-open {
     background: #ffffff !important;
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
+  }
+
+  /* ── ROOT-CAUSE FIXES for the shared print layer ──
+     The overlay was position:fixed with a near-black background and
+     an overflow-y scroll container: on paper that printed the dark
+     preview background and clipped everything past page 1. In print
+     the document must flow as a normal (non-fixed, non-scrolling)
+     block so every page paginates naturally. */
+  body.print-report-open .print-overlay {
+    position: static;
+    inset: auto;
+    z-index: auto;
+    display: block;
+    background: none;
+  }
+
+  body.print-report-open .print-overlay-toolbar {
+    display: none !important;
+  }
+
+  body.print-report-open .print-overlay-scroll {
+    position: static;
+    overflow: visible;
+    flex: none;
+    padding: 0;
+  }
+
+  /* The host locks body scroll for the SCREEN preview with an inline
+     style; in print that inline lock clipped multi-page documents.
+     (!important in a stylesheet overrides the inline declaration.) */
+  body.print-report-open {
+    overflow: visible !important;
+    height: auto !important;
+    min-height: 0 !important;
+  }
+
+  .print-doc-header {
+    display: block !important;
   }
 }
 
@@ -1081,6 +1408,8 @@ textarea:focus {
   border-radius: 4px;
   font-size: 12px;
   line-height: 1.7;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
 }
 
 @media print {
@@ -1099,12 +1428,53 @@ textarea:focus {
   gap: 16px;
 }
 
-.print-doc-brand-name {
-  display: block;
+/* §PRINT-HEADER — RIGHT: title + subject identity + meta.
+   (In RTL the first flex child renders on the physical right.) */
+.print-doc-identity { flex: 1; min-width: 0; }
+
+/* LEFT: the print logo alone — the SVG asset IS the full brand mark. */
+.print-doc-logo {
+  flex-shrink: 0;
+  padding-top: 2px;
+}
+
+.print-doc-subject { margin-top: 6px; }
+
+.print-doc-subject-name {
+  font-size: 15px;
+  font-weight: 800;
+  color: #111827;
+  margin: 0 0 2px;
+}
+
+/* §PRINT-IDENTITY — employee name / department / position STACKED on
+   their own lines (top-right of the report), never joined inline. */
+.print-doc-subject-line {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: #374151;
+  margin: 1px 0;
+}
+
+.print-doc-subject-extra {
   font-size: 10px;
-  letter-spacing: 2px;
   color: #6b7280;
-  font-weight: 700;
+  margin: 3px 0 0;
+}
+
+.print-doc-subject-meta {
+  font-size: 11px;
+  color: #374151;
+  margin: 2px 0 0;
+}
+
+.print-doc-meta-inline {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  font-size: 11px;
+  color: #374151;
+  margin-top: 8px;
 }
 
 .print-doc-title {
@@ -1122,13 +1492,26 @@ textarea:focus {
 }
 .print-doc-meta p { margin: 2px 0; }
 
+/* §PRINT-RULE — two-tone professional divider: dark base with a brand
+   red accent segment at the document's start edge (right in RTL). */
 .print-doc-rule {
   border: none;
+  height: 0;
   border-top: 2px solid #111827;
   margin: 10px 0 0;
+  position: relative;
 }
 
-/* Headline stats */
+.print-doc-rule::after {
+  content: "";
+  position: absolute;
+  top: -2px;
+  inset-inline-start: 0;
+  width: 64px;
+  border-top: 2px solid #a01a2b;
+}
+
+/* Headline stats — brand-accented KPI chips */
 .print-stats-grid {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
@@ -1138,11 +1521,15 @@ textarea:focus {
 
 .print-stat {
   border: 1px solid #d1d5db;
+  border-top: 3px solid #a01a2b;
   border-radius: 6px;
   padding: 6px 8px;
   display: flex;
   flex-direction: column;
   gap: 1px;
+  background: #fbfbfc;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
 }
 
 .print-stat-label { font-size: 10px; color: #6b7280; }
@@ -1159,7 +1546,7 @@ textarea:focus {
   font-size: 15px;
   font-weight: 800;
   color: #111827;
-  border-inline-start: 4px solid #4f46e5;
+  border-inline-start: 4px solid #a01a2b;
   padding-inline-start: 8px;
   margin: 0 0 8px;
   break-after: avoid;
@@ -1188,8 +1575,11 @@ textarea:focus {
   color: #111827;
   font-weight: 800;
   border: 1px solid #9ca3af;
+  border-top: 2px solid #a01a2b;
   padding: 5px 6px;
   text-align: right;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
 }
 
 .print-table td {
@@ -1198,6 +1588,10 @@ textarea:focus {
   text-align: right;
   vertical-align: top;
   color: #1f2937;
+  /* Long Arabic text and unbreakable tokens (codes/URLs) must wrap,
+     never widen the page or clip columns. */
+  overflow-wrap: anywhere;
+  word-break: normal;
 }
 
 .print-table tbody tr:nth-child(even) td { background: #f9fafb; }
@@ -1208,4 +1602,345 @@ textarea:focus {
   font-size: 10px;
   color: #6b7280;
 }
-.print-doc-footer p { margin: 6px 0 0; }
+
+.print-doc-footer-rule { margin-top: 16px; }
+
+.print-doc-footer-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 5px;
+}
+
+.print-doc-footer-brand {
+  font-weight: 800;
+  letter-spacing: 1.5px;
+  color: #a01a2b;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   §BRAND CANVAS — PersistentBackground decorative layers. The DARK
+   identity is the default; html.light refines every layer (see the
+   light section below). Inline styles were moved here so the theme
+   is driven from one place.
+   ══════════════════════════════════════════════════════════════ */
+.qnlys-bg-base { background-color: #0b0d11; }
+.qnlys-bg-glow-a { background: radial-gradient(circle, rgba(194,35,52,0.10) 0%, rgba(124,22,36,0.05) 45%, transparent 72%); }
+.qnlys-bg-glow-b { background: radial-gradient(circle, rgba(124,22,36,0.07) 0%, rgba(28,32,40,0.20) 45%, transparent 72%); }
+.qnlys-bg-sheen { background: linear-gradient(to bottom, rgba(255,255,255,0.022), transparent); }
+.qnlys-bg-vignette { background: radial-gradient(ellipse 120% 90% at 50% 40%, transparent 55%, rgba(0,0,0,0.42) 100%); }
+
+/* ══════════════════════════════════════════════════════════════
+   §LOGIN ATMOSPHERE — the "data intelligence" layer for Login and
+   Loading only (PersistentBackground stays the app-wide canvas).
+   A fine analytical grid, three flowing signal curves and sparse
+   monitoring points — extremely restrained, always secondary to
+   the brand. Static/opacity/dashoffset motion only; scoped to a
+   pointer-events-none layer so it never touches interaction.
+   ══════════════════════════════════════════════════════════════ */
+.qnlys-amb-grid {
+  background-image:
+    linear-gradient(to right, rgba(255, 255, 255, 0.02) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.02) 1px, transparent 1px);
+  background-size: 54px 54px;
+  -webkit-mask-image: radial-gradient(ellipse 78% 68% at 50% 45%, black 20%, transparent 72%);
+  mask-image: radial-gradient(ellipse 78% 68% at 50% 45%, black 20%, transparent 72%);
+}
+
+.qnlys-amb-svg { opacity: 0.4; }
+
+.qnlys-amb-curve {
+  stroke: url(#qnlys-amb-flow);
+  stroke-width: 1.1;
+  stroke-linecap: round;
+  stroke-dasharray: 0.16 0.1;
+  animation: qnlys-amb-flow 13s linear infinite;
+}
+
+.qnlys-amb-curve-2 { animation-duration: 17s; animation-direction: reverse; opacity: 0.7; }
+.qnlys-amb-curve-3 { animation-duration: 21s; opacity: 0.55; }
+
+@keyframes qnlys-amb-flow {
+  to { stroke-dashoffset: -2.6; }
+}
+
+.qnlys-amb-dot {
+  position: absolute;
+  width: 3px;
+  height: 3px;
+  border-radius: 9999px;
+  background: rgba(219, 74, 88, 0.7);
+  box-shadow: 0 0 8px rgba(219, 74, 88, 0.45);
+  animation: qnlys-amb-pulse 4.5s ease-in-out infinite;
+}
+
+@keyframes qnlys-amb-pulse {
+  0%, 100% { opacity: 0.1; }
+  50%      { opacity: 0.7; }
+}
+
+html.light .qnlys-amb-grid {
+  background-image:
+    linear-gradient(to right, rgba(15, 23, 42, 0.028) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(15, 23, 42, 0.028) 1px, transparent 1px);
+}
+html.light .qnlys-amb-svg { opacity: 0.3; }
+html.light .qnlys-amb-dot {
+  background: rgba(160, 26, 43, 0.6);
+  box-shadow: 0 0 8px rgba(160, 26, 43, 0.35);
+}
+
+/* ── §LOGIN SURFACES — refined charcoal card + brand zone ────── */
+/* Red atmospheric tint INSIDE the card (kept subtle in light). */
+.qnlys-card-aura {
+  background:
+    radial-gradient(ellipse at 15% -10%, rgba(194, 35, 52, 0.16), transparent 55%),
+    radial-gradient(ellipse at 100% 115%, rgba(124, 22, 36, 0.12), transparent 55%);
+}
+
+html.light .qnlys-card-aura {
+  background:
+    radial-gradient(ellipse at 15% -10%, rgba(160, 26, 43, 0.06), transparent 55%),
+    radial-gradient(ellipse at 100% 115%, rgba(160, 26, 43, 0.04), transparent 55%);
+}
+
+/* Brand hairline across the card's top edge. */
+.qnlys-card-topline {
+  background: linear-gradient(90deg, transparent, rgba(219, 74, 88, 0.6), rgba(124, 22, 36, 0.35), transparent);
+}
+
+html.light .qnlys-card-topline {
+  background: linear-gradient(90deg, transparent, rgba(160, 26, 43, 0.5), rgba(160, 26, 43, 0.28), transparent);
+}
+
+/* Short brand divider under the official tagline. */
+.qnlys-brand-divider {
+  width: 56px;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(219, 74, 88, 0.7), transparent);
+}
+
+html.light .qnlys-brand-divider {
+  background: linear-gradient(90deg, transparent, rgba(160, 26, 43, 0.55), transparent);
+}
+
+/* Localized glow behind the brand lockup in the login brand zone. */
+.qnlys-login-brand-glow {
+  background: radial-gradient(ellipse, rgba(194, 35, 52, 0.13) 0%, rgba(124, 22, 36, 0.07) 45%, transparent 72%);
+}
+
+html.light .qnlys-login-brand-glow {
+  background: radial-gradient(ellipse, rgba(160, 26, 43, 0.08) 0%, rgba(160, 26, 43, 0.04) 45%, transparent 72%);
+}
+
+/* ── §LOGIN CONNECT — the perceived relationship between the login
+   card and the brand area: one faint analytical path with sparse
+   nodes drifting through the space between the two zones. Felt,
+   not seen: the stroke itself is a low-opacity brand-red gradient. */
+.qnlys-connect { opacity: 0.85; }
+
+html.light .qnlys-connect { opacity: 0.55; }
+
+.qnlys-connect-path {
+  stroke-dasharray: 6 8;
+  animation: qnlys-connect-flow 9s linear infinite;
+}
+
+@keyframes qnlys-connect-flow {
+  to { stroke-dashoffset: -140; }
+}
+
+/* Sparse connected nodes on the signal paths. */
+.qnlys-node {
+  animation: qnlys-amb-pulse 4.5s ease-in-out infinite;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   §20.2 LIGHT THEME — Qnlys PROFESSIONAL LIGHT SYSTEM
+   ══════════════════════════════════════════════════════════════
+   Light Mode is designed INDEPENDENTLY (not "dark mode on white"):
+   a near-white page, white primary surfaces, charcoal text, visible
+   neutral borders, and the Qnlys deep-red brand accent tuned for
+   paper contrast. Dark utilities used across the app are mapped
+   HERE — one auditable adapter — so pages consume tokens without
+   individual redesigns. Dark Mode keeps its own values untouched.
+   ══════════════════════════════════════════════════════════════ */
+
+html.light {
+  /* ── §LIGHT FOUNDATION — surface hierarchy ── */
+  --light-bg: #f2f4f8;             /* page background — very light neutral */
+  --light-elev: #ffffff;           /* primary surface — white              */
+  --light-surface: #eef0f5;        /* secondary surface — tinted neutral   */
+  --light-surface-hover: #e4e8ef;  /* hover surface                        */
+  --light-border: #cfd6e0;         /* visible neutral border               */
+  --light-border-strong: #b6c0cd;  /* emphasized border / divider          */
+
+  /* ── §LIGHT TEXT — charcoal hierarchy (muted is READABLE, not pale) ── */
+  --light-text: #101828;           /* primary text  — very dark charcoal   */
+  --light-text-2: #2f3a4c;         /* secondary text — medium-dark         */
+  --light-text-3: #55606e;         /* muted text — readable on white       */
+  --light-text-4: #6e7a88;         /* faint text (icons, hints)            */
+
+  /* ── §LIGHT BRAND — Qnlys deep red tuned for paper ── */
+  --light-accent: #a01a2b;         /* brand red readable on white          */
+  --light-accent-strong: #8b1625;  /* hover/active brand red               */
+
+  /* ── §LIGHT SHADCN TOKENS — ui primitives (dialog/popover/cards) ── */
+  --background: #f2f4f8;
+  --foreground: #101828;
+  --card: #ffffff;
+  --card-foreground: #101828;
+  --popover: #ffffff;
+  --popover-foreground: #101828;
+  --primary: #a01a2b;
+  --primary-foreground: #ffffff;
+  --secondary: #eef0f5;
+  --secondary-foreground: #2f3a4c;
+  --muted: #eef0f5;
+  --muted-foreground: #55606e;
+  --accent: #eef0f5;
+  --accent-foreground: #101828;
+  --border: #cfd6e0;
+  --input: #cfd6e0;
+  --ring: oklch(0.48 0.13 22);     /* deep brand red — visible focus       */
+  --sidebar: #ffffff;
+  --sidebar-foreground: #101828;
+  --sidebar-border: #cfd6e0;
+}
+
+html.light body { background: var(--light-bg); color: var(--light-text); }
+
+/* ── §LIGHT SURFACES ─────────────────────────────────────────── */
+html.light .bg-slate-950 { background-color: var(--light-bg) !important; }
+html.light .bg-slate-950\/95, html.light .bg-slate-950\/90, html.light .bg-slate-950\/80,
+html.light .bg-slate-950\/70, html.light .bg-slate-950\/60, html.light .bg-slate-950\/50,
+html.light .bg-slate-950\/40, html.light .bg-slate-950\/30 { background-color: color-mix(in srgb, var(--light-bg) 88%, #ffffff) !important; }
+html.light .bg-slate-900, html.light .bg-slate-900\/95, html.light .bg-slate-900\/97 { background-color: var(--light-elev) !important; }
+html.light .bg-slate-900\/90, html.light .bg-slate-900\/80, html.light .bg-slate-900\/70,
+html.light .bg-slate-900\/60, html.light .bg-slate-900\/50, html.light .bg-slate-900\/40,
+html.light .bg-slate-900\/30, html.light .bg-slate-900\/20 { background-color: color-mix(in srgb, var(--light-elev) 90%, var(--light-surface)) !important; }
+html.light .bg-slate-800, html.light .bg-slate-800\/95, html.light .bg-slate-800\/90 { background-color: var(--light-surface) !important; }
+html.light .bg-slate-800\/80, html.light .bg-slate-800\/70, html.light .bg-slate-800\/60,
+html.light .bg-slate-800\/50, html.light .bg-slate-800\/40, html.light .bg-slate-800\/30,
+html.light .bg-slate-800\/20 { background-color: color-mix(in srgb, var(--light-surface) 72%, var(--light-elev)) !important; }
+html.light .bg-slate-700, html.light .bg-slate-700\/70, html.light .bg-slate-700\/60,
+html.light .bg-slate-700\/50, html.light .bg-slate-700\/40, html.light .bg-slate-700\/30 { background-color: var(--light-surface-hover) !important; }
+
+/* Dark-mode translucent whites (subtle hovers/chips) become subtle
+   charcoal tints — visible on paper without inventing new surfaces. */
+html.light .bg-white\/5, html.light .bg-white\/\[0\.04\], html.light .bg-white\/\[0\.06\],
+html.light .bg-white\/10, html.light .bg-white\/\[0\.08\] { background-color: rgba(15, 23, 42, 0.05) !important; }
+
+/* Dark-mode near-black hover blocks become visible light hovers. */
+html.light .bg-slate-600, html.light .bg-slate-600\/70, html.light .bg-slate-600\/60,
+html.light .bg-slate-600\/50, html.light .bg-slate-600\/40, html.light .bg-slate-600\/30 {
+  background-color: #dbe0e8 !important;
+}
+
+/* ── §LIGHT TEXT ─────────────────────────────────────────────── */
+html.light .text-slate-50, html.light .text-slate-100, html.light .text-white { color: var(--light-text) !important; }
+html.light .text-slate-200, html.light .text-slate-300 { color: var(--light-text-2) !important; }
+html.light .text-slate-400, html.light .text-slate-500 { color: var(--light-text-3) !important; }
+html.light .text-slate-600, html.light .text-slate-700 { color: var(--light-text-4) !important; }
+
+/* §LIGHT SEMANTIC TEXT — the 300/400 pastels are unreadable on paper;
+   they map to their deep families (meaning preserved — §4: semantic
+   hues stay green/amber/red/blue; the brand red is NOT universal). */
+html.light .text-emerald-300, html.light .text-emerald-400, html.light .text-emerald-300\/90 { color: #047857 !important; }
+html.light .text-amber-300, html.light .text-amber-400, html.light .text-amber-300\/90 { color: #92610a !important; }
+html.light .text-yellow-300, html.light .text-yellow-400 { color: #8a6d00 !important; }
+html.light .text-red-300, html.light .text-red-400, html.light .text-red-300\/90 { color: #b32222 !important; }
+html.light .text-rose-300, html.light .text-rose-400 { color: #be123c !important; }
+html.light .text-cyan-300, html.light .text-cyan-400 { color: #0e7490 !important; }
+html.light .text-blue-300, html.light .text-blue-400 { color: #1d4ed8 !important; }
+html.light .text-violet-300, html.light .text-violet-400 { color: #6d28d9 !important; }
+html.light .text-orange-300, html.light .text-orange-400 { color: #c2410c !important; }
+html.light .text-teal-300, html.light .text-teal-400 { color: #0f766e !important; }
+html.light .text-brand-300, html.light .text-brand-400 { color: var(--light-accent) !important; }
+
+/* ── §LIGHT BORDERS / DIVIDERS ───────────────────────────────── */
+html.light .border-slate-950, html.light .border-slate-800,
+html.light .border-slate-800\/30, html.light .border-slate-800\/40,
+html.light .border-slate-800\/50, html.light .border-slate-800\/60,
+html.light .border-slate-800\/70, html.light .border-slate-800\/80 { border-color: var(--light-border) !important; }
+html.light .border-slate-700, html.light .border-slate-700\/30,
+html.light .border-slate-700\/40, html.light .border-slate-700\/50,
+html.light .border-slate-700\/60, html.light .border-slate-700\/70 { border-color: var(--light-border) !important; }
+html.light .border-slate-600, html.light .border-slate-600\/30,
+html.light .border-slate-600\/40, html.light .border-slate-600\/50,
+html.light .border-slate-600\/60 { border-color: var(--light-border-strong) !important; }
+/* Dark-mode translucent white borders → visible neutral borders. */
+html.light .border-white\/10, html.light .border-white\/\[0\.06\], html.light .border-white\/\[0\.08\],
+html.light .border-white\/\[0\.1\], html.light .border-white\/15, html.light .border-white\/20 {
+  border-color: var(--light-border) !important;
+}
+html.light .divide-slate-700 > :not([hidden]) ~ :not([hidden]),
+html.light .divide-slate-800 > :not([hidden]) ~ :not([hidden]) { border-color: var(--light-border) !important; }
+
+/* ── §LIGHT BADGE SURFACES — keep tinted fills, deepen the brand ── */
+html.light .bg-brand-500\/10, html.light .bg-brand-500\/15, html.light .bg-brand-500\/20 { background-color: rgba(160, 26, 43, 0.09) !important; }
+
+/* ── §LIGHT INPUTS ───────────────────────────────────────────── */
+html.light input, html.light textarea, html.light select {
+  background-color: var(--light-elev);
+  color: var(--light-text);
+  border-color: var(--light-border);
+}
+html.light input::placeholder, html.light textarea::placeholder { color: var(--light-text-4); }
+/* Disabled inputs must be distinguishable. */
+html.light input:disabled, html.light textarea:disabled, html.light select:disabled {
+  background-color: var(--light-surface);
+  color: var(--light-text-4);
+}
+html.light .placeholder\:text-slate-500::placeholder { color: var(--light-text-4) !important; }
+
+/* ── §LIGHT SHADOWS — soft, never the heavy black of dark mode ── */
+html.light .shadow-black\/20, html.light .shadow-black\/30, html.light .shadow-black\/40,
+html.light .shadow-black\/50, html.light .shadow-black\/60, html.light .shadow-black\/80 {
+  --tw-shadow-color: rgba(15, 23, 42, 0.16) !important;
+}
+html.light .shadow-2xl { box-shadow: 0 12px 32px rgba(15, 23, 42, 0.14) !important; }
+html.light .shadow-xl { box-shadow: 0 8px 24px rgba(15, 23, 42, 0.12) !important; }
+html.light .shadow-lg { box-shadow: 0 4px 14px rgba(15, 23, 42, 0.10) !important; }
+
+/* ── §LIGHT OVERLAYS — drawer/dialog backdrops lighten ────────── */
+html.light .bg-black\/60, html.light .bg-black\/50 { background-color: rgba(15, 23, 42, 0.38) !important; }
+
+/* ── §LIGHT FOCUS — visible keyboard focus in the brand accent ── */
+html.light .focus-visible\:ring-brand-500\/50:focus-visible,
+html.light .focus-visible\:ring-brand-500\/40:focus-visible,
+html.light .focus-visible\:ring-brand-500\/60:focus-visible {
+  --tw-ring-color: rgba(160, 26, 43, 0.45) !important;
+}
+
+/* ── §LIGHT HEADER — integrated with the page, not a dark bar ─── */
+html.light .glass-header {
+  background: rgba(255, 255, 255, 0.86);
+  backdrop-filter: blur(18px) saturate(160%);
+  -webkit-backdrop-filter: blur(18px) saturate(160%);
+}
+html.light .header-gradient-line {
+  background: linear-gradient(90deg,
+    transparent 0%,
+    rgba(160, 26, 43, 0.10) 15%,
+    rgba(160, 26, 43, 0.45) 50%,
+    rgba(160, 26, 43, 0.10) 85%,
+    transparent 100%);
+}
+
+/* ── §LIGHT PRINT-PREVIEW HOST — white chrome around the paper ── */
+html.light .print-overlay { background: rgba(15, 23, 42, 0.45); }
+html.light .print-overlay-toolbar {
+  background: var(--light-elev);
+  color: var(--light-text);
+  border-bottom: 1px solid var(--light-border);
+}
+
+/* ── §LIGHT DECORATIVE BACKGROUND — quiet support, never noise ── */
+html.light .qnlys-bg-base { background-color: #f7f8fb; }
+html.light .qnlys-bg-glow-a { background: radial-gradient(circle, rgba(160, 26, 43, 0.06) 0%, rgba(160, 26, 43, 0.03) 45%, transparent 72%); }
+html.light .qnlys-bg-glow-b { background: radial-gradient(circle, rgba(100, 116, 139, 0.06) 0%, rgba(100, 116, 139, 0.03) 45%, transparent 72%); }
+html.light .qnlys-bg-sheen { background: linear-gradient(to bottom, rgba(255, 255, 255, 0.6), transparent); }
+html.light .qnlys-bg-vignette { background: radial-gradient(ellipse 120% 90% at 50% 40%, transparent 60%, rgba(15, 23, 42, 0.05) 100%); }
+

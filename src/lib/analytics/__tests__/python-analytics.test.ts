@@ -673,15 +673,25 @@ describe('Phase 5 — python analytics engine (requires python3)', { skip: !PY_A
       assert.equal(outcome.reason, 'PYTHON_UNAVAILABLE');
     });
 
-    // Binary that exits non-zero → SCRIPT_ERROR.
-    await withEnv({ PYTHON_ANALYTICS_BIN: '/bin/false' }, async () => {
+    // Engine invocation that exits non-zero → SCRIPT_ERROR.
+    // §PORTABILITY: exercised via a failing engine SCRIPT over the real
+    // detected interpreter — '/bin/false' does not exist on Windows and
+    // degraded there to PYTHON_UNAVAILABLE instead of SCRIPT_ERROR.
+    const failingScript = path.join(process.cwd(),
+      'python-analytics/tests/fixtures/failing_engine.py');
+    assert.ok(fs.existsSync(failingScript), 'failing-engine fixture must exist');
+    await withEnv({ PYTHON_ANALYTICS_SCRIPT: failingScript }, async () => {
       const outcome = await runPythonAnalytics(makeDataset());
       assert.equal(outcome.ok, false);
       assert.equal(outcome.reason, 'SCRIPT_ERROR');
     });
 
-    // Binary producing garbage stdout → INVALID_OUTPUT.
-    await withEnv({ PYTHON_ANALYTICS_BIN: '/bin/echo' }, async () => {
+    // Engine that exits 0 with garbage stdout → INVALID_OUTPUT.
+    // (Same portability doctrine — '/bin/echo' is POSIX-only.)
+    const garbageScript = path.join(process.cwd(),
+      'python-analytics/tests/fixtures/garbage_engine.py');
+    assert.ok(fs.existsSync(garbageScript), 'garbage-engine fixture must exist');
+    await withEnv({ PYTHON_ANALYTICS_SCRIPT: garbageScript }, async () => {
       const outcome = await runPythonAnalytics(makeDataset());
       assert.equal(outcome.ok, false);
       assert.equal(outcome.reason, 'INVALID_OUTPUT');

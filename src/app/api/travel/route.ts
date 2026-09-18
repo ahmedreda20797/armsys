@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getAll, getAllBatch, withEmployee } from '@/lib/db';
 import { verifyPermission, requireAuth } from '@/lib/verify-permission';
 import { asScopeViewer, employeeInScope, authScopeViewer, filterRowsByEmployeeScope, resolveEmployeeScopeFromDb } from '@/lib/scope/server';
+import { isDepartureAttention, isReturnAttention, isTomorrow } from '@/lib/travel-status';
 
 /** Parse DD/MM/YYYY to a comparable number YYYYMMDD for sorting */
 function parseDateToSortable(dateStr: string): number {
@@ -28,6 +29,9 @@ function getDaysRemaining(dateStr: string): number {
     return 0;
   }
 }
+
+/** §TRAVEL-TOMORROW — tomorrow matcher lives in lib/travel-status.ts
+ *  (canonical, tested); the route consumes it directly. */
 
 function getMonthKey(dateStr: string): string {
   if (!dateStr) return 'غير محدد';
@@ -134,6 +138,18 @@ export async function GET(request: NextRequest) {
       filtered = filtered.filter((t) => t._monthKey === month);
     }
 
+    // §TRAVEL-TOMORROW filters (real server-side filters, combinable
+    // with every other filter; canceled trips excluded from "tomorrow"
+    // results since a canceled trip is not traveling).
+    const tomorrowDeparture = searchParams.get('tomorrowDeparture') === '1';
+    const tomorrowReturn = searchParams.get('tomorrowReturn') === '1';
+    if (tomorrowDeparture) {
+      filtered = filtered.filter((t) => !isCanceled(t) && isTomorrow(t.departureDate));
+    }
+    if (tomorrowReturn) {
+      filtered = filtered.filter((t) => !isCanceled(t) && isTomorrow(t.returnDate));
+    }
+
     // Search filter
     if (search.trim()) {
       const q = search.trim().toLowerCase();
@@ -184,14 +200,23 @@ export async function GET(request: NextRequest) {
     //     in 2 days IS a real attention item, not a "long future
     //     event"). Each urgent entry carries `urgentType: 'departure' | 'return'`
     //     so the consumer labels the event correctly. ──
+    // ── Urgent trips (Phase 6 §6 + §TRAVEL-THRESHOLD) — include BOTH
+    //     upcoming DEPARTURES and upcoming RETURNS, each with its OWN
+    //     independent attention window from src/lib/travel-status.ts:
+    //       departure → DEPARTURE_ATTENTION_DAYS (10 = the قريب rule)
+    //       return    → RETURN_ATTENTION_DAYS (14, deliberately its own
+    //                   concept — a return in 2 days IS a real attention
+    //                   item even when the departure already passed).
+    //     Each urgent entry carries `urgentType: 'departure' | 'return'`
+    //     so the consumer labels the event correctly. ──
     const urgentTripsRaw = tripsWithCategory
       .filter((t) => !isCanceled(t))
       .flatMap((t) => {
         const out: Array<{ t: any; daysLeft: number; urgentType: 'departure' | 'return' }> = [];
-        if (t._daysLeft >= 0 && t._daysLeft <= 14) {
+        if (isDepartureAttention(t._daysLeft)) {
           out.push({ t, daysLeft: t._daysLeft, urgentType: 'departure' });
         }
-        if (typeof t._retDays === 'number' && t._retDays >= 0 && t._retDays <= 14) {
+        if (typeof t._retDays === 'number' && isReturnAttention(t._retDays)) {
           out.push({ t, daysLeft: t._retDays, urgentType: 'return' });
         }
         return out;

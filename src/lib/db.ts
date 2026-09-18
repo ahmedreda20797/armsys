@@ -145,27 +145,89 @@ export async function findFirst<T = Record<string, any>>(table: string, filters:
 // Tries the fast indexed query first, but ANY failure — missing index,
 // timeout, or a hung RTDB connection — falls back to the legacy
 // full-table scan, which is the path proven to work in this environment
-// (empirically: plain .get() completes in ~17s, while an
+// (empirically: plain .get() completes in ~17s cold, while an
 // orderByChild().equalTo() query can hang indefinitely on this network).
 // The indexed attempt is therefore hard-capped so the fallback always
 // has time to run inside the route's 45s budget.
+//
+// CIRCUIT BREAKER (auth reliability): when the indexed query TIMES OUT
+// (the hang signature, distinct from a fast "index not defined" error),
+// repeated logins would each burn the full timeout before the fallback.
+// After INDEX_BREAKER_THRESHOLD consecutive timeouts the indexed attempt
+// is skipped for INDEX_BREAKER_COOLDOWN_MS and the scan serves login
+// immediately. The breaker resets on the first indexed success, so a
+// repaired index/network is picked up automatically.
 //
 // Deliberately bypasses the table cache: freshness matters more than
 // latency for a credential check (suspension, role changes), and
 // caching one row here would poison the whole-table cache.
 const USER_QUERY_TIMEOUT_MS = 10_000;
+const INDEX_BREAKER_THRESHOLD = 2;
+const INDEX_BREAKER_COOLDOWN_MS = 5 * 60_000;
 let userEmailFallbackWarningShown = false;
+let indexedTimeoutStreak = 0;
+let indexedBreakerOpenUntil = 0;
+
+/** Internal-only diagnostic classes for the user lookup (never user-facing). */
+export type UserLookupFailureKind = 'timeout' | 'error' | 'none';
+
+export interface UserLookupDiagnostic {
+  path: 'indexed' | 'scan' | 'scan-breaker-open';
+  failure: UserLookupFailureKind;
+  durationMs: number;
+}
+
+let lastUserLookupDiagnostic: UserLookupDiagnostic | null = null;
+
+/** The classification of the most recent findUserByEmail call (for the login route's diagnostics). */
+export function getLastUserLookupDiagnostic(): UserLookupDiagnostic | null {
+  return lastUserLookupDiagnostic;
+}
+
+/**
+ * Test hook — resets the indexed-query circuit breaker, the timeout
+ * streak and the last diagnostic between test cases (the breaker state
+ * is module-level by design; production code must never call this).
+ */
+export function resetUserLookupBreakerForTests(): void {
+  indexedTimeoutStreak = 0;
+  indexedBreakerOpenUntil = 0;
+  lastUserLookupDiagnostic = null;
+}
 
 function raceWithTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
   return Promise.race([
     promise,
     new Promise<never>((_, reject) =>
       setTimeout(
-        () => reject(new Error(`[db] RTDB query exceeded ${timeoutMs}ms (hung connection)`)),
+        () => {
+          const err = new Error(`[db] RTDB query exceeded ${timeoutMs}ms (hung connection)`);
+          (err as any).kind = 'timeout';
+          reject(err);
+        },
         timeoutMs
       )
     ),
   ]);
+}
+
+async function indexedUserLookup(
+  normalizedEmail: string,
+  queryTimeoutMs: number
+): Promise<{ user: Record<string, any> | null; failure: UserLookupFailureKind }> {
+  const snapshot = await raceWithTimeout(
+    rtdbRef('arm_erp/users')
+      .orderByChild('email')
+      .equalTo(normalizedEmail)
+      .limitToFirst(2)
+      .get(),
+    queryTimeoutMs
+  );
+
+  if (!snapshot.exists()) return { user: null, failure: 'none' };
+  const data = snapshot.val() as Record<string, Record<string, any>>;
+  const [id, val] = Object.entries(data)[0];
+  return { user: { id, ...(val as Record<string, any>) }, failure: 'none' };
 }
 
 export async function findUserByEmail<T = Record<string, any>>(
@@ -174,35 +236,60 @@ export async function findUserByEmail<T = Record<string, any>>(
 ): Promise<T | null> {
   const normalizedEmail = email.trim().toLowerCase();
   const queryTimeoutMs = options?.queryTimeoutMs ?? USER_QUERY_TIMEOUT_MS;
-  try {
-    const snapshot = await raceWithTimeout(
-      rtdbRef('arm_erp/users')
-        .orderByChild('email')
-        .equalTo(normalizedEmail)
-        .limitToFirst(2)
-        .get(),
-      queryTimeoutMs
-    );
+  const t0 = performance.now();
 
-    if (!snapshot.exists()) return null;
-    const data = snapshot.val() as Record<string, Record<string, any>>;
-    const [id, val] = Object.entries(data)[0];
-    return { id, ...(val as Record<string, any>) } as unknown as T;
+  // Breaker open → the indexed path already proved it hangs recently;
+  // serve from the scan without re-paying the timeout.
+  if (Date.now() < indexedBreakerOpenUntil) {
+    const results = await findWhere<T>('users', { email: normalizedEmail });
+    lastUserLookupDiagnostic = {
+      path: 'scan-breaker-open',
+      failure: 'none',
+      durationMs: Math.round(performance.now() - t0),
+    };
+    return results.length > 0 ? results[0] : null;
+  }
+
+  try {
+    const { user, failure } = await indexedUserLookup(normalizedEmail, queryTimeoutMs);
+    indexedTimeoutStreak = 0;
+    lastUserLookupDiagnostic = {
+      path: 'indexed',
+      failure,
+      durationMs: Math.round(performance.now() - t0),
+    };
+    return (user as T) ?? null;
   } catch (err: any) {
+    const kind: UserLookupFailureKind = err?.kind === 'timeout' ? 'timeout' : 'error';
+    if (kind === 'timeout') {
+      indexedTimeoutStreak += 1;
+      if (indexedTimeoutStreak >= INDEX_BREAKER_THRESHOLD) {
+        indexedBreakerOpenUntil = Date.now() + INDEX_BREAKER_COOLDOWN_MS;
+      }
+    }
+
     // Indexed lookup unavailable (missing index, hung connection, or any
     // network failure) — the scan below is what actually serves login.
-    if (!userEmailFallbackWarningShown) {
+    if (!userEmailFallbackWarningShown || kind === 'timeout') {
       userEmailFallbackWarningShown = true;
       const reason = String(err?.message ?? err).slice(0, 140);
       console.warn(
-        `[db] findUserByEmail: indexed lookup failed (${reason}) — ` +
-        'falling back to the full users-table scan. Login still works.\n' +
-        'Faster fix: Firebase Console → Realtime Database → Rules → add\n' +
+        `[db] findUserByEmail: indexed lookup failed (${kind}: ${reason}) — ` +
+        'falling back to the full users-table scan. Login still works.' +
+        (kind === 'timeout' && indexedBreakerOpenUntil > Date.now()
+          ? ' Indexed path temporarily disabled (breaker open) — subsequent logins skip the hung query.'
+          : '') +
+        '\nFaster fix: Firebase Console → Realtime Database → Rules → add\n' +
         '  "users": { ".indexOn": ["email"] }\n' +
         'If queries keep hanging after that, check network/proxy access to the RTDB host.'
       );
     }
     const results = await findWhere<T>('users', { email: normalizedEmail });
+    lastUserLookupDiagnostic = {
+      path: 'scan',
+      failure: kind === 'timeout' ? 'none' : kind, // the scan itself succeeded — the failure was the indexed attempt
+      durationMs: Math.round(performance.now() - t0),
+    };
     return results.length > 0 ? results[0] : null;
   }
 }

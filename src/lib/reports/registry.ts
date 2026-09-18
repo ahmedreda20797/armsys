@@ -29,6 +29,7 @@ import { runQualityDeductionsReport } from './runners/quality-deductions';
 import { runKpiReport } from './runners/kpi-monthly';
 import { runKpiMasterEmployeeReport } from './runners/kpi-master-employee';
 import { groupQualityDeductionsByEmployee } from './grouping/quality-deductions-grouped';
+import { runFollowUpsReport, runFollowUpsEmployeeReport } from './runners/follow-ups';
 
 // ─────────────────────────────────────────────────────────────
 //  Runner contract
@@ -87,12 +88,20 @@ export const QUALITY_DEDUCTIONS_REPORT: RegisteredReport<Record<string, unknown>
       { key: 'employeeId', label: 'الموظف', control: 'employee-single' },
       { key: 'employeeIds', label: 'الموظفون', control: 'employee-multi' },
       { key: 'employeeScope', label: 'نطاق الموظفين', control: 'employee-scope' },
+      { key: 'search', label: 'بحث باسم الموظف', control: 'text' },
       { key: 'department', label: 'القسم', control: 'department' },
+      { key: 'team', label: 'الفريق', control: 'team' },
+      { key: 'archived', label: 'حالة الخصم', control: 'select', options: [
+        { value: 'active', label: 'الخصومات النشطة' },
+        { value: 'archived', label: 'الخصومات المؤرشفة' },
+        { value: 'all', label: 'الكل' },
+      ] },
       { key: 'category', label: 'نوع الخصم', control: 'text' },
     ],
     visibleColumns: [
       { key: 'employeeName', label: 'الموظف', origin: 'raw' },
       { key: 'department', label: 'القسم', origin: 'raw' },
+      { key: 'team', label: 'الفريق', origin: 'raw' },
       { key: 'category', label: 'نوع الخصم', origin: 'raw' },
       { key: 'description', label: 'الوصف', origin: 'raw', width: 36 },
       { key: 'date', label: 'التاريخ', origin: 'raw' },
@@ -113,6 +122,131 @@ export const QUALITY_DEDUCTIONS_REPORT: RegisteredReport<Record<string, unknown>
   },
   run: async (ctx) => {
     const result = await runQualityDeductionsReport(ctx.resolved);
+    return result as unknown as ReportRunnerResult<Record<string, unknown>>;
+  },
+};
+
+/**
+ * §24/§25 FOLLOW-UPS REPORTS — deterministic reporting over the
+ * canonical followUps store via the canonical metric predicates.
+ * Filters: employee / team / department / month / date-range /
+ * type / status / name-search. NO AI: patterns are arithmetic.
+ */
+const FOLLOW_UPS_FILTERS: ReportFilterSpec[] = [
+  { key: 'fromDate', label: 'من تاريخ', control: 'date' },
+  { key: 'toDate', label: 'إلى تاريخ', control: 'date' },
+  { key: 'monthKey', label: 'الشهر', control: 'month-select' },
+  { key: 'employeeId', label: 'الموظف', control: 'employee-single' },
+  { key: 'employeeScope', label: 'نطاق الموظفين', control: 'employee-scope' },
+  { key: 'search', label: 'بحث باسم الموظف', control: 'text' },
+  { key: 'department', label: 'القسم', control: 'department' },
+  { key: 'team', label: 'الفريق', control: 'team' },
+  {
+    key: 'type', label: 'نوع المتابعة', control: 'select',
+    options: [
+      { value: 'quality', label: 'جودة' },
+      { value: 'behavior', label: 'سلوك' },
+      { value: 'attendance', label: 'حضور' },
+      { value: 'productivity', label: 'إنتاجية' },
+      { value: 'training', label: 'تدريب' },
+      { value: 'coaching', label: 'توجيه' },
+      { value: 'complaint', label: 'شكوى' },
+      { value: 'positive', label: 'إيجابي' },
+      { value: 'improvement', label: 'تحسين' },
+      { value: 'other', label: 'أخرى' },
+    ],
+  },
+  {
+    key: 'status', label: 'الحالة', control: 'select',
+    options: [
+      { value: 'open', label: 'مفتوحة' },
+      { value: 'under_review', label: 'قيد المراجعة' },
+      { value: 'under_follow_up', label: 'قيد المتابعة' },
+      { value: 'resolved', label: 'تم الحل' },
+      { value: 'closed', label: 'مغلقة' },
+      { value: 'cancelled', label: 'ملغاة' },
+    ],
+  },
+];
+
+export const FOLLOW_UPS_REPORT: RegisteredReport<Record<string, unknown>> = {
+  definition: {
+    reportId: 'follow-ups',
+    name: 'تقرير المتابعات',
+    description: 'سجل المتابعات مع ملخص تنفيذي: الإجمالي والمكتملة والمعلقة والمتأخرة ومعدل الإنجاز ومتوسط التأخير (تحليل حتمي من البيانات الفعلية)',
+    domain: 'follow-ups',
+    reportType: 'operational',
+    enabled: true,
+    permission: { pageId: 'followUps', action: 'view', allowedEmployeeScopeModes: ['single', 'multiple', 'all'] },
+    timeMechanism: 'both',
+    allowedScopes: ['selected_month', 'current_month', 'previous_month', 'last_3_months', 'last_6_months', 'current_year', 'custom_range'],
+    allowedFilters: FOLLOW_UPS_FILTERS,
+    visibleColumns: [
+      { key: 'employeeName', label: 'الموظف', origin: 'raw' },
+      { key: 'department', label: 'القسم', origin: 'raw' },
+      { key: 'team', label: 'الفريق', origin: 'raw' },
+      { key: 'type', label: 'النوع', origin: 'raw' },
+      { key: 'subject', label: 'الموضوع', origin: 'raw', width: 32 },
+      { key: 'status', label: 'الحالة', origin: 'raw' },
+      { key: 'priority', label: 'الأولوية', origin: 'raw' },
+      { key: 'date', label: 'التاريخ', origin: 'raw' },
+      { key: 'nextFollowUpDate', label: 'الموعد التالي', origin: 'raw' },
+      { key: 'overdueDays', label: 'أيام التأخير', origin: 'raw' },
+      { key: 'responsible', label: 'المسؤول', origin: 'raw' },
+    ],
+    availableMetrics: [
+      { metricId: 'totalCount', label: 'إجمالي المتابعات', origin: 'raw', source: 'followUps', unit: 'count' },
+      { metricId: 'completedCount', label: 'مكتملة', origin: 'raw', source: 'followUps', unit: 'count' },
+      { metricId: 'pendingCount', label: 'غير مكتملة', origin: 'raw', source: 'followUps', unit: 'count' },
+      { metricId: 'overdueCount', label: 'متأخرة', origin: 'raw', source: 'followUps', unit: 'count' },
+      { metricId: 'completionRate', label: 'معدل الإنجاز %', origin: 'raw', source: 'followUps', unit: 'percent' },
+      { metricId: 'avgOverdueDays', label: 'متوسط أيام التأخير', origin: 'raw', source: 'followUps', unit: 'days' },
+    ],
+    exportFormats: ['view', 'print', 'excel'],
+    dataMode: 'live',
+  },
+  run: async (ctx) => {
+    const result = await runFollowUpsReport(ctx.resolved);
+    return result as unknown as ReportRunnerResult<Record<string, unknown>>;
+  },
+};
+
+export const FOLLOW_UPS_EMPLOYEE_REPORT: RegisteredReport<Record<string, unknown>> = {
+  definition: {
+    reportId: 'follow-ups-employee',
+    name: 'تقرير متابعات الموظفين — مجمّع',
+    description: 'صف واحد لكل موظف: عدد المتابعات ومعدل الإنجاز ونسبة التأخير والقضايا المتكررة وتوزيع الحالات (تحليل حتمي)',
+    domain: 'follow-ups',
+    reportType: 'operational',
+    enabled: true,
+    permission: { pageId: 'followUps', action: 'view', allowedEmployeeScopeModes: ['single', 'multiple', 'all'] },
+    timeMechanism: 'both',
+    allowedScopes: ['selected_month', 'current_month', 'previous_month', 'last_3_months', 'last_6_months', 'current_year', 'custom_range'],
+    allowedFilters: FOLLOW_UPS_FILTERS,
+    visibleColumns: [
+      { key: 'employeeName', label: 'الموظف', origin: 'raw' },
+      { key: 'department', label: 'القسم', origin: 'raw' },
+      { key: 'team', label: 'الفريق', origin: 'raw' },
+      { key: 'followUpCount', label: 'عدد المتابعات', origin: 'raw' },
+      { key: 'completedCount', label: 'مكتملة', origin: 'raw' },
+      { key: 'overdueCount', label: 'متأخرة', origin: 'raw' },
+      { key: 'completionRate', label: 'معدل الإنجاز %', origin: 'raw' },
+      { key: 'avgOverdueDays', label: 'متوسط أيام التأخير', origin: 'raw' },
+      { key: 'repeatedIssues', label: 'قضايا متكررة', origin: 'raw' },
+      { key: 'typesSummary', label: 'أنواع المتابعات', origin: 'raw', width: 28 },
+      { key: 'statusDistribution', label: 'توزيع الحالات', origin: 'raw', width: 28 },
+    ],
+    availableMetrics: [
+      { metricId: 'employees', label: 'عدد الموظفين', origin: 'raw', unit: 'count' },
+      { metricId: 'totalCount', label: 'إجمالي المتابعات', origin: 'raw', source: 'followUps', unit: 'count' },
+      { metricId: 'overdueCount', label: 'متأخرة', origin: 'raw', source: 'followUps', unit: 'count' },
+      { metricId: 'completionRate', label: 'معدل الإنجاز %', origin: 'raw', source: 'followUps', unit: 'percent' },
+    ],
+    exportFormats: ['view', 'print', 'excel'],
+    dataMode: 'live',
+  },
+  run: async (ctx) => {
+    const result = await runFollowUpsEmployeeReport(ctx.resolved);
     return result as unknown as ReportRunnerResult<Record<string, unknown>>;
   },
 };
@@ -284,6 +418,7 @@ export const QUALITY_DEDUCTIONS_GROUPED_REPORT: RegisteredReport<Record<string, 
     visibleColumns: [
       { key: 'employeeName', label: 'الموظف', origin: 'raw' },
       { key: 'department', label: 'القسم', origin: 'raw' },
+      { key: 'team', label: 'الفريق', origin: 'raw' },
       { key: 'deductionCount', label: 'عدد الخصومات', origin: 'raw' },
       { key: 'totalDeductionDays', label: 'إجمالي أيام الخصم', origin: 'raw' },
       { key: 'totalMonetaryAmount', label: 'إجمالي المبلغ (ج.م)', origin: 'raw' },
@@ -388,6 +523,8 @@ export const KPI_MASTER_EMPLOYEE_REPORT: RegisteredReport<Record<string, unknown
 const REGISTRY: RegisteredReport[] = [
   QUALITY_DEDUCTIONS_REPORT as RegisteredReport,
   QUALITY_DEDUCTIONS_GROUPED_REPORT as RegisteredReport,
+  FOLLOW_UPS_REPORT as RegisteredReport,
+  FOLLOW_UPS_EMPLOYEE_REPORT as RegisteredReport,
   KPI_MONTHLY_REPORT as RegisteredReport,
   KPI_MTD_REPORT as RegisteredReport,
   KPI_HISTORICAL_REPORT as RegisteredReport,

@@ -28,6 +28,9 @@ import {
   Search,
   ShieldX,
 } from 'lucide-react';
+import { openPrintReport } from '@/components/print/print-report-store';
+import { performanceDatasetToPrintModel } from '@/components/print/print-adapters';
+import { PageIdentity } from '@/components/shared/PageIdentity';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
@@ -39,6 +42,7 @@ import { EmployeeSearchInput } from '@/components/shared/EmployeeSearchInput';
 import { useEmployees } from '@/hooks/use-queries';
 import { usePerformanceIntelligence, useMonthSnapshots } from '@/hooks/use-kpi-queries';
 import { usePageState } from '@/hooks/use-page-state';
+import { useLanguage } from '@/lib/i18n/language-context';
 import { usePermissions } from '@/hooks/usePermissions';
 import { useAppStore } from '@/lib/store';
 import type { EmployeePerformanceDataset } from '@/lib/performance-intelligence';
@@ -115,6 +119,7 @@ function UnauthorizedState() {
 
 // ─── Report body ─────────────────────────────────────────────
 function ReportBody() {
+  const { t } = useLanguage();
   // Phase 6.3 (§8/§51): Smart Quality Report is a LIVE view — the
   // dataset refetches for the selection; only the SELECTION
   // (employee + period) persists per user (never a data snapshot).
@@ -140,15 +145,20 @@ function ReportBody() {
 
   const employeesQuery = useEmployees();
   const snapshotsQuery = useMonthSnapshots();
-  const datasetQuery = usePerformanceIntelligence(employeeId || null, month);
 
   const monthOptions = useMemo(
     () => buildMonthOptions(snapshotsQuery.data as Array<{ monthKey: string; status: 'open' | 'closed' }> | undefined),
     [snapshotsQuery.data],
   );
 
-  // Keep the selector valid when options load/refresh.
+  // Keep the selector valid when options load/refresh. §PERIOD-TRUTH:
+  // the EFFECTIVE month drives EVERYTHING downstream — dataset query,
+  // analytics and AI sections — so the period shown in the selector is
+  // always the period actually being reported (a stale persisted month
+  // that fell out of the options used to display one period while
+  // loading another).
   const effectiveMonth = monthOptions.some((o) => o.value === month) ? month : monthOptions[0]?.value ?? month;
+  const datasetQuery = usePerformanceIntelligence(employeeId || null, effectiveMonth);
 
   const navigateTo = useAppStore((s) => s.navigateTo);
   const visiblePageIds = usePermissions().visiblePages.map((p) => p.id);
@@ -209,46 +219,50 @@ function ReportBody() {
     };
   }, [datasetQuery.data]);
 
+  // §PRINT — the dedicated clean A4 report host (not the live UI):
+  // the tab's dataset projects into the shared print model adapter.
   const handlePrint = () => {
-    toast.info('استخدم حوار الطباعة لحفظ التقرير PDF');
-    window.print();
+    if (!datasetQuery.data) return;
+    openPrintReport(
+      performanceDatasetToPrintModel(datasetQuery.data as Parameters<typeof performanceDatasetToPrintModel>[0], {
+        title: 'تقرير الجودة الذكي',
+      }),
+    );
   };
 
   return (
     <div className="space-y-4 p-1">
-      {/* ── Page header (controls never print — spec §24) ── */}
-      <div className="flex flex-wrap items-start justify-between gap-3 no-print">
-        <div className="space-y-1">
-          <h1 className="text-2xl font-bold text-slate-100 flex items-center gap-2">
-            <FileSearch className="h-6 w-6 text-emerald-400" />
-            تقرير الجودة الذكي
-          </h1>
-          <p className="text-sm text-slate-400">
-            تقرير أداء الموظف فوق بيانات ذكاء الأداء المتحقق منها — حقائق منظمة قابلة للتتبع، بلا أي سرد أو تفسير.
-          </p>
-        </div>
-        <Button variant="outline" size="sm" onClick={handlePrint} className="border-slate-700/50 text-slate-300 hover:bg-slate-800/60">
-          <Printer className="h-4 w-4 ml-1.5" />
-          طباعة / PDF
-        </Button>
-      </div>
+      {/* ── §7 unified page identity (controls never print — spec §24) ── */}
+      <PageIdentity
+        pageId="smartQualityReport"
+        icon={<FileSearch className="size-5" />}
+        iconClassName="bg-emerald-500/15 border-emerald-500/30 text-emerald-400"
+        description={t('smart.identityDescription')}
+        className="flex-wrap items-start no-print"
+        actions={
+          <Button variant="outline" size="sm" onClick={handlePrint} className="border-slate-700/50 text-slate-300 hover:bg-slate-800/60">
+            <Printer className="h-4 w-4 ml-1.5" />
+            {t('smart.print')}
+          </Button>
+        }
+      />
 
       {/* ── §6 Period selector + employee picker ── */}
       <Card className="no-print bg-slate-800/30 border-slate-700/40">
         <CardContent className="p-4 grid grid-cols-1 md:grid-cols-[1fr_auto_auto_auto] gap-3 items-end">
           <div className="space-y-1.5">
-            <Label>الموظف</Label>
+            <Label>{t('smart.employee')}</Label>
             <EmployeeSearchInput
               employees={employeesQuery.data ?? []}
               value={employeeId}
               onChange={(id) => setEmployeeId(id)}
-              placeholder="ابحث بالاسم أو الرقم الوظيفي..."
+              placeholder={t('smart.employeePlaceholder')}
               showDepartment
             />
           </div>
 
           <div className="space-y-1.5 min-w-[150px]">
-            <Label>MTD — الشهر الحالي</Label>
+            <Label>{t('smart.mtd')}</Label>
             <Button
               variant={effectiveMonth === currentMonthKey() ? 'secondary' : 'outline'}
               size="sm"
@@ -256,12 +270,12 @@ function ReportBody() {
               onClick={() => setMonth(currentMonthKey())}
             >
               <CalendarDays className="h-4 w-4 ml-1" />
-              حتى تاريخه
+              {t('smart.mtdButton')}
             </Button>
           </div>
 
           <div className="space-y-1.5 min-w-[150px]">
-            <Label>الشهر السابق</Label>
+            <Label>{t('smart.lastMonth')}</Label>
             <Button
               variant={effectiveMonth === previousMonthKey(currentMonthKey()) ? 'secondary' : 'outline'}
               size="sm"
@@ -269,12 +283,12 @@ function ReportBody() {
               onClick={() => setMonth(previousMonthKey(currentMonthKey()))}
             >
               <CalendarDays className="h-4 w-4 ml-1" />
-              {monthOptions.find((o) => o.value === previousMonthKey(currentMonthKey()))?.label ?? 'الشهر السابق'}
+              {monthOptions.find((o) => o.value === previousMonthKey(currentMonthKey()))?.label ?? t('smart.lastMonth')}
             </Button>
           </div>
 
           <div className="space-y-1.5 min-w-[190px]">
-            <Label>فترة تاريخية</Label>
+            <Label>{t('smart.historical')}</Label>
             <Select value={effectiveMonth} onValueChange={setMonth}>
               <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
               <SelectContent>
@@ -292,8 +306,8 @@ function ReportBody() {
         <Card className="bg-slate-800/30 border-slate-700/40">
           <CardContent className="p-12 text-center text-slate-400 space-y-2">
             <Search className="h-8 w-8 mx-auto opacity-50" />
-            <p>ابحث عن موظف لعرض تقرير الجودة الذكي للفترة المختارة</p>
-            <p className="text-xs text-slate-500">يدعم التقرير الشهر الحالي (MTD) والأشهر التاريخية</p>
+            <p>{t('smart.pickEmployee')}</p>
+            <p className="text-xs text-slate-500">{t('smart.pickEmployeeHint')}</p>
           </CardContent>
         </Card>
       )}
@@ -316,12 +330,12 @@ function ReportBody() {
         <Card className="bg-red-950/20 border-red-800/40">
           <CardContent className="p-6 text-center space-y-3">
             <AlertOctagon className="h-8 w-8 mx-auto text-red-400" />
-            <p className="text-red-300 text-sm font-semibold">تعذر تحميل بيانات تقرير الجودة الذكي</p>
+            <p className="text-red-300 text-sm font-semibold">{t('smart.loadFailed')}</p>
             <p className="text-xs text-red-200/70 font-mono" dir="ltr">
-              {datasetQuery.error instanceof Error ? datasetQuery.error.message : 'خطأ غير معروف'}
+              {datasetQuery.error instanceof Error ? datasetQuery.error.message : t('smart.unknownError')}
             </p>
             <p className="text-xs text-slate-400">
-              لم يتم عرض أي قيم — لن تُعرض أصفار بديلة. أعد المحاولة أو تواصل مع مدير النظام إن استمر الخطأ.
+              {t('smart.loadFailedNote')}
             </p>
             <Button
               variant="outline"
@@ -329,7 +343,7 @@ function ReportBody() {
               className="border-red-800/50 text-red-200 hover:bg-red-900/30"
               onClick={() => datasetQuery.refetch()}
             >
-              إعادة المحاولة
+              {t('smart.retry')}
             </Button>
           </CardContent>
         </Card>
@@ -384,16 +398,16 @@ function ReportBody() {
           {/* Phase 5.3 — deterministic statistical insights (TypeScript engine,
               FACT + ANALYSIS layer; degrades independently without
               touching the facts-only sections above) */}
-          <AnalyticsSection employeeId={employeeId} month={month} />
+          <AnalyticsSection employeeId={employeeId} month={effectiveMonth} />
 
           {/* Phase 6.2 — Smart Quality AI (§23): mounted in the reserved
               "التحليل الذكي" spot. ON-DEMAND only, evidence-auditable via
               the SAME EvidencePreviewModal, failure-isolated from the
               facts sections above. */}
           <AIAnalysisSection
-            key={`${employeeId}:${month}`}
+            key={`${employeeId}:${effectiveMonth}`}
             employeeId={employeeId}
-            month={month}
+            month={effectiveMonth}
             onViewEvidence={handleViewEvidence}
           />
 

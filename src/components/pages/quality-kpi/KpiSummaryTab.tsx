@@ -153,7 +153,7 @@ function StatCard({
     amber: 'text-amber-300 border-amber-500/40',
     sky: 'text-sky-300 border-sky-500/40',
     red: 'text-red-300 border-red-500/40',
-    purple: 'text-purple-300 border-purple-500/40',
+    purple: 'text-brand-300 border-brand-500/40',
     orange: 'text-orange-300 border-orange-500/40',
   };
   return (

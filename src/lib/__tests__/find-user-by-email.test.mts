@@ -97,10 +97,11 @@ mock.module('@/lib/firebase-server', {
   },
 });
 
-const { findUserByEmail, invalidateCache } = await import('@/lib/db');
+const { findUserByEmail, invalidateCache, resetUserLookupBreakerForTests, getLastUserLookupDiagnostic } = await import('@/lib/db');
 
 describe('findUserByEmail — targeted RTDB login lookup', () => {
   beforeEach(() => {
+    resetUserLookupBreakerForTests();
     invalidateCache(); // the fallback scan populates the table TTL cache
   });
 
@@ -170,5 +171,74 @@ describe('findUserByEmail — targeted RTDB login lookup', () => {
     resetFake([{ id: 'u1', email: 'other@arm.com' }]);
     fake.otherError = new Error('connection reset');
     assert.equal(await findUserByEmail('ghost@arm.com'), null);
+  });
+});
+
+// ══════════════════════════════════════════════════════════════
+//  §AUTH-RELIABILITY — the indexed-query circuit breaker.
+//  Two consecutive TIMEOUTS open the breaker: subsequent lookups skip
+//  the hanging indexed path entirely (no wasted timeout budget) and go
+//  straight to the proven full-scan. A fast indexed ERROR never opens
+//  the breaker (it is not the hang signature), and a fresh COOLDOWN
+//  window is what keeps the breaker closed.
+// ══════════════════════════════════════════════════════════════
+describe('findUserByEmail — indexed-query circuit breaker (§AUTH-RELIABILITY)', () => {
+  beforeEach(() => {
+    resetUserLookupBreakerForTests();
+    invalidateCache();
+  });
+
+  it('keeps trying the indexed path after a SINGLE timeout (no premature breaker)', async () => {
+    resetFake([{ id: 'u1', email: 'admin@arm.com', password: 'h1' }]);
+    fake.hangIndexed = true;
+    await findUserByEmail('admin@arm.com', { queryTimeoutMs: 30 });
+    fake.hangIndexed = false;
+    resetFake([{ id: 'u2', email: 'admin@arm.com' }]);
+    await findUserByEmail('admin@arm.com');
+    assert.equal(fake.indexedGetCalls, 1, 'second lookup still attempts the indexed query');
+  });
+
+  it('opens the breaker after TWO consecutive timeouts — indexed path skipped', async () => {
+    resetFake([{ id: 'u1', email: 'admin@arm.com', password: 'h1' }]);
+    fake.hangIndexed = true;
+    await findUserByEmail('admin@arm.com', { queryTimeoutMs: 30 });
+    await findUserByEmail('admin@arm.com', { queryTimeoutMs: 30 });
+    const indexedCallsAfterHangs = fake.indexedGetCalls;
+    assert.ok(indexedCallsAfterHangs >= 2, 'both lookups attempted the indexed query');
+
+    fake.hangIndexed = false;
+    resetFake([{ id: 'u2', email: 'admin@arm.com' }]);
+    invalidateCache(); // the scan cache still holds the pre-reset rows
+    const user = await findUserByEmail<any>('admin@arm.com');
+    assert.equal(user.id, 'u2', 'the scan still serves the login');
+    assert.equal(fake.indexedGetCalls, 0, 'breaker open — the hanging indexed query was skipped');
+    assert.equal(fake.plainGetCalls, 1);
+    const diag = getLastUserLookupDiagnostic();
+    assert.equal(diag?.path, 'scan-breaker-open');
+  });
+
+  it('a fast indexed ERROR never opens the breaker', async () => {
+    resetFake([{ id: 'u1', email: 'admin@arm.com' }]);
+    fake.otherError = new Error('Index not defined');
+    await findUserByEmail('admin@arm.com');
+    await findUserByEmail('admin@arm.com');
+    fake.otherError = null;
+    resetFake([{ id: 'u2', email: 'admin@arm.com' }]);
+    invalidateCache();
+    await findUserByEmail('admin@arm.com');
+    assert.equal(fake.indexedGetCalls, 1, 'errors are not the hang signature — indexed path stays');
+  });
+
+  it('classifies diagnostics: indexed success vs scan fallback', async () => {
+    resetFake([{ id: 'u1', email: 'admin@arm.com' }]);
+    await findUserByEmail('admin@arm.com');
+    assert.equal(getLastUserLookupDiagnostic()?.path, 'indexed');
+
+    resetFake([{ id: 'u1', email: 'admin@arm.com' }]);
+    fake.indexError = true; // set AFTER resetFake (resetFake clears it)
+    await findUserByEmail('admin@arm.com');
+    const diag = getLastUserLookupDiagnostic();
+    assert.equal(diag?.path, 'scan');
+    assert.equal(typeof diag?.durationMs, 'number');
   });
 });

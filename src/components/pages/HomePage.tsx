@@ -22,8 +22,10 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { usePermissions } from '@/hooks/usePermissions';
-import { useAppStore } from '@/lib/store';
-import { useHomeStats, useUpdateRequest } from '@/hooks/use-queries';
+import { useAppStore, type HeaderContextualAction } from '@/lib/store';
+import { usePageIdentity, usePageHeaderActions } from '@/hooks/use-page-header';
+import { useHomeStats, useUpdateRequest, useEmployees } from '@/hooks/use-queries';
+import { HomeStatDetailDialog, type HomeStatDetailKind } from '@/components/shared/HomeStatDetailDialog';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -41,7 +43,7 @@ import {
   Users, Zap,
   Award, Fingerprint, FileSpreadsheet,
   ExternalLink, ClipboardList, Gauge,
-  GripVertical, Plus, Inbox, Star, Pin as PinIcon, Activity,
+  GripVertical, Inbox, Star, Pin as PinIcon, Activity, X, Save,
 } from 'lucide-react';
 import { AttentionPanel, type AttentionItem } from '@/components/shared/AttentionPanel';
 import { playNotificationSound } from '@/lib/sounds';
@@ -219,7 +221,7 @@ const NavBtn = ({ onClick, label, icon, color }: { onClick: () => void; label: s
 );
 
 const QuickLink = ({ icon, label, sub, color, onClick }: { icon: React.ReactNode; label: string; sub: string; color: string; onClick: () => void }) => (
-  <button onClick={onClick} className={`flex items-center gap-2.5 p-3 rounded-xl bg-gradient-to-br ${color} border border-slate-700/20 hover:border-violet-500/30 hover:scale-[1.02] active:scale-[0.98] transition-all duration-150 text-right`}>
+  <button onClick={onClick} className={`flex items-center gap-2.5 p-3 rounded-xl bg-gradient-to-br ${color} border border-slate-700/20 hover:border-brand-500/30 hover:scale-[1.02] active:scale-[0.98] transition-all duration-150 text-right`}>
     <span className="text-slate-300">{icon}</span>
     <span className="min-w-0">
       <span className="block text-xs font-semibold text-white truncate">{label}</span>
@@ -250,7 +252,12 @@ export default function HomePage() {
   // ── Data ──
   const { data: rawStats, isLoading: loading, refetch, isFetching: refreshing } = useHomeStats();
   const updateRequestMutation = useUpdateRequest();
+  // §22 — the scope-filtered employee list powering the in-place
+  // "إجمالي الموظفين" detail surface.
+  const { data: employeesData } = useEmployees();
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+  // §22 — which summary-card detail surface is open (in-place).
+  const [statDetail, setStatDetail] = useState<HomeStatDetailKind | null>(null);
   const soundRef = useRef(false);
   const clock = useLiveClock();
   const todayDate = useLiveDate();
@@ -262,7 +269,10 @@ export default function HomePage() {
   // the body as a flat array and crashed with
   // `recentNotifications?.map is not a function`. We unwrap `data` here
   // so every downstream consumer can keep using a plain array.
-  const notificationsPageAllowed = canViewPage('notifications');
+  // §NOTIFICATIONS-V2: this feed is the signed-in user's OWN recent
+  // notifications — always fetched (the API visibility rule already
+  // scopes rows to the viewer; it never depended on the removed
+  // Notification Center page permission).
   const { data: recentNotifications } = useQuery({
     queryKey: ['home-recent-activity'],
     queryFn: () =>
@@ -274,7 +284,6 @@ export default function HomePage() {
         return Array.isArray(body) ? body : Array.isArray(body?.data) ? body.data : [];
       }),
     staleTime: 60_000,
-    enabled: notificationsPageAllowed,
   });
 
   const stats = useMemo(() => {
@@ -400,6 +409,57 @@ export default function HomePage() {
     });
   }, []);
 
+  // ═══ §HEADER-V3 — the page feeds the global Header ═══
+  // Identity (title + the live date/time line + icon) and contextual
+  // actions (quick-create menu; customize/refresh as compact header
+  // icons; cancel/save while editing). Same handlers, permissions and
+  // confirmations the page used to render inline — the action surface
+  // moved, the behavior did not change.
+  usePageIdentity({
+    title: 'مركز القيادة',
+    description: (
+      <>
+        {todayDate} · <span className="font-mono tabular-nums" dir="ltr">{clock}</span>
+      </>
+    ),
+    icon: <Gauge className="size-4 text-brand-400" />,
+  });
+
+  const headerActions = useMemo<HeaderContextualAction[]>(() => {
+    const actions: HeaderContextualAction[] = [];
+    // Quick-create actions (permission-filtered — §2.1): collapsed into
+    // the header's compact quick-actions menu.
+    if (canDoAction('employees', 'create')) actions.push({ id: 'qa-employees', label: 'إضافة موظف', icon: <Users className="size-3.5" />, display: 'menu', onClick: () => setActiveQuickAction('employees'), active: activeQuickAction === 'employees' });
+    if (canDoAction('observations', 'create')) actions.push({ id: 'qa-observations', label: 'ملاحظة جودة', icon: <Award className="size-3.5" />, display: 'menu', onClick: () => setActiveQuickAction('observations'), active: activeQuickAction === 'observations' });
+    if (canDoAction('capa', 'create')) actions.push({ id: 'qa-capa', label: 'إنشاء CAPA', icon: <ClipboardList className="size-3.5" />, display: 'menu', onClick: () => setActiveQuickAction('capa'), active: activeQuickAction === 'capa' });
+    if (canDoAction('complaints', 'create')) actions.push({ id: 'qa-complaints', label: 'إضافة شكوى', icon: <AlertTriangle className="size-3.5" />, display: 'menu', onClick: () => setActiveQuickAction('complaints'), active: activeQuickAction === 'complaints' });
+    if (canDoAction('followUps', 'create')) actions.push({ id: 'qa-followUps', label: 'متابعة جديدة', icon: <ClipboardList className="size-3.5" />, display: 'menu', onClick: () => setActiveQuickAction('followUps'), active: activeQuickAction === 'followUps' });
+    if (canDoAction('requests', 'create')) actions.push({ id: 'qa-requests', label: 'طلب جديد', icon: <FileText className="size-3.5" />, display: 'menu', onClick: () => setActiveQuickAction('requests'), active: activeQuickAction === 'requests' });
+
+    // Utility actions as compact header icons (§8) — never large page
+    // toolbar buttons. While editing, the draft controls replace them.
+    if (editMode) {
+      actions.push({ id: 'cancel-edit', label: 'إلغاء', icon: <X className="size-4" />, display: 'icon', onClick: exitEditMode });
+      actions.push({ id: 'save-layout', label: 'حفظ', icon: <Save className="size-4" />, display: 'icon', onClick: () => void saveLayout(), disabled: savingLayout });
+    } else {
+      actions.push({ id: 'customize', label: 'تخصيص', icon: <GripVertical className="size-4" />, display: 'icon', onClick: enterEditMode });
+      actions.push({ id: 'refresh', label: 'تحديث', icon: <RefreshCw className={`size-4 ${refreshing ? 'animate-spin' : ''}`} />, display: 'icon', onClick: () => void refetch(), active: refreshing });
+    }
+    return actions;
+  }, [canDoAction, activeQuickAction, editMode, exitEditMode, saveLayout, savingLayout, enterEditMode, refreshing, refetch]);
+  usePageHeaderActions(headerActions);
+
+  // When a quick action fires from the HEADER menu, bring its inline
+  // form into view — deterministic scroll on state change (no timers).
+  // scroll-margin keeps it clear of the sticky header.
+  const quickActionHostRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (activeQuickAction) {
+      quickActionHostRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  }, [activeQuickAction]);
+
+
   // ── Derived snapshot numbers ──
   const perf = stats?.currentMonthPerformance ?? emptyPerf;
   const lastPerf = stats?.lastMonthPerformance ?? emptyPerf;
@@ -409,7 +469,7 @@ export default function HomePage() {
   // ── Loading skeleton ──
   if (loading) {
     return (
-      <div dir="rtl" className="space-y-5">
+      <div className="space-y-5">
         <Skeleton className="h-20 w-full rounded-2xl bg-slate-800/60" />
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5">{Array.from({length:6}).map((_,i)=><Skeleton key={i} className="h-16 rounded-xl bg-slate-800/40" />)}</div>
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">{Array.from({length:6}).map((_,i)=><Skeleton key={i} className="h-[300px] rounded-2xl bg-slate-800/40" />)}</div>
@@ -418,19 +478,10 @@ export default function HomePage() {
   }
 
   if (!stats) return (
-    <div dir="rtl"><h1 className="text-2xl font-bold text-white">مركز القيادة</h1>
+    <div><h1 className="text-2xl font-bold text-white">مركز القيادة</h1>
       <Card className="border-slate-700/50 bg-slate-800/50"><CardContent className="py-16"><EmptyState icon={<BarChart3 className="size-12" />} message="لا توجد بيانات" /></CardContent></Card>
     </div>
   );
-
-  /* ── Quick Actions (permission-filtered create actions — §2.1) ── */
-  const quickActions: { id: HomeQuickActionId; label: string; icon: ReactNode; onClick: () => void }[] = [];
-  if (canDoAction('employees', 'create')) quickActions.push({ id: 'employees', label: 'إضافة موظف', icon: <Users className="size-3.5" />, onClick: () => setActiveQuickAction('employees') });
-  if (canDoAction('observations', 'create')) quickActions.push({ id: 'observations', label: 'ملاحظة جودة', icon: <Award className="size-3.5" />, onClick: () => setActiveQuickAction('observations') });
-  if (canDoAction('capa', 'create')) quickActions.push({ id: 'capa', label: 'إنشاء CAPA', icon: <ClipboardList className="size-3.5" />, onClick: () => setActiveQuickAction('capa') });
-  if (canDoAction('complaints', 'create')) quickActions.push({ id: 'complaints', label: 'إضافة شكوى', icon: <AlertTriangle className="size-3.5" />, onClick: () => setActiveQuickAction('complaints') });
-  if (canDoAction('followUps', 'create')) quickActions.push({ id: 'followUps', label: 'متابعة جديدة', icon: <ClipboardList className="size-3.5" />, onClick: () => setActiveQuickAction('followUps') });
-  if (canDoAction('requests', 'create')) quickActions.push({ id: 'requests', label: 'طلب جديد', icon: <FileText className="size-3.5" />, onClick: () => setActiveQuickAction('requests') });
 
   /* ── Attention rows (§2.2/§2.3 — "ما يحتاج انتباهي الآن") ──
      §10 GLOBAL ALERT CONTRACT: these rows render through the SAME
@@ -444,12 +495,16 @@ export default function HomePage() {
     key: 'requests', severity: 'warning',
     text: `${stats.pendingRequests} طلب بانتظار الموافقة`,
     detail: stats.pendingRequestsDetails[0] ? `آخرها: ${stats.pendingRequestsDetails[0].employeeName}` : undefined,
-    action: () => navigateTo('requests'),
+    // §17 EXACT DEEP-LINKING — the destination shows EXACTLY these N
+    // pending requests (status filter seeded from the metric).
+    action: () => navigateTo('requests', undefined, { status: 'pending' }),
   });
   if (stats.followUpsSummary.totalOverdue > 0) attentionItems.push({
     key: 'overdueFollowUps', severity: 'critical',
     text: `${stats.followUpsSummary.totalOverdue} متابعة متأخرة عن موعدها`,
-    action: () => navigateTo('followUps'),
+    // §17 — shows EXACTLY the overdue records the metric counted
+    // (same canonical isOverdueFollowUp definition on both sides).
+    action: () => navigateTo('followUps', undefined, { overdue: '1' }),
   });
   urgentTravels.forEach((t) => attentionItems.push({
     key: `travel-${t.id}`, severity: 'critical',
@@ -461,13 +516,16 @@ export default function HomePage() {
     key: 'late', severity: 'urgent',
     text: `${stats.lateCount} موظف متأخر اليوم`,
     detail: stats.lateEmployees[0] ? `${stats.lateEmployees[0].employeeName} (${stats.lateEmployees[0].minutesLate} د)` : undefined,
-    action: () => navigateTo('attendance'),
+    // §17 — shows exactly today's LATE records.
+    action: () => navigateTo('attendance', undefined, { status: 'late' }),
   });
   if (stats.qualitySummary.totalCases > 0) attentionItems.push({
     key: 'quality', severity: 'info',
     text: `${stats.qualitySummary.totalCases} حالة جودة هذا الشهر`,
     detail: stats.qualitySummary.totalAmount > 0 ? `خصومات ${stats.qualitySummary.totalAmount.toFixed(0)} ج.م` : undefined,
-    action: () => navigateTo('quality'),
+    // §17 — the card counts THIS month; the destination month-filters
+    // to exactly that period.
+    action: () => navigateTo('quality', undefined, { month: new Date().toISOString().slice(0, 7) }),
   });
 
   /* ═══ WIDGETS (§3 — each renders inside the draggable grid) ═══ */
@@ -500,7 +558,7 @@ export default function HomePage() {
       <DashboardCard title="الطلبات المعلقة" icon={<FileText className="size-4" />} iconBg="bg-amber-500/10" iconColor="text-amber-400" borderClr="border-amber-500/20"
         size="medium"
         badge={stats.pendingRequestsDetails.length || undefined}
-        onOpenFull={() => navigateTo('requests')}
+        onOpenFull={() => navigateTo('requests', undefined, { status: 'pending' })}
         empty={stats.pendingRequestsDetails.length === 0}
         emptyIcon={<CheckCircle2 className="size-10" />}
         emptyMessage="لا توجد طلبات معلقة - كل شيء على ما يرام!">
@@ -541,7 +599,7 @@ export default function HomePage() {
       <DashboardCard title="الحضور اليوم" icon={<Clock className="size-4" />} iconBg="bg-cyan-500/10" iconColor="text-cyan-400" borderClr="border-cyan-500/20"
         onOpenFull={() => navigateTo('attendance')} size="medium">
         <div className="flex flex-wrap gap-2 mb-4">
-          <Pill icon={<UserCheck className="size-3.5" />} label="حاضر" value={stats.presentCount} color="text-violet-400" bg="bg-emerald-500/8 border-violet-500/30" />
+          <Pill icon={<UserCheck className="size-3.5" />} label="حاضر" value={stats.presentCount} color="text-brand-400" bg="bg-emerald-500/8 border-brand-500/30" />
           <Pill icon={<AlertTriangle className="size-3.5" />} label="متأخر" value={stats.lateCount} color="text-amber-400" bg="bg-amber-500/8 border-amber-500/12" />
           <Pill icon={<UserX className="size-3.5" />} label="غائب" value={stats.absentCount} color="text-red-400" bg="bg-red-500/8 border-red-500/12" />
           <Pill icon={<Activity className="size-3.5" />} label="النسبة" value={`${stats.attendanceRate}%`} color="text-cyan-400" bg="bg-cyan-500/8 border-cyan-500/12" />
@@ -568,7 +626,7 @@ export default function HomePage() {
 
     todaysFollowUps: (
       <DashboardCard title="متابعات مجدولة اليوم" icon={<ClipboardList className="size-4" />} iconBg="bg-cyan-500/10" iconColor="text-cyan-400" borderClr="border-cyan-500/20"
-        actions={<NavBtn onClick={() => navigateTo('followUps')} label="عرض المتابعات" icon={<ExternalLink className="size-3" />} color="text-cyan-400" />}
+        actions={<NavBtn onClick={() => navigateTo('followUps', undefined, { dueToday: '1' })} label="عرض المتابعات" icon={<ExternalLink className="size-3" />} color="text-cyan-400" />}
         size="medium"
         badge={stats.todaysFollowUps.length || undefined}
         empty={stats.todaysFollowUps.length === 0}
@@ -577,7 +635,7 @@ export default function HomePage() {
         <div className="space-y-2">
           {stats.todaysFollowUps.map((fu) => {
             const typeLabels: Record<string, string> = { quality: 'جودة', behavior: 'سلوك', attendance: 'حضور', productivity: 'إنتاجية', training: 'تدريب', customerHandling: 'التعامل مع العملاء' };
-            const priorityColors: Record<string, string> = { high: 'text-red-400 bg-red-500/10', medium: 'text-amber-400 bg-amber-500/10', low: 'text-violet-400 bg-violet-500/10' };
+            const priorityColors: Record<string, string> = { high: 'text-red-400 bg-red-500/10', medium: 'text-amber-400 bg-amber-500/10', low: 'text-brand-400 bg-brand-500/10' };
             return (
               <div key={fu.id} className="flex items-center gap-3 p-2.5 rounded-lg border border-cyan-500/15 bg-cyan-500/5 hover:bg-cyan-500/10 transition-colors">
                 <div className="size-8 rounded-full bg-cyan-500/15 flex items-center justify-center flex-shrink-0">
@@ -637,7 +695,7 @@ export default function HomePage() {
         <div className="flex flex-wrap gap-2 mb-4">
           <Pill icon={<Award className="size-3.5" />} label="حالات" value={stats.qualitySummary.totalCases} color="text-orange-400" bg="bg-orange-500/8 border-orange-500/12" />
           <Pill icon={<DollarSign className="size-3.5" />} label="خصومات" value={`${stats.qualitySummary.totalAmount.toFixed(0)} ج.م`} color="text-red-400" bg="bg-red-500/8 border-red-500/12" />
-          <Pill icon={<CalendarClock className="size-3.5" />} label="أيام" value={stats.qualitySummary.totalDays.toFixed(1)} color="text-violet-400" bg="bg-violet-500/8 border-violet-500/12" />
+          <Pill icon={<CalendarClock className="size-3.5" />} label="أيام" value={stats.qualitySummary.totalDays.toFixed(1)} color="text-brand-400" bg="bg-brand-500/8 border-brand-500/12" />
         </div>
         {Object.entries(stats.qualitySummary.byType).length > 0 && (
           <div className="space-y-2.5">
@@ -655,8 +713,8 @@ export default function HomePage() {
     ),
 
     requestTypeAnalytics: (
-      <DashboardCard title="تحليل الطلبات حسب النوع" icon={<BarChart3 className="size-4" />} iconBg="bg-violet-500/10" iconColor="text-violet-400" borderClr="border-violet-500/20"
-        actions={<NavBtn onClick={() => navigateTo('requests')} label="التفاصيل" icon={<ExternalLink className="size-3" />} color="text-violet-400" />}
+      <DashboardCard title="تحليل الطلبات حسب النوع" icon={<BarChart3 className="size-4" />} iconBg="bg-brand-500/10" iconColor="text-brand-400" borderClr="border-brand-500/20"
+        actions={<NavBtn onClick={() => navigateTo('requests')} label="التفاصيل" icon={<ExternalLink className="size-3" />} color="text-brand-400" />}
         size="medium"
         empty={stats.requestTypeSummary.length === 0}
         emptyIcon={<BarChart3 className="size-10" />}
@@ -667,7 +725,7 @@ export default function HomePage() {
             const pPct = total > 0 ? (rt.pending / total * 100) : 0;
             const aPct = total > 0 ? (rt.approved / total * 100) : 0;
             const rPct = total > 0 ? (rt.rejected / total * 100) : 0;
-            const colors: Record<string, string> = { leave: 'bg-cyan-500', permission: 'bg-violet-500', excuse: 'bg-rose-500', tardiness: 'bg-amber-500', remote: 'bg-emerald-500' };
+            const colors: Record<string, string> = { leave: 'bg-cyan-500', permission: 'bg-brand-500', excuse: 'bg-rose-500', tardiness: 'bg-amber-500', remote: 'bg-emerald-500' };
             return (
               <div key={rt.type} className="p-3 rounded-xl bg-slate-700/10 border border-slate-700/10">
                 <div className="flex items-center justify-between mb-2.5">
@@ -683,7 +741,7 @@ export default function HomePage() {
                   {rPct > 0 && <div className="h-full bg-red-500" style={{ width: `${rPct}%` }} />}
                 </div>
                 <div className="flex items-center justify-between mt-2 text-[10px] font-medium">
-                  <span className="text-violet-400">موافق: {rt.approved}</span>
+                  <span className="text-brand-400">موافق: {rt.approved}</span>
                   <span className="text-amber-400">معلق: {rt.pending}</span>
                   <span className="text-red-400">مرفوض: {rt.rejected}</span>
                 </div>
@@ -695,8 +753,8 @@ export default function HomePage() {
     ),
 
     departmentsOverview: (
-      <DashboardCard title="أقسام الشركة" icon={<Users className="size-4" />} iconBg="bg-violet-500/10" iconColor="text-violet-400" borderClr="border-violet-500/20"
-        actions={<NavBtn onClick={() => navigateTo('employees')} label="عرض الموظفين" icon={<ExternalLink className="size-3" />} color="text-violet-400" />}
+      <DashboardCard title="أقسام الشركة" icon={<Users className="size-4" />} iconBg="bg-brand-500/10" iconColor="text-brand-400" borderClr="border-brand-500/20"
+        actions={<NavBtn onClick={() => navigateTo('employees')} label="عرض الموظفين" icon={<ExternalLink className="size-3" />} color="text-brand-400" />}
         size="medium"
         empty={stats.deptTodayStats.length === 0}
         emptyIcon={<Users className="size-10" />}
@@ -706,7 +764,7 @@ export default function HomePage() {
             <div key={dept.name} className="p-3 rounded-xl bg-slate-700/10 hover:bg-slate-700/20 transition-all">
               <div className="flex items-center justify-between mb-2 gap-3">
                 <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                  <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-violet-500/20 to-indigo-500/10 flex items-center justify-center shrink-0">
+                  <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-brand-500/20 to-brand-500/10 flex items-center justify-center shrink-0">
                     <span className="text-white text-[11px] font-bold">{dept.name[0]}</span>
                   </div>
                   <div className="min-w-0">
@@ -732,7 +790,7 @@ export default function HomePage() {
       const pins = userPreferences?.pins ?? [];
       const shortcuts = [...pins, ...favorites].slice(0, 6);
       return (
-        <DashboardCard title="مختصراتي" icon={<Zap className="size-4" />} iconBg="bg-violet-500/10" iconColor="text-violet-400" borderClr="border-violet-500/20" size="medium">
+        <DashboardCard title="مختصراتي" icon={<Zap className="size-4" />} iconBg="bg-brand-500/10" iconColor="text-brand-400" borderClr="border-brand-500/20" size="medium">
           {/* §2.6 Personal shortcuts — the user's own 📌 pins + ⭐ favorites */}
           {shortcuts.length > 0 && (
             <div className="mb-4">
@@ -750,8 +808,8 @@ export default function HomePage() {
             </div>
           )}
           <div className="grid grid-cols-2 gap-2">
-            {canViewPage('employees') && <QuickLink icon={<Users className="size-4" />} label="الموظفين" sub={`${stats.totalEmployees} موظف`} color="from-violet-500/10 to-purple-600/5" onClick={() => navigateTo('employees')} />}
-            {canViewPage('biometric') && <QuickLink icon={<Fingerprint className="size-4" />} label="البصمة" sub={`${stats.biometricRecordCount.toLocaleString()} سجل`} color="from-purple-500/10 to-fuchsia-600/5" onClick={() => navigateTo('biometric')} />}
+            {canViewPage('employees') && <QuickLink icon={<Users className="size-4" />} label="الموظفين" sub={`${stats.totalEmployees} موظف`} color="from-brand-500/10 to-brand-600/5" onClick={() => navigateTo('employees')} />}
+            {canViewPage('biometric') && <QuickLink icon={<Fingerprint className="size-4" />} label="البصمة" sub={`${stats.biometricRecordCount.toLocaleString()} سجل`} color="from-brand-500/10 to-fuchsia-600/5" onClick={() => navigateTo('biometric')} />}
             {canViewPage('attendance') && <QuickLink icon={<Clock className="size-4" />} label="الحضور" sub={`${stats.attendanceRate}% حضور`} color="from-cyan-500/10 to-teal-600/5" onClick={() => navigateTo('attendance')} />}
             {canViewPage('requests') && <QuickLink icon={<FileText className="size-4" />} label="الطلبات" sub={`${stats.pendingRequests} معلق`} color="from-amber-500/10 to-orange-600/5" onClick={() => navigateTo('requests')} />}
             {canViewPage('rules') && <QuickLink icon={<Timer className="size-4" />} label="قواعد الخصم" sub={`${stats.rulesSummary.length} قاعدة`} color="from-rose-500/10 to-pink-600/5" onClick={() => navigateTo('rules')} />}
@@ -772,16 +830,16 @@ export default function HomePage() {
 
     recentActivity: (
       <DashboardCard title="النشاط الأخير" icon={<Activity className="size-4" />} iconBg="bg-emerald-500/10" iconColor="text-emerald-400" borderClr="border-emerald-500/20"
-        actions={<NavBtn onClick={() => navigateTo('notifications')} label="مركز الإشعارات" icon={<ExternalLink className="size-3" />} color="text-emerald-400" />}
+        actions={<NavBtn onClick={() => navigateTo('notifications')} label="كل الإشعارات" icon={<ExternalLink className="size-3" />} color="text-emerald-400" />}
         size="medium"
-        empty={!notificationsPageAllowed || !recentNotifications || (recentNotifications as unknown[]).length === 0}
+        empty={!recentNotifications || (recentNotifications as unknown[]).length === 0}
         emptyIcon={<Inbox className="size-10" />}
         emptyMessage="لا يوجد نشاط حديث">
         <div className="space-y-1.5">
           {(recentNotifications as { id: string; title: string; description?: string; status?: string; createdAt?: string }[] | undefined)?.map((n) => (
             <button key={n.id} onClick={() => navigateTo('notifications')}
               className="w-full flex items-start gap-2.5 p-2.5 rounded-lg hover:bg-slate-700/20 transition-colors text-right">
-              <span className={`mt-1.5 size-1.5 rounded-full shrink-0 ${n.status === 'unread' ? 'bg-violet-400' : 'bg-slate-600'}`} />
+              <span className={`mt-1.5 size-1.5 rounded-full shrink-0 ${n.status === 'unread' ? 'bg-brand-400' : 'bg-slate-600'}`} />
               <span className="flex-1 min-w-0">
                 <span className="block text-xs text-slate-200 font-medium truncate">{n.title}</span>
                 {n.description && <span className="block text-[10px] text-slate-500 truncate mt-0.5">{n.description}</span>}
@@ -798,8 +856,8 @@ export default function HomePage() {
     //     information is never silently lost. Users opt in via
     //     "تخصيص" → enable. ────────────────────────────────────────
     performanceDetail: (
-      <DashboardCard title="تفاصيل الأداء والتأخيرات" icon={<BarChart3 className="size-4" />} iconBg="bg-violet-500/10" iconColor="text-violet-400" borderClr="border-violet-500/20"
-        actions={<NavBtn onClick={() => navigateTo('reports')} label="تقارير الأداء" icon={<ExternalLink className="size-3" />} color="text-violet-400" />}
+      <DashboardCard title="تفاصيل الأداء والتأخيرات" icon={<BarChart3 className="size-4" />} iconBg="bg-brand-500/10" iconColor="text-brand-400" borderClr="border-brand-500/20"
+        actions={<NavBtn onClick={() => navigateTo('reports')} label="تقارير الأداء" icon={<ExternalLink className="size-3" />} color="text-brand-400" />}
         size="medium"
         empty={perf.departments.length === 0}
         emptyIcon={<BarChart3 className="size-10" />}
@@ -807,7 +865,7 @@ export default function HomePage() {
         <div className="flex flex-wrap gap-2 mb-4">
           <Pill icon={<Flame className="size-3.5" />} label="تأخيرات" value={perf.totalDelays} color="text-red-400" bg="bg-red-500/8 border-red-500/12" />
           <Pill icon={<Clock className="size-3.5" />} label="دقائق" value={perf.totalDelayMinutes} color="text-amber-400" bg="bg-amber-500/8 border-amber-500/12" />
-          <Pill icon={<DollarSign className="size-3.5" />} label="خصومات" value={`${perf.totalDeductionAmount.toFixed(0)} ج`} color="text-violet-400" bg="bg-violet-500/8 border-violet-500/12" />
+          <Pill icon={<DollarSign className="size-3.5" />} label="خصومات" value={`${perf.totalDeductionAmount.toFixed(0)} ج`} color="text-brand-400" bg="bg-brand-500/8 border-brand-500/12" />
           <Pill icon={<CalendarClock className="size-3.5" />} label="أيام" value={perf.totalDeductionDays.toFixed(1)} color="text-cyan-400" bg="bg-cyan-500/8 border-cyan-500/12" />
         </div>
         {perf.departments.length > 0 && (
@@ -848,7 +906,7 @@ export default function HomePage() {
         <div className="flex flex-wrap gap-2 mb-4">
           <Pill icon={<Award className="size-3.5" />} label="حالات" value={stats?.qualitySummary.totalCases ?? 0} color="text-orange-400" bg="bg-orange-500/8 border-orange-500/12" />
           <Pill icon={<DollarSign className="size-3.5" />} label="مبلغ" value={`${(stats?.qualitySummary.totalAmount ?? 0).toFixed(0)} ج`} color="text-red-400" bg="bg-red-500/8 border-red-500/12" />
-          <Pill icon={<CalendarClock className="size-3.5" />} label="أيام" value={(stats?.qualitySummary.totalDays ?? 0).toFixed(1)} color="text-violet-400" bg="bg-violet-500/8 border-violet-500/12" />
+          <Pill icon={<CalendarClock className="size-3.5" />} label="أيام" value={(stats?.qualitySummary.totalDays ?? 0).toFixed(1)} color="text-brand-400" bg="bg-brand-500/8 border-brand-500/12" />
         </div>
         {stats?.qualitySummary && Object.entries(stats.qualitySummary.byType).length > 0 && (
           <div className="space-y-2.5">
@@ -903,100 +961,56 @@ export default function HomePage() {
     : [];
 
   return (
-    <div dir="rtl" className="space-y-5 pb-8">
+    <div className="space-y-5 pb-8">
 
-      {/* ═══ COMMAND HEADER — compact (§2) ═══ */}
-      <div className="flex items-center justify-between gap-3 flex-wrap">
-        <div className="flex items-center gap-3 min-w-0">
-          <div className="flex items-center justify-center size-10 rounded-xl bg-violet-500/15 border border-violet-500/30 shrink-0">
-            <Gauge className="size-5 text-violet-400" />
-          </div>
-          <div className="min-w-0">
-            <h1 className="text-xl font-bold text-white truncate">مركز القيادة</h1>
-            <p className="text-slate-500 text-xs mt-0.5 truncate">{todayDate} · <span className="font-mono tabular-nums" dir="ltr">{clock}</span></p>
-          </div>
-        </div>
-        <div className="flex items-center gap-2">
-          {editMode ? (
-            <>
-              <Button variant="outline" size="sm" onClick={exitEditMode}
-                className="border-slate-600/60 bg-transparent text-slate-300 hover:bg-slate-800 hover:text-white text-xs h-9 px-4 rounded-xl">
-                إلغاء
-              </Button>
-              <Button size="sm" onClick={() => void saveLayout()} disabled={savingLayout}
-                className="bg-violet-600 hover:bg-violet-700 text-white text-xs h-9 px-4 rounded-xl shadow-lg shadow-violet-500/20">
-                {savingLayout ? 'جاري الحفظ...' : 'حفظ'}
-              </Button>
-            </>
-          ) : (
-            <>
-              <Button variant="outline" size="sm" onClick={enterEditMode}
-                className="border-white/[0.08] bg-white/[0.04] hover:bg-white/[0.08] text-slate-200 gap-2 text-xs h-9 px-3.5 rounded-xl">
-                <GripVertical className="size-4" />
-                تخصيص
-              </Button>
-              <Button variant="outline" size="sm" onClick={() => void refetch()} disabled={refreshing}
-                className="border-white/[0.08] bg-white/[0.04] hover:bg-white/[0.08] text-slate-200 gap-2 text-xs h-9 px-3.5 rounded-xl">
-                <RefreshCw className={`size-4 ${refreshing ? 'animate-spin' : ''}`} />
-                تحديث
-              </Button>
-            </>
-          )}
-        </div>
-      </div>
+      {/* ═══ §HEADER-V3 — page identity + contextual actions live in the
+          global Header now (title/date, quick actions, تخصيص/تحديث).
+          The page keeps its in-place edit-mode banner and surfaces. ═══ */}
 
       {/* ═══ EDIT MODE banner (§3) ═══ */}
       {editMode && (
-        <div className="flex items-center gap-2 rounded-xl border border-violet-500/30 bg-violet-500/10 px-4 py-2.5 text-xs text-violet-300">
+        <div className="flex items-center gap-2 rounded-xl border border-brand-500/30 bg-brand-500/10 px-4 py-2.5 text-xs text-brand-300">
           <GripVertical className="size-4 shrink-0" />
           وضع التخصيص: اسحب البطاقات لإعادة ترتيبها، وأخفِ ما لا تحتاجه — اضغط «حفظ» لتثبيت التخطيط.
         </div>
       )}
 
-      {/* ═══ OPERATIONAL SNAPSHOT — one compact metric row (§8) ═══ */}
+      {/* ═══ OPERATIONAL SNAPSHOT — one compact metric row (§8/§22):
+          each card opens the EXACT records it represents in place. ═══ */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5">
-        <CompactMetricCard label="إجمالي الموظفين" value={stats.totalEmployees} hint={`${stats.departmentList.length} قسم`} icon={<Users className="size-4" />} tone="violet" onClick={() => canViewPage('employees') && navigateTo('employees')} />
-        <CompactMetricCard label="نسبة الحضور" value={`${stats.attendanceRate}%`} hint={`${stats.presentCount} حاضر اليوم`} icon={<UserCheck className="size-4" />} tone={stats.attendanceRate >= 80 ? 'positive' : stats.attendanceRate >= 50 ? 'warning' : 'danger'} onClick={() => canViewPage('attendance') && navigateTo('attendance')} />
-        <CompactMetricCard label="متأخرو اليوم" value={stats.lateCount} hint={`${stats.absentCount} غائب`} icon={<Clock className="size-4" />} tone={stats.lateCount > 0 ? 'warning' : 'positive'} onClick={() => canViewPage('attendance') && navigateTo('attendance')} />
-        <CompactMetricCard label="طلبات معلقة" value={stats.pendingRequests} hint="بانتظار الموافقة" icon={<Bell className="size-4" />} tone={stats.pendingRequests > 5 ? 'danger' : 'default'} onClick={() => canViewPage('requests') && navigateTo('requests')} />
+        <CompactMetricCard label="إجمالي الموظفين" value={stats.totalEmployees} hint={`${stats.departmentList.length} قسم`} icon={<Users className="size-4" />} tone="violet" onClick={() => canViewPage('employees') || employeesData ? setStatDetail('employees') : undefined} />
+        <CompactMetricCard label="نسبة الحضور" value={`${stats.attendanceRate}%`} hint={`${stats.presentCount} حاضر اليوم`} icon={<UserCheck className="size-4" />} tone={stats.attendanceRate >= 80 ? 'positive' : stats.attendanceRate >= 50 ? 'warning' : 'danger'} onClick={() => setStatDetail('attendance')} />
+        <CompactMetricCard label="متأخرو اليوم" value={stats.lateCount} hint={`${stats.absentCount} غائب`} icon={<Clock className="size-4" />} tone={stats.lateCount > 0 ? 'warning' : 'positive'} onClick={() => setStatDetail('late')} />
+        <CompactMetricCard label="طلبات معلقة" value={stats.pendingRequests} hint="بانتظار الموافقة" icon={<Bell className="size-4" />} tone={stats.pendingRequests > 5 ? 'danger' : 'default'} onClick={() => setStatDetail('pending-requests')} />
         <CompactMetricCard label="تأخيرات الشهر" value={perf.totalDelays} hint={`${perf.totalDelayMinutes} دقيقة`} icon={<Flame className="size-4" />} tone={delayChange > 0 ? 'danger' : 'default'} trend={{ direction: delayChange > 0 ? 'up' : delayChange < 0 ? 'down' : 'neutral', label: `${delayChange === 0 ? '—' : `${Math.abs(delayChange)}%`}` }} />
         <CompactMetricCard label="خصومات الشهر" value={perf.totalDeductionAmount.toFixed(0)} hint={`${perf.totalDeductionDays.toFixed(1)} يوم`} icon={<DollarSign className="size-4" />} tone={dedChange > 0 ? 'danger' : 'default'} trend={{ direction: dedChange > 0 ? 'up' : dedChange < 0 ? 'down' : 'neutral', label: `${dedChange === 0 ? '—' : `${Math.abs(dedChange)}%`}` }} />
       </div>
 
-      {/* ═══ QUICK ACTIONS (§2.1, §5/§6) ═══ */}
-      {quickActions.length > 0 && (
-        <div className="flex items-center gap-2 flex-wrap">
-          <span className="text-[10px] font-bold text-slate-500 flex items-center gap-1 shrink-0"><Plus className="size-3" /> إجراءات سريعة:</span>
-          {quickActions.map((action) => {
-            const isActive = activeQuickAction === action.id;
-            return (
-              <button
-                key={action.id}
-                onClick={() => setActiveQuickAction(isActive ? null : action.id)}
-                aria-expanded={isActive}
-                className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-[11px] font-semibold border transition-all ${
-                  isActive
-                    ? 'border-violet-500/50 bg-violet-500/25 text-white ring-1 ring-violet-500/40'
-                    : 'border-violet-500/20 bg-violet-500/10 text-violet-300 hover:bg-violet-500/20 hover:text-white hover:scale-[1.03] active:scale-[0.97]'
-                }`}
-              >
-                {action.icon}{action.label}
-              </button>
-            );
-          })}
-        </div>
-      )}
+      {/* §22 — in-place metric detail surfaces (exact represented records) */}
+      <HomeStatDetailDialog
+        kind={statDetail}
+        stats={stats}
+        employees={(employeesData ?? []) as Array<{ id: string; name: string; department?: string | null; position?: string | null }>}
+        onRequestAction={(id, action) => handleRequestAction(id, action)}
+        actionLoadingId={actionLoading}
+        onClose={() => setStatDetail(null)}
+      />
 
-      {/* §5/§6 — inline action surface (CAPA truly inline; others
-          navigate with intent and reuse the destination's existing
-          create dialog). Mounted only while a quick action is active
-          so the page stays compact when idle. */}
-      {activeQuickAction && (
-        <HomeQuickActionHost
-          activeAction={activeQuickAction}
-          onClose={() => setActiveQuickAction(null)}
-        />
-      )}
+      {/* §HEADER-V3 — the quick-create actions moved into the Header's
+          compact quick-actions menu. The inline action surface stays
+          HERE (same handlers, same query invalidations): activating a
+          menu action scrolls it into view. §5/§6 — CAPA truly inline;
+          others navigate with intent and reuse the destination's
+          existing create dialog. Mounted only while a quick action is
+          active so the page stays compact when idle. */}
+      <div ref={quickActionHostRef} style={{ scrollMarginTop: '56px' }}>
+        {activeQuickAction && (
+          <HomeQuickActionHost
+            activeAction={activeQuickAction}
+            onClose={() => setActiveQuickAction(null)}
+          />
+        )}
+      </div>
 
       {/* ═══ WIDGET GRID — §3 draggable, ordered by personal layout ═══ */}
       <div
@@ -1024,16 +1038,16 @@ export default function HomePage() {
               {/* §3 Drop indicator — the destination card gets a live
                   violet ring + placement chip BEFORE the drop happens. */}
               {isOverTarget && (
-                <div className="absolute -top-2 right-3 z-20 flex items-center gap-1 px-2 py-0.5 rounded-md bg-violet-600 text-[9px] font-bold text-white shadow-lg pointer-events-none">
+                <div className="absolute -top-2 right-3 z-20 flex items-center gap-1 px-2 py-0.5 rounded-md bg-brand-600 text-[9px] font-bold text-white shadow-lg pointer-events-none">
                   سيتم النقل هنا
                 </div>
               )}
               {editMode && (
-                <div className={`absolute inset-0 rounded-2xl pointer-events-none z-10 transition-all ${isDragging ? 'border-2 border-dashed border-violet-400 bg-violet-500/5' : isOverTarget ? 'ring-2 ring-violet-500 ring-offset-2 ring-offset-slate-950' : ''}`} />
+                <div className={`absolute inset-0 rounded-2xl pointer-events-none z-10 transition-all ${isDragging ? 'border-2 border-dashed border-brand-400 bg-brand-500/5' : isOverTarget ? 'ring-2 ring-brand-500 ring-offset-2 ring-offset-slate-950' : ''}`} />
               )}
               {editMode && (
                 <div className="absolute top-1.5 left-1.5 z-20 flex items-center gap-1 pointer-events-none">
-                  <span className="flex items-center justify-center size-7 rounded-lg bg-slate-900/90 border border-violet-500/40 text-violet-400">
+                  <span className="flex items-center justify-center size-7 rounded-lg bg-slate-900/90 border border-brand-500/40 text-brand-400">
                     <GripVertical className="size-3.5" />
                   </span>
                 </div>

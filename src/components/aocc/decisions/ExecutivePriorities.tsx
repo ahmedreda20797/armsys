@@ -105,8 +105,8 @@ export const ExecutivePriorities = memo(function ExecutivePriorities({
     <DashboardCard
       title="الأولويات التنفيذية"
       icon={<Crown className="w-4 h-4" />}
-      iconBg="bg-indigo-500/15"
-      iconColor="text-indigo-400"
+      iconBg="bg-brand-500/15"
+      iconColor="text-brand-400"
       borderClr="border-slate-700/50"
       size="large"
       loading={loading}
@@ -135,7 +135,7 @@ export const ExecutivePriorities = memo(function ExecutivePriorities({
                 className={cn(
                   'flex items-center gap-1.5 px-2 py-1 rounded-md text-[10px] font-medium transition-colors whitespace-nowrap',
                   isActive
-                    ? 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/30'
+                    ? 'bg-brand-500/20 text-brand-300 border border-brand-500/30'
                     : 'text-slate-400 hover:text-slate-300 hover:bg-slate-800/60 border border-transparent'
                 )}
               >
@@ -144,7 +144,7 @@ export const ExecutivePriorities = memo(function ExecutivePriorities({
                 {tab.count > 0 && (
                   <span className={cn(
                     'text-[9px] px-1 rounded',
-                    isActive ? 'bg-indigo-500/30' : 'bg-slate-700/50'
+                    isActive ? 'bg-brand-500/30' : 'bg-slate-700/50'
                   )}>
                     {tab.count}
                   </span>
@@ -277,7 +277,7 @@ const AlertsList = memo(function AlertsList({
   onNavigate,
 }: {
   alerts: ExecutiveAlert[];
-  onNavigate: (page: string) => void;
+  onNavigate: (page: string, recordId?: string | null) => void;
 }) {
   if (alerts.length === 0) {
     return <EmptySection message="لا توجد تنبيهات تنفيذية" />;
@@ -293,7 +293,12 @@ const AlertsList = memo(function AlertsList({
         return (
           <div
             key={alert.id}
-            onClick={() => onNavigate(alert.targetPage)}
+            onClick={() => onNavigate(
+              alert.targetPage,
+              // §AOCC-ROUTING — department-scope alerts carry their
+              // department context to the health dialog.
+              alert.scope === 'department' ? alert.affectedName : undefined,
+            )}
             role="button"
             tabIndex={0}
             className={cn(

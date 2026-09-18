@@ -17,6 +17,7 @@
 
 import { isValidMonthKey } from '@/lib/month-utils';
 import { buildEmployeeKpiReport, trendWindow } from '@/lib/kpi-reporting';
+import { buildOrgIndex, findAncestorOfType } from '@/lib/organization/graph';
 import type { PerformanceIntelligenceLoaders } from './loaders';
 import { defaultPerformanceIntelligenceLoaders } from './loaders';
 import { assembleEmployeePerformanceDataset } from './assemble';
@@ -67,6 +68,15 @@ export async function getEmployeePerformanceDataset(
   const identity = await loaders.loadEmployeeIdentity(input.employeeId);
   if (!identity) return null;
 
+  // ── Team label from the ORGANIZATION TREE (§REPORT-IDENTITY) ──
+  // One extra cached read; the tree is authoritative, subteams roll up
+  // to their parent team, and an unassigned employee resolves to null
+  // (explicit unavailable downstream — never an invented label).
+  const orgNodes = await loaders.loadOrgNodes();
+  const team = identity.orgNodeId
+    ? findAncestorOfType(buildOrgIndex(orgNodes as never), identity.orgNodeId, 'team')?.name ?? null
+    : null;
+
   // ── Canonical KPI report (Phase 2 → Phase 1 engine, same loaders) ──
   // ── Batched operational reads: ONE cached read per collection ──
   const [kpiReport, observations, deductions, complaints, capaSplit, followUps, deals, attendanceResult] =
@@ -94,6 +104,7 @@ export async function getEmployeePerformanceDataset(
     windowMonths: window,
     minOccurrences: input.minOccurrences,
     identity,
+    orgTeam: team,
     kpiReport,
     observations,
     deductions,

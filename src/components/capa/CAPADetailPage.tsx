@@ -74,7 +74,7 @@ function InlineField({ label, value, type = 'text', onSave, editable = true, row
           <div className="flex items-start gap-1">
             <p className="text-slate-300 text-sm leading-relaxed whitespace-pre-wrap flex-1">{value}</p>
             {editable && (
-              <button onClick={() => setEditing(true)} className="opacity-0 group-hover:opacity-100 transition-opacity p-0.5 text-slate-500 hover:text-violet-400">
+              <button onClick={() => setEditing(true)} className="opacity-0 group-hover:opacity-100 transition-opacity p-0.5 text-slate-500 hover:text-brand-400">
                 <Pencil className="size-3" />
               </button>
             )}
@@ -82,7 +82,7 @@ function InlineField({ label, value, type = 'text', onSave, editable = true, row
         ) : (
           <button
             onClick={() => editable && setEditing(true)}
-            className="text-slate-600 text-xs hover:text-violet-400 transition-colors border border-dashed border-slate-700 hover:border-violet-500/50 rounded px-2 py-1"
+            className="text-slate-600 text-xs hover:text-brand-400 transition-colors border border-dashed border-slate-700 hover:border-brand-500/50 rounded px-2 py-1"
           >
             + إضافة {label}
           </button>
@@ -105,7 +105,7 @@ function InlineField({ label, value, type = 'text', onSave, editable = true, row
           <Input value={draft} onChange={(e) => setDraft(e.target.value)}
             className="bg-slate-800 border-slate-600 text-white flex-1 h-8 text-sm" autoFocus />
         )}
-        <Button size="sm" onClick={handleSave} className="bg-violet-600 hover:bg-violet-700 text-white h-8 px-2">
+        <Button size="sm" onClick={handleSave} className="bg-brand-600 hover:bg-brand-700 text-white h-8 px-2">
           <Check className="size-3.5" />
         </Button>
         <Button size="sm" variant="outline" onClick={handleCancel}
@@ -151,14 +151,14 @@ function SmartProgress({ capa }: { capa: CAPACase }) {
   const steps = getProgressSteps(capa);
   const completed = steps.filter((s) => s.completed).length;
 
-  const colorClass = pct >= 85 ? 'bg-violet-500' : pct >= 60 ? 'bg-sky-500' : pct >= 35 ? 'bg-amber-500' : 'bg-red-500';
-  const textColor = pct >= 85 ? 'text-violet-400' : pct >= 60 ? 'text-sky-400' : pct >= 35 ? 'text-amber-400' : 'text-red-400';
+  const colorClass = pct >= 85 ? 'bg-brand-500' : pct >= 60 ? 'bg-sky-500' : pct >= 35 ? 'bg-amber-500' : 'bg-red-500';
+  const textColor = pct >= 85 ? 'text-brand-400' : pct >= 60 ? 'text-sky-400' : pct >= 35 ? 'text-amber-400' : 'text-red-400';
 
   return (
     <div className="rounded-xl border border-slate-700/40 bg-slate-800/30 p-4 space-y-3">
       <div className="flex items-center justify-between">
         <h3 className="text-slate-300 text-xs font-semibold flex items-center gap-1.5">
-          <BarChart3 className="size-3.5 text-violet-400" />
+          <BarChart3 className="size-3.5 text-brand-400" />
           تقدم الحالة
         </h3>
         <span className={`${textColor} font-bold text-lg`}>{pct}%</span>
@@ -177,7 +177,7 @@ function SmartProgress({ capa }: { capa: CAPACase }) {
         {steps.map((step) => (
           <span key={step.key} className={`text-[10px] px-2 py-0.5 rounded-full border transition-colors ${
             step.completed
-              ? 'bg-violet-500/15 text-violet-400 border-violet-500/30'
+              ? 'bg-brand-500/15 text-brand-400 border-brand-500/30'
               : 'bg-slate-800/50 text-slate-600 border-slate-700/50'
           }`}>
             {step.completed ? '✓ ' : ''}{step.label}
@@ -365,7 +365,7 @@ export default function CAPADetailPage({ capaId, onBack }: CAPADetailPageProps) 
   // Loading state
   if (loading) {
     return (
-      <div dir="rtl" className="space-y-4 p-1">
+      <div className="space-y-4 p-1">
         <div className="flex items-center gap-3">
           <Skeleton className="h-9 w-9 rounded-lg bg-slate-800" />
           <Skeleton className="h-6 w-48 rounded bg-slate-800" />
@@ -387,7 +387,7 @@ export default function CAPADetailPage({ capaId, onBack }: CAPADetailPageProps) 
   const pc = getPriorityConfig(capa.priority);
 
   return (
-    <div dir="rtl" className="space-y-4">
+    <div className="space-y-4">
       {/* ═══ Header ═══ */}
       <motion.div
         initial={{ opacity: 0, y: -10 }}
@@ -548,7 +548,7 @@ export default function CAPADetailPage({ capaId, onBack }: CAPADetailPageProps) 
           </SectionCard>
 
           {/* 5. Preventive Action Section */}
-          <SectionCard title="الإجراء الوقائي" icon={Shield} color="text-violet-400">
+          <SectionCard title="الإجراء الوقائي" icon={Shield} color="text-brand-400">
             <InlineField label="وصف الإجراء الوقائي" value={capa.preventiveAction} type="textarea" onSave={(v) => saveField({ preventiveAction: v }, 'الإجراء الوقائي')} rows={3} />
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div>
@@ -606,7 +606,7 @@ export default function CAPADetailPage({ capaId, onBack }: CAPADetailPageProps) 
                 <div className="absolute right-[5px] top-0 bottom-0 w-px bg-slate-700/50" />
                 {[...capa.timeline].reverse().map((event: CAPATimelineEvent) => (
                   <div key={event.id} className="flex items-start gap-3 py-2 relative">
-                    <div className="size-[11px] rounded-full bg-violet-500 border-2 border-slate-900 mt-1.5 shrink-0 z-10" />
+                    <div className="size-[11px] rounded-full bg-brand-500 border-2 border-slate-900 mt-1.5 shrink-0 z-10" />
                     <div className="flex-1 min-w-0">
                       <p className="text-slate-300 text-xs">{event.description}</p>
                       <p className="text-slate-600 text-[10px] mt-0.5">
@@ -641,7 +641,7 @@ export default function CAPADetailPage({ capaId, onBack }: CAPADetailPageProps) 
           </SectionCard>
 
           {/* 9. Linked Records Section */}
-          <SectionCard title="السجلات المرتبطة" icon={LinkIcon} color="text-violet-400" defaultOpen={false}>
+          <SectionCard title="السجلات المرتبطة" icon={LinkIcon} color="text-brand-400" defaultOpen={false}>
             <LinkedRecordsPanel capa={capa} />
           </SectionCard>
 
@@ -720,9 +720,9 @@ export default function CAPADetailPage({ capaId, onBack }: CAPADetailPageProps) 
 
           {/* Source References — Quick Navigation */}
           {(capa.relatedFollowUpId || capa.relatedQualityDeductionId || capa.relatedComplaintId || capa.relatedHrDeductionId) && (
-            <Card className="bg-violet-500/5 border-violet-500/20">
+            <Card className="bg-brand-500/5 border-brand-500/20">
               <CardHeader className="pb-2 pt-3 px-4">
-                <CardTitle className="text-xs text-violet-400 font-medium flex items-center gap-1.5">
+                <CardTitle className="text-xs text-brand-400 font-medium flex items-center gap-1.5">
                   <ArrowLeft className="size-3.5" />
                   السجل المصدر
                 </CardTitle>
@@ -730,25 +730,25 @@ export default function CAPADetailPage({ capaId, onBack }: CAPADetailPageProps) 
               <CardContent className="px-4 pb-3 space-y-1.5 text-[11px]">
                 {capa.relatedFollowUpId && (
                   <button type="button" onClick={() => { onBack(); useAppStore.getState().navigateTo('followUps'); }}
-                    className="w-full text-right flex items-center gap-2 text-violet-300 hover:text-violet-200 transition-colors py-1">
+                    className="w-full text-right flex items-center gap-2 text-brand-300 hover:text-brand-200 transition-colors py-1">
                     <ExternalLink className="size-3" /> متابعة مرتبطة
                   </button>
                 )}
                 {capa.relatedQualityDeductionId && (
                   <button type="button" onClick={() => { onBack(); useAppStore.getState().navigateTo('quality'); }}
-                    className="w-full text-right flex items-center gap-2 text-violet-300 hover:text-violet-200 transition-colors py-1">
+                    className="w-full text-right flex items-center gap-2 text-brand-300 hover:text-brand-200 transition-colors py-1">
                     <ExternalLink className="size-3" /> خصم جودة مرتبط
                   </button>
                 )}
                 {capa.relatedComplaintId && (
                   <button type="button" onClick={() => { onBack(); useAppStore.getState().navigateTo('complaints'); }}
-                    className="w-full text-right flex items-center gap-2 text-violet-300 hover:text-violet-200 transition-colors py-1">
+                    className="w-full text-right flex items-center gap-2 text-brand-300 hover:text-brand-200 transition-colors py-1">
                     <ExternalLink className="size-3" /> شكوى عميل مرتبطة
                   </button>
                 )}
                 {capa.relatedHrDeductionId && (
                   <button type="button" onClick={() => { onBack(); useAppStore.getState().navigateTo('hrDeductions'); }}
-                    className="w-full text-right flex items-center gap-2 text-violet-300 hover:text-violet-200 transition-colors py-1">
+                    className="w-full text-right flex items-center gap-2 text-brand-300 hover:text-brand-200 transition-colors py-1">
                     <ExternalLink className="size-3" /> مخالفة HR مرتبطة
                   </button>
                 )}
@@ -813,7 +813,7 @@ function LinkedRecordsPanel({ capa }: { capa: CAPACase }) {
       {hasEmployees && (
         <div className="rounded-lg border border-slate-700/30 bg-slate-800/30 px-3 py-2.5">
           <div className="flex items-center gap-2 mb-1.5">
-            <Users className="size-3.5 text-violet-400" />
+            <Users className="size-3.5 text-brand-400" />
             <span className="text-slate-300 text-xs">الموظفون المرتبطون ({capa.relatedEmployeeIds!.length})</span>
           </div>
           <div className="space-y-1">
@@ -843,7 +843,7 @@ function ActivityLogView({ capa }: { capa: CAPACase }) {
       <div className="absolute right-[5px] top-0 bottom-0 w-px bg-slate-700/50" />
       {events.map((event: CAPATimelineEvent) => (
         <div key={event.id} className="flex items-start gap-3 py-2 relative">
-          <div className="size-[11px] rounded-full bg-violet-500 border-2 border-slate-900 mt-1.5 shrink-0 z-10" />
+          <div className="size-[11px] rounded-full bg-brand-500 border-2 border-slate-900 mt-1.5 shrink-0 z-10" />
           <div className="flex-1 min-w-0">
             <p className="text-slate-300 text-xs">{event.description}</p>
             <div className="flex items-center gap-2 mt-0.5">

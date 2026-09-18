@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { findUserByEmail, updateRecord, getById } from '@/lib/db';
+import { findUserByEmail, updateRecord, getById, getLastUserLookupDiagnostic } from '@/lib/db';
 import { FirebaseConfigError } from '@/lib/firebase-server';
 import { POSITIONS_TABLE, parsePositionTemplate, type Position } from '@/lib/organization';
 import { verifyPassword, hashPassword, signToken, storeRefreshToken } from '@/lib/auth';
@@ -260,6 +260,9 @@ console.log(
         email: user.email,
         name: user.name,
         role: user.role,
+        // §AVATAR-SYNC — same canonical photo field the profile page
+        // uploads to, so the header avatar is correct from first login.
+        photoURL: user.photoURL ?? null,
         permissions: safeParsePerms(user.permissions),
         positionId: user.positionId || null,
         positionPermissions,
@@ -283,6 +286,13 @@ console.log(
       error?.stack || 'No stack'
     );
 
+    // ─── Internal failure classification (safe diagnostics) ──────
+    // Distinguishes, in server logs AND in the console-only `detail`
+    // field, WHICH layer failed — without leaking any credential or
+    // Firebase detail to the rendered UI.
+    const lookup = getLastUserLookupDiagnostic?.() ?? null;
+    const msg = String(error?.message ?? '');
+
     // Firebase configuration problems (placeholders / malformed key /
     // missing env). The UI shows the safe general message per the error
     // contract; the actionable operator instructions travel in `detail`
@@ -303,6 +313,30 @@ console.log(
       );
     }
 
-    return loginErrorResponse(500, LOGIN_ERROR_CODES.SERVER_ERROR);
+    // RTDB query timeout vs. connection failure vs. unexpected error —
+    // all three are 500 SERVER_ERROR to the client (same safe message),
+    // but the operator-visible `detail` pinpoints the layer.
+    let classification = 'internal_error';
+    if (error?.name === 'AbortError' || msg.includes('exceeded') || msg.includes('timeout') || msg.includes('Timeout')) {
+      classification = lookup ? `rtdb_query_timeout (${lookup.path}, ${lookup.durationMs}ms)` : 'rtdb_query_timeout';
+    } else if (
+      msg.includes('ETIMEDOUT') || msg.includes('ECONNREFUSED') || msg.includes('ENOTFOUND') ||
+      msg.includes('ECONNRESET') || msg.includes('fetch failed') || msg.includes('network')
+    ) {
+      classification = 'rtdb_connection_failure';
+    }
+
+    console.error('[Login] Failure classification:', classification, {
+      lastLookup: lookup,
+    });
+
+    return NextResponse.json(
+      {
+        error: LOGIN_ERROR_MESSAGES[LOGIN_ERROR_CODES.SERVER_ERROR],
+        errorKey: LOGIN_ERROR_CODES.SERVER_ERROR,
+        detail: `login_failed:${classification}`,
+      },
+      { status: 500 }
+    );
   }
 }

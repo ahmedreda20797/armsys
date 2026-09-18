@@ -19,7 +19,8 @@
 
 import { useState } from 'react';
 import { Printer, Search, FileText, Link2, Info, Archive, Users, Stethoscope } from 'lucide-react';
-import { toast } from 'sonner';
+import { openPrintReport } from '@/components/print/print-report-store';
+import { employeeKpiReportToPrintModel } from '@/components/print/print-adapters';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -103,8 +104,11 @@ export default function KpiEmployeeReportTab({ month }: { month: string }) {
               className="gap-1.5"
               disabled={!reportQuery.data}
               onClick={() => {
-                window.print();
-                toast.info('استخدم حوار الطباعة لحفظ التقرير PDF');
+                // §PRINT — the dedicated clean A4 report document.
+                openPrintReport(employeeKpiReportToPrintModel(
+                  reportQuery.data as EmployeeKpiReport,
+                  month,
+                ));
               }}
             >
               <Printer className="h-4 w-4" />
@@ -288,11 +292,11 @@ function EmployeeReportBody({ report, month }: { report: EmployeeKpiReport; mont
           </div>
 
           {hasOutcomeMessage ? (
-            <div className="flex items-start gap-2 rounded-lg border border-purple-500/30 bg-purple-500/10 p-3 text-sm text-purple-200">
+            <div className="flex items-start gap-2 rounded-lg border border-brand-500/30 bg-brand-500/10 p-3 text-sm text-brand-200">
               <Info className="h-4 w-4 mt-0.5 shrink-0" />
               <div>
                 <p className="font-medium">لا توجد نتيجة KPI لهذه الفترة</p>
-                <p className="text-purple-300/80">{report.message}</p>
+                <p className="text-brand-300/80">{report.message}</p>
               </div>
             </div>
           ) : (

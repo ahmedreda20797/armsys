@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getAll, createRecord, getById, TTL } from '@/lib/db';
+import { getAll, createRecord, getById, invalidateCache, TTL } from '@/lib/db';
 import { requireAuth, verifyPermission } from '@/lib/verify-permission';
+import { computeAutomationStats } from '@/lib/automation/stats';
 import type { AutomationRule } from '@/types';
 
 // ══════════════════════════════════════════════════════════════
@@ -33,8 +34,20 @@ export async function GET(request: NextRequest) {
     const templateCategory = searchParams.get('templateCategory');
     const limit = parseInt(searchParams.get('limit') || '100', 10);
     const offset = parseInt(searchParams.get('offset') || '0', 10);
+    // §RULES-CREATE-APPEARANCE — `fresh=1` drops the TTL cache before
+    // reading, so a create→list round-trip can never serve a stale
+    // cached snapshot (multi-instance deploys included).
+    const fresh = searchParams.get('fresh') === '1';
+    if (fresh) invalidateCache('automationRules');
 
-    let records = await getAll<AutomationRule>('automationRules', TTL.LONG);
+    const allRules = await getAll<AutomationRule>('automationRules', TTL.LONG);
+
+    // §15 — stats come from the SAME authoritative dataset the list
+    // serves (the full rule set, before filters/pagination). The UI
+    // counter can therefore never disagree with the visible list.
+    const stats = computeAutomationStats(allRules);
+
+    let records = allRules;
 
     // Server-side filters
     if (status) records = records.filter((r) => r.status === status);
@@ -66,6 +79,7 @@ export async function GET(request: NextRequest) {
       total: records.length,
       limit,
       offset,
+      stats,
     });
   } catch (error) {
     console.error('[GET /api/rules] Error:', error);

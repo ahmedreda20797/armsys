@@ -4,7 +4,8 @@ import { getAll, createRecord, findFirst } from '@/lib/db';
 import { requireAuth, verifyPermission } from '@/lib/verify-permission';
 import { asScopeViewer, hasUnrestrictedEmployeeScope } from '@/lib/scope/server';
 import { resolveActor } from '@/lib/auth/actor-resolver';
-import { makeApprovalEvent, appendApprovalEvent, projectLatestApprovalStatus } from '@/lib/approvals';
+import { makeApprovalEvent, projectLatestApprovalStatus } from '@/lib/approvals';
+import { notifyQualityDiscountPending } from '@/lib/notifications/quality-approval-events';
 import { getById } from '@/lib/db';
 
 // ── Column mapping for Arabic Excel headers ──
@@ -139,13 +140,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: permCheck.error }, { status: 403 });
     }
 
-    // §WORKFLOW — bulk-imported discounts follow the SAME approval
-    // lifecycle as manual ones: an uploader without the approve
-    // permission imports them as PENDING (affecting nothing until a
-    // manager approves); an approver imports them as APPROVED.
+    // §WORKFLOW (UNIFORM APPROVAL) — bulk-imported discounts follow the
+    // SAME approval lifecycle as manual ones and ALWAYS enter it as
+    // PENDING, regardless of who imports: decision authority lives in
+    // the approve/reject routes ('approve' action), never in creation.
     // §AUDIT — every imported row is attributed to the uploading user.
-    const approveCheck = await verifyPermission(request, 'quality', 'approve');
-    const canApprove = approveCheck.allowed;
     const actor = await resolveActor(permCheck.user?.id);
     const uploaderRecord = permCheck.user?.id
       ? await getById<{ name?: string; email?: string }>('users', permCheck.user.id)
@@ -156,14 +155,7 @@ export async function POST(request: NextRequest) {
       actorName: actor.name,
       notes: 'استيراد خصومات من ملف Excel',
     });
-    const approvalHistory = canApprove
-      ? appendApprovalEvent([submitEvent], makeApprovalEvent({
-          action: 'approve',
-          actorId: actor.id,
-          actorName: actor.name,
-          notes: 'اعتماد تلقائي — المستورد يملك صلاحية الاعتماد',
-        }))
-      : [submitEvent];
+    const approvalHistory = [submitEvent];
     const importedApprovalStatus = projectLatestApprovalStatus(approvalHistory);
 
     // ── BULK WRITE-SCOPE (M0.4) ──
@@ -324,6 +316,18 @@ export async function POST(request: NextRequest) {
     const skippedMsg = skippedNames.length > 0
       ? ` (أمثلة: ${skippedNames.slice(0, 5).join(', ')})`
       : '';
+
+    // §APPROVAL-NOTIFY — one summary notification for the whole batch
+    // (dedup window prevents retry spam; per-record deep links come
+    // from the pending section on the quality page).
+    if (imported > 0) {
+      void notifyQualityDiscountPending({
+        recordId: 'bulk-import',
+        typeLabel: `استيراد ${imported} خصم جودة`,
+        actorId: actor.id,
+        creatorName: actor.name,
+      });
+    }
 
     return NextResponse.json({
       message: `تم استيراد ${imported} خصم بنجاح${updated > 0 ? ` — ${updated} سجل مكرر تم تخطيه` : ''}${skipped > 0 ? ` — ${skipped} صف تم تخطيه${skippedMsg}` : ''}`,

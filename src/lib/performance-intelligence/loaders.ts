@@ -24,7 +24,10 @@ import type { QualityObservation } from '@/types/quality-kpi';
 import type { KpiReportingLoaders } from '@/lib/kpi-reporting';
 import { defaultKpiReportingLoaders } from '@/lib/kpi-reporting';
 import { isEffectiveDeduction } from '@/lib/quality-deductions/domain';
-import { monthKeyOfDisplayDate, monthKeyOfStoredMonth } from './month-attribution';
+import { attributeMonth, monthKeyOfDisplayDate, monthKeyOfStoredMonth } from './month-attribution';
+
+/** The RTDB org-tree collection (literal parity with lib/organization). */
+export const ORG_NODES_TABLE = 'orgNodes';
 
 /** Existing collections consumed read-only (literal parity with the owning routes). */
 export const PERFORMANCE_INTELLIGENCE_SOURCES = {
@@ -44,6 +47,8 @@ export interface EmployeeIdentityRecord {
   code: string | null;
   department: string | null;
   position: string | null;
+  /** Org-tree assignment — the anchor for team/department resolution. */
+  orgNodeId: string | null;
   status: unknown;
   archivedAt: string | null;
   restoredAt: string | null;
@@ -60,6 +65,8 @@ export interface CapaRelationshipSplit {
 export interface PerformanceIntelligenceLoaders extends KpiReportingLoaders {
   /** Raw employee record incl. lifecycle stamps (null = not found). */
   loadEmployeeIdentity(employeeId: string): Promise<EmployeeIdentityRecord | null>;
+  /** Org-tree nodes for team/department label resolution (org tree is authoritative). */
+  loadOrgNodes(): Promise<Array<{ id: string; name: string; type: string; parentId: string | null; status?: string | null }>>;
   /** One collection read for the whole analysis window, filtered in memory. */
   loadObservationsForWindow(employeeId: string, months: ReadonlyArray<string>): Promise<QualityObservation[]>;
   loadQualityDeductions(employeeId: string): Promise<QualityDeduction[]>;
@@ -78,6 +85,7 @@ function toIdentityRecord(raw: Record<string, unknown>, id: string): EmployeeIde
     code: typeof raw.code === 'string' && raw.code.length > 0 ? raw.code : null,
     department: typeof raw.department === 'string' ? raw.department : null,
     position: typeof raw.position === 'string' ? raw.position : null,
+    orgNodeId: typeof raw.orgNodeId === 'string' && raw.orgNodeId.length > 0 ? raw.orgNodeId : null,
     status: raw.status,
     archivedAt: typeof raw.archivedAt === 'string' ? raw.archivedAt : null,
     restoredAt: typeof raw.restoredAt === 'string' ? raw.restoredAt : null,
@@ -94,10 +102,33 @@ export const defaultPerformanceIntelligenceLoaders: PerformanceIntelligenceLoade
     return raw ? toIdentityRecord(raw, employeeId) : null;
   },
 
+  loadOrgNodes: async () => {
+    const nodes = await getAll<Record<string, unknown>>(ORG_NODES_TABLE, TTL.MEDIUM);
+    return nodes
+      .filter((n) => n && typeof n.id === 'string')
+      .map((n) => ({
+        id: n.id as string,
+        name: String(n.name ?? ''),
+        type: String(n.type ?? ''),
+        parentId: typeof n.parentId === 'string' ? n.parentId : null,
+        status: typeof n.status === 'string' ? n.status : null,
+      }));
+  },
+
   loadObservationsForWindow: async (employeeId, months) => {
     const monthSet = new Set(months);
     const all = await getAll<QualityObservation>(PERFORMANCE_INTELLIGENCE_SOURCES.observations, TTL.MEDIUM);
-    return all.filter((o) => o && o.employeeId === employeeId && monthSet.has(o.month));
+    // ROOT-CAUSE FIX (Smart Quality Report "غير متاح"): records with a
+    // missing/legacy-shaped `month` are attributed through the SAME
+    // canonical policy as the assembler (attributeMonth: stored month →
+    // display date → ISO) — never a second policy, never dropped while
+    // a valid date exists. Records that still cannot be attributed fall
+    // through to the assembler's unattributed accounting.
+    return all.filter((o) => {
+      if (!o || o.employeeId !== employeeId) return false;
+      const month = attributeMonth(o.month, o.observationDate);
+      return month !== null && monthSet.has(month);
+    });
   },
 
   loadQualityDeductions: async (employeeId) => {
@@ -192,14 +223,19 @@ export function attributeRecords<T>(
   return out;
 }
 
-/** Observation attribution — the stored `month` field is mandatory in the model. */
+/** Observation attribution — the CANONICAL attributeMonth policy:
+ *  stored `month` → observationDate (DD/MM/YYYY) → ISO date. Legacy
+ *  records whose observationDate was stored ISO-shaped used to fall
+ *  through the display-date-only parse into `unattributed` and vanish
+ *  from the report — attributeMonth is the existing single policy. */
 export function monthOfObservation(obs: QualityObservation): string | null {
-  return monthKeyOfStoredMonth(obs.month);
+  return attributeMonth(obs.month, obs.observationDate);
 }
 
-/** Quality deduction attribution — stored `month` field, display-date fallback. */
+/** Quality deduction attribution — same canonical policy
+ *  (stored month → DD/MM/YYYY date → ISO). */
 export function monthOfQualityDeduction(record: QualityDeduction): string | null {
-  return monthKeyOfStoredMonth(record.month) ?? monthKeyOfDisplayDate(record.date);
+  return attributeMonth(record.month, record.date);
 }
 
 /** Complaint attribution — creation timestamp (the record's only business date). */

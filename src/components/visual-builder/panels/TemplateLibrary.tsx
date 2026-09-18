@@ -65,7 +65,7 @@ export const TemplateLibrary = memo(function TemplateLibrary({
   };
 
   return (
-    <div className="flex flex-col h-full" dir="rtl">
+    <div className="flex flex-col h-full">
       {/* Header */}
       <div className="px-4 py-3 border-b border-slate-800 flex items-center justify-between">
         <div>
@@ -83,19 +83,19 @@ export const TemplateLibrary = memo(function TemplateLibrary({
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="بحث في القوالب..."
-            className="w-full bg-slate-800/60 border border-slate-700/50 rounded-lg pr-8 pl-3 py-1.5 text-xs text-slate-200 placeholder:text-slate-500 focus:outline-none focus:border-violet-500/50"
+            className="w-full bg-slate-800/60 border border-slate-700/50 rounded-lg pr-8 pl-3 py-1.5 text-xs text-slate-200 placeholder:text-slate-500 focus:outline-none focus:border-brand-500/50"
           />
         </div>
         <div className="flex flex-wrap gap-1">
           <button
             onClick={() => setCategory(null)}
-            className={cn('px-2 py-0.5 rounded-full text-[9px] border transition-colors', category === null ? 'bg-violet-600/30 text-violet-300 border-violet-500/40' : 'text-slate-500 border-slate-700/40 hover:text-slate-300')}
+            className={cn('px-2 py-0.5 rounded-full text-[9px] border transition-colors', category === null ? 'bg-brand-600/30 text-brand-300 border-brand-500/40' : 'text-slate-500 border-slate-700/40 hover:text-slate-300')}
           >الكل</button>
           {categories.map((c) => (
             <button
               key={c}
               onClick={() => setCategory(c)}
-              className={cn('px-2 py-0.5 rounded-full text-[9px] border transition-colors', category === c ? 'bg-violet-600/30 text-violet-300 border-violet-500/40' : 'text-slate-500 border-slate-700/40 hover:text-slate-300')}
+              className={cn('px-2 py-0.5 rounded-full text-[9px] border transition-colors', category === c ? 'bg-brand-600/30 text-brand-300 border-brand-500/40' : 'text-slate-500 border-slate-700/40 hover:text-slate-300')}
             >{c}</button>
           ))}
         </div>
@@ -107,12 +107,12 @@ export const TemplateLibrary = memo(function TemplateLibrary({
           {filtered.map((t) => {
             const Icon = ICONS[t.icon] ?? FileText;
             return (
-              <div key={t.id} className="group rounded-xl bg-slate-900/60 border border-slate-800 hover:border-violet-500/40 transition-all overflow-hidden">
+              <div key={t.id} className="group rounded-xl bg-slate-900/60 border border-slate-800 hover:border-brand-500/40 transition-all overflow-hidden">
                 <div className="p-3">
                   <div className="flex items-start justify-between mb-2">
                     <div className="flex items-center gap-2">
-                      <div className="w-8 h-8 rounded-lg bg-violet-600/20 border border-violet-500/20 flex items-center justify-center">
-                        <Icon className="w-4 h-4 text-violet-300" />
+                      <div className="w-8 h-8 rounded-lg bg-brand-600/20 border border-brand-500/20 flex items-center justify-center">
+                        <Icon className="w-4 h-4 text-brand-300" />
                       </div>
                       <div>
                         <p className="text-xs font-bold text-slate-200">{t.nameAr}</p>
@@ -145,7 +145,7 @@ export const TemplateLibrary = memo(function TemplateLibrary({
                     </button>
                     <button
                       onClick={() => { onApply(t.nodes, t.edges, t.variables); onClose(); }}
-                      className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded-lg bg-violet-600/20 border border-violet-500/30 text-[10px] text-violet-300 hover:bg-violet-600/30 transition-colors"
+                      className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded-lg bg-brand-600/20 border border-brand-500/30 text-[10px] text-brand-300 hover:bg-brand-600/30 transition-colors"
                     >
                       <Plus className="w-3 h-3" /> استخدام
                     </button>
@@ -188,7 +188,7 @@ export const TemplateLibrary = memo(function TemplateLibrary({
             </div>
             <button
               onClick={() => { onApply(preview.nodes, preview.edges, preview.variables); onClose(); }}
-              className="w-full mt-4 flex items-center justify-center gap-1 py-2 rounded-lg bg-violet-600/20 border border-violet-500/30 text-xs text-violet-300 hover:bg-violet-600/30 transition-colors"
+              className="w-full mt-4 flex items-center justify-center gap-1 py-2 rounded-lg bg-brand-600/20 border border-brand-500/30 text-xs text-brand-300 hover:bg-brand-600/30 transition-colors"
             >
               <CheckCircle2 className="w-4 h-4" /> استخدام هذا القالب
             </button>

@@ -104,6 +104,14 @@ export interface DashboardLeaderboardEntry extends RankedEmployee {
   position?: string;
   deductionPoints?: number;
   bonusPoints?: number;
+  /**
+   * §TOP-PERFORMERS EVIDENCE — total quality observations behind the
+   * aggregated score. Zero means the entry carries NO scored evidence:
+   * it is excluded from the top ranking (a default score without data
+   * is never "top performance") so the ranking is always backed by
+   * actual records.
+   */
+  observationCount?: number;
 }
 
 /** The full /api/kpi-dashboard response. */
@@ -489,6 +497,7 @@ function aggregateLeaderboard(
       samples: number;
       deductionPoints: number;
       bonusPoints: number;
+      observationCount: number;
       identity: {
         employeeName: string;
         department: string;
@@ -505,6 +514,7 @@ function aggregateLeaderboard(
         samples: 0,
         deductionPoints: 0,
         bonusPoints: 0,
+        observationCount: 0,
         identity: {
           employeeName: entry.employeeSnapshot.employeeName,
           department: entry.dept,
@@ -515,6 +525,9 @@ function aggregateLeaderboard(
       cur.samples += 1;
       cur.deductionPoints += entry.deductionPoints;
       cur.bonusPoints += entry.bonusPoints;
+      // Evidence accumulates across months — the observation count is
+      // the eligibility basis for the top-performers ranking (§12).
+      cur.observationCount += entry.observationCount ?? 0;
       // Latest frozen identity for this employee wins.
       cur.identity = {
         employeeName: entry.employeeSnapshot.employeeName,
@@ -536,6 +549,11 @@ function aggregateLeaderboard(
       position: v.identity.position,
       deductionPoints: v.deductionPoints,
       bonusPoints: v.bonusPoints,
+      // §TOP-PERFORMERS EVIDENCE — the total quality observations behind
+      // this entry. An employee with ZERO observations has no scored
+      // evidence: their default-score result is the ABSENCE of data,
+      // not excellence, and they are excluded from the top ranking.
+      observationCount: v.observationCount,
     });
   }
   // Rank by averaged score desc, employeeId asc for determinism (mirrors
@@ -607,6 +625,15 @@ const IMPROVEMENT_LIST_CAP = 10;
  * net effective deductions", so a valid 100-score employee with no
  * deductions is never classified as needing improvement.
  *
+ * §TOP-PERFORMERS EVIDENCE RULE (milestone §12): the TOP list further
+ * requires actual scored evidence — `observationCount >= 1`. An
+ * employee with zero quality observations has no measured performance;
+ * their default score is the ABSENCE of data, not excellence, so they
+ * never rank as a top performer (no automatic 100%). When NO employee
+ * carries evidence, the top list is honestly EMPTY — the UI explains
+ * it instead of manufacturing a ranking. The needs-improvement list is
+ * unaffected: deductions ARE evidence.
+ *
  * Both lists stay deterministic: scores sort first, employeeId breaks
  * ties (mirroring the engine's tie-break).
  */
@@ -618,7 +645,9 @@ function splitTopAndImprovement(
   needsImprovement: DashboardLeaderboardEntry[];
 } {
   // rows arrive sorted best-first (aggregateLeaderboard ordering).
-  const top = rows.filter((e) => e.score >= defaultScore).slice(0, 10);
+  const top = rows
+    .filter((e) => e.score >= defaultScore && (e.observationCount ?? 0) >= 1)
+    .slice(0, 10);
   const needsImprovement = rows
     .filter((e) => e.score < defaultScore)
     .sort((a, b) =>

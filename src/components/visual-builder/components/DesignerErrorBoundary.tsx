@@ -85,7 +85,7 @@ export class DesignerErrorBoundary extends Component<BoundaryProps, BoundaryStat
     if (!this.state.hasError) return this.props.children;
     const err = this.state.error;
     return (
-      <div className="flex items-center justify-center h-screen bg-slate-950 p-6" dir="rtl">
+      <div className="flex items-center justify-center h-screen bg-slate-950 p-6">
         <div className="max-w-lg w-full bg-slate-900 border border-red-500/30 rounded-2xl shadow-2xl p-6">
           <div className="flex items-center gap-3 mb-4">
             <div className="w-10 h-10 rounded-full bg-red-500/20 flex items-center justify-center">
@@ -111,7 +111,7 @@ export class DesignerErrorBoundary extends Component<BoundaryProps, BoundaryStat
           <div className="flex flex-wrap gap-2">
             <button
               onClick={this.handleReload}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-violet-600/30 border border-violet-500/40 text-violet-300 text-xs hover:bg-violet-600/40 transition-colors"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-brand-600/30 border border-brand-500/40 text-brand-300 text-xs hover:bg-brand-600/40 transition-colors"
             >
               <RefreshCw className="w-3.5 h-3.5" /> إعادة المحاولة
             </button>
@@ -160,7 +160,7 @@ export function RecoveryDialog({ open, warnings, graphName, onAccept, onCancel }
   if (!open) return null;
   const corrupted = warnings.some((w) => w.kind === 'corrupted');
   return (
-    <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4" dir="rtl">
+    <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
       <div className="max-w-lg w-full bg-slate-900 border border-amber-500/30 rounded-2xl shadow-2xl overflow-hidden">
         <div className="px-5 py-4 border-b border-slate-800 flex items-center gap-3">
           <div className="w-9 h-9 rounded-full bg-amber-500/15 flex items-center justify-center">
@@ -206,7 +206,7 @@ export function RecoveryDialog({ open, warnings, graphName, onAccept, onCancel }
           {!corrupted && (
             <button
               onClick={onAccept}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-violet-600/30 border border-violet-500/40 text-violet-300 text-xs hover:bg-violet-600/40 transition-colors"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-brand-600/30 border border-brand-500/40 text-brand-300 text-xs hover:bg-brand-600/40 transition-colors"
             >
               متابعة مع الإصلاحات
             </button>

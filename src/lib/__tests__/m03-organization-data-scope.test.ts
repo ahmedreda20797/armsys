@@ -430,7 +430,13 @@ describe('M0.3 D — route wiring guards', () => {
   });
 
   it('[matrix 20] employee detail route enforces the SAME scope before assembling data', () => {
-    assert.match(detailRouteCode, /verifyPermission\(request,\s*'employees',\s*'view'\)/);
+    // The employees gate may be expressed either through the classic
+    // adapter (verifyPermission) or the canonical authorizer
+    // (authorizeRequest) — same gate, same page key, same action.
+    assert.match(
+      detailRouteCode,
+      /(verifyPermission\(request,\s*'employees',\s*'view'\)|authorizeRequest\(request,\s*\{\s*page:\s*'employees',\s*action:\s*'view'\s*,?\s*\}\))/,
+    );
     assert.match(detailRouteCode, /resolveEmployeeScope\(/);
     const scopeIndex = detailRouteCode.indexOf('resolveEmployeeScope');
     const aggregateIndex = detailRouteCode.indexOf('Promise.allSettled');
@@ -470,9 +476,18 @@ describe('M0.3 D — route wiring guards', () => {
     assert.doesNotMatch(hookSrc, /scope\s*\?\?\s*'all'/); // the old inline 'all' fallback must be gone
   });
 
-  it('Control Panel persists scopes explicitly — selecting "all" stores "all"', () => {
-    const cpSrc = stripComments(readFileSync(join(PROJECT_ROOT, 'src', 'components', 'pages', 'ControlPanelPage.tsx'), 'utf8'));
-    assert.match(cpSrc, /resolvePageScope\(tempPermissions/); // display = effective scope
-    assert.doesNotMatch(cpSrc, /scope:\s*undefined/);         // 'all' must not be stored as absent
+  it('Permission Manager console persists scopes explicitly — selecting a scope stores it (incl. "all")', () => {
+    // The console is now the single editor surface. It edits ONLY the
+    // direct-override tier: scope 'inherit' DELETES the facet (the
+    // resolver then inherits the lower tier's scope); any chosen value
+    // — including 'all' — is stored explicitly on the entry. The scope
+    // vocabulary offered is the CANONICAL one (no invented values).
+    const pmSrc = stripComments(readFileSync(join(PROJECT_ROOT, 'src', 'components', 'permissions', 'PermissionManagerConsole.tsx'), 'utf8'));
+    assert.match(pmSrc, /onSetScope = \(pageKey: string, scope: DataScope \| 'inherit'\)/); // the single scope mutation
+    assert.match(pmSrc, /if \(scope === 'inherit'\) delete entry\.scope;/);                 // inherit = absent, never stored as a value
+    assert.match(pmSrc, /else entry\.scope = scope;/);                                      // chosen value stored explicitly (incl. 'all')
+    const rowSrc = stripComments(readFileSync(join(PROJECT_ROOT, 'src', 'components', 'permissions', 'PageAccessRow.tsx'), 'utf8'));
+    assert.match(rowSrc, /resolvePageScope\(/);            // preview through the CANONICAL scope resolver
+    assert.match(rowSrc, /describeDataScope\(/);           // canonical scope labels, no parallel vocabulary
   });
 });

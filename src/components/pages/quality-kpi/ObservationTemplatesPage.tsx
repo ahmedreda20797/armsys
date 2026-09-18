@@ -21,6 +21,8 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
 import { FileText, Plus, Search, Star, Trash2, Clock, Sparkles, Heart } from 'lucide-react';
+import { SmartActionMenu } from '@/components/shared/SmartActionMenu';
+import { PageIdentity } from '@/components/shared/PageIdentity';
 import {
   useObservationTemplates,
   useCreateTemplate,
@@ -95,7 +97,7 @@ function CreateTemplateDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg" dir="rtl">
+      <DialogContent className="max-w-lg">
         <DialogHeader>
           <DialogTitle className="text-slate-100 flex items-center gap-2">
             <Plus className="size-5 text-blue-400" />
@@ -205,16 +207,14 @@ function TemplateCard({
                 <Heart className="size-3.5 text-slate-500" />
               )}
             </Button>
+            {/* §2 — SmartActionMenu */}
             {canDelete && (
-              <Button
-                variant="ghost"
-                size="icon"
-                className="size-7 text-rose-400"
-                onClick={onDelete}
-                title="حذف"
-              >
-                <Trash2 className="size-3.5" />
-              </Button>
+              <SmartActionMenu
+                size="sm"
+                actions={[
+                  { key: 'delete', label: 'حذف', icon: <Trash2 className="size-3.5" />, destructive: true, onSelect: onDelete },
+                ]}
+              />
             )}
           </div>
         </div>
@@ -297,32 +297,28 @@ export default function ObservationTemplatesPage() {
 
   if (!canView) {
     return (
-      <div dir="rtl" className="flex flex-col items-center justify-center py-24 text-slate-400">
+      <div className="flex flex-col items-center justify-center py-24 text-slate-400">
         <p>ليس لديك صلاحية للوصول إلى هذه الصفحة</p>
       </div>
     );
   }
 
   return (
-    <div dir="rtl" className="space-y-4 p-4 sm:p-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-100 flex items-center gap-2">
-            <FileText className="size-6 text-blue-400" />
-            قوالب الملاحظات
-          </h1>
-          <p className="text-sm text-slate-400 mt-1">
-            قوالب جاهزة لإدخال الملاحظات بسرعة — مع نقاط وملاحظات وإجراءات تصحيحية افتراضية
-          </p>
-        </div>
-        {canCreate && (
+    <div className="space-y-4 p-4 sm:p-6">
+      {/* §7 — unified page identity */}
+      <PageIdentity
+        pageId="observationTemplates"
+        icon={<FileText className="size-5" />}
+        iconClassName="bg-blue-500/15 border-blue-500/30 text-blue-400"
+        title="قوالب الملاحظات"
+        description="قوالب جاهزة لإدخال الملاحظات بسرعة — مع نقاط وملاحظات وإجراءات تصحيحية افتراضية"
+        actions={canCreate && (
           <Button onClick={() => setCreateOpen(true)} className="gap-2">
             <Plus className="size-4" />
             قالب جديد
           </Button>
         )}
-      </div>
+      />
 
       {/* Sort tabs + search */}
       <div className="flex flex-col sm:flex-row sm:items-center gap-3">

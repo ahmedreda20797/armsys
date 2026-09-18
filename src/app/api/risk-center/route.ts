@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getAll, getAllBatch, getEmployeeMap } from '@/lib/db';
+import { getAllBatch } from '@/lib/db';
+import { dedupeEmployeesByIdentity, employeeIdentityKey } from '@/lib/risk/employee-identity';
 import { requireAuth, verifyPermission } from '@/lib/verify-permission';
 import { filterEmployeesInScope, authScopeViewer, filterRowsByEmployeeScope, resolveEmployeeScopeFromDb } from '@/lib/scope/server';
 import { isEffectiveDeduction } from '@/lib/quality-deductions/domain';
@@ -57,17 +58,14 @@ export async function GET(request: NextRequest) {
     const monthKey =
       monthParam && /^\d{4}-\d{2}$/.test(monthParam) ? monthParam : null;
 
-    const [batch, empMap] = await Promise.all([
-      getAllBatch([
-        'employees',
-        'attendance',
-        'qualityDeductions',
-        'hrDeductions',
-        'followUps',
-        'complaints',
-        'capaCases',
-      ]),
-      getEmployeeMap(),
+    const batch = await getAllBatch([
+      'employees',
+      'attendance',
+      'qualityDeductions',
+      'hrDeductions',
+      'followUps',
+      'complaints',
+      'capaCases',
     ]);
 
     // ═══════════════════════════════════════════════════
@@ -84,7 +82,16 @@ export async function GET(request: NextRequest) {
     // are scored.
     // ═══════════════════════════════════════════════════
     const scopeCtx = await resolveEmployeeScopeFromDb(authScopeViewer(auth), undefined, auth.permissions);
-    const employees = filterEmployeesInScope(batch.get('employees') || [], scopeCtx);
+    const scopedEmployees = filterEmployeesInScope(batch.get('employees') || [], scopeCtx);
+    // §IDENTITY — ONE risk profile per human. Duplicate employee
+    // records (same code or same name) merge here: factor maps below
+    // aggregate under the IDENTITY key, and exactly one row is emitted
+    // per identity (the primary record). This is the root-cause fix
+    // for duplicated employees in the Risk Center — not a UI merge.
+    const identityIndex = dedupeEmployeesByIdentity(scopedEmployees);
+    const employees = identityIndex.primaries;
+    const idKey = (recordId: string | null | undefined) =>
+      recordId ? identityIndex.identityOf(recordId) ?? employeeIdentityKey({ code: null, name: recordId }) : null;
     const attendanceRecords = filterRowsByEmployeeScope(batch.get('attendance') || [], scopeCtx);
     // §WORKFLOW — only APPROVED discounts raise an employee's risk.
     const qualityDeductions = filterRowsByEmployeeScope(batch.get('qualityDeductions') || [], scopeCtx)
@@ -153,37 +160,45 @@ export async function GET(request: NextRequest) {
       ? capaCases.filter((r: any) => inMonth(r, ['createdAt']))
       : capaCases;
 
-    // ── Pre-compute attendance stats per employee ──
+    // ── Pre-compute factor stats per IDENTITY (merged duplicates) ──
     const empAttendance = new Map<string, { delays: number; absences: number; lastDate: string }>();
     for (const r of attRecordsForScore) {
-      if (!empAttendance.has(r.employeeId)) {
-        empAttendance.set(r.employeeId, { delays: 0, absences: 0, lastDate: '' });
+      const key = idKey(r.employeeId);
+      if (!key) continue;
+      if (!empAttendance.has(key)) {
+        empAttendance.set(key, { delays: 0, absences: 0, lastDate: '' });
       }
-      const stat = empAttendance.get(r.employeeId)!;
+      const stat = empAttendance.get(key)!;
       if (r.status === 'late') stat.delays += 1;
       if (r.status === 'absent') stat.absences += 1;
       if (r.date > stat.lastDate) stat.lastDate = r.date;
     }
 
-    // ── Pre-compute quality deductions per employee (all time) ──
+    // ── Pre-compute quality deductions per identity (all time) ──
     const empQuality = new Map<string, number>();
     for (const q of qualityForScore) {
-      empQuality.set(q.employeeId, (empQuality.get(q.employeeId) || 0) + 1);
+      const key = idKey(q.employeeId);
+      if (!key) continue;
+      empQuality.set(key, (empQuality.get(key) || 0) + 1);
     }
 
-    // ── Pre-compute HR deductions per employee ──
+    // ── Pre-compute HR deductions per identity ──
     const empHr = new Map<string, number>();
     for (const h of hrForScore) {
-      empHr.set(h.employeeId, (empHr.get(h.employeeId) || 0) + 1);
+      const key = idKey(h.employeeId);
+      if (!key) continue;
+      empHr.set(key, (empHr.get(key) || 0) + 1);
     }
 
-    // ── Pre-compute follow-up stats per employee ──
+    // ── Pre-compute follow-up stats per identity ──
     const empFollowUps = new Map<string, { open: number; high: number; critical: number; repeated: number; lastDate: string }>();
     for (const f of followUpsForScore) {
-      if (!empFollowUps.has(f.employeeId)) {
-        empFollowUps.set(f.employeeId, { open: 0, high: 0, critical: 0, repeated: 0, lastDate: '' });
+      const key = idKey(f.employeeId);
+      if (!key) continue;
+      if (!empFollowUps.has(key)) {
+        empFollowUps.set(key, { open: 0, high: 0, critical: 0, repeated: 0, lastDate: '' });
       }
-      const stat = empFollowUps.get(f.employeeId)!;
+      const stat = empFollowUps.get(key)!;
       if (f.status === 'open' || f.status === 'under_follow_up' || f.status === 'under_review') stat.open += 1;
       if (f.priorityLevel === 'high') stat.high += 1;
       if (f.priorityLevel === 'critical') stat.critical += 1;
@@ -195,14 +210,16 @@ export async function GET(request: NextRequest) {
       if (f.date > stat.lastDate) stat.lastDate = f.date;
     }
 
-    // ── Pre-compute complaints per employee ──
+    // ── Pre-compute complaints per identity ──
     const empComplaints = new Map<string, { open: number; lastDate: string }>();
     for (const c of complaintsForScore) {
       if (!c.employeeId) continue;
-      if (!empComplaints.has(c.employeeId)) {
-        empComplaints.set(c.employeeId, { open: 0, lastDate: '' });
+      const key = idKey(c.employeeId);
+      if (!key) continue;
+      if (!empComplaints.has(key)) {
+        empComplaints.set(key, { open: 0, lastDate: '' });
       }
-      const stat = empComplaints.get(c.employeeId)!;
+      const stat = empComplaints.get(key)!;
       if (c.status === 'open' || c.status === 'under_investigation' || c.status === 'pending_resolution') stat.open += 1;
       if ((c.createdAt || '') > stat.lastDate) stat.lastDate = c.createdAt || '';
     }
@@ -221,10 +238,12 @@ export async function GET(request: NextRequest) {
       const terminal = isTerminalCAPA(c);
 
       for (const eid of linkedIds) {
-        if (!empCapa.has(eid)) {
-          empCapa.set(eid, { open: 0, overdue: 0, critical: 0, reopened: 0, capaIds: [], lastDate: '' });
+        const key = idKey(eid);
+        if (!key) continue;
+        if (!empCapa.has(key)) {
+          empCapa.set(key, { open: 0, overdue: 0, critical: 0, reopened: 0, capaIds: [], lastDate: '' });
         }
-        const stat = empCapa.get(eid)!;
+        const stat = empCapa.get(key)!;
 
         if (!terminal) {
           stat.open += 1;
@@ -249,12 +268,13 @@ export async function GET(request: NextRequest) {
     const risks: EmployeeRisk[] = [];
 
     for (const emp of employees) {
-      const att = empAttendance.get(emp.id) || { delays: 0, absences: 0, lastDate: '' };
-      const qCount = empQuality.get(emp.id) || 0;
-      const hCount = empHr.get(emp.id) || 0;
-      const fu = empFollowUps.get(emp.id) || { open: 0, high: 0, critical: 0, repeated: 0, lastDate: '' };
-      const comp = empComplaints.get(emp.id) || { open: 0, lastDate: '' };
-      const capa = empCapa.get(emp.id) || { open: 0, overdue: 0, critical: 0, reopened: 0, capaIds: [], lastDate: '' };
+      const identity = employeeIdentityKey(emp);
+      const att = empAttendance.get(identity) || { delays: 0, absences: 0, lastDate: '' };
+      const qCount = empQuality.get(identity) || 0;
+      const hCount = empHr.get(identity) || 0;
+      const fu = empFollowUps.get(identity) || { open: 0, high: 0, critical: 0, repeated: 0, lastDate: '' };
+      const comp = empComplaints.get(identity) || { open: 0, lastDate: '' };
+      const capa = empCapa.get(identity) || { open: 0, overdue: 0, critical: 0, reopened: 0, capaIds: [], lastDate: '' };
 
       // Canonical risk score — the ONLY formula in the system.
       // Zero-risk employees are INCLUDED with score 0 so lowRiskCount
@@ -282,13 +302,13 @@ export async function GET(request: NextRequest) {
       let trend: 'increasing' | 'stable' | 'improving' = 'stable';
       if (!monthScoped) {
         const recentAttendance = attendanceRecords.filter(
-          (r: any) => r.employeeId === emp.id && r.date >= sevenDaysAgoStr && (r.status === 'late' || r.status === 'absent')
+          (r: any) => idKey(r.employeeId) === identity && r.date >= sevenDaysAgoStr && (r.status === 'late' || r.status === 'absent')
         ).length;
         const recentFollowUps = followUps.filter(
-          (f: any) => f.employeeId === emp.id && f.date >= sevenDaysAgoStr && (f.status === 'open' || f.status === 'under_follow_up')
+          (f: any) => idKey(f.employeeId) === identity && f.date >= sevenDaysAgoStr && (f.status === 'open' || f.status === 'under_follow_up')
         ).length;
         const recentCapas = capaCases.filter(
-          (c: any) => (c.employeeId === emp.id || (c.relatedEmployeeIds || []).includes(emp.id)) && !isTerminalCAPA(c) && (c.updatedAt || c.createdAt || '') >= sevenDaysAgoStr
+          (c: any) => (idKey(c.employeeId) === identity || (c.relatedEmployeeIds || []).some((rid: string) => idKey(rid) === identity)) && !isTerminalCAPA(c) && (c.updatedAt || c.createdAt || '') >= sevenDaysAgoStr
         ).length;
         if (recentAttendance >= 3 || recentFollowUps >= 2 || recentCapas >= 2) trend = 'increasing';
         else if (recentAttendance === 0 && recentFollowUps === 0 && recentCapas === 0 && totalScore > 10) trend = 'improving';
@@ -379,7 +399,7 @@ export async function GET(request: NextRequest) {
       monthKey,
       basisLabel: monthScoped
         ? `عوامل الخطر المسجلة خلال ${monthKey}`
-        : 'لقطة متجددة (آخر 30 يوماً / الحالة الحالية)',
+        : 'إجمالي السجل — كل الفترات (بدون تحديد فترة)',
     });
   } catch (error) {
     console.error('[GET /api/risk-center] Error:', error);

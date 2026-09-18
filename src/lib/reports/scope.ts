@@ -15,6 +15,7 @@
 // ══════════════════════════════════════════════════════════════
 
 import { isValidMonthKey } from '@/lib/month-utils';
+import { normalizeForSearch } from '@/lib/search/search-normalize';
 import {
   describeTimeScope,
   isValidDayKey,
@@ -72,17 +73,28 @@ export function resolveEmployeeScope(
 }
 
 /**
- * Filter employee ids by the resolved scope + department against the
- * employee list the caller loaded canonically. Pure — used by every
- * report runner so multi-employee / department filtering is ONE
- * mechanism, not per-report reimplementations.
+ * Filter employee ids by the resolved scope + department/team/search
+ * against the employee list the caller loaded canonically. Pure —
+ * used by every report runner so multi-employee / department / team
+ * / name-search filtering is ONE mechanism, not per-report
+ * reimplementations.
+ *
+ * `team` matches the employee's REAL org-team label (resolved by
+ * lib/reports/employee-org); `search` is a normalized substring over
+ * the name+code blob (also resolved there).
  */
-export function applyEmployeeScope<T extends { id: string; department?: string | null }>(
+export function applyEmployeeScope<
+  T extends { id: string; department?: string | null; team?: string | null; searchKey?: string; name?: string; code?: string | null },
+>(
   employees: ReadonlyArray<T>,
   scope: EmployeeScope,
   department?: string | null,
+  team?: string | null,
+  search?: string | null,
 ): ReadonlyArray<T> {
   const dept = typeof department === 'string' && department.length > 0 ? department : null;
+  const teamFilter = typeof team === 'string' && team.length > 0 ? team : null;
+  const searchFilter = typeof search === 'string' && search.trim().length > 0 ? search.trim() : null;
   let list = employees;
   if (scope.mode === 'single') {
     list = list.filter((e) => e.id === scope.employeeId);
@@ -93,7 +105,18 @@ export function applyEmployeeScope<T extends { id: string; department?: string |
   if (dept) {
     list = list.filter((e) => (e.department ?? null) === dept);
   }
+  if (teamFilter) {
+    list = list.filter((e) => (e.team ?? null) === teamFilter);
+  }
+  if (searchFilter) {
+    list = list.filter((e) => employeeBlob(e).includes(normalizeForSearch(searchFilter)));
+  }
   return list;
+}
+
+function employeeBlob(e: { searchKey?: string; name?: string; code?: string | null }): string {
+  if (typeof e.searchKey === 'string' && e.searchKey.length > 0) return e.searchKey;
+  return normalizeForSearch(`${e.name ?? ''} ${e.code ?? ''}`);
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -224,6 +247,8 @@ export function pickAllowedFilters(
   delete picked.employeeIds;
   delete picked.employeeScope;
   delete picked.department;
+  delete picked.team;
+  delete picked.search;
   delete picked.fromDate;
   delete picked.toDate;
   delete picked.monthKey;
@@ -239,6 +264,10 @@ export function pickAllowedFilters(
 export interface ResolvedReportRequest {
   employeeScope: EmployeeScope;
   department: string | null;
+  /** Real org-team label filter (resolved per employee by employee-org). */
+  team: string | null;
+  /** Employee name/code search (normalized substring). */
+  search: string | null;
   period: ResolvedPeriod;
   filters: Record<string, string | number | boolean>;
 }
@@ -259,6 +288,8 @@ export function resolveReportRequest(
     value: {
       employeeScope: scope.value,
       department: typeof request.department === 'string' && request.department.length > 0 ? request.department : null,
+      team: typeof request.team === 'string' && request.team.length > 0 ? request.team : null,
+      search: typeof request.search === 'string' && request.search.trim().length > 0 ? request.search : null,
       period: period.value,
       filters: pickAllowedFilters(report, request.filters),
     },

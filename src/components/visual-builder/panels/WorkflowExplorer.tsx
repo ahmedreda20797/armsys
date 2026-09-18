@@ -27,7 +27,7 @@ const STATUS_COLORS: Record<string, string> = {
   draft: 'bg-amber-500/20 text-amber-300 border-amber-500/20',
   published: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/20',
   archived: 'bg-slate-500/20 text-slate-400 border-slate-500/20',
-  running: 'bg-violet-500/20 text-violet-300 border-violet-500/20',
+  running: 'bg-brand-500/20 text-brand-300 border-brand-500/20',
 };
 
 interface WorkflowExplorerProps {
@@ -75,11 +75,11 @@ export const WorkflowExplorer = memo(function WorkflowExplorer({
   }, [folder, search, tagFilter, sortBy]);
 
   return (
-    <div className="flex flex-col h-full bg-slate-950" dir="rtl">
+    <div className="flex flex-col h-full bg-slate-950">
       {/* Header */}
       <div className="px-4 py-3 border-b border-slate-800 flex items-center justify-between">
         <h2 className="text-sm font-bold text-slate-200">مستكشف المسارات</h2>
-        <button onClick={onCreateNew} className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-violet-600/20 border border-violet-500/30 text-violet-300 text-[11px] hover:bg-violet-600/30 transition-colors">
+        <button onClick={onCreateNew} className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-brand-600/20 border border-brand-500/30 text-brand-300 text-[11px] hover:bg-brand-600/30 transition-colors">
           <Plus className="w-3.5 h-3.5" /> جديد
         </button>
       </div>
@@ -98,7 +98,7 @@ export const WorkflowExplorer = memo(function WorkflowExplorer({
               onClick={() => setFolder(f.id)}
               className={cn(
                 'flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-medium whitespace-nowrap transition-colors',
-                folder === f.id ? 'bg-violet-600/30 text-violet-300 border border-violet-500/30' : 'text-slate-500 hover:text-slate-300'
+                folder === f.id ? 'bg-brand-600/30 text-brand-300 border border-brand-500/30' : 'text-slate-500 hover:text-slate-300'
               )}
             >
               <f.icon className="w-3 h-3" />
@@ -117,7 +117,7 @@ export const WorkflowExplorer = memo(function WorkflowExplorer({
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="بحث..."
-            className="w-full bg-slate-800/60 border border-slate-700/50 rounded-lg pr-8 pl-3 py-1.5 text-xs text-slate-200 placeholder:text-slate-500 focus:outline-none focus:border-violet-500/50"
+            className="w-full bg-slate-800/60 border border-slate-700/50 rounded-lg pr-8 pl-3 py-1.5 text-xs text-slate-200 placeholder:text-slate-500 focus:outline-none focus:border-brand-500/50"
           />
         </div>
         <div className="flex items-center gap-2">
@@ -127,8 +127,8 @@ export const WorkflowExplorer = memo(function WorkflowExplorer({
             <option value="name">الاسم</option>
           </select>
           <div className="flex gap-0.5 rounded-md bg-slate-800/60 p-0.5">
-            <button onClick={() => setView('grid')} className={cn('p-1 rounded', view === 'grid' ? 'bg-violet-600/30 text-violet-300' : 'text-slate-500')}><LayoutGrid className="w-3 h-3" /></button>
-            <button onClick={() => setView('list')} className={cn('p-1 rounded', view === 'list' ? 'bg-violet-600/30 text-violet-300' : 'text-slate-500')}><ListIcon className="w-3 h-3" /></button>
+            <button onClick={() => setView('grid')} className={cn('p-1 rounded', view === 'grid' ? 'bg-brand-600/30 text-brand-300' : 'text-slate-500')}><LayoutGrid className="w-3 h-3" /></button>
+            <button onClick={() => setView('list')} className={cn('p-1 rounded', view === 'list' ? 'bg-brand-600/30 text-brand-300' : 'text-slate-500')}><ListIcon className="w-3 h-3" /></button>
           </div>
         </div>
         {/* Tags */}
@@ -139,7 +139,7 @@ export const WorkflowExplorer = memo(function WorkflowExplorer({
               onClick={() => setTagFilter(tagFilter === t ? null : t)}
               className={cn(
                 'px-1.5 py-0.5 rounded-full text-[9px] border transition-colors',
-                tagFilter === t ? 'bg-violet-600/30 text-violet-300 border-violet-500/40' : 'text-slate-500 border-slate-700/40 hover:text-slate-300'
+                tagFilter === t ? 'bg-brand-600/30 text-brand-300 border-brand-500/40' : 'text-slate-500 border-slate-700/40 hover:text-slate-300'
               )}
             >
               {t}
@@ -163,7 +163,7 @@ export const WorkflowExplorer = memo(function WorkflowExplorer({
               <button
                 key={w.id}
                 onClick={() => onOpen(w)}
-                className="group text-right p-3 rounded-xl bg-slate-900/60 border border-slate-800 hover:border-violet-500/40 hover:bg-slate-900 transition-all"
+                className="group text-right p-3 rounded-xl bg-slate-900/60 border border-slate-800 hover:border-brand-500/40 hover:bg-slate-900 transition-all"
               >
                 <div className="flex items-start justify-between mb-1.5">
                   <div className="flex items-center gap-2">

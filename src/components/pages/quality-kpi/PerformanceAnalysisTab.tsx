@@ -153,7 +153,7 @@ function DatasetBody({ dataset }: { dataset: EmployeePerformanceDataset }) {
       <Card className="bg-slate-800/30 border-slate-700/40">
         <CardHeader className="pb-2">
           <CardTitle className="text-base text-slate-100 flex items-center gap-2">
-            <Brain className="h-4 w-4 text-violet-400" />
+            <Brain className="h-4 w-4 text-brand-400" />
             {employee.employeeName || employee.employeeId}
             <span className="text-xs font-normal text-slate-500">
               {employee.employeeCode ? `(${employee.employeeCode})` : ''} · {employee.department ?? '—'}

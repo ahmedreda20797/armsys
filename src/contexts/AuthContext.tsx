@@ -120,6 +120,9 @@ function buildAuthUser(userData: any): AuthUser {
     permissions,
     isSuspended: userData.isSuspended || false,
     suspendedAt: userData.suspendedAt || null,
+    photoURL: userData.photoURL ?? null,
+    linkedEmployeeId: userData.linkedEmployeeId ?? null,
+    positionId: userData.positionId ?? null,
   };
 }
 

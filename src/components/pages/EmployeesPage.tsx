@@ -1,16 +1,18 @@
 'use client';
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo, memo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { usePermissions } from '@/hooks/usePermissions';
 import { usePageState } from '@/hooks/use-page-state';
 import { useAppStore } from '@/lib/store';
 import { useEmployees, useCreateEmployee, useUpdateEmployee, useDeleteEmployee } from '@/hooks/use-queries';
+import { cn } from '@/lib/utils';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { UserCircle } from 'lucide-react';
+import { Archive, UserCircle } from 'lucide-react';
+import { SmartActionMenu } from '@/components/shared/SmartActionMenu';
 import { EmployeeLink } from '@/components/shared/EmployeeLink';
 import {
   Dialog,
@@ -40,7 +42,13 @@ import {
   Loader2,
 } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { FavoriteToggle, PinToggle } from '@/components/shared/NavigationMarks';
+import {
+  useMarkState,
+  useFavoriteToggleAction,
+  usePinToggleAction,
+} from '@/components/shared/NavigationMarks';
+import type { NavigationDescriptor } from '@/lib/personalization';
+import { Star, Pin as PinIcon } from 'lucide-react';
 import { PageHeaderBar } from '@/components/shared/PageHeaderBar';
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
 import {
@@ -87,11 +95,93 @@ const STATUS_BADGE_CLASS: Record<EmployeeStatus, string> = {
   archived: 'bg-slate-500/15 text-slate-400 border-slate-500/30',
 };
 
+// ═══════════════════════════════════════════════════════════════
+//  §3 EMPLOYEE ROW ACTIONS — EVERY action lives inside the ONE
+//  SmartActionMenu: View · Edit · Favorite · Pin · Delete. The old
+//  external ⭐/📌/👤 buttons are gone (no duplicates, no hidden
+//  layout placeholders). The menu reflects CURRENT state:
+//    إضافة للمفضلة ⇄ إزالة من المفضلة
+//    تثبيت ⇄ إلغاء التثبيت
+//  and permission filters items declaratively (hidden flags).
+// ═══════════════════════════════════════════════════════════════
+const EmployeeRowActions = memo(function EmployeeRowActions({
+  emp,
+  canOpenEmployee360,
+  canUpdate,
+  canDelete,
+  onOpen360,
+  onEdit,
+  onDelete,
+  onArchive,
+}: {
+  emp: Employee;
+  canOpenEmployee360: boolean;
+  canUpdate: boolean;
+  canDelete: boolean;
+  onOpen360: (id: string) => void;
+  onEdit: (emp: Employee) => void;
+  onDelete: (id: string) => void;
+  onArchive: (emp: Employee, archive: boolean) => void;
+}) {
+  const descriptor = useMemo<NavigationDescriptor>(() => ({
+    targetType: 'record',
+    targetId: emp.id,
+    route: 'employees',
+    label: emp.name,
+    navigationContext: normalizeEmployeeStatus(emp.status) !== 'active'
+      ? { status: normalizeEmployeeStatus(emp.status) }
+      : undefined,
+  }), [emp.id, emp.name, emp.status]);
+  const { favoriteActive, pinActive } = useMarkState(descriptor);
+  const toggleFavorite = useFavoriteToggleAction();
+  const togglePin = usePinToggleAction();
+
+  return (
+    <SmartActionMenu
+      label={`إجراءات الموظف ${emp.name}`}
+      actions={[
+        { key: 'view', label: 'الملف الشخصي', icon: <UserCircle className="size-3.5" />, onSelect: () => onOpen360(emp.id), hidden: !canOpenEmployee360 },
+        { key: 'edit', label: 'تعديل', icon: <Pencil className="size-3.5" />, onSelect: () => onEdit(emp), hidden: !canUpdate },
+        {
+          key: 'favorite',
+          label: favoriteActive ? 'إزالة من المفضلة' : 'إضافة للمفضلة',
+          icon: <Star className={cn('size-3.5', favoriteActive && 'fill-amber-400 text-amber-400')} />,
+          onSelect: () => void toggleFavorite(descriptor),
+        },
+        {
+          key: 'pin',
+          label: pinActive ? 'إلغاء التثبيت' : 'تثبيت',
+          icon: <PinIcon className={cn('size-3.5', pinActive && 'fill-cyan-400 text-cyan-400')} />,
+          onSelect: () => void togglePin(descriptor),
+        },
+        // §19 — Archive directly from the three-dot menu (with
+        // confirmation); restore is offered for archived employees.
+        // No "Edit → change status → save" detour.
+        {
+          key: 'archive',
+          label: normalizeEmployeeStatus(emp.status) === 'archived' ? 'استعادة من الأرشيف' : 'أرشفة',
+          icon: <Archive className="size-3.5" />,
+          onSelect: () => onArchive(emp, normalizeEmployeeStatus(emp.status) !== 'archived'),
+          hidden: !canUpdate,
+        },
+        { key: 'delete', label: 'حذف', icon: <Trash2 className="size-3.5" />, destructive: true, onSelect: () => onDelete(emp.id), hidden: !canDelete },
+      ]}
+    />
+  );
+});
+
 export default function EmployeesPage() {
   const { canEdit, canCreate, canUpdate, canDelete, canExport, canUpload, canSeeField } = usePermissions('employees');
   const { canViewPage } = usePermissions('employee360');
   const canOpenEmployee360 = canViewPage('employee360');
-  const { highlightId, setHighlightId, openEmployee360 } = useAppStore();
+  // Field selectors (NOT selectorless useAppStore()): a selectorless
+  // subscription re-renders this whole page on EVERY store write —
+  // including the header identity registration this page performs on
+  // each render (its icon is a fresh JSX element), which loops into
+  // React's maximum update depth.
+  const highlightId = useAppStore((s) => s.highlightId);
+  const setHighlightId = useAppStore((s) => s.setHighlightId);
+  const openEmployee360 = useAppStore((s) => s.openEmployee360);
 
   // ── React Query: data fetching with automatic caching ──
   const { data: employees = [], isLoading } = useEmployees();
@@ -223,6 +313,24 @@ export default function EmployeesPage() {
         },
       });
     }
+  };
+
+  // §19 — archive/restore straight from the row menu, with the
+  // unified ConfirmDialog for the archive step. Uses the SAME
+  // updateEmployee mutation as the edit dialog (one lifecycle path).
+  const [archivingEmployee, setArchivingEmployee] = useState<Employee | null>(null);
+  const openArchiveConfirm = (emp: Employee, archive: boolean) => {
+    if (archive) {
+      setArchivingEmployee(emp);
+      return;
+    }
+    updateEmployee.mutate(
+      { id: emp.id, data: { status: 'active' } },
+      {
+        onSuccess: () => toast.success('تم استعادة الموظف من الأرشيف'),
+        onError: (error: Error) => toast.error('فشل الاستعادة', { description: error?.message }),
+      },
+    );
   };
 
   const handleDelete = async (id: string) => {
@@ -421,7 +529,7 @@ export default function EmployeesPage() {
           <Button
             onClick={handleSave}
             disabled={isSaving || !form.name}
-            className="bg-linear-to-r from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white h-9 px-5 shadow-lg shadow-violet-500/20 transition-all"
+            className="bg-linear-to-r from-brand-600 to-brand-700 hover:from-brand-700 hover:to-brand-800 text-white h-9 px-5 shadow-lg shadow-brand-500/20 transition-all"
           >
             {isSaving ? (
               <><Loader2 className="size-4 animate-spin" /> جاري الحفظ...</>
@@ -433,13 +541,13 @@ export default function EmployeesPage() {
   );
 
   return (
-    <div dir="rtl" className="space-y-6">
+    <div className="space-y-6">
       {/* Header (§25/§26 — sticky, primary action always accessible) */}
       <PageHeaderBar
         icon={<Users className="size-5" />}
-        iconClassName="bg-violet-500/15 border-violet-500/30 text-violet-400"
+        iconClassName="bg-brand-500/15 border-brand-500/30 text-brand-400"
         title="إدارة الموظفين"
-        subtitle={`${filtered.length} من ${employees.length} موظف`}
+        description={`${filtered.length} من ${employees.length} موظف`}
         primaryAction={canCreate ? {
           label: 'إضافة موظف',
           onClick: () => {
@@ -545,7 +653,10 @@ export default function EmployeesPage() {
                   <TableHead className="text-slate-400 text-sm font-medium hidden lg:table-cell">الإقامة</TableHead>
                   <TableHead className="text-slate-400 text-sm font-medium hidden xl:table-cell">الدوام</TableHead>
                   <TableHead className="text-slate-400 text-sm font-medium hidden xl:table-cell">الموبايل</TableHead>
-                  {(canUpdate || canDelete) && <TableHead className="text-slate-400 text-sm font-medium">إجراءات</TableHead>}
+                  {/* §3 — the actions column renders for every viewer: the
+                      menu holds personal marks (⭐/📌) too, not just
+                      update/delete actions. */}
+                  <TableHead className="text-slate-400 text-sm font-medium">إجراءات</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -589,70 +700,23 @@ export default function EmployeesPage() {
                       <TableCell className="text-slate-300 hidden xl:table-cell" dir="ltr">
                         {canSeeField('employees', 'mobile') ? emp.mobile || '—' : '—'}
                       </TableCell>
-                      {(canOpenEmployee360 || canUpdate || canDelete) && (
-                        <TableCell>
-                          <div className="flex items-center gap-1">
-                            {/* §22/§23: mark this employee (⭐/📌) — navigates
-                                back to the exact row via the shared highlight. */}
-                            <FavoriteToggle
-                              size="sm"
-                              descriptor={{
-                                targetType: 'record',
-                                targetId: emp.id,
-                                route: 'employees',
-                                label: emp.name,
-                                navigationContext: normalizeEmployeeStatus(emp.status) !== 'active'
-                                  ? { status: normalizeEmployeeStatus(emp.status) }
-                                  : undefined,
-                              }}
-                            />
-                            <PinToggle
-                              size="sm"
-                              descriptor={{
-                                targetType: 'record',
-                                targetId: emp.id,
-                                route: 'employees',
-                                label: emp.name,
-                                navigationContext: normalizeEmployeeStatus(emp.status) !== 'active'
-                                  ? { status: normalizeEmployeeStatus(emp.status) }
-                                  : undefined,
-                              }}
-                            />
-                            {canOpenEmployee360 && (
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => openEmployee360(emp.id)}
-                              className="text-slate-400 hover:text-violet-400 hover:bg-violet-500/10"
-                              title="عرض الملف الشخصي"
-                            >
-                              <UserCircle className="size-4" />
-                            </Button>
-                            )}
-                            {canUpdate && (
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                onClick={() => openEdit(emp)}
-                                className="text-slate-400 hover:text-violet-400 hover:bg-violet-500/10"
-                              >
-                                <Pencil className="size-4" />
-                              </Button>
-                            )}
-                            {/* Desktop delete button */}
-                            {canDelete && (
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                onClick={() => setDeletingId(emp.id)}
-                                className="text-slate-400 hover:text-red-400 hover:bg-red-500/10 hidden sm:flex"
-                              >
-                                <Trash2 className="size-4" />
-                              </Button>
-                            )}
-                          </div>
-                        </TableCell>
-                      )}
+                      <TableCell>
+                        {/* §3 — ALL row actions inside the ONE SmartActionMenu
+                            (view/edit/favorite/pin/delete). No external
+                            duplicate buttons remain; the menu reflects the
+                            current favorite/pin state and the caller's
+                            permissions. */}
+                        <EmployeeRowActions
+                          emp={emp}
+                          canOpenEmployee360={canOpenEmployee360}
+                          canUpdate={canUpdate}
+                          canDelete={canDelete}
+                          onOpen360={openEmployee360}
+                          onEdit={openEdit}
+                          onDelete={setDeletingId}
+                          onArchive={openArchiveConfirm}
+                        />
+                      </TableCell>
                       {/* Swipe delete indicator (mobile) */}
                       <AnimatePresence>
                         {swipeId === emp.id && (
@@ -687,6 +751,30 @@ export default function EmployeesPage() {
           if (!v) setEditingEmployee(null);
         }
       )}
+
+      {/* §19 Archive Confirm Dialog — non-destructive (history kept) */}
+      <ConfirmDialog
+        open={!!archivingEmployee}
+        onOpenChange={(o) => { if (!o) setArchivingEmployee(null); }}
+        title="أرشفة الموظف"
+        description="سيصبح الموظف مؤرشفاً: لن يظهر في القوائم النشطة، ويبقى سجله التاريخي كاملاً قابلاً للاستعادة والتدقيق."
+        itemName={archivingEmployee?.name}
+        confirmLabel="أرشفة"
+        destructive={false}
+        loading={updateEmployee.isPending}
+        onConfirm={() => {
+          if (!archivingEmployee) return;
+          const emp = archivingEmployee;
+          setArchivingEmployee(null);
+          updateEmployee.mutate(
+            { id: emp.id, data: { status: 'archived' } },
+            {
+              onSuccess: () => toast.success('تم أرشفة الموظف'),
+              onError: (error: Error) => toast.error('فشل أرشفة الموظف', { description: error?.message }),
+            },
+          );
+        }}
+      />
 
       {/* Delete Confirm Dialog — unified ConfirmDialog (§4) */}
       <ConfirmDialog

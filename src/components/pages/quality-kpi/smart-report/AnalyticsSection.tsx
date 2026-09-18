@@ -156,7 +156,7 @@ function ToneBadge({ badge }: { badge: AnalyticsBadgeView }) {
     warn: 'bg-amber-500/15 text-amber-300 border-amber-500/30',
     bad: 'bg-red-500/15 text-red-300 border-red-500/30',
     info: 'bg-sky-500/15 text-sky-300 border-sky-500/30',
-    accent: 'bg-violet-500/15 text-violet-300 border-violet-500/30',
+    accent: 'bg-brand-500/15 text-brand-300 border-brand-500/30',
   };
   return (
     <Badge variant="outline" className={cn('font-normal text-[11px]', TONE[badge.tone])}>

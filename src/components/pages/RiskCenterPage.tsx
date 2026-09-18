@@ -23,6 +23,7 @@ import {
   UserCheck, Award, Zap, BarChart3, Target, FilePlus, FileText,
   Loader2,
 } from 'lucide-react';
+import { PageIdentity } from '@/components/shared/PageIdentity';
 import { toast } from 'sonner';
 import { authFetch } from '@/lib/api-fetch';
 import { useAppStore } from '@/lib/store';
@@ -160,7 +161,13 @@ export default function RiskCenterPage() {
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [levelFilter, setLevelFilter] = useState('all');
-  const [deptFilter, setDeptFilter] = useState('all');
+  // §7.1 DEEP-LINK SCOPE — a department deep link (Operations Center
+  // risk detail) seeds the department filter so the destination shows
+  // the SAME scope the manager was inspecting. navParams is read once
+  // at mount (a nav params change always remounts via PageRouter).
+  const [deptFilter, setDeptFilter] = useState(
+    () => useAppStore.getState().navParams?.department || 'all',
+  );
   const [selectedEmployee, setSelectedEmployee] = useState<EmployeeRisk | null>(null);
   // §VIEWPORT-MODAL — the details view is now a Radix Dialog, which
   // owns ESC + click-outside + backdrop closing itself; no manual
@@ -178,9 +185,7 @@ export default function RiskCenterPage() {
   const [usersList, setUsersList] = useState<{ id: string; name: string; email?: string; role?: string }[]>([]);
   useEffect(() => {
     let cancelled = false;
-    fetch('/api/dashboard/users?limit=200', {
-      headers: { Authorization: `Bearer ${localStorage.getItem('erp_access_token')}` },
-    })
+    authFetch('/api/dashboard/users?basic=1')
       .then((r) => (r.ok ? r.json() : []))
       .then((list) => {
         if (cancelled) return;
@@ -189,11 +194,16 @@ export default function RiskCenterPage() {
       .catch(() => {});
     return () => { cancelled = true; };
   }, []);
-  // Default view stays the rolling snapshot (''); selecting a month
-  // switches to month-attributed factors (traceable records only).
-  const [basis, setBasis] = useState<'rolling' | 'month'>('rolling');
-  const [basisLabel, setBasisLabel] = useState<string>('لقطة متجددة');
-  const [month, setMonth] = useState<string>('');
+  // §PERIOD-DEFAULT — the Risk Center opens on the CURRENT MONTH
+  // (traceable, month-attributed factors). The user may explicitly
+  // pick another month or 'كل الفترات' (all-time rolling view);
+  // historical analysis remains available either way.
+  const [basis, setBasis] = useState<'rolling' | 'month'>('month');
+  const [basisLabel, setBasisLabel] = useState<string>('الشهر الحالي');
+  const [month, setMonth] = useState<string>(() => {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  });
   const [compareRows, setCompareRows] = useState<Record<string, number> | null>(null);
   const [compareLabel, setCompareLabel] = useState<string | null>(null);
   const [compareState, setCompareState] = useState<'idle' | 'loading' | 'ready' | 'insufficient'>('idle');
@@ -218,7 +228,7 @@ export default function RiskCenterPage() {
         setSummary(data.summary || null);
         setDeptAnalysis(data.departmentAnalysis || {});
         setBasis(data.basis === 'month' ? 'month' : 'rolling');
-        setBasisLabel(data.basisLabel || 'لقطة متجددة');
+        setBasisLabel(data.basisLabel || 'الفترة المحددة');
       } else {
         setError('تعذر تحميل بيانات المخاطر');
         setEmployees([]);
@@ -334,7 +344,7 @@ export default function RiskCenterPage() {
   // ── Permission guard ──
   if (!canView) {
     return (
-      <div dir="rtl" className="flex flex-col items-center justify-center py-20">
+      <div className="flex flex-col items-center justify-center py-20">
         <div className="size-16 rounded-full bg-slate-800 flex items-center justify-center mb-4">
           <ShieldAlert className="size-8 text-slate-500" />
         </div>
@@ -345,49 +355,51 @@ export default function RiskCenterPage() {
   }
 
   return (
-    <div dir="rtl" className="space-y-5">
-      {/* ═══ Header ═══ */}
-      <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <div className="flex items-center justify-center size-10 rounded-xl bg-red-500/15 border border-red-500/30">
-            <ShieldAlert className="size-5 text-red-400" />
-          </div>
-          <div>
-            <h1 className="text-xl font-bold text-white">مركز المخاطر</h1>
-            <p className="text-slate-500 text-xs mt-0.5">نظام الإنذار المبكر — مَن يحتاج تدخل اليوم؟</p>
+    <div className="space-y-5">
+      {/* ═══ §7 unified page identity ═══ */}
+      <PageIdentity
+        pageId="riskCenter"
+        icon={<ShieldAlert className="size-5" />}
+        iconClassName="bg-red-500/15 border border-red-500/30 text-red-400"
+        description={
+          <>
+            نظام الإنذار المبكر — مَن يحتاج تدخل اليوم؟
             {/* §14: which attribution produced these numbers — visible. */}
-            <p className="text-slate-600 text-[10px] mt-0.5">{basisLabel}</p>
-          </div>
-        </div>
-        <div className="flex items-center gap-2 flex-wrap">
-          {/* §14 month selector — rolling snapshot is the default */}
-          <Select
-            value={month || 'rolling'}
-            onValueChange={(v) => { setMonth(v === 'rolling' ? '' : v); }}
-          >
-            <SelectTrigger className="bg-slate-800/70 border-slate-700/70 text-white w-44 h-9 text-sm">
-              <SelectValue placeholder="لقطة متجددة" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="rolling" className="text-white">لقطة متجددة (الحالية)</SelectItem>
-              {buildMonthOptions().map((m) => (
-                <SelectItem key={m} value={m} className="text-white">{formatMonthLabelAr(m)}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          {month && compareState !== 'loading' && (
-            <Button variant="outline" size="sm" onClick={() => void loadComparison()} className="border-slate-700/70 text-slate-300 hover:bg-slate-800 h-9">
-              <BarChart3 className="size-3.5 ml-1" />
-              مقارنة بالشهر السابق
+            <span className="block text-slate-600 text-[10px] mt-0.5">{basisLabel}</span>
+          </>
+        }
+        actions={
+          <>
+            {/* §14 month selector — CURRENT MONTH is the default; 'all
+                periods' (rolling all-time) is an explicit opt-in */}
+            <Select
+              value={month || 'rolling'}
+              onValueChange={(v) => { setMonth(v === 'rolling' ? '' : v); }}
+            >
+              <SelectTrigger className="bg-slate-800/70 border-slate-700/70 text-white w-44 h-9 text-sm">
+                <SelectValue placeholder="الشهر الحالي" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="rolling" className="text-white">كل الفترات (إجمالي السجل)</SelectItem>
+                {buildMonthOptions().map((m) => (
+                  <SelectItem key={m} value={m} className="text-white">{formatMonthLabelAr(m)}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {month && compareState !== 'loading' && (
+              <Button variant="outline" size="sm" onClick={() => void loadComparison()} className="border-slate-700/70 text-slate-300 hover:bg-slate-800 h-9">
+                <BarChart3 className="size-3.5 ml-1" />
+                مقارنة بالشهر السابق
+              </Button>
+            )}
+            {compareState === 'loading' && <Loader2 className="size-4 animate-spin text-slate-400" />}
+            <Button variant="ghost" size="sm" onClick={fetchRiskData} className="text-slate-400 hover:text-white">
+              <Activity className="size-4 ml-1" />
+              تحديث
             </Button>
-          )}
-          {compareState === 'loading' && <Loader2 className="size-4 animate-spin text-slate-400" />}
-          <Button variant="ghost" size="sm" onClick={fetchRiskData} className="text-slate-400 hover:text-white">
-            <Activity className="size-4 ml-1" />
-            تحديث
-          </Button>
-        </div>
-      </motion.div>
+          </>
+        }
+      />
 
       {/* §14 explicit comparison-impossible notice (never fake history) */}
       {month && compareState === 'insufficient' && (
@@ -548,7 +560,7 @@ export default function RiskCenterPage() {
               <ShieldCheck className="size-6 text-emerald-500/60" />
             </div>
             <p className="text-slate-400 text-sm font-medium">لا توجد مخاطر حالياً</p>
-            <p className="text-slate-600 text-xs mt-1">جميع الموظفين في المستوى الطبيعي</p>
+            <p className="text-slate-600 text-xs mt-1">جميع الموظفين في المستوى الطبيعي — الفترة: {basisLabel}</p>
           </CardContent>
         </Card>
       ) : (
@@ -670,7 +682,7 @@ export default function RiskCenterPage() {
       <Dialog open={!!selectedEmployee} onOpenChange={(open) => { if (!open) { setSelectedEmployee(null); setCapaCreateOpen(false); } }}>
         <DialogContent
           aria-describedby={undefined}
-          dir="rtl"
+         
           className="backdrop-blur-xl bg-slate-900 border-slate-700/60 shadow-2xl shadow-black/60 w-[min(28rem,calc(100vw-1.5rem))] max-h-[85vh] p-0 gap-0 flex flex-col overflow-hidden"
         >
           <DialogHeader className="px-5 py-3.5 border-b border-slate-700/50 bg-slate-900 shrink-0 space-y-0">
@@ -732,7 +744,7 @@ export default function RiskCenterPage() {
                         { label: 'تأخير حضور', key: 'delay', icon: Clock, color: 'text-cyan-400' },
                         { label: 'غياب', key: 'absence', icon: AlertCircle, color: 'text-red-400' },
                         { label: 'مخالفات جودة', key: 'quality', icon: Award, color: 'text-amber-400' },
-                        { label: 'مخالفات موارد بشرية', key: 'hr', icon: UserCheck, color: 'text-violet-400' },
+                        { label: 'مخالفات موارد بشرية', key: 'hr', icon: UserCheck, color: 'text-brand-400' },
                         { label: 'حالات متابعة مفتوحة', key: 'openFollowUp', icon: Activity, color: 'text-blue-400' },
                         { label: 'متابعة أولوية عالية', key: 'highPriorityFollowUp', icon: AlertTriangle, color: 'text-orange-400' },
                         { label: 'متابعة حرجة', key: 'criticalFollowUp', icon: ShieldX, color: 'text-red-500' },
@@ -843,11 +855,11 @@ export default function RiskCenterPage() {
                       animate={{ opacity: 1, y: 0, scale: 1 }}
                       exit={{ opacity: 0, y: -8, scale: 0.98 }}
                       transition={{ duration: 0.22, ease: [0.4, 0, 0.2, 1] }}
-                      className="rounded-2xl border border-violet-500/30 bg-slate-900/80 backdrop-blur-md shadow-2xl shadow-violet-900/20 overflow-hidden"
+                      className="rounded-2xl border border-brand-500/30 bg-slate-900/80 backdrop-blur-md shadow-2xl shadow-brand-900/20 overflow-hidden"
                     >
                       <div className="flex items-center justify-between gap-2 px-4 py-2.5 border-b border-slate-700/50">
                         <p className="text-xs font-bold text-slate-200 flex items-center gap-2">
-                          <FilePlus className="size-3.5 text-violet-400" />
+                          <FilePlus className="size-3.5 text-brand-400" />
                           إنشاء CAPA — {selectedEmployee.employeeName}
                         </p>
                         <button onClick={() => setCapaCreateOpen(false)} className="p-1.5 rounded-md text-slate-500 hover:text-white hover:bg-slate-800 transition-colors">

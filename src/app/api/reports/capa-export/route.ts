@@ -193,7 +193,7 @@ function applyFilters(records: CAPACase[], filters: Filters): CAPACase[] {
 
 async function generateExcel(rows: ExportRow[]): Promise<ArrayBuffer> {
   const workbook = new ExcelJS.Workbook();
-  workbook.creator = 'ARM ERP System';
+  workbook.creator = 'Qnlys';
   workbook.created = new Date();
 
   const sheet = workbook.addWorksheet('تقرير حالات كابا', {

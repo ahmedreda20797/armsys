@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAll, withEmployee, sortByDateField, createRecord, getById } from '@/lib/db';
-import { requireAuth } from '@/lib/verify-permission';
+import { requireAuth, verifyPermission } from '@/lib/verify-permission';
 import { asScopeViewer, employeeInScope, authScopeViewer, filterRowsByEmployeeScope, resolveEmployeeScopeFromDb } from '@/lib/scope/server';
 import { computeRisk, isOverdueFollowUp } from '@/lib/metrics';
 import { createSmartNotification } from '@/lib/rules-engine';
@@ -19,6 +19,13 @@ export async function GET(request: NextRequest) {
     const auth = await requireAuth(request);
     if (!auth) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    // §28 SECURITY — explicit page-permission gate on GET (the employee
+    // scope filter below stays the DATA boundary; server-side).
+    const viewCheck = await verifyPermission(request, 'followUps', 'view');
+    if (!viewCheck.allowed) {
+      return NextResponse.json({ error: viewCheck.error }, { status: 403 });
     }
 
     const { searchParams } = new URL(request.url);

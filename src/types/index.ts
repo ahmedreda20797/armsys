@@ -11,6 +11,12 @@ export interface AuthUser {
   permissions: Record<string, any>;
   isSuspended?: boolean;
   suspendedAt?: string;
+  /** §USER-PROFILE — profile photo URL (uploaded via admin, storage-backed). */
+  photoURL?: string | null;
+  /** §USER-PROFILE — linked employee record (User ↔ Employee bridge). */
+  linkedEmployeeId?: string | null;
+  /** §USER-PROFILE — position template id (permission overlay source). */
+  positionId?: string | null;
 }
 
 export interface Employee {
@@ -146,6 +152,11 @@ export interface QualityDeduction {
    *  reports/totals/payroll. */
   approvalStatus?: 'draft' | 'pending' | 'approved' | 'rejected';
   approvalHistory?: import('@/lib/approvals/types').ApprovalEvent[];
+  /** §ARCHIVE — archived = historical, excluded from active totals/KPI. */
+  archived?: boolean;
+  archivedAt?: string | null;
+  archivedBy?: string | null;
+  archivedByName?: string | null;
 }
 
 export interface HrDeduction {
@@ -164,6 +175,11 @@ export interface HrDeduction {
   relatedCapaId: string | null;
   createdAt: string;
   updatedAt: string;
+  /** §ARCHIVE — archived = historical, excluded from active totals/KPI. */
+  archived?: boolean;
+  archivedAt?: string | null;
+  archivedBy?: string | null;
+  archivedByName?: string | null;
 }
 
 export interface TravelDeal {

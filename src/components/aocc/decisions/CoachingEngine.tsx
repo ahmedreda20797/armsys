@@ -60,16 +60,17 @@ export const CoachingEngine = memo(function CoachingEngine({
   error = false,
   onRetry,
 }: CoachingEngineProps) {
-  const navigateTo = useAppStore((s) => s.navigateTo);
   const openEmployee360 = useAppStore((s) => s.openEmployee360);
 
   const handleOpportunityClick = useCallback((opp: CoachingOpportunity) => {
     if (opp.affectedEmployeeId) {
       openEmployee360(opp.affectedEmployeeId);
     } else if (opp.affectedDepartment) {
-      navigateTo('attendance');
+      // §AOCC-ROUTING — a department-level coaching opportunity opens the
+      // department's health context, not the attendance list.
+      useAppStore.getState().openDepartmentHealth(opp.affectedDepartment);
     }
-  }, [navigateTo, openEmployee360]);
+  }, [openEmployee360]);
 
   // ── Summary stats ──
   const highPriority = opportunities.filter((o) => o.priority === 'high' || o.priority === 'critical').length;

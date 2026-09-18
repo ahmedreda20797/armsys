@@ -1,6 +1,8 @@
 'use client';
 
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { isOverdueFollowUp } from '@/lib/metrics/followUpMetrics';
+import { ReportView } from '@/components/shared/reports/ReportView';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePermissions } from '@/hooks/usePermissions';
@@ -20,7 +22,8 @@ import { EmployeeSearchInput } from '@/components/shared/EmployeeSearchInput';
 import { UserSearchInput } from '@/components/shared/UserSearchInput';
 import { CAPALinkBadge } from '@/components/shared/CAPALinkBadge';
 import { AttentionPanel, type AttentionItem } from '@/components/shared/AttentionPanel';
-import { OverflowMenu, type OverflowMenuItem } from '@/components/shared/OverflowMenu';
+import { SmartActionMenu, type SmartAction } from '@/components/shared/SmartActionMenu';
+import type { OverflowMenuItem } from '@/components/shared/OverflowMenu';
 import { InlineFormPanel } from '@/components/shared/InlineFormPanel';
 import { EvidenceLinkButton } from '@/components/shared/EvidenceLinkButton';
 import { CAPAInlineForm, type CapaInlineFormState } from '@/components/shared/inline-forms';
@@ -32,7 +35,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
-import {
+import { BarChart3,
   Plus, Pencil, Search, X, Trash2, CalendarDays, Users,
   CheckCircle2, AlertTriangle, Clock, ClipboardList, UserCheck,
   ArrowUpCircle, ArrowDownCircle, ShieldAlert, Ban, Bell, ShieldCheck,
@@ -110,14 +113,14 @@ const SCORE_MAP: Record<string, number> = { low: 1, medium: 3, high: 5, critical
 function getTypeBadge(type: string) {
   const map: Record<string, { label: string; color: string }> = {
     quality: { label: 'جودة', color: 'bg-amber-500/15 text-amber-400 border-amber-500/30' },
-    behavior: { label: 'سلوك', color: 'bg-violet-500/15 text-violet-400 border-violet-500/30' },
+    behavior: { label: 'سلوك', color: 'bg-brand-500/15 text-brand-400 border-brand-500/30' },
     attendance: { label: 'حضور', color: 'bg-cyan-500/15 text-cyan-400 border-cyan-500/30' },
-    productivity: { label: 'أداء', color: 'bg-violet-500/15 text-violet-400 border-violet-500/30' },
+    productivity: { label: 'أداء', color: 'bg-brand-500/15 text-brand-400 border-brand-500/30' },
     training: { label: 'تدريب', color: 'bg-blue-500/15 text-blue-400 border-blue-500/30' },
     coaching: { label: 'توجيه', color: 'bg-teal-500/15 text-teal-400 border-teal-500/30' },
     complaint: { label: 'شكوى عميل', color: 'bg-rose-500/15 text-rose-400 border-rose-500/30' },
     positive: { label: 'إيجابية', color: 'bg-green-500/15 text-green-400 border-green-500/30' },
-    improvement: { label: 'تحسين', color: 'bg-indigo-500/15 text-indigo-400 border-indigo-500/30' },
+    improvement: { label: 'تحسين', color: 'bg-brand-500/15 text-brand-400 border-brand-500/30' },
     other: { label: 'أخرى', color: 'bg-slate-500/15 text-slate-400 border-slate-500/30' },
   };
   return map[type] || { label: type, color: 'bg-slate-500/15 text-slate-400 border-slate-500/30' };
@@ -146,9 +149,9 @@ function getPriorityDot(priority: string) {
 function getStatusBadge(status: string) {
   const map: Record<string, { label: string; color: string }> = {
     open: { label: 'مفتوح', color: 'bg-blue-500/15 text-blue-400 border-blue-500/30' },
-    under_review: { label: 'قيد المراجعة', color: 'bg-purple-500/15 text-purple-400 border-purple-500/30' },
+    under_review: { label: 'قيد المراجعة', color: 'bg-brand-500/15 text-brand-400 border-brand-500/30' },
     under_follow_up: { label: 'قيد المتابعة', color: 'bg-yellow-500/15 text-yellow-400 border-yellow-500/30' },
-    resolved: { label: 'تم الحل', color: 'bg-violet-500/15 text-violet-400 border-violet-500/30' },
+    resolved: { label: 'تم الحل', color: 'bg-brand-500/15 text-brand-400 border-brand-500/30' },
     closed: { label: 'مغلق', color: 'bg-slate-500/15 text-slate-400 border-slate-500/30' },
     cancelled: { label: 'ملغي', color: 'bg-slate-600/15 text-slate-500 border-slate-600/30' },
   };
@@ -170,9 +173,9 @@ function getStatusIcon(status: string) {
 function getStatusColor(status: string) {
   const map: Record<string, string> = {
     open: 'border-blue-500/30',
-    under_review: 'border-purple-500/30',
+    under_review: 'border-brand-500/30',
     under_follow_up: 'border-yellow-500/30',
-    resolved: 'border-violet-500/30',
+    resolved: 'border-brand-500/30',
     closed: 'border-slate-600/30',
     cancelled: 'border-slate-700/30',
   };
@@ -240,6 +243,12 @@ export default function FollowUpsPage() {
   // Phase 6.3 (§8): filter/view context persists per user (session-scoped).
   // collapsedEmployees (§25 container state) persists as an array so a
   // returning user finds the same groups collapsed.
+  // §17 EXACT DEEP-LINKING — summary cards seed these filters at
+  // mount (navParams win over persisted state for THIS mount, like
+  // the EmployeesPage status seed). Keys: overdue / status / priority
+  // / type / dueToday — e.g. "22 متابعة متأخرة" → exactly those 22.
+  const navSeed = useAppStore((s) => s.navParams);
+  const hasNavSeed = Boolean(navSeed.overdue || navSeed.status || navSeed.priority || navSeed.type || navSeed.dueToday);
   const [followUpsView, setFollowUpsView, resetFollowUpsView] = usePageState<{
     search: string;
     statusFilter: string;
@@ -248,17 +257,29 @@ export default function FollowUpsPage() {
     deptFilter: string;
     startDate: string;
     endDate: string;
+    overdueOnly?: boolean;
     viewMode: 'table' | 'cards';
     collapsedEmployees: string[];
   }>({
     page: 'followUps',
     slot: 'filters',
     version: 1,
-    initial: () => ({
-      search: '', statusFilter: 'all', typeFilter: 'all', priorityFilter: 'all',
-      deptFilter: 'all', startDate: '', endDate: '', viewMode: 'table',
-      collapsedEmployees: [],
-    }),
+    skipRestore: hasNavSeed,
+    initial: () => {
+      const todayKey = new Date().toISOString().split('T')[0];
+      return {
+        search: '',
+        statusFilter: typeof navSeed.status === 'string' && navSeed.status ? navSeed.status : 'all',
+        typeFilter: typeof navSeed.type === 'string' && navSeed.type ? navSeed.type : 'all',
+        priorityFilter: typeof navSeed.priority === 'string' && navSeed.priority ? navSeed.priority : 'all',
+        deptFilter: 'all',
+        startDate: navSeed.dueToday === '1' ? todayKey : '',
+        endDate: navSeed.dueToday === '1' ? todayKey : '',
+        overdueOnly: navSeed.overdue === '1',
+        viewMode: 'table',
+        collapsedEmployees: [],
+      };
+    },
     validate: (raw) =>
       raw && typeof raw === 'object' && !Array.isArray(raw)
         && typeof (raw as { viewMode?: unknown }).viewMode === 'string'
@@ -279,6 +300,8 @@ export default function FollowUpsPage() {
   const setStartDate = (v: string) => setFollowUpsView((s) => ({ ...s, startDate: v }));
   const endDate = followUpsView.endDate;
   const setEndDate = (v: string) => setFollowUpsView((s) => ({ ...s, endDate: v }));
+  const overdueOnly = followUpsView.overdueOnly === true;
+  const setOverdueOnly = (v: boolean) => setFollowUpsView((s) => ({ ...s, overdueOnly: v }));
   const viewMode = followUpsView.viewMode;
   const setViewMode = (v: 'table' | 'cards') => setFollowUpsView((s) => ({ ...s, viewMode: v }));
   const collapsedEmployees = useMemo(
@@ -294,6 +317,12 @@ export default function FollowUpsPage() {
 
   // Deep-link highlight (Phase 5.2 §35) from Evidence Preview navigation.
   useRecordHighlight();
+
+  // §24 — the follow-ups REPORT (deterministic analytics) lives in a
+  // dialog on this page; it runs through the SAME unified reporting
+  // architecture (registry + runner + ReportView) as every report.
+  const [reportOpen, setReportOpen] = useState(false);
+  const [reportMode, setReportMode] = useState<'employee' | 'flat'>('employee');
 
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<FollowUp | null>(null);
@@ -350,7 +379,9 @@ export default function FollowUpsPage() {
   // in lib/metrics/followUpMetrics stay untouched).
   const overdueFollowUps = useMemo(() =>
     followUps
-      .filter(f => f.nextFollowUpDate && f.nextFollowUpDate < todayStr && (f.status === 'open' || f.status === 'under_follow_up'))
+      // §17/§26 — the SAME canonical predicate the dashboard uses, so
+      // the deep-link target list always matches the card's count.
+      .filter(f => isOverdueFollowUp(f))
       .sort((a, b) => (a.nextFollowUpDate || '').localeCompare(b.nextFollowUpDate || '')),
     [followUps, todayStr]
     // §10 DATA INTEGRITY: no silent cap — the panel body scrolls
@@ -409,6 +440,9 @@ export default function FollowUpsPage() {
       if (endDate && item.date > endDate) return false;
       if (deptFilter !== 'all' && item.department !== deptFilter) return false;
       if (priorityFilter !== 'all' && item.priorityLevel !== priorityFilter) return false;
+      // §17 — the overdue deep-link shows EXACTLY the overdue records
+      // the canonical metric counts on the dashboard.
+      if (overdueOnly && !isOverdueFollowUp(item)) return false;
 
       const empName = item.employeeName || employees.find((e: any) => e.id === item.employeeId)?.name || '';
       const matchesSearch = search === '' ||
@@ -423,7 +457,7 @@ export default function FollowUpsPage() {
       if (dateCompare !== 0) return dateCompare;
       return (b.createdAt || '').localeCompare(a.createdAt || '');
     });
-  }, [followUps, startDate, endDate, deptFilter, priorityFilter, search, statusFilter, typeFilter, employees]);
+  }, [followUps, startDate, endDate, deptFilter, priorityFilter, search, statusFilter, typeFilter, overdueOnly, employees]);
 
   // ═══ Group by Employee ═══
   const groupedByEmployee = useMemo(() => {
@@ -661,14 +695,15 @@ export default function FollowUpsPage() {
     setDeptFilter('all');
     setStartDate('');
     setEndDate('');
+    setOverdueOnly(false);
   };
 
-  const hasActiveFilters = search || statusFilter !== 'all' || typeFilter !== 'all' || priorityFilter !== 'all' || deptFilter !== 'all' || startDate || endDate;
+  const hasActiveFilters = search || statusFilter !== 'all' || typeFilter !== 'all' || priorityFilter !== 'all' || deptFilter !== 'all' || startDate || endDate || overdueOnly;
 
   // ═══ Permission Guard ═══
   if (!canView) {
     return (
-      <div dir="rtl" className="flex flex-col items-center justify-center py-20">
+      <div className="flex flex-col items-center justify-center py-20">
         <div className="size-16 rounded-full bg-slate-800 flex items-center justify-center mb-4">
           <ShieldAlert className="size-8 text-slate-500" />
         </div>
@@ -679,13 +714,13 @@ export default function FollowUpsPage() {
   }
 
   return (
-    <div dir="rtl" className="space-y-5">
+    <div className="space-y-5">
       {/* ═══ Header (§25/§26 — sticky) ═══ */}
       <PageHeaderBar
         icon={<ClipboardList className="size-5" />}
         iconClassName="bg-cyan-500/15 border-cyan-500/30 text-cyan-400"
         title="مركز المتابعة والملاحظات"
-        subtitle="إدارة وتتبع جميع ملاحظات الأداء والسلوك"
+        description="إدارة وتتبع جميع ملاحظات الأداء والسلوك"
         primaryAction={canCreate ? { label: 'إضافة متابعة', onClick: openCreate } : undefined}
         actions={
           <div className="flex rounded-lg border border-slate-700/50 overflow-hidden shrink-0">
@@ -784,7 +819,7 @@ export default function FollowUpsPage() {
           <InlineFormPanel
             id="followups-inline-capa"
             tone="violet"
-            icon={<ShieldAlert className="size-3.5 text-violet-400" />}
+            icon={<ShieldAlert className="size-3.5 text-brand-400" />}
             title="إنشاء CAPA من متابعة"
             onClose={() => setCapaPrefill(null)}
           >
@@ -817,13 +852,13 @@ export default function FollowUpsPage() {
           <p className="text-slate-500 text-[11px] mb-0.5">حالات مفتوحة</p>
           <p className="text-blue-400 font-bold text-lg leading-tight">{openCount}</p>
         </div>
-        <div className="rounded-lg border border-purple-500/25 bg-purple-500/8 px-3.5 py-2.5">
+        <div className="rounded-lg border border-brand-500/25 bg-brand-500/8 px-3.5 py-2.5">
           <p className="text-slate-500 text-[11px] mb-0.5">قيد المتابعة</p>
-          <p className="text-purple-400 font-bold text-lg leading-tight">{underFollowCount}</p>
+          <p className="text-brand-400 font-bold text-lg leading-tight">{underFollowCount}</p>
         </div>
-        <div className="rounded-lg border border-violet-500/30 bg-emerald-500/8 px-3.5 py-2.5">
+        <div className="rounded-lg border border-brand-500/30 bg-emerald-500/8 px-3.5 py-2.5">
           <p className="text-slate-500 text-[11px] mb-0.5">حالات محلولة</p>
-          <p className="text-violet-400 font-bold text-lg leading-tight">{resolvedCount}</p>
+          <p className="text-brand-400 font-bold text-lg leading-tight">{resolvedCount}</p>
         </div>
         <div className="rounded-lg border border-orange-500/25 bg-orange-500/8 px-3.5 py-2.5">
           <p className="text-slate-500 text-[11px] mb-0.5">أولوية عالية / حرجة</p>
@@ -898,6 +933,30 @@ export default function FollowUpsPage() {
             </Select>
 
             {/* Status */}
+            {/* §17 — overdue chip (deep-link target of the dashboard card) */}
+            <button
+              type="button"
+              onClick={() => setOverdueOnly(!overdueOnly)}
+              aria-pressed={overdueOnly}
+              className={`inline-flex items-center gap-1.5 px-3 h-9 rounded-lg border text-xs font-medium transition-colors ${
+                overdueOnly
+                  ? 'bg-red-500/15 text-red-300 border-red-500/30'
+                  : 'bg-slate-800/50 text-slate-400 border-slate-700/50 hover:text-slate-200'
+              }`}
+            >
+              <AlertTriangle className="size-3.5" />
+              متأخرة عن موعدها
+            </button>
+            {/* §24 — open the deterministic follow-ups report */}
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setReportOpen(true)}
+              className="border-brand-500/30 text-brand-300 hover:bg-brand-500/10 h-9"
+            >
+              <BarChart3 className="size-3.5 ml-1" />
+              تقرير المتابعات
+            </Button>
             <Select value={statusFilter} onValueChange={setStatusFilter}>
               <SelectTrigger className="bg-slate-800/70 border-slate-700/70 text-white w-36 h-9 text-sm">
                 <Clock className="size-3.5 ml-1.5 text-slate-500" />
@@ -1045,8 +1104,8 @@ export default function FollowUpsPage() {
                             {/* §6 — one ⋮ menu instead of three always-visible
                                 icons; same actions, permission-gated. */}
                             <div className="flex items-center justify-center">
-                              <OverflowMenu
-                                items={rowActionsFor(item)}
+                              <SmartActionMenu
+                                actions={rowActionsFor(item)}
                                 label={`إجراءات المتابعة — ${empName}`}
                               />
                             </div>
@@ -1114,7 +1173,7 @@ export default function FollowUpsPage() {
                             {empHigh} عالي
                           </Badge>
                         )}
-                        <Badge variant="outline" className="text-[10px] bg-violet-500/10 text-violet-400 border-violet-500/30 px-1.5 py-0">
+                        <Badge variant="outline" className="text-[10px] bg-brand-500/10 text-brand-400 border-brand-500/30 px-1.5 py-0">
                           {empResolved} محلول
                         </Badge>
                         {riskScore > 0 && (
@@ -1188,8 +1247,8 @@ export default function FollowUpsPage() {
                                     <div className="flex-1" />
                                     {/* §6 — same shared ⋮ row actions as the table view. */}
                                     <div className="flex items-center flex-shrink-0">
-                                      <OverflowMenu
-                                        items={rowActionsFor(item)}
+                                      <SmartActionMenu
+                                        actions={rowActionsFor(item)}
                                         label={`إجراءات المتابعة — ${empName}`}
                                       />
                                     </div>
@@ -1209,10 +1268,10 @@ export default function FollowUpsPage() {
                                   {(item.positiveNotes || item.negativeNotes) && (
                                     <div className={`grid ${item.positiveNotes && item.negativeNotes ? 'grid-cols-1 sm:grid-cols-2' : 'grid-cols-1'} gap-2`}>
                                       {item.positiveNotes && (
-                                        <div className="rounded-lg bg-emerald-500/5 border border-violet-500/30 px-3 py-2">
+                                        <div className="rounded-lg bg-emerald-500/5 border border-brand-500/30 px-3 py-2">
                                           <div className="flex items-center gap-1.5 mb-1">
                                             <ArrowUpCircle className="size-3 text-emerald-500" />
-                                            <p className="text-violet-400 text-[10px] font-medium">ملاحظات إيجابية</p>
+                                            <p className="text-brand-400 text-[10px] font-medium">ملاحظات إيجابية</p>
                                           </div>
                                           <p className="text-slate-300 text-xs leading-relaxed whitespace-pre-wrap break-words">{item.positiveNotes}</p>
                                         </div>
@@ -1355,8 +1414,8 @@ export default function FollowUpsPage() {
                 {(viewingItem.positiveNotes || viewingItem.negativeNotes) && (
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                     {viewingItem.positiveNotes && (
-                      <div className="rounded-lg bg-emerald-500/5 border border-violet-500/30 px-3 py-2">
-                        <p className="text-violet-400 text-[10px] font-medium mb-1">إيجابي</p>
+                      <div className="rounded-lg bg-emerald-500/5 border border-brand-500/30 px-3 py-2">
+                        <p className="text-brand-400 text-[10px] font-medium mb-1">إيجابي</p>
                         <p className="text-slate-300 text-xs leading-relaxed whitespace-pre-wrap">{viewingItem.positiveNotes}</p>
                       </div>
                     )}
@@ -1692,6 +1751,45 @@ export default function FollowUpsPage() {
         loading={deleteLoading}
         onConfirm={async () => { if (deletingId) await handleDelete(deletingId); }}
       />
+      {/* ── §24 FOLLOW-UPS REPORT — deterministic analytics over the
+          canonical data via the unified reporting architecture. Filters
+          (employee/team/department/month/range/type/status) run
+          SERVER-SIDE and respect the caller's data scope. ── */}
+      <Dialog open={reportOpen} onOpenChange={setReportOpen}>
+        <DialogContent className="max-w-6xl max-h-[92vh] overflow-y-auto backdrop-blur-xl bg-slate-900 border-slate-700">
+          <DialogHeader>
+            <DialogTitle className="text-white flex items-center gap-2">
+              <BarChart3 className="size-5 text-brand-400" />
+              تقرير المتابعات
+            </DialogTitle>
+            <DialogDescription className="text-slate-400">
+              تحليل حتمي من البيانات الفعلية — بدون أي استنتاجات افتراضية
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex items-center gap-1 rounded-lg border border-slate-700/60 bg-slate-950/40 p-1 w-fit">
+            <button
+              type="button"
+              onClick={() => setReportMode('employee')}
+              className={`px-3 py-1.5 text-xs rounded-md transition-colors ${reportMode === 'employee' ? 'bg-brand-500/20 text-brand-300' : 'text-slate-400 hover:text-slate-200'}`}
+            >
+              مجمّع حسب الموظف
+            </button>
+            <button
+              type="button"
+              onClick={() => setReportMode('flat')}
+              className={`px-3 py-1.5 text-xs rounded-md transition-colors ${reportMode === 'flat' ? 'bg-brand-500/20 text-brand-300' : 'text-slate-400 hover:text-slate-200'}`}
+            >
+              تفصيلي
+            </button>
+          </div>
+          {reportMode === 'employee' ? (
+            <ReportView reportId="follow-ups-employee" insufficientBelow={5} />
+          ) : (
+            <ReportView reportId="follow-ups" insufficientBelow={5} />
+          )}
+        </DialogContent>
+      </Dialog>
+
     </div>
   );
 }

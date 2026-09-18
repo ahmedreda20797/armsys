@@ -131,8 +131,11 @@ export type ReportFilterKey =
   | 'employeeIds'
   | 'employeeScope'
   | 'department'
+  | 'team'
+  | 'search'
   | 'category'
   | 'status'
+  | 'archived'
   | 'severity'
   | 'actor'
   | 'entityType'
@@ -148,6 +151,7 @@ export type ReportFilterControl =
   | 'employee-multi'
   | 'employee-scope'  // single/multi/all switch
   | 'department'
+  | 'team'            // real org-team select (options from filter-options API)
   | 'select'          // options from filterOptions
   | 'text';
 
@@ -274,7 +278,11 @@ export interface ReportRunRequest {
   employeeIds?: string[];
   employeeScope?: 'all';
   department?: string | null;
-  /** Additional domain filters (category/status/severity/…). */
+  /** Real org-team label (resolved per employee; Qnlys milestone §1). */
+  team?: string | null;
+  /** Employee name/code search — normalized substring (§1). */
+  search?: string | null;
+  /** Additional domain filters (category/status/severity/archived/…). */
   filters?: Record<string, string | number | boolean>;
 }
 

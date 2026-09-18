@@ -29,7 +29,7 @@
 //  events (and by future modules) without changing old behavior.
 // ══════════════════════════════════════════════════════════════
 
-import { migratePermission, resolveEffectivePermissions, type PermissionsMap } from '@/config/permissions';
+import { migratePermission, resolveEffectivePermissions, type ActionKey, type PermissionsMap } from '@/config/permissions';
 import { buildOrgIndex, resolveManagerChain, type OrgEmployeeRef, type OrgNode } from '@/lib/organization';
 import { findDuplicateByTitleOrRecord } from '@/lib/notifications/dedup';
 import { createRecord, findWhere, getAll } from '@/lib/db';
@@ -38,7 +38,16 @@ import { createRecord, findWhere, getAll } from '@/lib/db';
 export interface NotificationRoute {
   /** Content permission gate for candidates (null/undefined = no gate). */
   pageKey?: string | null;
+  /**
+   * ACTION-level gate: when set, a candidate must hold page level
+   * 'edit' AND this action flag (e.g. 'approve' → only users who may
+   * actually act on the item are notified — §APPROVAL-NOTIFY). Admin
+   * role users pass through the preset map automatically.
+   */
+  requiredAction?: ActionKey | null;
   directUserIds?: string[];
+  /** Users explicitly excluded from routing (e.g. the actor themself). */
+  excludeUserIds?: string[];
   roles?: string[];
   /** Managers assigned to these organization nodes. */
   orgNodeIds?: string[];
@@ -61,9 +70,15 @@ export interface RoutingContext {
   employees: OrgEmployeeRef[];
 }
 
-function passesPageGate(user: RoutingUser, pageKey: string | null | undefined): boolean {
+function passesPageGate(user: RoutingUser, pageKey: string | null | undefined, requiredAction?: ActionKey | null): boolean {
   if (!pageKey) return true;
-  return migratePermission(user.permissions?.[pageKey]).level !== 'none';
+  const perm = migratePermission(user.permissions?.[pageKey]);
+  if (perm.level === 'none') return false;
+  if (requiredAction) {
+    if (perm.level !== 'edit') return false;
+    return perm.actions?.[requiredAction] === true;
+  }
+  return true;
 }
 
 /**
@@ -73,9 +88,10 @@ function passesPageGate(user: RoutingUser, pageKey: string | null | undefined): 
  */
 export function resolveNotificationRecipients(route: NotificationRoute, ctx: RoutingContext): string[] {
   const candidates: string[] = [];
+  const excluded = new Set(route.excludeUserIds ?? []);
 
   const push = (userId: string | null | undefined) => {
-    if (userId) candidates.push(userId);
+    if (userId && !excluded.has(userId)) candidates.push(userId);
   };
 
   for (const id of route.directUserIds ?? []) push(id);
@@ -113,7 +129,7 @@ export function resolveNotificationRecipients(route: NotificationRoute, ctx: Rou
     seen.add(userId);
     const user = ctx.users.find((u) => u.id === userId);
     if (!user) continue; // unknown/foreign id — never route to ghosts
-    if (!passesPageGate(user, route.pageKey)) continue;
+    if (!passesPageGate(user, route.pageKey, route.requiredAction)) continue;
     recipients.push(userId);
   }
   return recipients;
@@ -134,6 +150,12 @@ export interface RoutedNotificationInput {
   employeeName?: string | null;
   sourceRecordId?: string | null;
   route: NotificationRoute;
+  /** Notification category — drives the popover icon and default page map. */
+  category?: string;
+  /** Owning module (sourceModule on the record). */
+  sourceModule?: string;
+  /** Page the recipient lands on when opening the notification. */
+  targetPage?: string | null;
 }
 
 /**
@@ -181,13 +203,13 @@ export async function fireRoutedNotification(input: RoutedNotificationInput): Pr
       description: input.description ?? null,
       priority: input.priority ?? 'medium',
       status: 'unread',
-      category: 'system',
-      sourceModule: 'organization',
+      category: input.category ?? 'system',
+      sourceModule: input.sourceModule ?? 'organization',
       sourceType: 'automation',
       sourceRecordId: input.sourceRecordId ?? null,
       employeeId: input.employeeId ?? null,
       employeeName: input.employeeName ?? null,
-      targetPage: null,
+      targetPage: input.targetPage ?? null,
       actionUrl: null,
       recipientUserIds: recipients,
     });

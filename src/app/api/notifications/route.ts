@@ -42,6 +42,10 @@ export async function GET(request: NextRequest) {
       permissions: auth.permissions,
       linkedEmployeeId: auth.linkedEmployeeId ?? null,
     });
+    // Snapshot AFTER visibility (the authorization boundary) and
+    // BEFORE any narrowing filters — the count covers everything
+    // this viewer may see, regardless of the query's filters.
+    const visibleForCount = records;
 
     // Server-side filters
     if (priority) records = records.filter((r) => r.priority === priority);
@@ -66,12 +70,18 @@ export async function GET(request: NextRequest) {
       (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
     );
 
+    // §16 — the TRUE unread count (over ALL visible notifications,
+    // before the date/limit windows) so the bell badge can never
+    // disagree with the panel.
+    const unreadCount = visibleForCount.filter((r) => r.status === 'unread').length;
+
     // Apply pagination
     const paginated = records.slice(offset, offset + limit);
 
     return NextResponse.json({
       data: paginated,
       total: records.length,
+      unreadCount,
       limit,
       offset,
     });

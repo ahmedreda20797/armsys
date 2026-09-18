@@ -145,13 +145,13 @@ function createStarterWorkflow(): { nodes: VBNode[]; edges: VBEdge[] } {
 
 function CanvasEmptyState({ onAddStart }: { onAddStart: () => void }) {
   return (
-    <div className="absolute inset-0 z-10 flex items-center justify-center pointer-events-none" dir="rtl">
+    <div className="absolute inset-0 z-10 flex items-center justify-center pointer-events-none">
       <div className="flex flex-col items-center text-center max-w-sm px-6 select-none">
         {/* Illustration */}
         <div className="relative mb-5">
-          <div className="absolute inset-0 bg-violet-500/20 blur-2xl rounded-full" />
-          <div className="relative w-20 h-20 rounded-2xl bg-gradient-to-br from-violet-600/30 to-indigo-600/20 border border-violet-500/30 flex items-center justify-center shadow-xl shadow-violet-900/20">
-            <Workflow className="w-9 h-9 text-violet-300" strokeWidth={1.5} />
+          <div className="absolute inset-0 bg-brand-500/20 blur-2xl rounded-full" />
+          <div className="relative w-20 h-20 rounded-2xl bg-gradient-to-br from-brand-600/30 to-brand-700/20 border border-brand-500/30 flex items-center justify-center shadow-xl shadow-brand-900/20">
+            <Workflow className="w-9 h-9 text-brand-300" strokeWidth={1.5} />
           </div>
         </div>
         {/* Headline */}
@@ -162,7 +162,7 @@ function CanvasEmptyState({ onAddStart }: { onAddStart: () => void }) {
         {/* CTA */}
         <button
           onClick={onAddStart}
-          className="pointer-events-auto flex items-center gap-2 px-4 py-2 rounded-lg bg-violet-600/20 border border-violet-500/40 text-violet-200 text-xs font-medium hover:bg-violet-600/30 hover:border-violet-500/60 transition-all shadow-lg shadow-violet-900/10"
+          className="pointer-events-auto flex items-center gap-2 px-4 py-2 rounded-lg bg-brand-600/20 border border-brand-500/40 text-brand-200 text-xs font-medium hover:bg-brand-600/30 hover:border-brand-500/60 transition-all shadow-lg shadow-brand-900/10"
         >
           <Plus className="w-4 h-4" />
           إضافة عقدة بداية
@@ -1216,12 +1216,12 @@ function WorkflowDesignerInner() {
       {/* ── Header ───────────────────────────────────────────────────────── */}
       <div className="flex items-center justify-between px-4 py-2 bg-slate-950 border-b border-slate-800/60 flex-shrink-0">
         <div className="flex items-center gap-3">
-          <div className="flex items-center justify-center w-9 h-9 rounded-lg bg-gradient-to-br from-violet-600 to-indigo-600 shadow-lg shadow-violet-600/20">
+          <div className="flex items-center justify-center w-9 h-9 rounded-lg bg-gradient-to-br from-brand-600 to-brand-700 shadow-lg shadow-brand-600/20">
             <Workflow className="w-5 h-5 text-white" />
           </div>
           <div>
             <h1 className="text-sm font-bold text-slate-100">
-              مصمم المسارات <span className="text-[9px] text-violet-400 font-mono ml-1">V2</span>
+              مصمم المسارات <span className="text-[9px] text-brand-400 font-mono ml-1">V2</span>
             </h1>
             <p className="text-[10px] text-slate-500">Enterprise Workflow Authoring Platform</p>
           </div>
@@ -1230,8 +1230,8 @@ function WorkflowDesignerInner() {
               <span className={cn('w-1.5 h-1.5 rounded-full', validation.valid ? 'bg-emerald-400' : 'bg-red-400')} />
               <span className="text-[10px] text-slate-400">{validation.valid ? 'سليم' : `${errorCount} خطأ`}</span>
             </div>
-            <div className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-violet-500/10 border border-violet-500/20">
-              <span className="text-[10px] text-violet-300 font-bold">{validation.score}</span>
+            <div className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-brand-500/10 border border-brand-500/20">
+              <span className="text-[10px] text-brand-300 font-bold">{validation.score}</span>
               <span className="text-[9px] text-slate-500">/100</span>
             </div>
           </div>
@@ -1381,7 +1381,7 @@ function WorkflowDesignerInner() {
                     onClick={() => setRightMode(id)}
                     className={cn(
                       'flex-1 flex items-center justify-center gap-1 py-2.5 text-[11px] font-medium transition-colors border-b-2 whitespace-nowrap',
-                      rightMode === id ? 'border-violet-500 text-violet-300 bg-violet-500/5' : 'border-transparent text-slate-500 hover:text-slate-300',
+                      rightMode === id ? 'border-brand-500 text-brand-300 bg-brand-500/5' : 'border-transparent text-slate-500 hover:text-slate-300',
                     )}
                   >
                     <Icon className="w-3.5 h-3.5" />

@@ -48,14 +48,14 @@ export function UserAvatar({ name, src, className, ariaLabel }: UserAvatarProps)
   return (
     <Avatar
       className={cn(
-        'size-9 bg-linear-to-br from-violet-600 to-indigo-600 ring-2 ring-violet-500/40 transition-all',
+        'size-9 bg-linear-to-br from-brand-600 to-brand-700 ring-2 ring-brand-500/40 transition-all',
         className,
       )}
       aria-label={ariaLabel ?? (name ? `صورة المستخدم ${name}` : 'صورة المستخدم')}
     >
       {src && <AvatarImage src={src} alt={name ?? 'المستخدم'} />}
       <AvatarFallback
-        className="bg-linear-to-br from-violet-600 to-indigo-600 text-xs font-bold text-white"
+        className="bg-linear-to-br from-brand-600 to-brand-700 text-xs font-bold text-white"
         delayMs={src ? 300 : 0}
       >
         {initials}

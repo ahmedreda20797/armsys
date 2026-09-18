@@ -144,7 +144,7 @@ export function UserSearchInput({
     return (
       <div className={`relative ${className}`} ref={dropdownRef}>
         <div className="relative">
-          <ShieldCheck className="absolute right-2.5 top-1/2 -translate-y-1/2 size-3.5 text-violet-400" />
+          <ShieldCheck className="absolute right-2.5 top-1/2 -translate-y-1/2 size-3.5 text-brand-400" />
           <Input
             placeholder={placeholder}
             value={searchText}
@@ -173,10 +173,10 @@ export function UserSearchInput({
                   <button
                     key={u.id}
                     onClick={() => handleSelect(u.id, u.name)}
-                    className="w-full text-right px-3 py-2 text-white text-xs hover:bg-violet-500/10 transition-colors flex items-center gap-2"
+                    className="w-full text-right px-3 py-2 text-white text-xs hover:bg-brand-500/10 transition-colors flex items-center gap-2"
                   >
-                    <div className="size-5 rounded-full bg-violet-500/15 border border-violet-500/30 flex items-center justify-center flex-shrink-0">
-                      <span className="text-[9px] font-bold text-violet-400">{u.name.charAt(0)}</span>
+                    <div className="size-5 rounded-full bg-brand-500/15 border border-brand-500/30 flex items-center justify-center flex-shrink-0">
+                      <span className="text-[9px] font-bold text-brand-400">{u.name.charAt(0)}</span>
                     </div>
                     <div className="min-w-0 flex-1">
                       <p className="truncate">{u.name}</p>
@@ -197,7 +197,7 @@ export function UserSearchInput({
     <div className={`relative space-y-2 ${colSpan || ''} ${className}`} ref={dropdownRef}>
       {label && <label className="text-slate-300 text-sm">{label}</label>}
       <div className="relative">
-        <ShieldCheck className="absolute right-3 top-1/2 -translate-y-1/2 size-4 text-violet-500" />
+        <ShieldCheck className="absolute right-3 top-1/2 -translate-y-1/2 size-4 text-brand-500" />
         <Input
           placeholder={placeholder}
           value={searchText}
@@ -234,10 +234,10 @@ export function UserSearchInput({
                 <button
                   key={u.id}
                   onClick={() => handleSelect(u.id, u.name)}
-                  className="w-full text-right px-3 py-2 text-white text-sm hover:bg-violet-500/10 transition-colors flex items-center gap-2"
+                  className="w-full text-right px-3 py-2 text-white text-sm hover:bg-brand-500/10 transition-colors flex items-center gap-2"
                 >
-                  <div className="size-6 rounded-full bg-violet-500/15 border border-violet-500/30 flex items-center justify-center flex-shrink-0">
-                    <span className="text-[10px] font-bold text-violet-400">{u.name.charAt(0)}</span>
+                  <div className="size-6 rounded-full bg-brand-500/15 border border-brand-500/30 flex items-center justify-center flex-shrink-0">
+                    <span className="text-[10px] font-bold text-brand-400">{u.name.charAt(0)}</span>
                   </div>
                   <div className="min-w-0 flex-1">
                     <p className="truncate">{u.name}</p>

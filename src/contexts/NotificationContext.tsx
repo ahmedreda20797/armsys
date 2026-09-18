@@ -166,18 +166,33 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
     }
   }, [!!user]); // Stable boolean — doesn't re-fire on user object recreation
 
+  // ── §16 unread-count accounting ── the badge is a real number that
+  // reacts to every transition (server refresh, mark read, mark all,
+  // delete, new arrival). The server count is authoritative; local
+  // transitions adjust it so the badge never goes stale between
+  // refreshes. Declared BEFORE refresh() (declaration order).
+  const [serverUnreadCount, setServerUnreadCount] = useState<number | null>(null);
+  const adjustUnread = useCallback((delta: number) => {
+    setServerUnreadCount((prev) => (prev === null ? prev : Math.max(0, prev + delta)));
+  }, []);
+
   // ── Fetch notifications and detect new ones (used for both initial + polling) ──
   const lastFetchAtRef = useRef<number>(0);
 
   const refresh = useCallback(async () => {
     try {
       lastFetchAtRef.current = Date.now();
-      // Fetch unread + recent (last 24h) to keep bell populated even after reading
-      const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-      const res = await authFetch(`/api/notifications?limit=50&status=unread&dateFrom=${encodeURIComponent(yesterday)}`);
+      // §16 — unread feed WITHOUT a 24h window: the badge must reflect
+      // every unread notification the viewer can see. The server also
+      // returns the authoritative `unreadCount` (computed over ALL
+      // visible notifications, beyond any limit) and the badge uses it.
+      const res = await authFetch('/api/notifications?limit=50&status=unread');
       if (res.ok) {
         const json = await res.json();
         const data: AppNotification[] = json.data || [];
+        if (typeof json.unreadCount === 'number') {
+          setServerUnreadCount(json.unreadCount);
+        }
 
         setNotifications((prev) => {
           const existingIds = new Set(prev.map((n) => n.id));
@@ -357,10 +372,12 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
 
   // ── Mark read (server + local) ──
   const markReadLocal = useCallback((id: string) => {
+    const target = notifications.find((n) => n.id === id);
+    if (target && target.status === 'unread') adjustUnread(-1);
     setNotifications((prev) =>
       prev.map((n) => (n.id === id ? { ...n, status: 'read' as const, readAt: n.readAt || new Date().toISOString() } : n))
     );
-  }, []);
+  }, [notifications, adjustUnread]);
 
   const markRead = useCallback(async (id: string) => {
     try {
@@ -375,16 +392,24 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
     markReadLocal(id);
   }, [markReadLocal]);
 
-  // ── Mark all read ──
+  // ── Mark all read ── (single server call + badge reset)
   const markAllRead = useCallback(async () => {
+    try {
+      await authFetch('/api/notifications/mark-all-read', { method: 'POST' });
+    } catch {
+      // fall through to per-item marking as before
+    }
     const unreadIds = notifications.filter((n) => n.status === 'unread').map((n) => n.id);
-    await Promise.allSettled(unreadIds.map((id) => markRead(id)));
-  }, [notifications, markRead]);
+    unreadIds.forEach((id) => markReadLocal(id));
+    setServerUnreadCount(0);
+  }, [notifications, markReadLocal]);
 
   // ── Remove local ──
   const removeLocal = useCallback((id: string) => {
+    const target = notifications.find((n) => n.id === id);
+    if (target && target.status === 'unread') adjustUnread(-1);
     setNotifications((prev) => prev.filter((n) => n.id !== id));
-  }, []);
+  }, [notifications, adjustUnread]);
 
   // ── Delete notification (server + local) ──
   const deleteNotification = useCallback(async (id: string) => {
@@ -405,16 +430,17 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
 
   // ── Add local (from listener) ──
   const addLocal = useCallback((notif: AppNotification) => {
-    setNotifications((prev) => {
-      if (prev.some((n) => n.id === notif.id)) return prev;
-      seenIdsRef.current.add(notif.id);
-      return [notif, ...prev].slice(0, 100);
-    });
+    if (notifications.some((n) => n.id === notif.id)) return;
+    seenIdsRef.current.add(notif.id);
+    if (notif.status === 'unread') adjustUnread(1);
+    setNotifications((prev) => [notif, ...prev].slice(0, 100));
     setLatestNotification(notif);
     setTimeout(() => setLatestNotification(null), 3000);
-  }, []);
+  }, [notifications, adjustUnread]);
 
-  const unreadCount = notifications.filter((n) => n.status === 'unread').length;
+  // Server count (authoritative, covers >50 unread) — falls back to
+  // the local derivation before the first server response arrives.
+  const unreadCount = serverUnreadCount ?? notifications.filter(n => n.status === 'unread').length;
 
   return (
     <NotificationContext.Provider

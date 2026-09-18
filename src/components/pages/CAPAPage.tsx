@@ -25,6 +25,7 @@ import {
   Target, Zap, TrendingUp, Flame,
   CircleDot, Download, AlertOctagon, ShieldAlert,
 } from 'lucide-react';
+import { SmartActionMenu } from '@/components/shared/SmartActionMenu';
 import { toast } from 'sonner';
 import { logDelete } from '@/lib/activity-logger';
 import { authFetch } from '@/lib/api-fetch';
@@ -337,7 +338,7 @@ function CAPAListPage() {
 
   if (!canView) {
     return (
-      <div dir="rtl" className="flex flex-col items-center justify-center py-20">
+      <div className="flex flex-col items-center justify-center py-20">
         <div className="size-16 rounded-full bg-slate-800 flex items-center justify-center mb-4">
           <ShieldCheck className="size-8 text-slate-500" />
         </div>
@@ -347,13 +348,13 @@ function CAPAListPage() {
   }
 
   return (
-    <div dir="rtl" className="space-y-5">
+    <div className="space-y-5">
       {/* ═══ Header (§25/§26 — sticky) ═══ */}
       <PageHeaderBar
         icon={<ShieldCheck className="size-5" />}
-        iconClassName="bg-linear-to-br from-violet-600/20 to-indigo-600/20 border-violet-500/30 text-violet-400"
+        iconClassName="bg-linear-to-br from-brand-600/20 to-brand-700/20 border-brand-500/30 text-brand-400"
         title="نظام كابا — الإجراءات التصحيحية والوقائية"
-        subtitle="محرك تحسين الجودة وحل المشكلات"
+        description="محرك تحسين الجودة وحل المشكلات"
         primaryAction={canCreate ? {
           label: 'إنشاء حالة كابا',
           onClick: () => { setCreateDefaults({}); setIsCreateOpen(true); },
@@ -374,7 +375,7 @@ function CAPAListPage() {
       {/* ═══ Enhanced Dashboard Widgets ═══ */}
       <motion.div initial={{ opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }} className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2.5">
         {[
-          { label: 'إجمالي الحالات', value: stats.total, color: 'border-violet-500/30 bg-violet-500/8', textColor: 'text-violet-400' },
+          { label: 'إجمالي الحالات', value: stats.total, color: 'border-brand-500/30 bg-brand-500/8', textColor: 'text-brand-400' },
           { label: 'مفتوحة', value: stats.open, color: 'border-blue-500/25 bg-blue-500/8', textColor: 'text-blue-400' },
           { label: 'قيد التنفيذ', value: stats.inProgress, color: 'border-amber-500/25 bg-amber-500/8', textColor: 'text-amber-400' },
           { label: 'متأخرة', value: stats.overdue, color: 'border-red-500/25 bg-red-500/8', textColor: 'text-red-400' },
@@ -435,7 +436,7 @@ function CAPAListPage() {
           <InlineFormPanel
             id="capa-inline-create"
             tone="violet"
-            icon={<Plus className="size-3.5 text-violet-400" />}
+            icon={<Plus className="size-3.5 text-brand-400" />}
             title="إنشاء حالة CAPA جديدة"
             onClose={() => { setIsCreateOpen(false); setCreateDefaults({}); }}
           >
@@ -499,7 +500,7 @@ function CAPAListPage() {
           ].map((tab) => (
             <button key={tab.key} onClick={() => setActiveTab(tab.key)}
               className={`px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap transition-colors ${
-                activeTab === tab.key ? 'bg-linear-to-r from-violet-600 to-indigo-600 text-white shadow-md shadow-violet-500/20' : 'text-slate-400 hover:bg-slate-800 hover:text-white'
+                activeTab === tab.key ? 'bg-linear-to-r from-brand-600 to-brand-700 text-white shadow-md shadow-brand-500/20' : 'text-slate-400 hover:bg-slate-800 hover:text-white'
               }`}>
               {tab.label}{tab.count !== undefined ? ` (${tab.count})` : ''}
             </button>
@@ -525,7 +526,7 @@ function CAPAListPage() {
             <p className="text-slate-400 text-sm font-medium">لا توجد حالات كابا</p>
             <p className="text-slate-600 text-xs mt-1">{search ? 'لم يتم العثور على نتائج' : 'لم يتم تسجيل أي حالات بعد'}</p>
             {canCreate && !search && (
-              <Button onClick={() => { setCreateDefaults({}); setIsCreateOpen(true); }} size="sm" className="mt-3 bg-violet-600 hover:bg-violet-700 text-white">
+              <Button onClick={() => { setCreateDefaults({}); setIsCreateOpen(true); }} size="sm" className="mt-3 bg-brand-600 hover:bg-brand-700 text-white">
                 <Plus className="size-4 ml-1" /> إنشاء أول حالة
               </Button>
             )}
@@ -601,7 +602,12 @@ function CAPAListPage() {
                               navigationContext: { id: item.id },
                             }}
                           />
-                          {canDelete && <button onClick={() => setDeletingId(item.id)} className="p-1.5 rounded-md text-slate-600 hover:text-red-400 hover:bg-red-500/10 transition-colors"><Trash2 className="size-3.5" /></button>}
+                          {/* §2 — SmartActionMenu */}
+                          <SmartActionMenu
+                            actions={[
+                              { key: 'delete', label: 'حذف الحالة', icon: <Trash2 className="size-3.5" />, destructive: true, onSelect: () => setDeletingId(item.id), hidden: !canDelete },
+                            ]}
+                          />
                         </div>
                       </div>
 
@@ -610,7 +616,7 @@ function CAPAListPage() {
                         <div className="flex-1 h-1.5 rounded-full bg-slate-700/50 overflow-hidden">
                           <motion.div
                             className={`h-full rounded-full ${
-                              pct >= 85 ? 'bg-violet-500' : pct >= 60 ? 'bg-sky-500' : pct >= 35 ? 'bg-amber-500' : 'bg-red-500'
+                              pct >= 85 ? 'bg-brand-500' : pct >= 60 ? 'bg-sky-500' : pct >= 35 ? 'bg-amber-500' : 'bg-red-500'
                             }`}
                             initial={{ width: 0 }}
                             animate={{ width: `${pct}%` }}
@@ -646,9 +652,9 @@ function CAPAListPage() {
                             <p className="text-slate-400 text-xs leading-relaxed">{truncate(item.correctiveAction, 80)}</p>
                           </div>
                           {item.preventiveAction && (
-                            <div className="rounded-lg bg-violet-500/5 border border-violet-500/10 px-3 py-1.5">
+                            <div className="rounded-lg bg-brand-500/5 border border-brand-500/10 px-3 py-1.5">
                               <div className="flex items-center justify-between mb-0.5">
-                                <p className="text-violet-400 text-[10px] font-medium">الإجراء الوقائي</p>
+                                <p className="text-brand-400 text-[10px] font-medium">الإجراء الوقائي</p>
                                 {item.preventiveStatus && (() => { const ac = getActionStatusConfig(item.preventiveStatus); return <span className={`px-1.5 py-0.5 rounded text-[9px] border ${ac.color}`}>{ac.label}</span>; })()}
                               </div>
                               <p className="text-slate-400 text-xs leading-relaxed">{truncate(item.preventiveAction, 80)}</p>
@@ -681,17 +687,17 @@ function CAPAListPage() {
       <Dialog open={showReport} onOpenChange={(o) => { if (!o) { setShowReport(false); setReportData(null); } }}>
         <DialogContent className="backdrop-blur-xl bg-slate-900 border-slate-700 max-w-3xl max-h-[85vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle className="text-white flex items-center gap-2"><BarChart3 className="size-5 text-violet-400" />تقرير حالات كابا</DialogTitle>
+            <DialogTitle className="text-white flex items-center gap-2"><BarChart3 className="size-5 text-brand-400" />تقرير حالات كابا</DialogTitle>
             <DialogDescription className="text-slate-400">إحصائيات وتحليلات شاملة لحالات CAPA</DialogDescription>
           </DialogHeader>
           {reportLoading ? (
-            <div className="flex items-center justify-center py-12"><Loader2 className="size-8 text-violet-400 animate-spin" /></div>
+            <div className="flex items-center justify-center py-12"><Loader2 className="size-8 text-brand-400 animate-spin" /></div>
           ) : reportData ? (
             <div className="space-y-5">
               {/* Summary KPIs */}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
                 {[
-                  { label: 'إجمالي الحالات', value: reportData.summary?.total ?? 0, color: 'text-violet-400', border: 'border-violet-500/30' },
+                  { label: 'إجمالي الحالات', value: reportData.summary?.total ?? 0, color: 'text-brand-400', border: 'border-brand-500/30' },
                   { label: 'مفتوحة', value: reportData.summary?.open ?? 0, color: 'text-blue-400', border: 'border-blue-500/30' },
                   { label: 'مغلقة', value: reportData.summary?.closed ?? 0, color: 'text-green-400', border: 'border-green-500/30' },
                   { label: 'متأخرة', value: reportData.summary?.overdue ?? 0, color: 'text-red-400', border: 'border-red-500/30' },
@@ -711,7 +717,7 @@ function CAPAListPage() {
               {/* By Department */}
               {reportData.byDepartment && Object.keys(reportData.byDepartment).length > 0 && (
                 <div className="space-y-2">
-                  <h3 className="text-slate-300 text-sm font-semibold flex items-center gap-1.5"><Users className="size-4 text-violet-400" />حسب القسم</h3>
+                  <h3 className="text-slate-300 text-sm font-semibold flex items-center gap-1.5"><Users className="size-4 text-brand-400" />حسب القسم</h3>
                   <div className="space-y-1.5">
                     {Object.entries(reportData.byDepartment).sort((a: any, b: any) => (b[1] as any).total - (a[1] as any).total).map(([dept, metrics]: [string, any]) => (
                       <div key={dept} className="flex items-center gap-3 text-xs px-3 py-2 rounded-lg bg-slate-800/30 border border-slate-700/30">
@@ -732,7 +738,7 @@ function CAPAListPage() {
               {/* By Status */}
               {reportData.byStatus && Object.keys(reportData.byStatus).length > 0 && (
                 <div className="space-y-2">
-                  <h3 className="text-slate-300 text-sm font-semibold flex items-center gap-1.5"><CircleDot className="size-4 text-violet-400" />حسب الحالة</h3>
+                  <h3 className="text-slate-300 text-sm font-semibold flex items-center gap-1.5"><CircleDot className="size-4 text-brand-400" />حسب الحالة</h3>
                   <div className="flex flex-wrap gap-2">
                     {Object.entries(reportData.byStatus).sort((a: any, b: any) => b[1] - a[1]).map(([status, count]: [string, any]) => {
                       const cfg = getStatusConfig(status);
@@ -749,7 +755,7 @@ function CAPAListPage() {
               {/* By Priority */}
               {reportData.byPriority && Object.keys(reportData.byPriority).length > 0 && (
                 <div className="space-y-2">
-                  <h3 className="text-slate-300 text-sm font-semibold flex items-center gap-1.5"><AlertTriangle className="size-4 text-violet-400" />حسب الأولوية</h3>
+                  <h3 className="text-slate-300 text-sm font-semibold flex items-center gap-1.5"><AlertTriangle className="size-4 text-brand-400" />حسب الأولوية</h3>
                   <div className="flex flex-wrap gap-2">
                     {Object.entries(reportData.byPriority).sort((a: any, b: any) => b[1] - a[1]).map(([priority, count]: [string, any]) => {
                       const cfg = getPriorityConfig(priority);
@@ -766,7 +772,7 @@ function CAPAListPage() {
               {/* Monthly Trends */}
               {reportData.monthlyTrends && reportData.monthlyTrends.length > 0 && (
                 <div className="space-y-2">
-                  <h3 className="text-slate-300 text-sm font-semibold flex items-center gap-1.5"><TrendingUp className="size-4 text-violet-400" />الاتجاه الشهري (آخر 12 شهر)</h3>
+                  <h3 className="text-slate-300 text-sm font-semibold flex items-center gap-1.5"><TrendingUp className="size-4 text-brand-400" />الاتجاه الشهري (آخر 12 شهر)</h3>
                   <div className="space-y-1 max-h-48 overflow-y-auto">
                     {reportData.monthlyTrends.filter((m: any) => m.total > 0).map((m: any) => (
                       <div key={m.month} className="flex items-center gap-3 text-xs px-3 py-1.5 rounded-lg bg-slate-800/30">
@@ -785,7 +791,7 @@ function CAPAListPage() {
               {/* By Category */}
               {reportData.byCategory && Object.keys(reportData.byCategory).length > 0 && (
                 <div className="space-y-2">
-                  <h3 className="text-slate-300 text-sm font-semibold flex items-center gap-1.5"><FileText className="size-4 text-violet-400" />حسب التصنيف</h3>
+                  <h3 className="text-slate-300 text-sm font-semibold flex items-center gap-1.5"><FileText className="size-4 text-brand-400" />حسب التصنيف</h3>
                   <div className="flex flex-wrap gap-2">
                     {Object.entries(reportData.byCategory).sort((a: any, b: any) => b[1] - a[1]).map(([cat, count]: [string, any]) => (
                       <div key={cat} className="px-3 py-1.5 rounded-lg border border-slate-700/40 bg-slate-800/40 text-xs">
@@ -799,7 +805,7 @@ function CAPAListPage() {
               {/* By Source */}
               {reportData.bySource && Object.keys(reportData.bySource).length > 0 && (
                 <div className="space-y-2">
-                  <h3 className="text-slate-300 text-sm font-semibold flex items-center gap-1.5"><Zap className="size-4 text-violet-400" />حسب المصدر</h3>
+                  <h3 className="text-slate-300 text-sm font-semibold flex items-center gap-1.5"><Zap className="size-4 text-brand-400" />حسب المصدر</h3>
                   <div className="flex flex-wrap gap-2">
                     {Object.entries(reportData.bySource).sort((a: any, b: any) => b[1] - a[1]).map(([source, count]: [string, any]) => (
                       <div key={source} className="px-3 py-1.5 rounded-lg border border-slate-700/40 bg-slate-800/40 text-xs">

@@ -47,7 +47,7 @@ export function getRequestTypeLabel(type: string): string {
 export function getRequestTypeColor(type: string): string {
   switch (type) {
     case 'leave': return 'bg-cyan-500/15 text-cyan-400 border-cyan-500/20';
-    case 'permission': return 'bg-violet-500/15 text-violet-400 border-violet-500/20';
+    case 'permission': return 'bg-brand-500/15 text-brand-400 border-brand-500/20';
     case 'excuse': return 'bg-rose-500/15 text-rose-400 border-rose-500/20';
     case 'tardiness': return 'bg-amber-500/15 text-amber-400 border-amber-500/20';
     case 'remote': return 'bg-emerald-500/15 text-emerald-400 border-emerald-500/20';

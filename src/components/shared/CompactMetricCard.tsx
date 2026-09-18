@@ -23,7 +23,7 @@ const TONE_VALUE: Record<MetricTone, string> = {
   warning: 'text-amber-400',
   danger: 'text-red-400',
   info: 'text-cyan-400',
-  violet: 'text-violet-300',
+  violet: 'text-brand-300',
 };
 
 const TONE_ICON: Record<MetricTone, string> = {
@@ -32,7 +32,7 @@ const TONE_ICON: Record<MetricTone, string> = {
   warning: 'bg-amber-500/10 text-amber-400',
   danger: 'bg-red-500/10 text-red-400',
   info: 'bg-cyan-500/10 text-cyan-400',
-  violet: 'bg-violet-500/10 text-violet-300',
+  violet: 'bg-brand-500/10 text-brand-300',
 };
 
 export interface CompactMetricCardProps {
@@ -99,7 +99,7 @@ export const CompactMetricCard = memo(function CompactMetricCard({
       title={hint}
       className={cn(
         'group relative rounded-xl border border-slate-700/40 bg-slate-800/40 backdrop-blur-sm px-3 py-2.5 transition-colors',
-        interactive && 'cursor-pointer hover:border-violet-500/40 hover:bg-slate-800/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/40',
+        interactive && 'cursor-pointer hover:border-brand-500/40 hover:bg-slate-800/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/40',
         className,
       )}
     >

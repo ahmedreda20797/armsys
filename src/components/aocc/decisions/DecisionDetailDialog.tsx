@@ -96,7 +96,7 @@ interface LifecycleActionConfig {
 
 const LIFECYCLE_ACTIONS: LifecycleActionConfig[] = [
   { label: 'مراجعة', toStatus: 'acknowledged', icon: Eye, colorClass: 'text-cyan-400' },
-  { label: 'تعيين لي', toStatus: 'assigned', icon: User, colorClass: 'text-violet-400' },
+  { label: 'تعيين لي', toStatus: 'assigned', icon: User, colorClass: 'text-brand-400' },
   { label: 'بدء المعالجة', toStatus: 'in_progress', icon: CheckCircle2, colorClass: 'text-amber-400' },
   { label: 'حل', toStatus: 'resolved', icon: CheckCircle2, colorClass: 'text-emerald-400' },
   { label: 'تصعيد', toStatus: 'escalated', icon: ArrowUpRight, colorClass: 'text-red-400' },

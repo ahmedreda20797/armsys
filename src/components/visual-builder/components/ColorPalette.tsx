@@ -10,11 +10,11 @@ import React, { memo, useEffect, useRef } from 'react';
 import { cn } from '@/lib/utils';
 
 export const NODE_COLORS: string[] = [
-  'bg-emerald-500', 'bg-red-500', 'bg-violet-500', 'bg-amber-500',
-  'bg-cyan-600', 'bg-emerald-600', 'bg-blue-500', 'bg-indigo-500',
+  'bg-emerald-500', 'bg-red-500', 'bg-brand-500', 'bg-amber-500',
+  'bg-cyan-600', 'bg-emerald-600', 'bg-blue-500', 'bg-brand-500',
   'bg-slate-500', 'bg-orange-500', 'bg-yellow-600', 'bg-teal-600',
   'bg-sky-600', 'bg-blue-600', 'bg-pink-600', 'bg-green-600',
-  'bg-indigo-600', 'bg-amber-600', 'bg-red-600', 'bg-slate-600',
+  'bg-brand-700', 'bg-amber-600', 'bg-red-600', 'bg-slate-600',
 ];
 
 interface ColorPaletteProps {

@@ -74,7 +74,7 @@ export function EvidencePreviewModal({
     <Dialog open={!!state} onOpenChange={onOpenChange}>
       <DialogContent
         className="bg-slate-900 border-slate-700/60 text-slate-200 max-w-md no-print"
-        dir="rtl"
+       
       >
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-right text-slate-100">

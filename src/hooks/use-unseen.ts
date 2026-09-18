@@ -22,7 +22,16 @@ export const unseenKeys = {
 
 interface UnseenSummary {
   counts: Record<string, number>;
+  /** §APPROVAL-NOTIFY — action-needed counts (e.g. quality pending
+   *  approvals). NOT cleared by mark-seen; only the decision clears it. */
+  pending?: Record<string, number>;
   serverTime: string;
+}
+
+/** Pending-approval count for a page (0 when none / not applicable). */
+export function pendingCountOf(summary: UnseenSummary | undefined, pageId: string): number {
+  if (!summary?.pending) return 0;
+  return summary.pending[pageId] ?? 0;
 }
 
 export function useUnseenCounts() {

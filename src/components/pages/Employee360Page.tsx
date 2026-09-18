@@ -49,6 +49,9 @@ import {
   ExternalLink,
   Plus,
   RotateCcw,
+  Users,
+  UserCheck,
+  Archive,
 } from 'lucide-react';
 import { EmployeeQualityKpiPanel } from '@/components/pages/quality-kpi/EmployeeQualityKpiPanel';
 import { EmployeePerformanceSection } from '@/components/pages/employee360/EmployeePerformanceSection';
@@ -74,7 +77,26 @@ interface Employee360Data {
     hireDate: string | null;
     mobile: string | null;
     createdById: string | null;
+    // §2 — full identity + org
+    status?: string;
+    residence?: string | null;
+    orgNodeId?: string | null;
+    archivedAt?: string | null;
+    archiveReason?: string | null;
   };
+  // §2 — Organization section (tree authority) + observations.
+  organization?: {
+    node: { id: string; name: string; type: string } | null;
+    department: string | null;
+    team: string | null;
+    reportingLine: Array<{ id: string; name: string }>;
+  };
+  observations?: {
+    total: number;
+    currentMonth: number;
+    byStatus: Record<string, number>;
+  };
+  activity?: Record<string, { last90Days: number; lastEventAt: string | null }>;
   stats: {
     attendance: { totalPresent: number; totalLate: number; totalAbsent: number; totalExempt: number; totalMinutesLate: number };
     quality: { totalDeductions: number; deductionDays: number; deductionAmount: number };
@@ -751,6 +773,7 @@ export default function Employee360Page({ employeeId: propEmployeeId, onClose }:
   }
 
   const { employee, stats, risk, healthScore, timeline, recommendations } = data;
+  const employeeData = data; // §2 — organization/observations/activity blocks
 
   // ═══ Filtered timeline by tab ═══
   const getFilteredTimeline = (tabId: TabId) => {
@@ -776,7 +799,7 @@ export default function Employee360Page({ employeeId: propEmployeeId, onClose }:
           { label: 'تأخير', value: stats.attendance.totalLate, suffix: `(${formatMinutes(stats.attendance.totalMinutesLate)})`, icon: <Clock className="size-5 text-yellow-400" />, bg: 'bg-yellow-500/10', border: 'border-yellow-500/20' },
           { label: 'غياب', value: stats.attendance.totalAbsent, suffix: 'يوم', icon: <XCircleIcon className="size-5 text-red-400" />, bg: 'bg-red-500/10', border: 'border-red-500/20' },
           { label: 'خصم جودة', value: stats.quality.deductionDays, suffix: 'يوم', icon: <Award className="size-5 text-orange-400" />, bg: 'bg-orange-500/10', border: 'border-orange-500/20' },
-          { label: 'متابعات مفتوحة', value: stats.followUps.open, suffix: '', icon: <ClipboardCheck className="size-5 text-purple-400" />, bg: 'bg-purple-500/10', border: 'border-purple-500/20' },
+          { label: 'متابعات مفتوحة', value: stats.followUps.open, suffix: '', icon: <ClipboardCheck className="size-5 text-brand-400" />, bg: 'bg-brand-500/10', border: 'border-brand-500/20' },
           { label: 'CAPA مفتوحة', value: stats.capa.open, suffix: '', icon: <ShieldAlert className="size-5 text-cyan-400" />, bg: 'bg-cyan-500/10', border: 'border-cyan-500/20' },
         ].map((stat, i) => (
           <motion.div key={i} variants={gridItem}>
@@ -847,7 +870,7 @@ export default function Employee360Page({ employeeId: propEmployeeId, onClose }:
                 <div className={`w-2 h-2 rounded-full mt-1.5 flex-shrink-0 ${
                   item.type === 'attendance' ? (item.status === 'present' ? 'bg-emerald-400' : item.status === 'late' ? 'bg-yellow-400' : 'bg-red-400') :
                   item.type === 'quality' ? 'bg-orange-400' :
-                  item.type === 'followUp' ? 'bg-purple-400' :
+                  item.type === 'followUp' ? 'bg-brand-400' :
                   item.type === 'request' ? 'bg-blue-400' :
                   item.type === 'complaint' ? 'bg-red-400' :
                   item.type === 'capa' ? 'bg-cyan-400' :
@@ -1034,7 +1057,7 @@ export default function Employee360Page({ employeeId: propEmployeeId, onClose }:
               <div className={`w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 border ${
                 item.type === 'attendance' ? (item.status === 'present' ? 'bg-emerald-500/10 border-emerald-500/20' : item.status === 'late' ? 'bg-yellow-500/10 border-yellow-500/20' : 'bg-red-500/10 border-red-500/20') :
                 item.type === 'quality' ? 'bg-orange-500/10 border-orange-500/20' :
-                item.type === 'followUp' ? 'bg-purple-500/10 border-purple-500/20' :
+                item.type === 'followUp' ? 'bg-brand-500/10 border-brand-500/20' :
                 item.type === 'request' ? 'bg-blue-500/10 border-blue-500/20' :
                 item.type === 'complaint' ? 'bg-red-500/10 border-red-500/20' :
                 item.type === 'hrDeduction' ? 'bg-pink-500/10 border-pink-500/20' :
@@ -1044,7 +1067,7 @@ export default function Employee360Page({ employeeId: propEmployeeId, onClose }:
               }`}>
                 {item.type === 'attendance' && <Clock className={`size-4 ${item.status === 'present' ? 'text-emerald-400' : item.status === 'late' ? 'text-yellow-400' : 'text-red-400'}`} />}
                 {item.type === 'quality' && <Award className="size-4 text-orange-400" />}
-                {item.type === 'followUp' && <ClipboardCheck className="size-4 text-purple-400" />}
+                {item.type === 'followUp' && <ClipboardCheck className="size-4 text-brand-400" />}
                 {item.type === 'request' && <FileText className="size-4 text-blue-400" />}
                 {item.type === 'complaint' && <MessageSquareWarning className="size-4 text-red-400" />}
                 {item.type === 'hrDeduction' && <Banknote className="size-4 text-pink-400" />}
@@ -1093,7 +1116,7 @@ export default function Employee360Page({ employeeId: propEmployeeId, onClose }:
           { label: 'مغلقة', value: stats.capa.closed, icon: <CheckCircle className="size-4 text-emerald-400" />, bg: 'bg-emerald-500/10', border: 'border-emerald-500/20' },
           { label: 'متأخرة', value: stats.capa.overdue, icon: <Clock className="size-4 text-red-400" />, bg: 'bg-red-500/10', border: 'border-red-500/20' },
           { label: 'حرجة', value: stats.capa.critical, icon: <AlertCircle className="size-4 text-orange-400" />, bg: 'bg-orange-500/10', border: 'border-orange-500/20' },
-          { label: 'معاد فتحها', value: stats.capa.reopened, icon: <RotateCcw className="size-4 text-purple-400" />, bg: 'bg-purple-500/10', border: 'border-purple-500/20' },
+          { label: 'معاد فتحها', value: stats.capa.reopened, icon: <RotateCcw className="size-4 text-brand-400" />, bg: 'bg-brand-500/10', border: 'border-brand-500/20' },
           { label: 'فعّالة', value: stats.capa.effectiveness, icon: <ShieldCheck className="size-4 text-cyan-400" />, bg: 'bg-cyan-500/10', border: 'border-cyan-500/20' },
         ].map((stat, i) => (
           <motion.div key={i} variants={gridItem}>
@@ -1172,13 +1195,13 @@ export default function Employee360Page({ employeeId: propEmployeeId, onClose }:
                   <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 border ${
                     item.status === 'created' ? 'bg-cyan-500/10 border-cyan-500/20' :
                     item.status === 'closed' || item.status === 'verified' ? 'bg-emerald-500/10 border-emerald-500/20' :
-                    item.status === 'reopened' ? 'bg-purple-500/10 border-purple-500/20' :
+                    item.status === 'reopened' ? 'bg-brand-500/10 border-brand-500/20' :
                     'bg-slate-500/10 border-slate-500/20'
                   }`}>
                     <ShieldAlert className={`size-4 ${
                       item.status === 'created' ? 'text-cyan-400' :
                       item.status === 'closed' || item.status === 'verified' ? 'text-emerald-400' :
-                      item.status === 'reopened' ? 'text-purple-400' :
+                      item.status === 'reopened' ? 'text-brand-400' :
                       'text-slate-400'
                     }`} />
                   </div>
@@ -1240,7 +1263,7 @@ export default function Employee360Page({ employeeId: propEmployeeId, onClose }:
       variants={pageEnterVariants}
       initial="hidden"
       animate="visible"
-      dir="rtl"
+     
       className="space-y-5"
     >
       {/* ═══ Floating Header with Close Button ═══ */}
@@ -1348,6 +1371,31 @@ export default function Employee360Page({ employeeId: propEmployeeId, onClose }:
                       <span className="text-white" dir="ltr">{employee.shiftStart} - {employee.shiftEnd}</span>
                     </span>
                   )}
+                  {/* §2 — real team + reporting line from the org tree */}
+                  {(employeeData as any).organization?.team && (
+                    <span className="flex items-center gap-1.5 text-sm text-slate-400">
+                      <Users className="size-3.5 text-slate-500" />
+                      <span className="text-white">{(employeeData as any).organization.team}</span>
+                    </span>
+                  )}
+                  {(employeeData as any).organization?.reportingLine?.length > 0 && (
+                    <span className="flex items-center gap-1.5 text-sm text-slate-400">
+                      <UserCheck className="size-3.5 text-slate-500" />
+                      <span className="text-white">المدير: {(employeeData as any).organization.reportingLine[0].name}</span>
+                    </span>
+                  )}
+                  {/* §2 — lifecycle state (archive preserves history) */}
+                  {employee.status === 'archived' && (
+                    <span className="flex items-center gap-1.5 text-sm text-slate-400">
+                      <Archive className="size-3.5 text-slate-500" />
+                      <span className="text-slate-300">مؤرشف{(employee as any).archivedAt ? ` — ${new Date((employee as any).archivedAt).toLocaleDateString('ar-EG')}` : ''}</span>
+                    </span>
+                  )}
+                  {employee.status === 'inactive' && (
+                    <span className="flex items-center gap-1.5 text-sm text-slate-400">
+                      <span className="text-amber-300">غير نشط</span>
+                    </span>
+                  )}
                 </motion.div>
               </div>
 
@@ -1379,7 +1427,7 @@ export default function Employee360Page({ employeeId: propEmployeeId, onClose }:
           { label: 'الطلبات', value: stats.requests.pending, icon: <FileText className="size-3.5 text-blue-400" />, bg: 'bg-blue-500/10', border: 'border-blue-500/15' },
           { label: 'خصم الجودة', value: stats.quality.deductionDays, icon: <Award className="size-3.5 text-orange-400" />, bg: 'bg-orange-500/10', border: 'border-orange-500/15', suffix: 'يوم' },
           { label: 'خصم HR', value: stats.hrDeductions.deductionDays, icon: <Banknote className="size-3.5 text-pink-400" />, bg: 'bg-pink-500/10', border: 'border-pink-500/15', suffix: 'يوم' },
-          { label: 'المتابعات', value: stats.followUps.open, icon: <ClipboardCheck className="size-3.5 text-purple-400" />, bg: 'bg-purple-500/10', border: 'border-purple-500/15' },
+          { label: 'المتابعات', value: stats.followUps.open, icon: <ClipboardCheck className="size-3.5 text-brand-400" />, bg: 'bg-brand-500/10', border: 'border-brand-500/15' },
           { label: 'الشكاوى', value: stats.complaints.open, icon: <MessageSquareWarning className="size-3.5 text-red-400" />, bg: 'bg-red-500/10', border: 'border-red-500/15' },
           { label: 'CAPA مفتوحة', value: stats.capa.open, icon: <ShieldAlert className="size-3.5 text-cyan-400" />, bg: 'bg-cyan-500/10', border: 'border-cyan-500/15' },
         ].map((stat, i) => (

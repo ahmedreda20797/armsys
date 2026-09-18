@@ -196,3 +196,69 @@ describe('data scope — organization-aware dynamics', () => {
     assert.deepEqual(filtered.map((e) => e.id).sort(), ['empAhmed', 'empMohamed']);
   });
 });
+
+// ══════════════════════════════════════════════════════════════
+//  §18 ORG-SCOPE — a manager ASSIGNED to an org node (managerUserId)
+//  resolves that node's subtree under team/department scope, even when
+//  the manager is not an employee INSIDE the team/department.
+// ══════════════════════════════════════════════════════════════
+describe('§18 org-based scope — manager assignment drives team/department scope', () => {
+  it('team scope + manager of teamB (not an employee there) → whole teamB subtree', () => {
+    const { orgNodes, employees } = fixture();
+    const ctx = resolveEmployeeScope(
+      { userId: 'uManagerB', role: 'manager', linkedEmployeeId: null },
+      'employees',
+      mapWithScope('team'),
+      { orgNodes, employees },
+    );
+    assert.equal(ctx.scope, 'team');
+    // Ali + Omar are IN teamB; Ahmed/Mohamed (teamA) and Sara are not.
+    assert.ok(ctx.includes('empAli'));
+    assert.ok(ctx.includes('empOmar'));
+    assert.ok(!ctx.includes('empAhmed'));
+    assert.ok(!ctx.includes('empSara'));
+  });
+
+  it('department scope + manager of a department node → whole department subtree', () => {
+    const { orgNodes, employees } = fixture();
+    const nodes = [...orgNodes, { ...orgNodes[1], managerUserId: 'uSalesManager' }];
+    const ctx = resolveEmployeeScope(
+      { userId: 'uSalesManager', role: 'manager', linkedEmployeeId: null },
+      'employees',
+      mapWithScope('department'),
+      { orgNodes: nodes, employees },
+    );
+    // The entire sales subtree: both teams + their members.
+    assert.ok(ctx.includes('empAhmed'));
+    assert.ok(ctx.includes('empMohamed'));
+    assert.ok(ctx.includes('empAli'));
+    assert.ok(ctx.includes('empOmar'));
+    assert.ok(!ctx.includes('empSara'), 'quality department stays out of scope');
+  });
+
+  it('self scope remains self only — even for org managers (fail-closed semantics preserved)', () => {
+    const { orgNodes, employees } = fixture();
+    const ctx = resolveEmployeeScope(
+      { userId: 'uManagerB', role: 'manager', linkedEmployeeId: 'empAhmed' },
+      'employees',
+      mapWithScope('own'),
+      { orgNodes, employees },
+    );
+    assert.ok(ctx.includes('empAhmed'));
+    assert.ok(!ctx.includes('empAli'));
+    assert.ok(!ctx.includes('empOmar'));
+  });
+
+  it('a linked employee ALSO anchors team scope by their own node (union, not replacement)', () => {
+    const { orgNodes, employees } = fixture();
+    // Manager of teamB who is also an employee IN teamA: gets both.
+    const ctx = resolveEmployeeScope(
+      { userId: 'uManagerB', role: 'manager', linkedEmployeeId: 'empAhmed' },
+      'employees',
+      mapWithScope('team'),
+      { orgNodes, employees },
+    );
+    assert.ok(ctx.includes('empAhmed'), 'own team (via linked employee) in scope');
+    assert.ok(ctx.includes('empAli'), 'managed team in scope');
+  });
+});

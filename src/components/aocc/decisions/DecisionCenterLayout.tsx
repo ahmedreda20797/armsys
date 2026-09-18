@@ -131,16 +131,16 @@ export const DecisionCenterLayout = memo(function DecisionCenterLayout({
   }, [setCommandBarOpen]);
 
   return (
-    <div className="space-y-4" dir="rtl">
+    <div className="space-y-4">
       {/* ═══════════════════════════════════════════════════════════
           Section 1: Decision Center Header
           ═══════════════════════════════════════════════════════════ */}
-      <div className="rounded-xl border border-slate-700/50 bg-gradient-to-l from-indigo-500/10 via-slate-800/40 to-slate-800/40 p-4">
+      <div className="rounded-xl border border-slate-700/50 bg-gradient-to-l from-brand-500/10 via-slate-800/40 to-slate-800/40 p-4">
         <div className="flex items-center justify-between flex-wrap gap-3">
           {/* Title */}
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-indigo-500/15 flex items-center justify-center">
-              <BrainCircuit className="w-5 h-5 text-indigo-400" />
+            <div className="w-10 h-10 rounded-lg bg-brand-500/15 flex items-center justify-center">
+              <BrainCircuit className="w-5 h-5 text-brand-400" />
             </div>
             <div>
               <h2 className="text-lg font-semibold text-slate-100">

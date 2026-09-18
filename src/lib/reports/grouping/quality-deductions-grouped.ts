@@ -38,6 +38,8 @@ export interface QualityDeductionGroupRow {
   employeeId: string;
   employeeName: string;
   department: string | null;
+  /** Real org team label (nearest team node). */
+  team: string | null;
   deductionCount: number;
   totalDeductionDays: number;
   totalMonetaryAmount: number;
@@ -89,6 +91,7 @@ export function groupQualityDeductionsByEmployee(
         employeeId: row.employeeId,
         employeeName: row.employeeName,
         department: row.department,
+        team: row.team ?? null,
         deductionCount: 0,
         totalDeductionDays: 0,
         totalMonetaryAmount: 0,

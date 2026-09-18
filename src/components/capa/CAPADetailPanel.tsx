@@ -34,8 +34,8 @@ const PRIORITY_META: Record<string, { label: string; color: string; bg: string; 
 
 const STATUS_META: Record<string, { label: string; color: string }> = {
   open: { label: 'مفتوح', color: 'text-blue-400' },
-  in_progress: { label: 'قيد التنفيذ', color: 'text-violet-400' },
-  under_review: { label: 'قيد المراجعة', color: 'text-purple-400' },
+  in_progress: { label: 'قيد التنفيذ', color: 'text-brand-400' },
+  under_review: { label: 'قيد المراجعة', color: 'text-brand-400' },
   pending_verification: { label: 'بانتظار التحقق', color: 'text-amber-400' },
   resolved: { label: 'تم الحل', color: 'text-emerald-400' },
   closed: { label: 'مغلق', color: 'text-slate-500' },
@@ -75,7 +75,7 @@ export function CAPADetailPanel({ capaId, onBack, onFullPage }: CAPADetailPanelP
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.18 }}
       className="space-y-2"
-      dir="rtl"
+     
     >
       <div className="flex items-center justify-between gap-2">
         {onBack && (
@@ -90,7 +90,7 @@ export function CAPADetailPanel({ capaId, onBack, onFullPage }: CAPADetailPanelP
         {onFullPage && (
           <button
             onClick={onFullPage}
-            className="text-[10px] text-violet-300 hover:text-violet-200 flex items-center gap-1"
+            className="text-[10px] text-brand-300 hover:text-brand-200 flex items-center gap-1"
           >
             فتح الصفحة الكاملة
             <ExternalLink className="size-3" />
@@ -180,7 +180,7 @@ export function CAPADetailPanel({ capaId, onBack, onFullPage }: CAPADetailPanelP
             <span className="text-slate-300 font-mono">{Math.round(data.progress)}%</span>
           </div>
           <div className="h-1.5 rounded-full bg-slate-700/40 overflow-hidden">
-            <div className="h-full bg-linear-to-l from-violet-500 to-emerald-500 transition-all" style={{ width: `${Math.min(100, data.progress)}%` }} />
+            <div className="h-full bg-linear-to-l from-brand-500 to-emerald-500 transition-all" style={{ width: `${Math.min(100, data.progress)}%` }} />
           </div>
         </div>
       )}

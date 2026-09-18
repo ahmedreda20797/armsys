@@ -62,7 +62,8 @@ import { FavoriteToggle, PinToggle } from '@/components/shared/NavigationMarks';
 import { PageHeaderBar } from '@/components/shared/PageHeaderBar';
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
 import { complaintPrefillFromTravelIntent, hasCreateIntent } from '@/lib/record-prefill';
-import { OverflowMenu, type OverflowMenuItem } from '@/components/shared/OverflowMenu';
+import { SmartActionMenu, type SmartAction } from '@/components/shared/SmartActionMenu';
+import type { OverflowMenuItem } from '@/components/shared/OverflowMenu';
 import { InlineFormPanel } from '@/components/shared/InlineFormPanel';
 import { useMarkState, useFavoriteToggleAction, usePinToggleAction } from '@/components/shared/NavigationMarks';
 import { Star, Pin as PinIcon } from 'lucide-react';
@@ -169,7 +170,7 @@ function getComplaintTypeBadge(type: string) {
 
 function getComplaintTypeColor(type: string) {
   switch (type) {
-    case 'service_quality': return 'bg-violet-500/15 text-violet-400 border-violet-500/30';
+    case 'service_quality': return 'bg-brand-500/15 text-brand-400 border-brand-500/30';
     case 'pricing_error': return 'bg-amber-500/15 text-amber-400 border-amber-500/30';
     case 'communication': return 'bg-cyan-500/15 text-cyan-400 border-cyan-500/30';
     case 'delay': return 'bg-orange-500/15 text-orange-400 border-orange-500/30';
@@ -185,7 +186,7 @@ function getSeverityBadge(severity: string) {
 
 function getSeverityColor(severity: string) {
   switch (severity) {
-    case 'low': return 'bg-violet-500/15 text-violet-400 border-violet-500/30';
+    case 'low': return 'bg-brand-500/15 text-brand-400 border-brand-500/30';
     case 'medium': return 'bg-yellow-500/15 text-yellow-400 border-yellow-500/30';
     case 'high': return 'bg-orange-500/15 text-orange-400 border-orange-500/30';
     case 'critical': return 'bg-red-500/15 text-red-400 border-red-500/30';
@@ -203,7 +204,7 @@ function getStatusColor(status: string) {
     case 'open': return 'bg-blue-500/15 text-blue-400 border-blue-500/30';
     case 'investigating': return 'bg-amber-500/15 text-amber-400 border-amber-500/30';
     case 'pending_resolution': return 'bg-orange-500/15 text-orange-400 border-orange-500/30';
-    case 'resolved': return 'bg-violet-500/15 text-violet-400 border-violet-500/30';
+    case 'resolved': return 'bg-brand-500/15 text-brand-400 border-brand-500/30';
     case 'closed': return 'bg-slate-500/15 text-slate-400 border-slate-500/30';
     default: return 'bg-slate-500/15 text-slate-400 border-slate-500/30';
   }
@@ -399,7 +400,7 @@ export default function ComplaintsPage() {
   // ═══ Access denied guard ═══
   if (!canView) {
     return (
-      <div dir="rtl" className="flex flex-col items-center justify-center py-20">
+      <div className="flex flex-col items-center justify-center py-20">
         <ShieldCheck className="size-16 text-slate-600 mb-4" />
         <h2 className="text-xl font-semibold text-slate-400">صلاحية غير كافية</h2>
         <p className="text-slate-500 mt-2">هذه الصفحة غير متاحة لحسابك</p>
@@ -497,13 +498,13 @@ export default function ComplaintsPage() {
   const isSaving = createMutation.isPending || updateMutation.isPending;
 
   return (
-    <div dir="rtl" className="space-y-5">
+    <div className="space-y-5">
       {/* ═══ Header (§25/§26 — sticky) ═══ */}
       <PageHeaderBar
         icon={<MessageSquareWarning className="size-5" />}
         iconClassName="bg-rose-500/15 border-rose-500/30 text-rose-400"
         title="شكاوى العملاء"
-        subtitle={`${filtered.length} شكوى مسجلة`}
+        description={`${filtered.length} شكوى مسجلة`}
         primaryAction={canCreate ? { label: 'إضافة شكوى', onClick: openCreateInline } : undefined}
       />
 
@@ -546,7 +547,7 @@ export default function ComplaintsPage() {
           <InlineFormPanel
             id="complaints-inline-capa"
             tone="violet"
-            icon={<ShieldAlert className="size-3.5 text-violet-400" />}
+            icon={<ShieldAlert className="size-3.5 text-brand-400" />}
             title="إنشاء CAPA من شكوى"
             onClose={() => setCapaPrefill(null)}
           >
@@ -577,9 +578,9 @@ export default function ComplaintsPage() {
             <p className="text-slate-500 text-[11px] mb-0.5">مفتوحة</p>
             <p className="text-blue-400 font-bold text-lg leading-tight">{stats.openCount}</p>
           </div>
-          <div className="rounded-lg border border-violet-500/30 bg-emerald-500/8 px-3.5 py-2.5">
+          <div className="rounded-lg border border-brand-500/30 bg-emerald-500/8 px-3.5 py-2.5">
             <p className="text-slate-500 text-[11px] mb-0.5">تم الحل</p>
-            <p className="text-violet-400 font-bold text-lg leading-tight">{stats.resolvedCount}</p>
+            <p className="text-brand-400 font-bold text-lg leading-tight">{stats.resolvedCount}</p>
           </div>
           <div className="rounded-lg border border-amber-500/25 bg-amber-500/8 px-3.5 py-2.5">
             <p className="text-slate-500 text-[11px] mb-0.5">متوسط وقت الحل</p>
@@ -801,16 +802,16 @@ export default function ComplaintsPage() {
 
                       {/* Resolution section (if resolved) */}
                       {isResolved && complaint.resolution && (
-                        <div className="rounded-lg bg-emerald-500/8 border border-violet-500/30 p-3 space-y-1.5">
-                          <div className="flex items-center gap-1.5 text-violet-400 text-[11px] font-medium">
+                        <div className="rounded-lg bg-emerald-500/8 border border-brand-500/30 p-3 space-y-1.5">
+                          <div className="flex items-center gap-1.5 text-brand-400 text-[11px] font-medium">
                             <CheckCircle2 className="size-3.5" />
                             الحل
                           </div>
-                          <p className="text-violet-300/80 text-xs leading-relaxed">
+                          <p className="text-brand-300/80 text-xs leading-relaxed">
                             {complaint.resolution}
                           </p>
                           {complaint.compensation && (
-                            <p className="text-violet-400/60 text-[10px] mt-1">
+                            <p className="text-brand-400/60 text-[10px] mt-1">
                               التعويض: {complaint.compensation}
                             </p>
                           )}
@@ -825,17 +826,10 @@ export default function ComplaintsPage() {
                           ))}
                         </div>
                       )}
-                      <div className="flex gap-2 mt-1">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="flex-1 text-[11px] border-cyan-500/30 text-cyan-400 hover:bg-cyan-500/10 h-7"
-                          onClick={() => openCapaFromComplaint(complaint)}
-                        >
-                          <ShieldAlert className="size-3 ml-1" />
-                          إنشاء CAPA من الشكوى
-                        </Button>
-                      </div>
+                      {/* §14 — ONE authoritative create-CAPA entry point:
+                          the record's SmartActionMenu (⋮) already carries
+                          «إنشاء CAPA». The old card-level duplicate button
+                          was removed — no second action path. */}
                     </CardContent>
                   </Card>
                 </motion.div>
@@ -1105,5 +1099,5 @@ function ComplaintCardActions({
     });
   }
 
-  return <OverflowMenu items={items} label={`إجراءات شكوى ${complaint.customerName}`} />;
+  return <SmartActionMenu actions={items} label={`إجراءات شكوى ${complaint.customerName}`} />;
 }

@@ -16,14 +16,15 @@
 //  No new persistence, no schema change, no write-on-read sync.
 // ══════════════════════════════════════════════════════════════
 
-import { getAll, getEmployeeMap } from '@/lib/db';
+import { getAll } from '@/lib/db';
 import type { QualityDeduction } from '@/types';
 import {
-  isEffectiveDeduction, deductionTypeLabel, DEDUCTION_STATUS_LABELS,
+  isEffectiveDeduction, isArchivedDeduction, deductionTypeLabel, DEDUCTION_STATUS_LABELS,
   type DeductionApprovalStatus,
 } from '@/lib/quality-deductions/domain';
 import { applyEmployeeScope } from '../scope';
 import type { ResolvedReportRequest } from '../scope';
+import { loadEmployeeOrgRefs, employeeMatchesSearch, type EmployeeOrgRef } from '../employee-org';
 import type { ReportDataModeInfo, ReportRunnerResult } from '../types';
 
 /** The canonical store this report reads (echoed in response meta). */
@@ -34,7 +35,10 @@ export interface QualityDeductionReportRow {
   id: string;
   employeeId: string;
   employeeName: string;
+  /** Real org department label (org tree authority, stored fallback). */
   department: string | null;
+  /** Real org team label (nearest team node), null when unassigned. */
+  team: string | null;
   date: string;
   month: string;
   /** Human-readable category label (Arabic) — never the raw code. */
@@ -50,6 +54,8 @@ export interface QualityDeductionReportRow {
   evidence: string | null;
   /** Approval status (Arabic label; legacy = معتمد). */
   status: string;
+  /** §ARCHIVE — true when the deduction is archived (historical only). */
+  archived: boolean;
   relatedCapaId: string | null;
   createdAt: string;
 }
@@ -88,10 +94,25 @@ export function summarizeQualityDeductions(
  */
 export function filterQualityDeductionRecords(
   records: ReadonlyArray<QualityDeduction>,
-  employees: ReadonlyArray<{ id: string; department?: string | null; name: string }>,
+  employees: ReadonlyArray<EmployeeOrgRef>,
   resolved: ResolvedReportRequest,
 ): QualityDeductionReportRow[] {
-  const scopedEmployees = applyEmployeeScope(employees, resolved.employeeScope, resolved.department);
+  // §ARCHIVE — archived deductions appear ONLY when the filter
+  // explicitly asks for them ('archived' | 'all'). Default = active.
+  const archivedFilter =
+    resolved.filters.archived === 'archived' || resolved.filters.archived === 'all'
+      ? String(resolved.filters.archived)
+      : 'active';
+
+  // Scope + department + TEAM + SEARCH in one canonical mechanism
+  // (applyEmployeeScope). The employee list is org-annotated by
+  // loadEmployeeOrgRefs — department/team are the REAL assignments.
+  const scopedEmployees = applyEmployeeScope(
+    employees.filter((e) => employeeMatchesSearch(e, resolved.search)),
+    resolved.employeeScope,
+    resolved.department,
+    resolved.team,
+  );
   const byId = new Map(scopedEmployees.map((e) => [e.id, e]));
 
   const monthKeys = resolved.period.monthKeys ? new Set(resolved.period.monthKeys) : null;
@@ -104,9 +125,12 @@ export function filterQualityDeductionRecords(
   for (const rec of records) {
     // §WORKFLOW — pending/rejected discounts are excluded from the
     // report entirely (legacy records without a status stay visible).
-    if (!isEffectiveDeduction(rec)) continue;
+    // §ARCHIVE — archived records follow the archived filter.
+    if (archivedFilter === 'active' && !isEffectiveDeduction(rec)) continue;
+    if (archivedFilter !== 'active' && !isApprovedIgnoringArchive(rec)) continue;
+    if (archivedFilter === 'archived' && !isArchivedDeduction(rec)) continue;
 
-    // Employee scope + department.
+    // Employee scope + department + team + search.
     const emp = byId.get(rec.employeeId);
     if (!emp) continue;
 
@@ -142,6 +166,7 @@ export function filterQualityDeductionRecords(
       employeeId: rec.employeeId,
       employeeName: emp.name,
       department: emp.department ?? null,
+      team: emp.team ?? null,
       date: rec.date,
       month: typeof rec.month === 'string' ? rec.month : '',
       // §EXPORT-MAPPING — the human-readable label, never the raw key.
@@ -154,6 +179,7 @@ export function filterQualityDeductionRecords(
       status: DEDUCTION_STATUS_LABELS[
         (rec.approvalStatus as DeductionApprovalStatus) ?? 'approved'
       ] ?? 'معتمد',
+      archived: isArchivedDeduction(rec),
       relatedCapaId: rec.relatedCapaId ?? null,
       createdAt: rec.createdAt,
     });
@@ -169,17 +195,31 @@ export function filterQualityDeductionRecords(
 }
 
 /**
+ * Approval-only gate for the archived/'all' report modes: archive
+ * state must not filter here (the mode decided that), but the
+ * approval workflow still applies. Mirrors projectDeductionStatus's
+ * legacy rule (missing status = approved).
+ */
+function isApprovedIgnoringArchive(
+  rec: Pick<QualityDeduction, 'approvalStatus'>,
+): boolean {
+  return (
+    rec.approvalStatus === 'approved' ||
+    (rec.approvalStatus !== 'draft' && rec.approvalStatus !== 'pending' && rec.approvalStatus !== 'rejected')
+  );
+}
+
+/**
  * Thin orchestrator: batched canonical reads (one collection read +
  * the shared employee map — no N+1), then pure filtering/summary.
  * LIVE data mode: quality deductions have no monthly snapshot
  * store; this is current operational data by definition.
  */
 export async function runQualityDeductionsReport(resolved: ResolvedReportRequest): Promise<ReportRunnerResult<QualityDeductionReportRow>> {
-  const [records, employeeMap] = await Promise.all([
+  const [records, employees] = await Promise.all([
     getAll<QualityDeduction>(QUALITY_DEDUCTIONS_SOURCE),
-    getEmployeeMap(),
+    loadEmployeeOrgRefs(),
   ]);
-  const employees = [...employeeMap.values()].map((e) => ({ id: e.id, name: e.name, department: e.department }));
 
   const rows = filterQualityDeductionRecords(records, employees, resolved);
   const summary = summarizeQualityDeductions(rows);

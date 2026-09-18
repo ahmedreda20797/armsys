@@ -37,6 +37,20 @@ export function useReportCatalog() {
   });
 }
 
+/**
+ * Real filter vocabularies (departments/teams) for report filter
+ * bars — the caller's authorized employee scope, org-resolved.
+ * Shared by every ReportView instance; 5-minute staleness.
+ */
+export function useReportFilterOptions() {
+  return useQuery({
+    queryKey: ['reports', 'filter-options'] as const,
+    queryFn: () =>
+      apiFetch<{ departments: string[]; teams: string[] }>('/api/reports/filter-options'),
+    staleTime: 300_000,
+  });
+}
+
 /** One definition from the catalog by reportId. */
 export function useReportDefinition(reportId: string) {
   const catalog = useReportCatalog();

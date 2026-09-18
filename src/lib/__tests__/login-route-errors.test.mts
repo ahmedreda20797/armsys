@@ -35,6 +35,8 @@ mock.module('@/lib/db', {
     },
     updateRecord: async () => ({}),
     getById: async () => null,
+    // §AUTH-RELIABILITY — lookup diagnostics (classification contract).
+    getLastUserLookupDiagnostic: () => null,
   },
 });
 

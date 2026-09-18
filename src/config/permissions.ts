@@ -1,9 +1,36 @@
 // src/config/permissions.ts
 // Action-level permission system
+//
+// LEVEL SEMANTICS (canonical — the same vocabulary on pages, sections
+// and the resolver below):
+//   none — the page cannot be accessed: no view, no read API, no
+//          mutation API.
+//   read — the page can be viewed; read/list/detail APIs are allowed
+//          (always within the caller's DATA SCOPE); mutating actions
+//          remain denied.
+//   edit — the page can be viewed and read within scope, and
+//          EXPLICIT ActionKey grants (actions map) may allow specific
+//          mutations. 'edit' never implies every destructive
+//          operation: each action resolves individually through
+//          canDoAction / verifyPermission.
 
 export type PermissionLevel = 'none' | 'read' | 'edit';
 
-export type ActionKey = 'create' | 'update' | 'delete' | 'export' | 'approve' | 'upload' | 'override';
+/**
+ * ACTION VOCABULARY — the complete operation set an entry's actions
+ * map may grant. Extended from the original 8 keys to cover the full
+ * enterprise operation surface (archive/restore, print, assign/move,
+ * manage/configure, close/reopen). Absent keys resolve DENIED —
+ * existing stored maps, position templates and role presets need no
+ * migration, and new actions are never granted by default
+ * (fail-closed). 'update' IS the edit-existing-records action
+ * ('edit' the verb; the page LEVEL 'edit' is a different axis).
+ */
+export type ActionKey =
+  | 'create' | 'update' | 'delete' | 'export' | 'approve' | 'reject'
+  | 'upload' | 'override'
+  | 'archive' | 'restore' | 'print' | 'assign' | 'move'
+  | 'manage' | 'configure' | 'close' | 'reopen';
 
 export interface PageActions {
   [key: string]: ActionKey[];
@@ -70,6 +97,12 @@ export type PermissionsMap = Record<string, PagePermission | PermissionLevel>;
 export interface PageConfig {
   id: string;
   title: string;       // Arabic display name
+  /** §I18N-BILINGUAL — English display name (professional product term). */
+  titleEn?: string;
+  /** One-line Arabic purpose statement — the unified page identity (PageHeaderBar). */
+  description?: string;
+  /** §I18N-BILINGUAL — English purpose statement. */
+  descriptionEn?: string;
   icon: string;        // lucide icon name
   permissionKey: string;
   availableActions: ActionKey[];
@@ -80,84 +113,127 @@ export interface PageConfig {
 export interface SidebarGroup {
   id: string;
   label: string;
+  /** §I18N-BILINGUAL — English group label. */
+  labelEn?: string;
   emoji: string;
 }
 
+// ── §I18N-BILINGUAL — registry-localized labels ─────────────────
+// The page/group registry is the SINGLE source of navigation +
+// identity labels for both locales. Helpers are pure and client-safe
+// (Arabic falls back when an EN field is absent).
+export type LabelLocale = 'ar' | 'en';
+
+export function localizedPageLabel(pageId: string, locale: LabelLocale): string {
+  const page = APP_PAGES.find((p) => p.id === pageId || p.permissionKey === pageId);
+  if (!page) return pageId;
+  return locale === 'en' ? (page.titleEn ?? page.title) : page.title;
+}
+
+export function localizedPageDescription(pageId: string, locale: LabelLocale): string | undefined {
+  const page = APP_PAGES.find((p) => p.id === pageId || p.permissionKey === pageId);
+  if (!page) return undefined;
+  return locale === 'en' ? (page.descriptionEn ?? page.description) : page.description;
+}
+
+export function localizedGroupLabel(groupId: string, locale: LabelLocale): string {
+  const group = SIDEBAR_GROUPS.find((g) => g.id === groupId);
+  if (!group) return groupId;
+  return locale === 'en' ? (group.labelEn ?? group.label) : group.label;
+}
+
 export const SIDEBAR_GROUPS: SidebarGroup[] = [
-  { id: 'daily_ops',     label: 'العمليات اليومية',     emoji: '📊' },
-  { id: 'employee_mgmt', label: 'إدارة الموظفين',       emoji: '👥' },
-  { id: 'quality_ctrl',  label: 'الجودة والرقابة',      emoji: '🎯' },
-  { id: 'hr',            label: 'الموارد البشرية',       emoji: '🏢' },
-  { id: 'travel_ops',    label: 'العمليات والسفر',       emoji: '✈️' },
-  { id: 'reports',       label: 'التقارير والتحليلات',   emoji: '📈' },
-  { id: 'settings',      label: 'الإدارة والإعدادات',   emoji: '⚙️' },
+  { id: 'daily_ops',     label: 'العمليات اليومية',     labelEn: 'Daily Operations',       emoji: '📊' },
+  { id: 'employee_mgmt', label: 'إدارة الموظفين',       labelEn: 'Employee Management',    emoji: '👥' },
+  { id: 'quality_ctrl',  label: 'الجودة والرقابة',      labelEn: 'Quality & Control',      emoji: '🎯' },
+  { id: 'hr',            label: 'الموارد البشرية',       labelEn: 'Human Resources',        emoji: '🏢' },
+  { id: 'travel_ops',    label: 'العمليات والسفر',      labelEn: 'Operations & Travel',    emoji: '✈️' },
+  { id: 'reports',       label: 'التقارير والتحليلات',   labelEn: 'Reports & Analytics',    emoji: '📈' },
+  { id: 'settings',      label: 'الإدارة والإعدادات',   labelEn: 'Administration & Settings', emoji: '⚙️' },
 ];
 
 export const APP_PAGES: PageConfig[] = [
   // ═══ 📊 العمليات اليومية ═══
-  { id: 'home', title: 'الرئيسية', icon: 'LayoutDashboard', permissionKey: 'home', availableActions: [], groupId: 'daily_ops' },
-  { id: 'operationsCenter', title: 'مركز العمليات', icon: 'Monitor', permissionKey: 'operationsCenter', availableActions: [], groupId: 'daily_ops' },
-  { id: 'notifications', title: 'مركز الإشعارات', icon: 'Bell', permissionKey: 'notifications', availableActions: ['create', 'update', 'delete'], groupId: 'daily_ops' },
-  { id: 'followUps', title: 'المتابعة اليومية', icon: 'ClipboardCheck', permissionKey: 'followUps', availableActions: ['create', 'update', 'delete'], groupId: 'daily_ops' },
+  // §NOTIFICATIONS-V2: the standalone Notification Center page was
+  // REMOVED — notifications are the bell popover in the Header. The
+  // PERMISSION entry stays as overlayOnly (never in the sidebar, no
+  // router case) because the /api/notifications routes still gate
+  // create/update/delete on this key — the Control Center can keep
+  // administering it, and the route-permission regression guard holds.
+  { id: 'home', title: 'الرئيسية', description: 'نبض الأعمال اليومي وملخص الوضع التشغيلي', titleEn: 'Home', descriptionEn: 'The daily business pulse and operational summary', icon: 'LayoutDashboard', permissionKey: 'home', availableActions: [], groupId: 'daily_ops' },
+  { id: 'operationsCenter', title: 'مركز العمليات', description: 'ذكاء تشغيلي موحد — صحة الأقسام، قائمة الإجراءات، والقرارات', titleEn: 'Operations Center', descriptionEn: 'Unified operational intelligence — department health, action list, and decisions', icon: 'Monitor', permissionKey: 'operationsCenter', availableActions: [], groupId: 'daily_ops' },
+  { id: 'followUps', title: 'المتابعة اليومية', description: 'إنشاء ومتابعة المتابعات اليومية ومهام الموظفين', titleEn: 'Daily Follow-up', descriptionEn: 'Create and track daily follow-ups and employee tasks', icon: 'ClipboardCheck', permissionKey: 'followUps', availableActions: ['create', 'update', 'delete'], groupId: 'daily_ops' },
+  { id: 'notifications', title: 'مركز الإشعارات', description: 'الإشعارات تُدار من جرس التنبيهات في الشريط العلوي', titleEn: 'Notification Center', descriptionEn: 'Notifications are managed from the header bell', icon: 'Bell', permissionKey: 'notifications', availableActions: ['create', 'update', 'delete'], groupId: 'daily_ops', overlayOnly: true },
   // ═══ 👥 إدارة الموظفين ═══
-  { id: 'employees', title: 'الموظفين', icon: 'Users', permissionKey: 'employees', availableActions: ['create', 'update', 'delete', 'export'], groupId: 'employee_mgmt' },
-  { id: 'employee360', title: 'ملف الموظف', icon: 'UserCircle', permissionKey: 'employee360', availableActions: [], groupId: 'employee_mgmt', overlayOnly: true },
-  { id: 'attendance', title: 'الحضور والانصراف', icon: 'Clock', permissionKey: 'attendance', availableActions: ['create', 'update', 'delete', 'export'], groupId: 'employee_mgmt' },
-  { id: 'biometric', title: 'البصمة', icon: 'Fingerprint', permissionKey: 'biometric', availableActions: ['create', 'update', 'delete', 'upload'], groupId: 'employee_mgmt' },
-  { id: 'requests', title: 'الطلبات', icon: 'FileText', permissionKey: 'requests', availableActions: ['create', 'update', 'delete', 'approve'], groupId: 'employee_mgmt' },
+  { id: 'employees', title: 'الموظفين', description: 'قاعدة بيانات الموظفين — إضافة، تعديل، وحذف السجلات', titleEn: 'Employees', descriptionEn: 'Employee database — add, edit, and delete records', icon: 'Users', permissionKey: 'employees', availableActions: ['create', 'update', 'delete', 'export'], groupId: 'employee_mgmt' },
+  { id: 'employee360', title: 'ملف الموظف', description: 'الملف الشامل للموظف — كل الجوانب في مكان واحد', titleEn: 'Employee Profile', descriptionEn: 'The employee’s comprehensive file — everything in one place', icon: 'UserCircle', permissionKey: 'employee360', availableActions: [], groupId: 'employee_mgmt', overlayOnly: true },
+  { id: 'attendance', title: 'الحضور والانصراف', description: 'سجل الحضور والانصراف والتأخيرات اليومية', titleEn: 'Attendance & Check-out', descriptionEn: 'Attendance, check-out, and daily delay records', icon: 'Clock', permissionKey: 'attendance', availableActions: ['create', 'update', 'delete', 'export'], groupId: 'employee_mgmt' },
+  { id: 'biometric', title: 'البصمة', description: 'رفع ومراجعة بيانات بصمة الحضور', titleEn: 'Biometric', descriptionEn: 'Upload and review biometric attendance data', icon: 'Fingerprint', permissionKey: 'biometric', availableActions: ['create', 'update', 'delete', 'upload'], groupId: 'employee_mgmt' },
+  { id: 'requests', title: 'الطلبات', description: 'طلبات الموظفين — اعتماد ورفض ومتابعة الحالة', titleEn: 'Requests', descriptionEn: 'Employee requests — approve, reject, and track status', icon: 'FileText', permissionKey: 'requests', availableActions: ['create', 'update', 'delete', 'approve'], groupId: 'employee_mgmt' },
   // ═══ 🎯 الجودة والرقابة ═══
-  // §WORKFLOW: 'approve' on quality = authority to approve/reject
+  // §WORKFLOW: 'approve'/'reject' on quality = authority to decide on
   // PENDING quality discounts. Quality staff create; approvers decide.
-  { id: 'quality', title: 'الجودة', icon: 'Award', permissionKey: 'quality', availableActions: ['create', 'update', 'delete', 'approve'], groupId: 'quality_ctrl' },
-  { id: 'capa', title: 'نظام كابا', icon: 'ShieldCheck', permissionKey: 'capa', availableActions: ['create', 'update', 'delete'], groupId: 'quality_ctrl' },
-  { id: 'riskCenter', title: 'مركز المخاطر', icon: 'AlertTriangle', permissionKey: 'riskCenter', availableActions: [], groupId: 'quality_ctrl' },
-  { id: 'complaints', title: 'شكاوى العملاء', icon: 'MessageSquareWarning', permissionKey: 'complaints', availableActions: ['create', 'update', 'delete'], groupId: 'quality_ctrl' },
+  { id: 'quality', title: 'الجودة', description: 'خصومات الجودة — إنشاء ومراجعة واعتماد الخصومات', titleEn: 'Quality', descriptionEn: 'Quality deductions — create, review, and approve', icon: 'Award', permissionKey: 'quality', availableActions: ['create', 'update', 'delete', 'approve', 'reject'], groupId: 'quality_ctrl' },
+  { id: 'capa', title: 'نظام كابا', description: 'الإجراءات التصحيحية والوقائية — حالات كابا ومتابعتها', titleEn: 'CAPA System', descriptionEn: 'Corrective & preventive actions — CAPA cases and tracking', icon: 'ShieldCheck', permissionKey: 'capa', availableActions: ['create', 'update', 'delete'], groupId: 'quality_ctrl' },
+  { id: 'riskCenter', title: 'مركز المخاطر', description: 'تحليل مخاطر الموظفين ومستويات التدخل المطلوبة', titleEn: 'Risk Center', descriptionEn: 'Employee risk analysis and required intervention levels', icon: 'AlertTriangle', permissionKey: 'riskCenter', availableActions: [], groupId: 'quality_ctrl' },
+  { id: 'complaints', title: 'شكاوى العملاء', description: 'تسجيل ومعالجة شكاوى العملاء وربطها بالإجراءات', titleEn: 'Customer Complaints', descriptionEn: 'Record and handle customer complaints with follow-through', icon: 'MessageSquareWarning', permissionKey: 'complaints', availableActions: ['create', 'update', 'delete'], groupId: 'quality_ctrl' },
   // ── Quality KPI (Phase 1) ──
-  { id: 'observations', title: 'ملاحظات الجودة', icon: 'Eye', permissionKey: 'observations', availableActions: ['create', 'update', 'delete', 'approve'], groupId: 'quality_ctrl' },
-  { id: 'observationCategories', title: 'تصنيفات الملاحظات', icon: 'Tags', permissionKey: 'observationCategories', availableActions: ['create', 'update', 'delete'], groupId: 'quality_ctrl', overlayOnly: true },
-  { id: 'observationTemplates', title: 'قوالب الملاحظات', icon: 'FilePlus2', permissionKey: 'observationTemplates', availableActions: ['create', 'update', 'delete'], groupId: 'quality_ctrl', overlayOnly: true },
-  { id: 'kpiDashboard', title: 'لوحة مؤشرات الجودة', icon: 'Gauge', permissionKey: 'kpiDashboard', availableActions: [], groupId: 'quality_ctrl' },
+  { id: 'observations', title: 'ملاحظات الجودة', description: 'ملاحظات الجودة الميدانية وتصنيفاتها واعتمادها', titleEn: 'Quality Observations', descriptionEn: 'Field quality observations, categories, and approvals', icon: 'Eye', permissionKey: 'observations', availableActions: ['create', 'update', 'delete', 'approve'], groupId: 'quality_ctrl' },
+  { id: 'observationCategories', title: 'تصنيفات الملاحظات', description: 'إدارة تصنيفات ملاحظات الجودة', titleEn: 'Observation Categories', descriptionEn: 'Manage quality observation categories', icon: 'Tags', permissionKey: 'observationCategories', availableActions: ['create', 'update', 'delete'], groupId: 'quality_ctrl', overlayOnly: true },
+  { id: 'observationTemplates', title: 'قوالب الملاحظات', description: 'قوالب جاهزة لتسجيل ملاحظات الجودة', titleEn: 'Observation Templates', descriptionEn: 'Ready templates for recording quality observations', icon: 'FilePlus2', permissionKey: 'observationTemplates', availableActions: ['create', 'update', 'delete'], groupId: 'quality_ctrl', overlayOnly: true },
+  { id: 'kpiDashboard', title: 'لوحة مؤشرات الجودة', description: 'مؤشرات الأداء الرئيسية للجودة لحظة بلحظة', titleEn: 'Quality KPI Dashboard', descriptionEn: 'Real-time quality key performance indicators', icon: 'Gauge', permissionKey: 'kpiDashboard', availableActions: [], groupId: 'quality_ctrl' },
   // ── KPI Reporting Layer (Phase 2): read-only reporting over the
   //    existing KPI Framework; 'export' gates the Excel path. Safe
   //    default: explicitly granted per role preset below, 'none' for
   //    the generic role (see the organization-page doctrine).
-  { id: 'kpiReports', title: 'تقارير KPI', icon: 'FileBarChart', permissionKey: 'kpiReports', availableActions: ['export'], groupId: 'quality_ctrl' },
-  { id: 'qualityAuditLog', title: 'سجل مراجعة الجودة', icon: 'ScrollText', permissionKey: 'qualityAuditLog', availableActions: [], groupId: 'quality_ctrl' },
+  { id: 'kpiReports', title: 'تقارير KPI', description: 'تقارير أداء الجودة — شهري، MTD، تاريخي، وتحليلي', titleEn: 'KPI Reports', descriptionEn: 'Quality performance reports — monthly, MTD, historical, and analytical', icon: 'FileBarChart', permissionKey: 'kpiReports', availableActions: ['export'], groupId: 'quality_ctrl' },
+  { id: 'qualityAuditLog', title: 'سجل مراجعة الجودة', description: 'أثر التدقيق الكامل لعمليات الجودة (من أضاف ومن اعتمد)', titleEn: 'Quality Audit Log', descriptionEn: 'The complete audit trail of quality operations', icon: 'ScrollText', permissionKey: 'qualityAuditLog', availableActions: [], groupId: 'quality_ctrl' },
   // ── Smart Quality Report (Phase 4): a READ-ONLY presentation layer
   //    over the existing Performance Intelligence dataset. Mounts
   //    under the SAME 'kpiReports' permission key — existing role
   //    grants apply unchanged (same doctrine as
   //    qualityDeductionsReport / 'reports' above). No new permission
   //    system, no server-side changes.
-  { id: 'smartQualityReport', title: 'تقرير الجودة الذكي', icon: 'FileSearch', permissionKey: 'kpiReports', availableActions: ['export'], groupId: 'quality_ctrl' },
+  { id: 'smartQualityReport', title: 'تقرير الجودة الذكي', description: 'عرض موحد لحالة الجودة مع الأدلة والتحليل', titleEn: 'Smart Quality Report', descriptionEn: 'Unified quality status with evidence and analysis', icon: 'FileSearch', permissionKey: 'kpiReports', availableActions: ['export'], groupId: 'quality_ctrl' },
   // ═══ 🏢 الموارد البشرية ═══
-  { id: 'hrDeductions', title: 'خصومات الموارد البشرية', icon: 'Banknote', permissionKey: 'hrDeductions', availableActions: ['create', 'update', 'delete', 'approve'], groupId: 'hr' },
-  { id: 'rules', title: 'قواعد الخصم', icon: 'Scale', permissionKey: 'rules', availableActions: ['create', 'update', 'delete'], groupId: 'hr' },
+  { id: 'hrDeductions', title: 'خصومات الموارد البشرية', description: 'خصومات الموارد البشرية اليدوية واعتمادها', titleEn: 'HR Deductions', descriptionEn: 'Manual HR deductions and their approval', icon: 'Banknote', permissionKey: 'hrDeductions', availableActions: ['create', 'update', 'delete', 'approve'], groupId: 'hr' },
+  { id: 'rules', title: 'قواعد الخصم', description: 'قواعد الخصم الآلية ومزامنتها مع الحضور', titleEn: 'Deduction Rules', descriptionEn: 'Automated deduction rules synced with attendance', icon: 'Scale', permissionKey: 'rules', availableActions: ['create', 'update', 'delete'], groupId: 'hr' },
   // ═══ ✈️ العمليات والسفر ═══
-  { id: 'travel', title: 'السفر', icon: 'Plane', permissionKey: 'travel', availableActions: ['create', 'update', 'delete', 'export'], groupId: 'travel_ops' },
+  { id: 'travel', title: 'السفر', description: 'إدارة رحلات وأجازات السفر وحالات المندوبين', titleEn: 'Travel', descriptionEn: 'Manage trips, travel leave, and delegate status', icon: 'Plane', permissionKey: 'travel', availableActions: ['create', 'update', 'delete', 'export'], groupId: 'travel_ops' },
   // ═══ 📈 التقارير والتحليلات ═══
-  { id: 'reports', title: 'التقارير', icon: 'BarChart3', permissionKey: 'reports', availableActions: ['export'], groupId: 'reports' },
+  { id: 'reports', title: 'التقارير', description: 'التقارير الشهرية والتحليلية مع التصدير والطباعة', titleEn: 'Reports', descriptionEn: 'Monthly and analytical reports with export and print', icon: 'BarChart3', permissionKey: 'reports', availableActions: ['export'], groupId: 'reports' },
   // ── Unified Reporting Architecture (Milestone 8): the reference
   //    Quality Deductions report mounts as its own page under the
   //    SAME 'reports' permission key — existing role grants apply
   //    unchanged (backend enforcement lives in /api/reports/run).
-  { id: 'qualityDeductionsReport', title: 'تقرير خصومات الجودة', icon: 'FileWarning', permissionKey: 'reports', availableActions: ['export'], groupId: 'reports' },
-  { id: 'knowledgeBase', title: 'قاعدة المعرفة', icon: 'BookOpen', permissionKey: 'knowledgeBase', availableActions: ['create', 'update', 'delete'], groupId: 'reports' },
+  { id: 'qualityDeductionsReport', title: 'تقرير خصومات الجودة', description: 'تقرير موحد لخصومات الجودة مجمّعاً حسب الموظف', titleEn: 'Quality Deductions Report', descriptionEn: 'A unified quality deductions report grouped by employee', icon: 'FileWarning', permissionKey: 'reports', availableActions: ['export'], groupId: 'reports' },
+  { id: 'knowledgeBase', title: 'قاعدة المعرفة', description: 'توثيق الإجراءات والسياسات والدليل التشغيلي', titleEn: 'Knowledge Base', descriptionEn: 'Procedures, policies, and the operational guide', icon: 'BookOpen', permissionKey: 'knowledgeBase', availableActions: ['create', 'update', 'delete'], groupId: 'reports' },
   // ═══ ⚙️ الإدارة والإعدادات ═══
-  { id: 'controlPanel', title: 'مركز التحكم', icon: 'Shield', permissionKey: 'controlPanel', availableActions: [], groupId: 'settings' },
+  { id: 'controlPanel', title: 'مركز التحكم', description: 'إدارة المستخدمين والصلاحيات والجلسات وسجل الأنشطة', titleEn: 'Control Center', descriptionEn: 'Users, permissions, sessions, and activity log administration', icon: 'Shield', permissionKey: 'controlPanel', availableActions: [], groupId: 'settings' },
+  // §20 — unified Settings: personal preferences (profile, language,
+  // theme). Every authenticated user gets view access via their preset;
+  // system administration stays behind the existing controlPanel page.
+  { id: 'settings', title: 'الإعدادات', description: 'الملف الشخصي والتفضيلات السريعة — اللغة والمظهر', titleEn: 'Settings', descriptionEn: 'Profile and quick preferences — language and appearance', icon: 'Settings', permissionKey: 'settings', availableActions: [], groupId: 'settings' },
+  // §USER-PROFILE — the full self-service profile page (photo upload
+  // with zoom control, linked-employee identity, managed teams).
+  // overlayOnly: reached from the Header profile menu (avatar), never
+  // a sidebar destination. Self-scoped server-side (/api/profile uses
+  // requireAuth and can only ever return the CALLER's own data), so
+  // the router admits it like 'home' without a permission entry.
+  { id: 'profile', title: 'الملف الشخصي', description: 'بيانات حسابك وصورتك الشخصية وفريقك', titleEn: 'My Profile', descriptionEn: 'Your account, photo, and team', icon: 'UserCircle', permissionKey: 'profile', availableActions: [], groupId: 'settings', overlayOnly: true },
   // ── Organization & Positions (Milestone 10) ──
   // SAFE DEFAULT: only the computed ADMIN preset grants this page.
   // Every other preset explicitly denies it below — a newly introduced
   // page must never be exposed to anyone by accident (Safe Defaults).
-  { id: 'organization', title: 'الهيكل التنظيمي', icon: 'Network', permissionKey: 'organization', availableActions: ['create', 'update', 'delete'], groupId: 'settings' },
-  { id: 'workflowDesigner', title: 'مصمم المسارات', icon: 'Workflow', permissionKey: 'workflowDesigner', availableActions: ['create', 'update', 'delete'], groupId: 'settings' },
-  { id: 'rulesEngine', title: 'الأتمتة والقواعد', icon: 'Zap', permissionKey: 'rulesEngine', availableActions: ['create', 'update', 'delete'], groupId: 'settings' },
+  { id: 'organization', title: 'الهيكل التنظيمي', description: 'الهيكل التنظيمي والوظائف وقوالب صلاحياتها', titleEn: 'Organization', descriptionEn: 'The org structure, jobs, and their permission templates', icon: 'Network', permissionKey: 'organization', availableActions: ['create', 'update', 'delete'], groupId: 'settings' },
+  { id: 'workflowDesigner', title: 'مصمم المسارات', description: 'تصميم مسارات سير العمل والموافقات', titleEn: 'Workflow Designer', descriptionEn: 'Design workflow and approval paths', icon: 'Workflow', permissionKey: 'workflowDesigner', availableActions: ['create', 'update', 'delete'], groupId: 'settings' },
+  { id: 'rulesEngine', title: 'الأتمتة والقواعد', description: 'قواعد الأتمتة الذكية وإشعارات النظام', titleEn: 'Rules & Automation', descriptionEn: 'Smart automation rules and system notifications', icon: 'Zap', permissionKey: 'rulesEngine', availableActions: ['create', 'update', 'delete'], groupId: 'settings' },
   // §14: the standalone 'firebase' settings page was REMOVED — Firebase
   // configuration itself (admin SDK, RTDB) is unchanged; it simply has
   // no in-app administration surface anymore.
   // ── Month close / KPI settings (Phase 1) ──
-  { id: 'monthClose', title: 'إغلاق الشهر', icon: 'CalendarCog', permissionKey: 'monthClose', availableActions: ['approve'], groupId: 'settings' },
-  { id: 'kpiSettings', title: 'إعدادات محرك الأداء', icon: 'Settings2', permissionKey: 'kpiSettings', availableActions: ['update'], groupId: 'settings' },
+  { id: 'monthClose', title: 'إغلاق الشهر', description: 'إغلاق وإعادة فتح الأشهر وتثبيت بياناتها', titleEn: 'Month Close', descriptionEn: 'Close and reopen months and freeze their data', icon: 'CalendarCog', permissionKey: 'monthClose', availableActions: ['approve'], groupId: 'settings' },
+  { id: 'kpiSettings', title: 'إعدادات محرك الأداء', description: 'ضبط محرك حساب مؤشرات الأداء والأوزان', titleEn: 'Performance Engine Settings', descriptionEn: 'Configure the KPI calculation engine and weights', icon: 'Settings2', permissionKey: 'kpiSettings', availableActions: ['update'], groupId: 'settings' },
 ];
 
 // Role presets with action-level permissions
@@ -216,6 +292,7 @@ export const HR_PERMISSIONS: PermissionsMap = {
   kpiSettings: 'none',
   // Organization (Milestone 10) — admin-only by default (safe default)
   organization: 'none',
+  settings: 'read',
 };
 
 export const MANAGER_PERMISSIONS: PermissionsMap = {
@@ -233,10 +310,11 @@ export const MANAGER_PERMISSIONS: PermissionsMap = {
   attendance: 'read',
   requests: makeEditWithActions(['create', 'update', 'delete', 'approve']),
   rules: 'none',
-  // §WORKFLOW — quality discounts: managers APPROVE pending discounts
-  // (level 'edit' is required by the action gate, but ONLY the approve
-  // action is granted — create/update/delete of discounts stay denied).
-  quality: makeEditWithActions(['approve']),
+  // §WORKFLOW — quality discounts: managers APPROVE/REJECT pending
+  // discounts (level 'edit' is required by the action gate, but ONLY
+  // the decision actions are granted — create/update/delete of
+  // discounts stay denied).
+  quality: makeEditWithActions(['approve', 'reject']),
   hrDeductions: 'read',
   travel: 'read',
   reports: { level: 'edit', actions: { export: true } },
@@ -262,6 +340,7 @@ export const MANAGER_PERMISSIONS: PermissionsMap = {
   kpiSettings: makeEditWithActions(['update']),
   // Organization (Milestone 10) — admin-only by default (safe default)
   organization: 'none',
+  settings: 'read',
 };
 
 export const QUALITY_PERMISSIONS: PermissionsMap = {
@@ -309,6 +388,7 @@ export const QUALITY_PERMISSIONS: PermissionsMap = {
   kpiSettings: 'none',
   // Organization (Milestone 10) — admin-only by default (safe default)
   organization: 'none',
+  settings: 'read',
 };
 
 export const DEFAULT_PERMISSIONS: PermissionsMap = {
@@ -353,6 +433,7 @@ export const DEFAULT_PERMISSIONS: PermissionsMap = {
   kpiSettings: 'none',
   // Organization (Milestone 10) — admin-only by default (safe default)
   organization: 'none',
+  settings: 'read',
 };
 
 // Migrate old string permissions to new format
@@ -371,6 +452,69 @@ export function migratePermission(value: string | PagePermission | undefined): P
   }
   // Old format: 'none' | 'read' | 'edit'
   return { level: value as PermissionLevel, actions: {} };
+}
+
+/**
+ * Full SHAPE validation of one permission entry — used at the
+ * configuration boundaries (position templates, stored override
+ * writes) so a corrupt entry can never enter the resolver chain.
+ * Unlike migratePermission (which silently drops junk), this REPORTS
+ * every problem so the caller can reject the write:
+ *   • entry must be a valid level string, or an object with a valid
+ *     `level`
+ *   • `actions` — object whose values are booleans and whose keys are
+ *     known ActionKey vocabulary
+ *   • `scope` — a valid DataScope value
+ *   • `sections` — object whose values are valid PermissionLevel
+ * Missing extensions (actions/scope/sections) are LEGAL: legacy
+ * entries validate unchanged and resolve through safe defaults.
+ */
+export function validatePermissionEntry(value: unknown): string[] {
+  const problems: string[] = [];
+  if (typeof value === 'string') {
+    if (value !== 'none' && value !== 'read' && value !== 'edit') {
+      problems.push(`مستوى غير صالح: "${value}"`);
+    }
+    return problems;
+  }
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    problems.push('المدخل يجب أن يكون مستوى نصياً أو كائن صلاحية');
+    return problems;
+  }
+  const entry = value as Record<string, unknown>;
+  if (entry.level !== 'none' && entry.level !== 'read' && entry.level !== 'edit') {
+    problems.push(`مستوى غير صالح: ${JSON.stringify(entry.level)}`);
+  }
+  if (entry.actions !== undefined) {
+    if (!entry.actions || typeof entry.actions !== 'object' || Array.isArray(entry.actions)) {
+      problems.push('actions يجب أن يكون كائن مفاتيح إجراءات');
+    } else {
+      const KNOWN_ACTIONS: ReadonlySet<string> = new Set([
+        'create', 'update', 'delete', 'export', 'approve', 'reject',
+        'upload', 'override', 'archive', 'restore', 'print', 'assign',
+        'move', 'manage', 'configure', 'close', 'reopen',
+      ]);
+      for (const [key, flag] of Object.entries(entry.actions as Record<string, unknown>)) {
+        if (typeof flag !== 'boolean') problems.push(`actions.${key}: القيمة يجب أن تكون منطقية`);
+        else if (!KNOWN_ACTIONS.has(key)) problems.push(`actions.${key}: إجراء غير معروف`);
+      }
+    }
+  }
+  if (entry.scope !== undefined && !(typeof entry.scope === 'string' && DATA_SCOPES.has(entry.scope))) {
+    problems.push(`scope غير صالح: ${JSON.stringify(entry.scope)}`);
+  }
+  if (entry.sections !== undefined) {
+    if (!entry.sections || typeof entry.sections !== 'object' || Array.isArray(entry.sections)) {
+      problems.push('sections يجب أن يكون كائن مستويات أقسام');
+    } else {
+      for (const [id, level] of Object.entries(entry.sections as Record<string, unknown>)) {
+        if (level !== 'none' && level !== 'read' && level !== 'edit') {
+          problems.push(`sections.${id}: مستوى غير صالح`);
+        }
+      }
+    }
+  }
+  return problems;
 }
 
 /**
@@ -471,10 +615,54 @@ export function getActionLabel(action: ActionKey): string {
     delete: 'حذف',
     export: 'تصدير',
     approve: 'اعتماد',
+    reject: 'رفض',
     upload: 'رفع',
     override: 'تجاوز',
+    archive: 'أرشفة',
+    restore: 'استعادة',
+    print: 'طباعة',
+    assign: 'إسناد',
+    move: 'نقل',
+    manage: 'إدارة',
+    configure: 'إعداد',
+    close: 'إغلاق',
+    reopen: 'إعادة فتح',
   };
   return labels[action] || action;
+}
+
+// ══════════════════════════════════════════════════════════════
+//  CANONICAL ACTION CHECK — resolveActionKeyPermission / canDoAction
+//
+//  The ONE action-resolution rule every consumer must go through —
+//  the server counterpart of usePermissions().canDoAction and the
+//  replacement for hardcoded role checks ("if (user.role ===
+//  'manager') allowDelete()" is forbidden; call
+//  canDoAction('employees', 'delete') instead). Resolves through the
+//  EFFECTIVE permission map, so role preset → position template →
+//  stored override precedence is inherited from the single resolver.
+//
+//    level 'none' or 'read'  → denied (mutations need page edit)
+//    actions[action] === true → allowed (explicit grant only)
+//    anything else            → denied (fail-closed)
+// ══════════════════════════════════════════════════════════════
+
+/**
+ * May the holder of this EFFECTIVE map perform `action` on `pageKey`?
+ * Pure — operates on an already-resolved map (no reads, no writes).
+ * The optional `role` applies the single admin bypass; omit it for
+ * hypothetical/simulated maps. Unknown/absent action flags deny.
+ */
+export function canDoAction(
+  permissions: PermissionsMap | null | undefined,
+  pageKey: string,
+  action: ActionKey,
+  role?: string | null,
+): boolean {
+  if (role === 'admin') return true;
+  const perm = migratePermission(permissions?.[pageKey]);
+  if (perm.level !== 'edit') return false;
+  return perm.actions?.[action] === true;
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -647,12 +835,14 @@ export const PAGE_SECTIONS: Record<string, ReadonlyArray<{ id: string; title: st
     { id: 'basicInfo', title: 'البيانات الأساسية' },
     { id: 'attendance', title: 'الحضور والانصراف' },
     { id: 'quality', title: 'الجودة' },
+    { id: 'observations', title: 'ملاحظات الجودة' },
     { id: 'hrDeductions', title: 'خصومات الموارد البشرية' },
     { id: 'requests', title: 'الطلبات' },
     { id: 'followUps', title: 'المتابعات' },
     { id: 'travel', title: 'السفر' },
     { id: 'complaints', title: 'الشكاوى' },
     { id: 'capa', title: 'كابا' },
+    { id: 'risk', title: 'المخاطر' },
     { id: 'timeline', title: 'السجل الزمني' },
   ],
 };
@@ -802,4 +992,83 @@ export function diffPermissionMaps(
   // Stable, readable order: removals first, then additions, then changes
   const order = { removed: 0, added: 1, changed: 2 } as const;
   return entries.sort((x, y) => order[x.change] - order[y.change] || x.pageKey.localeCompare(y.pageKey));
+}
+
+// ══════════════════════════════════════════════════════════════
+//  CANONICAL AUTHORIZATION EXPLANATION — the single explainability
+//  result (§"Why can this user do this?"). Built ON the same
+//  resolver the enforcement path uses (resolveEffectivePermissions →
+//  explainPageAccess → explainScopeResolution → resolveSectionAccess
+//  → canDoAction) so the explanation can NEVER diverge from the real
+//  decision. Powers the Permission Manager UI (next milestone) —
+//  there is no second, UI-only explanation.
+// ══════════════════════════════════════════════════════════════
+
+/** Where an individual ACTION grant came from. */
+export type ActionSource = AccessSource | 'admin' | 'page-level';
+
+export interface ActionExplanation {
+  action: ActionKey;
+  allowed: boolean;
+  /**
+   * The tier that owns the effective entry ('admin' bypass /
+   * 'page-level' = implied by the level decision rather than an
+   * explicit flag in the actions map).
+   */
+  source: ActionSource;
+}
+
+/** Full authorization explanation for one page. */
+export interface AuthorizationExplanation extends AccessExplanation {
+  /** View = level ≠ none; edit-level requirement; every ActionKey the page's registry exposes. */
+  actions: Array<ActionExplanation | { action: 'view' | 'edit'; allowed: boolean; source: ActionSource }>;
+  /** Resolved level per KNOWN section of this page (PAGE_SECTIONS). */
+  sections: Record<string, PermissionLevel>;
+}
+
+/**
+ * Explain the COMPLETE effective authorization for a page — level,
+ * scope (+source), per-action allow/deny (+source), and every known
+ * section's resolved level. Pure; pass hypothetical inputs to
+ * simulate. The winner/source semantics are exactly explainPageAccess's.
+ */
+export function explainAuthorization(
+  role: string | null | undefined,
+  stored: Record<string, unknown> | null | undefined,
+  pageKey: string,
+  positionTemplate?: Record<string, unknown> | null,
+): AuthorizationExplanation {
+  const base = explainPageAccess(role, stored, pageKey, positionTemplate);
+  const effective = resolveEffectivePermissions(role, stored, positionTemplate);
+  const perm = migratePermission(effective[pageKey]);
+
+  const actionSourceOf = (): ActionSource =>
+    base.isAdminBypass ? 'admin' : base.winner === 'default-deny' ? 'page-level' : base.winner;
+
+  const actions: AuthorizationExplanation['actions'] = [
+    { action: 'view' as const, allowed: base.isAdminBypass || perm.level !== 'none', source: actionSourceOf() },
+    { action: 'edit' as const, allowed: base.isAdminBypass || perm.level === 'edit', source: actionSourceOf() },
+  ];
+
+  // Registry actions for the page (by id or permissionKey). Actions
+  // resolve through canDoAction — the same rule enforcement uses.
+  const page = APP_PAGES.find((p) => p.id === pageKey || p.permissionKey === pageKey);
+  const tierSource = actionSourceOf();
+  for (const action of page?.availableActions ?? []) {
+    const explicit = base.isAdminBypass ? true : perm.actions?.[action] === true;
+    actions.push({
+      action,
+      allowed: canDoAction(effective, pageKey, action, base.isAdminBypass ? 'admin' : undefined),
+      source: explicit ? tierSource : 'page-level',
+    });
+  }
+
+  // Known sections resolve through the single section rule — with the
+  // admin bypass expressed as the page level it already carries ('edit').
+  const sections: Record<string, PermissionLevel> = {};
+  for (const section of PAGE_SECTIONS[pageKey] ?? []) {
+    sections[section.id] = resolveSectionAccess(effective, pageKey, section.id);
+  }
+
+  return { ...base, actions, sections };
 }

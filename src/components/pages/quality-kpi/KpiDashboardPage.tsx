@@ -19,6 +19,7 @@ import {
   TrendingDown, AlertCircle, BarChart3, Activity, Radio, Building2,
   CheckCircle2, XCircle, Eye, MoreVertical, Scale, Settings2,
 } from 'lucide-react';
+import { PageIdentity } from '@/components/shared/PageIdentity';
 import {
   ScoreRing, ScoreBadge, TrendArrow, RangeSelector, Leaderboard,
   KpiSchemeSummaryCard,
@@ -273,7 +274,7 @@ export default function KpiDashboardPage() {
 
   if (!canView) {
     return (
-      <div dir="rtl" className="flex flex-col items-center justify-center py-24 text-slate-400">
+      <div className="flex flex-col items-center justify-center py-24 text-slate-400">
         <p>ليس لديك صلاحية للوصول إلى هذه الصفحة</p>
       </div>
     );
@@ -282,7 +283,7 @@ export default function KpiDashboardPage() {
   // ─── Loading state ───
   if (isLoading) {
     return (
-      <div dir="rtl" className="space-y-4 p-4 sm:p-6">
+      <div className="space-y-4 p-4 sm:p-6">
         <div className="flex items-center justify-between">
           <Skeleton className="h-8 w-64" />
           <Skeleton className="h-9 w-40" />
@@ -306,24 +307,24 @@ export default function KpiDashboardPage() {
   const hasTrend = trend && trend.sampleSize > 0;
 
   return (
-    <div dir="rtl" className="space-y-4 p-4 sm:p-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-100 flex items-center gap-2">
-            <Gauge className="size-6 text-blue-400" />
-            لوحة مؤشرات الأداء
+    <div className="space-y-4 p-4 sm:p-6">
+      {/* §7 — unified page identity */}
+      <PageIdentity
+        pageId="kpiDashboard"
+        icon={<Gauge className="size-5" />}
+        iconClassName="bg-blue-500/15 border-blue-500/30 text-blue-400"
+        description={
+          <>
+            {monthsLabel || 'ملخص أداء الجودة'}
             {dashboard.isLive && (
-              <Badge variant="outline" className="bg-blue-500/10 text-blue-400 border-blue-500/20 text-[10px] px-1.5 py-0 gap-1 mr-1">
+              <Badge variant="outline" className="bg-blue-500/10 text-blue-400 border-blue-500/20 text-[10px] px-1.5 py-0 gap-1 mr-1 align-middle">
                 <Radio className="size-2.5 animate-pulse" /> مباشر
               </Badge>
             )}
-          </h1>
-          <p className="text-sm text-slate-400 mt-1">
-            {monthsLabel || 'ملخص أداء الجودة'}
-          </p>
-        </div>
-        <div className="flex items-center gap-2 flex-wrap">
+          </>
+        }
+        className="flex-col sm:flex-row sm:items-center"
+        actions={<div className="flex items-center gap-2 flex-wrap">
           <RangeSelector
             value={range}
             onValueChange={setRange}
@@ -381,8 +382,8 @@ export default function KpiDashboardPage() {
               )}
             </DropdownMenuContent>
           </DropdownMenu>
-        </div>
-      </div>
+        </div>}
+      />
 
       {/* Stat cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
@@ -511,7 +512,7 @@ export default function KpiDashboardPage() {
                 variant="top"
                 maxItems={10}
                 onSelect={(eid) => navigateTo('employee360', undefined, { employeeId: eid })}
-                emptyLabel={`لا يوجد موظفون وصلوا إلى الدرجة المرجعية (${maxScore}) في هذه الفترة`}
+                emptyLabel={`لا يوجد موظفون مؤهلون بعد — الترتيب يتطلب درجة تصل للمرجعية (${maxScore}) مع ملاحظات جودة مسجّلة فعلياً (الدرجة بدون ملاحظات لا تمثل أداءً)`}
               />
             </motion.div>
           </CardContent>
@@ -546,7 +547,7 @@ export default function KpiDashboardPage() {
         <Card className="bg-slate-800/30 border-slate-700/40">
           <CardContent className="p-4 space-y-2">
             <div className="flex items-center gap-2 px-1 pb-2 border-b border-slate-700/40">
-              <Building2 className="size-4 text-violet-400" />
+              <Building2 className="size-4 text-brand-400" />
               <h3 className="text-sm font-semibold text-slate-200">تصنيف الأقسام</h3>
             </div>
             <DepartmentRankingWidget ranking={dashboard.departmentRanking ?? []} />

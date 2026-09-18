@@ -218,7 +218,7 @@ interface ObservationRecordLike {
 }
 
 interface DatasetLike {
-  employee?: { name?: string; department?: string | null; position?: string | null; code?: string | null };
+  employee?: { name?: string; department?: string | null; position?: string | null; code?: string | null; team?: string | null };
   period?: { label?: string; months?: string[]; monthKey?: string };
   kpi?: {
     weightedTotal?: number | null;
@@ -230,6 +230,10 @@ interface DatasetLike {
     observations?: {
       total?: number; approved?: number; pending?: number; rejected?: number;
       records?: ObservationRecordLike[];
+      /** Deterministic distributions (EmployeePerformanceDataset) — printed as stats when present. */
+      bySeverity?: Record<string, number>;
+      byResolutionStatus?: Record<string, number>;
+      byCategory?: Array<{ categoryId: string | null; categoryName: string; count: number }>;
     };
     deductions?: { count?: number; totalDays?: number; totalAmount?: number; records?: DeductionRecordLike[] };
   };
@@ -245,11 +249,33 @@ const OBS_STATUS_LABELS: Record<string, string> = {
   rejected: 'مرفوضة',
 };
 
-export function performanceDatasetToPrintModel(dataset: DatasetLike): PrintReportModel {
+export function performanceDatasetToPrintModel(
+  dataset: DatasetLike,
+  options?: { title?: string },
+): PrintReportModel {
   const sections: PrintSection[] = [];
 
   const observations = dataset.quality?.observations;
   if (observations?.records && observations.records.length > 0) {
+    // Deterministic distributions first — the printed report must carry
+    // the same analysis the screen shows, not only the raw record list.
+    const distroRows: Array<Array<string | number>> = [
+      ...Object.entries(observations.bySeverity ?? {}).map(([k, v]) => ['الخطورة', k, v] as Array<string | number>),
+      ...Object.entries(observations.byResolutionStatus ?? {}).map(([k, v]) => ['حالة المعالجة', k, v] as Array<string | number>),
+      ...(observations.byCategory ?? []).map((c) => ['التصنيف', c.categoryId === '_unclassified' ? 'غير مصنّف' : c.categoryName, c.count] as Array<string | number>),
+    ];
+    sections.push({
+      heading: 'إحصائيات ملاحظات الجودة',
+      stats: [
+        { label: 'إجمالي الملاحظات', value: num(observations.total) },
+        { label: 'معتمدة', value: num(observations.approved) },
+        { label: 'قيد الاعتماد', value: num(observations.pending) },
+        { label: 'مرفوضة', value: num(observations.rejected) },
+      ],
+      table: distroRows.length > 0
+        ? { columns: ['البعد', 'القيمة', 'العدد'], rows: distroRows }
+        : undefined,
+    });
     sections.push({
       heading: 'ملاحظات الجودة',
       table: {
@@ -323,12 +349,22 @@ export function performanceDatasetToPrintModel(dataset: DatasetLike): PrintRepor
 
   const quality = dataset.kpi?.quality;
   return {
-    title: 'تحليل الأداء',
+    title: options?.title ?? 'تحليل الأداء',
     subject: [
       dataset.employee?.name,
+      (dataset.employee as { code?: string | null } | undefined)?.code,
       dataset.employee?.department,
       dataset.period?.label,
     ].filter(Boolean).join(' — '),
+    // §PRINT-HEADER — structured employee identity from authoritative
+    // sources (employee record + org tree), never a generic label.
+    identity: {
+      name: dataset.employee?.name,
+      code: (dataset.employee as { code?: string | null } | undefined)?.code,
+      position: dataset.employee?.position ?? null,
+      team: dataset.employee?.team ?? null,
+      department: dataset.employee?.department ?? null,
+    },
     period: dataset.period?.label || monthLabel(dataset.period?.monthKey),
     generatedAt: dataset.generatedAt,
     stats: [
@@ -341,5 +377,219 @@ export function performanceDatasetToPrintModel(dataset: DatasetLike): PrintRepor
     ],
     sections,
     footerNote: dataset.kpi?.message || 'المصدر: بيانات الأداء الكنسية — نفس مجموعة البيانات المعروضة على الشاشة.',
+  };
+}
+
+// ─────────────────────────────────────────────────────────────
+//  4) تقرير KPI للموظف — EmployeeKpiReport (§23)
+//     Projection of the SAME typed report the tab renders — no
+//     refetch, no fabrication (missing = '—').
+// ─────────────────────────────────────────────────────────────
+
+interface EmployeeKpiReportLike {
+  employee?: {
+    employeeName?: string | null;
+    employeeCode?: string | null;
+    department?: string | null;
+    team?: string | null;
+    position?: string | null;
+  };
+  period?: { valueBasis?: string; asOfDate?: string | null };
+  scheme?: {
+    schemeName?: string;
+    schemeVersion?: string | number;
+    qualityWeight?: number | null;
+    frozen?: boolean;
+  } | null;
+  quality?: {
+    rawScore?: number | null;
+    weight?: number | null;
+    weightedContribution?: number | null;
+    maxContribution?: number | null;
+    status?: string | null;
+  } | null;
+  overallStatus?: string | null;
+  message?: string | null;
+  weightedTotal?: number | null;
+  availableWeight?: number | null;
+  components?: Array<{
+    componentId?: string;
+    name?: string;
+    weight?: number | null;
+    rawScore?: number | null;
+    weightedContribution?: number | null;
+    maxContribution?: number | null;
+    status?: string | null;
+  }>;
+  trend?: {
+    months?: Array<{
+      monthKey?: string;
+      available?: boolean;
+      rawScore?: number | null;
+      weightedContribution?: number | null;
+      weight?: number | null;
+      valueBasis?: string;
+      finalized?: boolean;
+      rowStatus?: string | null;
+    }>;
+    mom?: { previousMonth?: string; deltaPoints?: number } | null;
+  };
+  evidence?: {
+    counts?: { total?: number; approved?: number; pending?: number; rejected?: number; scoring?: number };
+    observations?: Array<{
+      observationDate?: string;
+      categoryName?: string;
+      severity?: string;
+      notes?: string | null;
+      status?: string;
+      approvalStatus?: string;
+      effect?: { applies?: boolean; counted?: boolean; signedPoints?: number };
+      evidence?: { kind?: string; text?: string | null; url?: string | null };
+      relatedCapaId?: string | null;
+    }>;
+  };
+  traceability?: {
+    origin?: string | null;
+    deductionPoints?: number | null;
+    bonusPoints?: number | null;
+  } | null;
+}
+
+const COMPONENT_STATUS_AR: Record<string, string> = {
+  AVAILABLE: 'متاح', ZERO: 'صفر', PENDING: 'غير متاح', NOT_ELIGIBLE: 'غير مؤهل',
+  INCOMPLETE: 'جزئي', FINALIZED: 'مجمّد',
+};
+
+export function employeeKpiReportToPrintModel(
+  report: EmployeeKpiReportLike,
+  monthKey: string,
+): PrintReportModel {
+  const sections: PrintSection[] = [];
+
+  const components = report.components ?? [];
+  if (components.length > 0) {
+    sections.push({
+      heading: 'مكونات KPI',
+      table: {
+        columns: ['المكون', 'الوزن', 'الدرجة الخام', 'المساهمة', 'الحالة'],
+        rows: components.map((c) => [
+          c.name ?? '—',
+          c.weight == null ? '—' : `${c.weight}%`,
+          c.rawScore === null || c.rawScore === undefined ? 'غير متاح' : pct(c.rawScore),
+          c.weightedContribution === null || c.weightedContribution === undefined
+            ? 'غير متاح'
+            : `${num(c.weightedContribution)} / ${c.maxContribution ?? '—'}`,
+          COMPONENT_STATUS_AR[c.status ?? ''] ?? dash(c.status),
+        ]),
+      },
+    });
+  }
+
+  const points = report.trend?.months ?? [];
+  if (points.length > 0) {
+    sections.push({
+      heading: 'الاتجاه الشهري — درجة الجودة',
+      table: {
+        columns: ['الشهر', 'الدرجة الخام', 'المساهمة', 'الأساس', 'الحالة'],
+        rows: points.map((p) => [
+          monthLabel(p.monthKey) ?? dash(p.monthKey),
+          p.available ? pct(p.rawScore) : 'غير متاح',
+          p.available && p.weightedContribution !== null && p.weightedContribution !== undefined
+            ? `${num(p.weightedContribution)} / ${p.weight ?? '—'}`
+            : '—',
+          dash(p.valueBasis),
+          p.available ? (p.finalized ? 'مجمّدة' : 'مفتوحة') : dash(p.rowStatus),
+        ]),
+      },
+    });
+  }
+
+  const evidence = report.evidence;
+  if (evidence?.observations && evidence.observations.length > 0) {
+    sections.push({
+      heading: 'أدلة الجودة (الملاحظات)',
+      table: {
+        columns: ['التاريخ', 'التصنيف', 'الخطورة', 'الوصف', 'الحالة', 'الأثر'],
+        rows: evidence.observations.map((o) => [
+          dash(o.observationDate),
+          dash(o.categoryName),
+          dash(o.severity),
+          dash(o.notes),
+          dash(o.approvalStatus ?? o.status),
+          o.effect?.counted
+            ? (o.effect.signedPoints ?? 0 >= 0 ? `+${num(o.effect.signedPoints)}` : num(o.effect.signedPoints))
+            : o.effect?.applies ? 'بانتظار الاعتماد' : 'لا يؤثر',
+        ]),
+      },
+    });
+  }
+
+  const scheme = report.scheme;
+  return {
+    title: 'تقرير KPI للموظف',
+    subject: [
+      report.employee?.employeeName,
+      (report.employee as { employeeCode?: string | null } | undefined)?.employeeCode,
+      report.employee?.department,
+      report.employee?.position,
+    ].filter(Boolean).join(' — '),
+    identity: {
+      name: report.employee?.employeeName,
+      code: (report.employee as { employeeCode?: string | null } | undefined)?.employeeCode,
+      position: report.employee?.position ?? null,
+      team: (report.employee as { team?: string | null } | undefined)?.team ?? null,
+      department: report.employee?.department ?? null,
+    },
+    period: monthLabel(monthKey) || monthKey,
+    generatedAt: undefined,
+    stats: [
+      { label: 'درجة الجودة (خام)', value: pct(report.quality?.rawScore) },
+      { label: 'مساهمة الجودة', value: num(report.quality?.weightedContribution) },
+      { label: 'وزن الجودة', value: pct(report.quality?.weight) },
+      { label: 'KPI الشركة', value: report.overallStatus === 'COMPLETE' ? 'مكتمل' : dash(report.overallStatus) },
+      { label: 'ملاحظات (أدلة)', value: num(evidence?.counts?.total) },
+      { label: 'معتمدة', value: num(evidence?.counts?.approved) },
+    ],
+    sections,
+    footerNote: scheme
+      ? `مخطط KPI: ${scheme.schemeName ?? '—'} (v${scheme.schemeVersion ?? '—'})${scheme.qualityWeight != null ? ` — وزن الجودة: ${scheme.qualityWeight}%` : ''}${scheme.frozen ? ' — قيم مجمّدة من إغلاق الشهر' : ''}`
+      : undefined,
+  };
+}
+
+// ─────────────────────────────────────────────────────────────
+//  5) Generic TABLE report — ReportView (definition-driven pages)
+//     Projects any columns/rows matrix into the clean A4 document.
+// ─────────────────────────────────────────────────────────────
+
+export function tableToPrintModel(input: {
+  title: string;
+  subject?: string;
+  identity?: PrintReportModel['identity'];
+  period?: string;
+  columns: string[];
+  rows: Array<Array<string | number>>;
+  stats?: PrintReportModel['stats'];
+  footerNote?: string;
+  /** Column indexes that must render LTR (numbers/ids). */
+  ltrColumns?: number[];
+}): PrintReportModel {
+  return {
+    title: input.title,
+    subject: input.subject,
+    identity: input.identity,
+    period: input.period,
+    generatedAt: new Date().toISOString(),
+    stats: input.stats,
+    sections: [
+      {
+        table: {
+          columns: input.columns,
+          rows: input.rows,
+          ltrColumns: input.ltrColumns,
+        },
+      },
+    ],
+    footerNote: input.footerNote ?? 'تقرير رسمي — مصدر البيانات: قاعدة بيانات النظام للفترة المحددة.',
   };
 }

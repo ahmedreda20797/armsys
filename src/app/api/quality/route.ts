@@ -1,13 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAll, findWhere, createRecord, getById, sortByDateField, withEmployeeFull } from '@/lib/db';
 import { verifyPermission, requireAuth, type AuthenticatedCaller } from '@/lib/verify-permission';
-import { migratePermission } from '@/config/permissions';
+import { maySeeAuditIdentity, stripAuditIdentity } from '@/lib/audit/audit-identity';
 import { asScopeViewer, employeeInScope, authScopeViewer, filterRowsByEmployeeScope, resolveEmployeeScopeFromDb } from '@/lib/scope/server';
 import { resolveActor } from '@/lib/auth/actor-resolver';
-import { makeApprovalEvent, appendApprovalEvent, projectLatestApprovalStatus } from '@/lib/approvals';
+import { makeApprovalEvent, projectLatestApprovalStatus } from '@/lib/approvals';
 import { writeAudit } from '@/lib/audit';
 import { isMonthClosed } from '@/lib/month-lock';
 import { dispatchAutomationEvent } from '@/lib/automation/event-bridge';
+import { notifyQualityDiscountPending } from '@/lib/notifications/quality-approval-events';
 import {
   QUALITY_DEDUCTIONS_TABLE, deductionTypeLabel,
 } from '@/lib/quality-deductions/domain';
@@ -15,32 +16,21 @@ import {
 /** Global quality audit trail table (same store observations use). */
 export const AUDIT_LOG_TABLE = 'qualityAuditLog';
 
-/** Audit fields that must NEVER reach a viewer without audit permission. */
-const AUDIT_FIELDS = [
-  'createdById', 'createdByUserId', 'createdByName', 'createdByEmail',
-  'updatedBy', 'updatedByName',
-] as const;
-
 /**
- * §AUDIT-VISIBILITY — who may see who created/updated a discount:
- * any user granted the explicit audit permission (the qualityAuditLog
- * page — the System Owner's admin preset grants it automatically).
- * Everyone else gets the record WITHOUT its audit metadata — hiding
- * in the UI is not enough, the fields never leave the server.
- * (No role string checks here: the canonical permission map already
- * encodes the admin bypass — see resolveEffectivePermissions.)
+ * §AUDIT-VISIBILITY (§2) — who may see who created/updated a discount:
+ * the canonical audit-identity rule shared with the observations route
+ * (src/lib/audit/audit-identity.ts — 'qualityAuditLog' page permission
+ * + System Owner bypass). Everyone else gets the record WITHOUT its
+ * audit metadata — hiding in the UI is not enough, the fields never
+ * leave the server. (No role strings, no hardcoded emails: the
+ * centralized permission map encodes the bypass.)
  */
 function viewerMaySeeAudit(user: AuthenticatedCaller): boolean {
-  return migratePermission(user.permissions?.['qualityAuditLog']).level !== 'none';
+  return maySeeAuditIdentity(user.role, user.permissions);
 }
 
 function stripAuditMetadata<T extends Record<string, any>>(record: T): T {
-  const out: Record<string, any> = { ...record };
-  for (const field of AUDIT_FIELDS) delete out[field];
-  // The approval history carries actor names (who approved) — same
-  // audit sensitivity. The fast-query approvalStatus stays visible.
-  if ('approvalHistory' in out) delete out.approvalHistory;
-  return out as T;
+  return stripAuditIdentity(record as unknown as Record<string, unknown>) as T;
 }
 
 export async function GET(request: NextRequest) {
@@ -56,6 +46,14 @@ export async function GET(request: NextRequest) {
     let records = month
       ? await findWhere(QUALITY_DEDUCTIONS_TABLE, { month })
       : await getAll(QUALITY_DEDUCTIONS_TABLE);
+
+    // §ARCHIVE — archived deductions never appear in the ACTIVE list.
+    // Historical views opt in explicitly with ?includeArchived=1
+    // (records keep their archived flag so the UI can badge them).
+    const includeArchived = searchParams.get('includeArchived') === '1';
+    if (!includeArchived) {
+      records = records.filter((r: any) => r.archived !== true);
+    }
 
     // ── READ SCOPE (M0.5) ──
     // Quality deductions are employee-linked; scope runs at the
@@ -135,30 +133,21 @@ export async function POST(request: NextRequest) {
       ? await getById<{ name?: string; email?: string }>('users', permCheck.user.id)
       : null;
 
-    // §WORKFLOW — a creator WITHOUT the approve permission produces a
-    // PENDING discount that affects nothing until approved. A creator
-    // WITH the permission (Quality Manager / System Owner) self-
-    // approves with an explicit approval event — the history stays
-    // truthful. The check goes through the canonical verifyPermission
-    // gate (which owns the System Owner bypass) — no role strings,
-    // no hardcoded emails.
-    const approveCheck = await verifyPermission(request, 'quality', 'approve');
-    const canApprove = approveCheck.allowed;
-
+    // §WORKFLOW (UNIFORM APPROVAL) — EVERY quality discount enters the
+    // workflow as PENDING, regardless of who created it. The decision
+    // authority (approve/reject) is exercised through the dedicated
+    // approve/reject routes gated by the 'approve' action — creation
+    // and approval are deliberately separate authorities, so reports
+    // and KPIs only ever see REVIEWED discounts. The System Owner and
+    // any granted Quality Manager approve from the pending list (or
+    // the bell notification) immediately after creating.
     const submitEvent = makeApprovalEvent({
       action: 'submit',
       actorId: actor.id,
       actorName: actor.name,
       notes: 'إنشاء خصم جودة',
     });
-    const approvalHistory = canApprove
-      ? appendApprovalEvent([submitEvent], makeApprovalEvent({
-          action: 'approve',
-          actorId: actor.id,
-          actorName: actor.name,
-          notes: 'اعتماد تلقائي — المنشئ يملك صلاحية الاعتماد',
-        }))
-      : [submitEvent];
+    const approvalHistory = [submitEvent];
 
     const qualityDeduction = await createRecord(QUALITY_DEDUCTIONS_TABLE, {
       employeeId,
@@ -196,7 +185,7 @@ export async function POST(request: NextRequest) {
         deductionDays: deductionDays || 0, deductionAmount: deductionAmount || 0,
         approvalStatus: qualityDeduction.approvalStatus,
       },
-      details: `إضافة خصم ${deductionTypeLabel(type)} — الحالة: ${qualityDeduction.approvalStatus === 'pending' ? 'قيد الاعتماد' : 'معتمد'}`,
+      details: `إضافة خصم ${deductionTypeLabel(type)} — الحالة: قيد الاعتماد`,
     });
     void dispatchAutomationEvent('record_created', 'quality', {
       employeeId,
@@ -205,6 +194,27 @@ export async function POST(request: NextRequest) {
       sourceRecordId: qualityDeduction.id,
       extra: { month, deductionDays: deductionDays || 0 },
     });
+
+    // §APPROVAL-NOTIFY — every PENDING discount notifies the users who
+    // hold the quality approve/reject authority (permission-routed,
+    // never the creator themself). Bell badge increments via the
+    // existing real-time notification feed; opening the notification
+    // lands on the quality page focused on this record.
+    void (async () => {
+      try {
+        const employee = await getById<{ name?: string }>('employees', employeeId);
+        await notifyQualityDiscountPending({
+          recordId: qualityDeduction.id,
+          employeeName: employee?.name ?? null,
+          employeeId,
+          typeLabel: deductionTypeLabel(type),
+          deductionDays: deductionDays || 0,
+          deductionAmount: deductionAmount || 0,
+          actorId: actor.id,
+          creatorName: actor.name,
+        });
+      } catch { /* never break the primary operation */ }
+    })();
 
     return NextResponse.json(qualityDeduction, { status: 201 });
   } catch (error) {

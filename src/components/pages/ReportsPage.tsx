@@ -63,7 +63,11 @@ import {
   CheckCircle2,
   UserCheck,
   Search,
+  Printer,
 } from 'lucide-react';
+import { openPrintReport } from '@/components/print/print-report-store';
+import { tableToPrintModel } from '@/components/print/print-adapters';
+import { PageIdentity } from '@/components/shared/PageIdentity';
 
 /* ════════════════════════════════════════════════════════════════
    Types
@@ -230,7 +234,7 @@ function SortButton({ field, label, activeField, desc, onToggle }: {
   return (
     <button
       onClick={() => onToggle(field)}
-      className="flex items-center justify-center gap-1 w-full text-slate-400 text-xs font-bold hover:text-violet-400 transition-colors cursor-pointer whitespace-nowrap"
+      className="flex items-center justify-center gap-1 w-full text-slate-400 text-xs font-bold hover:text-brand-400 transition-colors cursor-pointer whitespace-nowrap"
     >
       <span>{label}</span>
       <ArrowUpDown className={`size-3 transition-transform ${activeField === field ? (desc ? 'rotate-180' : '') : 'opacity-30'}`} />
@@ -370,6 +374,30 @@ export default function ReportsPage() {
     } finally {
       setGenerating(false);
     }
+  };
+
+  // §PRINT — the monthly report gets the SAME dedicated clean A4
+  // document as every other reporting surface (no live-UI printing).
+  const handlePrint = () => {
+    if (report.length === 0) return;
+    const columns = ['الموظف', 'القسم', 'حضور', 'تأخير', 'غياب', 'أيام الخصم', 'خصم الجودة (يوم)', 'خصم الموارد البشرية (يوم)', 'إجمالي أيام الخصم', 'الالتزام %'];
+    openPrintReport(tableToPrintModel({
+      title: 'تقرير الخصومات والحضور الشهري',
+      period: month,
+      columns,
+      rows: report.map((r) => [
+        r.employeeName, r.department,
+        r.totalPresent, r.totalLate, r.totalAbsent,
+        r.totalAttendanceDeductionDays, r.totalQualityDays, r.totalHrDeductionDays,
+        r.totalDeductionDays, `${r.attendanceCompliance}%`,
+      ]),
+      stats: [
+        { label: 'إجمالي الموظفين', value: summary?.totalEmployees ?? report.length },
+        { label: 'أيام الخصم الكلية', value: summary?.totalDeductionDaysAll ?? '—' },
+        { label: 'أيام الجودة', value: summary?.totalQualityDaysAll ?? '—' },
+      ],
+      ltrColumns: [2, 3, 4, 5, 6, 7, 8, 9],
+    }));
   };
 
   const handleExport = async () => {
@@ -521,7 +549,7 @@ export default function ReportsPage() {
 
   // ── Color helpers ──
   const getComplianceColor = (val: number) => {
-    if (val >= 90) return 'text-violet-400';
+    if (val >= 90) return 'text-brand-400';
     if (val >= 75) return 'text-amber-400';
     if (val >= 50) return 'text-orange-400';
     return 'text-red-400';
@@ -533,7 +561,7 @@ export default function ReportsPage() {
     return 'bg-red-500';
   };
   const getComplianceBadgeBg = (val: number) => {
-    if (val >= 90) return 'bg-violet-500/15 border-violet-500/30';
+    if (val >= 90) return 'bg-brand-500/15 border-brand-500/30';
     if (val >= 75) return 'bg-amber-500/15 border-amber-500/25';
     if (val >= 50) return 'bg-orange-500/15 border-orange-500/25';
     return 'bg-red-500/15 border-red-500/25';
@@ -542,7 +570,7 @@ export default function ReportsPage() {
   // ── Badge helpers ──
   const getDayStatusBadge = (status: string) => {
     switch (status) {
-      case 'present': return <Badge className="bg-violet-500/15 text-violet-400 border-violet-500/30 text-[11px]">حاضر</Badge>;
+      case 'present': return <Badge className="bg-brand-500/15 text-brand-400 border-brand-500/30 text-[11px]">حاضر</Badge>;
       case 'late': return <Badge className="bg-amber-500/15 text-amber-400 border-amber-500/20 text-[11px]">متأخر</Badge>;
       case 'absent': return <Badge className="bg-red-500/15 text-red-400 border-red-500/20 text-[11px]">غائب</Badge>;
       case 'exempt': return <Badge className="bg-cyan-500/15 text-cyan-400 border-cyan-500/20 text-[11px]">معفى</Badge>;
@@ -568,7 +596,7 @@ export default function ReportsPage() {
 
   if (!canView) {
     return (
-      <div dir="rtl" className="flex flex-col items-center justify-center py-20">
+      <div className="flex flex-col items-center justify-center py-20">
         <ShieldCheck className="size-16 text-slate-600 mb-4" />
         <h2 className="text-xl font-semibold text-slate-400">صلاحية غير كافية</h2>
         <p className="text-slate-500 mt-2">هذه الصفحة غير متاحة لحسابك</p>
@@ -577,19 +605,14 @@ export default function ReportsPage() {
   }
 
   return (
-    <div dir="rtl" className="space-y-5">
-      {/* ═══════════ Header ═══════════ */}
-      <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <div className="flex items-center justify-center size-11 rounded-xl bg-linear-to-br from-violet-500/20 to-indigo-500/20 border border-violet-500/30">
-            <BarChart3 className="size-5 text-violet-400" />
-          </div>
-          <div>
-            <h1 className="text-xl font-bold text-white">التقارير</h1>
-            <p className="text-slate-500 text-xs mt-0.5">تقرير الخصومات والحضور الشهري</p>
-          </div>
-        </div>
-      </motion.div>
+    <div className="space-y-5">
+      {/* ═══════════ §7 unified page identity ═══════════ */}
+      <PageIdentity
+        pageId="reports"
+        icon={<BarChart3 className="size-5" />}
+        iconClassName="bg-linear-to-br from-brand-500/20 to-brand-500/20 border border-brand-500/30 text-brand-400"
+        description="تقرير الخصومات والحضور الشهري"
+      />
 
       {/* ═══════════ Controls ═══════════ */}
       <motion.div initial={{ opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }} className="rounded-xl border border-slate-700/40 bg-slate-800/40 backdrop-blur-sm p-4">
@@ -632,7 +655,7 @@ export default function ReportsPage() {
                 placeholder="اسم الموظف أو القسم..."
                 value={empSearch}
                 onChange={(e) => setEmpSearch(e.target.value)}
-                className="w-full bg-slate-900/60 border border-slate-700/60 text-white rounded-md h-9 px-9 text-sm placeholder:text-slate-600 focus:outline-none focus:ring-1 focus:ring-violet-500/50 focus:border-violet-500/50"
+                className="w-full bg-slate-900/60 border border-slate-700/60 text-white rounded-md h-9 px-9 text-sm placeholder:text-slate-600 focus:outline-none focus:ring-1 focus:ring-brand-500/50 focus:border-brand-500/50"
               />
               {empSearch && (
                 <button onClick={() => setEmpSearch('')} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300">
@@ -642,7 +665,7 @@ export default function ReportsPage() {
             </div>
           </div>
           <div className="flex gap-2 sm:mr-auto">
-            <Button onClick={handleGenerate} disabled={!month || generating} size="sm" className="bg-linear-to-r from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white h-9 px-5 shadow-lg shadow-violet-500/20 transition-all">
+            <Button onClick={handleGenerate} disabled={!month || generating} size="sm" className="bg-linear-to-r from-brand-600 to-brand-700 hover:from-brand-700 hover:to-brand-800 text-white h-9 px-5 shadow-lg shadow-brand-500/20 transition-all">
               {generating ? (
                 <span className="flex items-center gap-1.5"><span className="size-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />جاري الإنشاء...</span>
               ) : (
@@ -650,9 +673,14 @@ export default function ReportsPage() {
               )}
             </Button>
             {canExport && (
-            <Button variant="outline" onClick={handleExport} disabled={report.length === 0} size="sm" className="border-slate-600 text-slate-300 hover:bg-slate-700 h-9 px-3">
-              <Download className="size-3.5 ml-1" />تصدير Excel
-            </Button>
+              <>
+                <Button variant="outline" onClick={handlePrint} disabled={report.length === 0} size="sm" className="border-slate-600 text-slate-300 hover:bg-slate-700 h-9 px-3">
+                  <Printer className="size-3.5 ml-1" />طباعة / PDF
+                </Button>
+                <Button variant="outline" onClick={handleExport} disabled={report.length === 0} size="sm" className="border-slate-600 text-slate-300 hover:bg-slate-700 h-9 px-3">
+                  <Download className="size-3.5 ml-1" />تصدير Excel
+                </Button>
+              </>
             )}
           </div>
         </div>
@@ -665,7 +693,7 @@ export default function ReportsPage() {
             </Badge>
           )}
           {hasReport && reportPeriod && (
-            <Badge variant="outline" className="border-violet-500/40 text-violet-300 gap-1">
+            <Badge variant="outline" className="border-brand-500/40 text-brand-300 gap-1">
               <FileText className="size-3" />
               التقرير المعروض: {formatMonthLabelAr(reportPeriod)}
             </Badge>
@@ -717,18 +745,18 @@ export default function ReportsPage() {
           {meta && (
             <div className="flex flex-wrap items-center gap-3 text-xs">
               <div className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-slate-800/60 border border-slate-700/40">
-                <CalendarCheck className="size-3.5 text-violet-400" />
+                <CalendarCheck className="size-3.5 text-brand-400" />
                 <span className="text-slate-400">أيام العمل:</span>
                 <span className="text-white font-bold">{meta.monthWorkingDays}</span>
               </div>
               <div className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-slate-800/60 border border-slate-700/40">
-                <Users className="size-3.5 text-violet-400" />
+                <Users className="size-3.5 text-brand-400" />
                 <span className="text-slate-400">إجمالي الموظفين:</span>
                 <span className="text-white font-bold">{meta.totalEmployees}</span>
               </div>
               {summary && (
                 <div className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-slate-800/60 border border-slate-700/40">
-                  <UserCircle className="size-3.5 text-violet-400" />
+                  <UserCircle className="size-3.5 text-brand-400" />
                   <span className="text-slate-400">موظفين ببيانات:</span>
                   <span className="text-white font-bold">{summary.employeesWithData}</span>
                 </div>
@@ -740,16 +768,16 @@ export default function ReportsPage() {
           {/* Summary Cards */}
           {summary && (
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5">
-              <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.02 }} className="rounded-xl border border-violet-500/30 bg-linear-to-br from-emerald-500/10 to-emerald-500/5 px-3.5 py-3">
-                <div className="flex items-center gap-1.5 mb-1.5"><Target className="size-3.5 text-violet-400" /><span className="text-slate-400 text-[10px] font-medium">متوسط الالتزام</span></div>
+              <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.02 }} className="rounded-xl border border-brand-500/30 bg-linear-to-br from-emerald-500/10 to-emerald-500/5 px-3.5 py-3">
+                <div className="flex items-center gap-1.5 mb-1.5"><Target className="size-3.5 text-brand-400" /><span className="text-slate-400 text-[10px] font-medium">متوسط الالتزام</span></div>
                 <p className={`text-2xl font-bold leading-tight ${getComplianceColor(summary.avgCompliance)}`} dir="ltr">{summary.avgCompliance}%</p>
                 <div className="mt-2 h-1.5 rounded-full bg-slate-700/40 overflow-hidden">
                   <motion.div className={`h-full rounded-full ${getComplianceBg(summary.avgCompliance)}`} initial={{ width: 0 }} animate={{ width: `${Math.min(summary.avgCompliance, 100)}%` }} transition={{ duration: 0.8, ease: 'easeOut' }} />
                 </div>
               </motion.div>
-              <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.06 }} className="rounded-xl border border-violet-500/30 bg-emerald-500/5 px-3.5 py-3">
-                <div className="flex items-center gap-1.5 mb-1.5"><CalendarCheck className="size-3.5 text-violet-400" /><span className="text-slate-400 text-[10px] font-medium">إجمالي الحضور</span></div>
-                <p className="text-2xl font-bold text-violet-400 leading-tight" dir="ltr">{summary.totalPresentDays}</p>
+              <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.06 }} className="rounded-xl border border-brand-500/30 bg-emerald-500/5 px-3.5 py-3">
+                <div className="flex items-center gap-1.5 mb-1.5"><CalendarCheck className="size-3.5 text-brand-400" /><span className="text-slate-400 text-[10px] font-medium">إجمالي الحضور</span></div>
+                <p className="text-2xl font-bold text-brand-400 leading-tight" dir="ltr">{summary.totalPresentDays}</p>
                 <p className="text-slate-500 text-[10px] mt-1">يوم حضور</p>
               </motion.div>
               <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.10 }} className="rounded-xl border border-amber-500/20 bg-amber-500/5 px-3.5 py-3">
@@ -810,7 +838,7 @@ export default function ReportsPage() {
           {/* Filter indicator */}
           {filterMode !== 'all' && (
             <div className="flex items-center gap-2 text-xs">
-              <Badge variant="outline" className="border-violet-500/30 bg-violet-500/10 text-violet-400 h-6 px-2.5">
+              <Badge variant="outline" className="border-brand-500/30 bg-brand-500/10 text-brand-400 h-6 px-2.5">
                 <Filter className="size-3 ml-1" />
                 {filterMode === 'committed' && 'التزام عالي'}
                 {filterMode === 'delayed' && 'متأخرون'}
@@ -819,7 +847,7 @@ export default function ReportsPage() {
                 {filterMode === 'problematic' && 'حالات مشكلة'}
               </Badge>
               <span className="text-slate-500">عرض <span className="text-white font-bold">{processed.length}</span> من {report.length} موظف</span>
-              <button onClick={() => setFilterMode('all')} className="text-slate-500 hover:text-violet-400 transition-colors flex items-center gap-0.5">
+              <button onClick={() => setFilterMode('all')} className="text-slate-500 hover:text-brand-400 transition-colors flex items-center gap-0.5">
                 <RotateCcw className="size-3" />إعادة تعيين
               </button>
             </div>
@@ -827,7 +855,7 @@ export default function ReportsPage() {
 
           {/* ═══════════ Data Table ═══════════ */}
           <div className="rounded-xl border border-slate-700/40 bg-slate-800/30 overflow-hidden">
-            <Table dir="rtl">
+            <Table>
               <TableHeader>
                 <TableRow className="border-slate-700/50 hover:bg-transparent bg-slate-900/60">
                   <TableHead className="text-slate-400 text-xs font-bold py-3 px-3 w-50"><SortButton field="employeeName" label="الموظف" activeField={sortField} desc={sortDir === 'desc'} onToggle={toggleSort} /></TableHead>
@@ -851,7 +879,7 @@ export default function ReportsPage() {
                     <React.Fragment key={row.employeeId}>
                       {/* ── Main Row ── */}
                       <TableRow
-                        className={`border-slate-700/20 hover:bg-slate-700/15 transition-colors cursor-pointer ${hasIssues ? 'bg-red-500/3' : ''} ${isExpanded ? 'bg-violet-500/6' : ''}`}
+                        className={`border-slate-700/20 hover:bg-slate-700/15 transition-colors cursor-pointer ${hasIssues ? 'bg-red-500/3' : ''} ${isExpanded ? 'bg-brand-500/6' : ''}`}
                         onClick={() => handleToggleDetail(row.employeeId)}
                       >
                         <TableCell className="py-3 px-3">
@@ -866,7 +894,7 @@ export default function ReportsPage() {
                           </div>
                         </TableCell>
                         <TableCell className="text-slate-400 text-xs text-center py-3 px-3">{row.department}</TableCell>
-                        <TableCell className="text-center py-3 px-3"><span className="text-violet-400 font-bold text-sm">{row.totalPresent}</span></TableCell>
+                        <TableCell className="text-center py-3 px-3"><span className="text-brand-400 font-bold text-sm">{row.totalPresent}</span></TableCell>
                         <TableCell className="text-center py-3 px-3">
                           <div className="flex flex-col items-center leading-tight">
                             <span className={`text-sm font-bold ${row.totalLate > 3 ? 'text-red-400' : row.totalLate > 0 ? 'text-amber-400' : 'text-slate-600'}`}>{row.totalLate}</span>
@@ -925,7 +953,7 @@ export default function ReportsPage() {
                               >
                                 {detailLoading && (
                                   <div className="flex items-center justify-center gap-2 py-10">
-                                    <Loader2 className="size-5 text-violet-400 animate-spin" />
+                                    <Loader2 className="size-5 text-brand-400 animate-spin" />
                                     <span className="text-slate-400 text-sm">جاري تحميل التفاصيل...</span>
                                   </div>
                                 )}
@@ -948,7 +976,7 @@ export default function ReportsPage() {
 
                                     {/* ── Employee Profile ── */}
                                     <div className="rounded-xl border border-slate-700/40 bg-slate-800/60 p-5">
-                                      <h3 className="text-violet-400 text-sm font-bold mb-4 flex items-center gap-2">
+                                      <h3 className="text-brand-400 text-sm font-bold mb-4 flex items-center gap-2">
                                         <Briefcase className="size-4" />بيانات الموظف
                                       </h3>
                                       <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-4">
@@ -965,18 +993,18 @@ export default function ReportsPage() {
 
                                     {/* ── Monthly Summary Stats ── */}
                                     <div className="rounded-xl border border-slate-700/40 bg-slate-800/60 p-5">
-                                      <h3 className="text-violet-400 text-sm font-bold mb-4 flex items-center gap-2">
+                                      <h3 className="text-brand-400 text-sm font-bold mb-4 flex items-center gap-2">
                                         <BarChart3 className="size-4" />ملخص الشهر
                                       </h3>
                                       <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-7 gap-3">
                                         <StatBox label="أيام العمل" value={`${detailData.reportSummary.monthWorkingDays}`} color="text-slate-300" />
                                         <StatBox label="أيام فعلي" value={`${detailData.reportSummary.effectiveWorkingDays}`} color="text-slate-300" />
-                                        <StatBox label="حضور" value={`${detailData.reportSummary.totalPresent}`} color="text-violet-400" />
+                                        <StatBox label="حضور" value={`${detailData.reportSummary.totalPresent}`} color="text-brand-400" />
                                         <StatBox label="تأخير" value={`${detailData.reportSummary.totalLate}`} color="text-amber-400" sub={detailData.reportSummary.totalMinutesLateFormatted} />
                                         <StatBox label="غياب" value={`${detailData.reportSummary.totalAbsent}`} color="text-red-400" />
                                         <StatBox label="معفى" value={`${detailData.reportSummary.totalExempt}`} color="text-cyan-400" />
                                         <StatBox label="أيام إعفاء تلقائي" value={`${detailData.reportSummary.autoExemptDays}/4`} color="text-blue-400" />
-                                        <StatBox label="أيام بونص" value={`${detailData.reportSummary.bonusDays}`} color="text-violet-400" unit="يوم" />
+                                        <StatBox label="أيام بونص" value={`${detailData.reportSummary.bonusDays}`} color="text-brand-400" unit="يوم" />
                                         <StatBox label="خصم تأخير" value={`${detailData.reportSummary.lateDeductionDays.toFixed(2)}`} color="text-amber-400" unit="يوم" />
                                         <StatBox label="خصم غياب" value={`${detailData.reportSummary.absenceDeductionDays.toFixed(2)}`} color="text-red-400" unit="يوم" />
                                         <StatBox label="خصم جودة" value={`${detailData.reportSummary.totalQualityDays.toFixed(1)}`} color="text-orange-400" unit="يوم" />
@@ -987,19 +1015,19 @@ export default function ReportsPage() {
                                     </div>
 
                                     {/* ── Actual Attendance Summary Card ── */}
-                                    <div className="rounded-xl border border-violet-500/30 bg-linear-to-br from-emerald-500/10 to-emerald-500/5 p-5">
-                                      <h3 className="text-violet-400 text-sm font-bold mb-4 flex items-center gap-2">
+                                    <div className="rounded-xl border border-brand-500/30 bg-linear-to-br from-emerald-500/10 to-emerald-500/5 p-5">
+                                      <h3 className="text-brand-400 text-sm font-bold mb-4 flex items-center gap-2">
                                         <UserCheck className="size-4" />ملخص الحضور الفعلي
                                       </h3>
                                       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
                                         <div className="rounded-lg bg-slate-900/60 border border-slate-700/30 px-4 py-3 text-center">
                                           <p className="text-slate-500 text-xs mb-1">إجمالي أيام الحضور</p>
-                                          <p className="text-2xl font-bold text-violet-400" dir="ltr">{detailData.reportSummary.totalPresent + detailData.reportSummary.totalLate}</p>
+                                          <p className="text-2xl font-bold text-brand-400" dir="ltr">{detailData.reportSummary.totalPresent + detailData.reportSummary.totalLate}</p>
                                           <p className="text-slate-600 text-[10px]">من {detailData.reportSummary.monthWorkingDays} يوم</p>
                                         </div>
                                         <div className="rounded-lg bg-slate-900/60 border border-slate-700/30 px-4 py-3 text-center">
                                           <p className="text-slate-500 text-xs mb-1">حضور منتظم</p>
-                                          <p className="text-2xl font-bold text-violet-400" dir="ltr">{detailData.reportSummary.totalPresent}</p>
+                                          <p className="text-2xl font-bold text-brand-400" dir="ltr">{detailData.reportSummary.totalPresent}</p>
                                           <p className="text-slate-600 text-[10px]">بدون تأخير</p>
                                         </div>
                                         <div className="rounded-lg bg-slate-900/60 border border-slate-700/30 px-4 py-3 text-center">
@@ -1019,11 +1047,11 @@ export default function ReportsPage() {
 
                                     {/* ── Daily Breakdown Table ── */}
                                     <div className="rounded-xl border border-slate-700/40 bg-slate-800/60 p-5">
-                                      <h3 className="text-violet-400 text-sm font-bold mb-4 flex items-center gap-2">
+                                      <h3 className="text-brand-400 text-sm font-bold mb-4 flex items-center gap-2">
                                         <CalendarDays className="size-4" />التفاصيل اليومية ({detailData.dailyBreakdown.length} يوم)
                                       </h3>
                                       <div className="overflow-x-auto">
-                                        <Table dir="rtl">
+                                        <Table>
                                           <TableHeader>
                                             <TableRow className="border-slate-700/50 hover:bg-transparent bg-slate-900/60">
                                               <TableHead className="text-slate-400 text-xs font-bold py-2.5 px-3">التاريخ</TableHead>
@@ -1049,7 +1077,7 @@ export default function ReportsPage() {
                                                   <div className="flex items-center gap-1.5">
                                                     {getDayStatusBadge(day.status)}
                                                     {day.autoFree && <Badge className="bg-blue-500/10 text-blue-400 border-blue-500/20 text-[10px]">إعفاء تلقائي</Badge>}
-                                                    {day.waived && !day.autoFree && <Badge className="bg-violet-500/10 text-violet-400 border-violet-500/30 text-[10px]">ملغى يدوياً</Badge>}
+                                                    {day.waived && !day.autoFree && <Badge className="bg-brand-500/10 text-brand-400 border-brand-500/30 text-[10px]">ملغى يدوياً</Badge>}
                                                   </div>
                                                 </TableCell>
                                                 <TableCell className="text-center py-2 px-3 text-xs text-slate-400" dir="ltr">{day.biometricCheckIn || '—'}</TableCell>
@@ -1062,10 +1090,10 @@ export default function ReportsPage() {
                                                   {day.requestStatus ? getRequestStatusBadge(day.requestStatus) : <span className="text-slate-600 text-xs">—</span>}
                                                 </TableCell>
                                                 <TableCell className="text-center py-2 px-3 text-xs">
-                                                  {day.absenceDeduction > 0 ? <span className="text-red-400 font-medium" dir="ltr">{day.absenceDeduction}</span> : day.waived && day.waivedType === 'absence' ? <span className="text-violet-400 text-[10px]">0 (ملغى)</span> : day.autoFree ? <span className="text-blue-400 text-[10px]">0 (إعفاء تلقائي)</span> : <span className="text-slate-600">—</span>}
+                                                  {day.absenceDeduction > 0 ? <span className="text-red-400 font-medium" dir="ltr">{day.absenceDeduction}</span> : day.waived && day.waivedType === 'absence' ? <span className="text-brand-400 text-[10px]">0 (ملغى)</span> : day.autoFree ? <span className="text-blue-400 text-[10px]">0 (إعفاء تلقائي)</span> : <span className="text-slate-600">—</span>}
                                                 </TableCell>
                                                 <TableCell className="text-center py-2 px-3 text-xs">
-                                                  {(day.lateDeduction || 0) > 0 && !day.waived ? <span className="text-amber-400 font-medium" dir="ltr">{day.lateDeduction}</span> : day.waived && day.waivedType === 'late' ? <span className="text-violet-400 text-[10px]">0 (ملغى)</span> : <span className="text-slate-600">—</span>}
+                                                  {(day.lateDeduction || 0) > 0 && !day.waived ? <span className="text-amber-400 font-medium" dir="ltr">{day.lateDeduction}</span> : day.waived && day.waivedType === 'late' ? <span className="text-brand-400 text-[10px]">0 (ملغى)</span> : <span className="text-slate-600">—</span>}
                                                 </TableCell>
                                                 <TableCell className="py-2 px-3 text-xs text-slate-500 max-w-55 truncate">{day.source}</TableCell>
                                                 <TableCell className="text-center py-2 px-2">
@@ -1096,7 +1124,7 @@ export default function ReportsPage() {
                                                     <button
                                                       onClick={(e) => { e.stopPropagation(); handleRestoreDeduction(detailData.employee.id, day.date); }}
                                                       disabled={waivingDate === day.date}
-                                                      className="p-1 rounded-md bg-violet-500/10 hover:bg-violet-500/20 text-violet-400 hover:text-violet-300 transition-colors disabled:opacity-50"
+                                                      className="p-1 rounded-md bg-brand-500/10 hover:bg-brand-500/20 text-brand-400 hover:text-brand-300 transition-colors disabled:opacity-50"
                                                       title="استعادة الخصم"
                                                     >
                                                       <CheckCircle2 className="size-3.5" />
@@ -1113,7 +1141,7 @@ export default function ReportsPage() {
                                     {/* ── Requests ── */}
                                     {detailData.requests.length > 0 && (
                                       <div className="rounded-xl border border-slate-700/40 bg-slate-800/60 p-5">
-                                        <h3 className="text-violet-400 text-sm font-bold mb-4 flex items-center gap-2">
+                                        <h3 className="text-brand-400 text-sm font-bold mb-4 flex items-center gap-2">
                                           <FileText className="size-4" />الطلبات ({detailData.requests.length})
                                         </h3>
                                         <div className="space-y-2">
@@ -1136,7 +1164,7 @@ export default function ReportsPage() {
                                     {/* ── Quality Deductions ── */}
                                     {detailData.qualityDeductions.length > 0 && (
                                       <div className="rounded-xl border border-slate-700/40 bg-slate-800/60 p-5">
-                                        <h3 className="text-violet-400 text-sm font-bold mb-4 flex items-center gap-2">
+                                        <h3 className="text-brand-400 text-sm font-bold mb-4 flex items-center gap-2">
                                           <Award className="size-4" />خصومات الجودة ({detailData.qualityDeductions.length})
                                         </h3>
                                         <div className="space-y-2">
@@ -1173,13 +1201,13 @@ export default function ReportsPage() {
                 <TableRow className="border-t-2 border-slate-600/50 bg-slate-900/70 hover:bg-transparent font-bold">
                   <TableCell className="py-3 px-3">
                     <div className="flex items-center gap-1.5">
-                      <TrendingUp className="size-3.5 text-violet-400" />
-                      <span className="text-violet-400 font-bold text-sm">الإجمالي</span>
+                      <TrendingUp className="size-3.5 text-brand-400" />
+                      <span className="text-brand-400 font-bold text-sm">الإجمالي</span>
                       <span className="text-slate-600 text-[10px]">({processed.length} موظف)</span>
                     </div>
                   </TableCell>
                   <TableCell />
-                  <TableCell className="text-center py-3 px-3"><span className="text-violet-400 text-sm font-bold">{totalPresent}</span></TableCell>
+                  <TableCell className="text-center py-3 px-3"><span className="text-brand-400 text-sm font-bold">{totalPresent}</span></TableCell>
                   <TableCell className="text-center py-3 px-3"><span className="text-amber-400 text-sm font-bold">{totalLate}</span></TableCell>
                   <TableCell className="text-center py-3 px-3"><span className="text-red-400 text-sm font-bold">{totalAbsent}</span></TableCell>
                   <TableCell className="text-center py-3 px-3"><span className="text-cyan-400 text-sm">{totalExempt > 0 ? totalExempt : '—'}</span></TableCell>

@@ -247,6 +247,9 @@ export interface TravelPageParams {
   search?: string;
   page?: number;
   pageSize?: number;
+  /** §TRAVEL-TOMORROW — real server-side filters (mutually combinable). */
+  tomorrowDeparture?: boolean;
+  tomorrowReturn?: boolean;
 }
 
 export interface TravelApiResponse {
@@ -258,9 +261,12 @@ export interface TravelApiResponse {
 }
 
 export function useTravel(params: TravelPageParams = {}) {
-  const { tab = 'all', employeeId = '', month = '', search = '', page = 1, pageSize = 50 } = params;
+  const {
+    tab = 'all', employeeId = '', month = '', search = '', page = 1, pageSize = 50,
+    tomorrowDeparture = false, tomorrowReturn = false,
+  } = params;
   return useQuery({
-    queryKey: [...queryKeys.travel, tab, employeeId, month, search, page, pageSize],
+    queryKey: [...queryKeys.travel, tab, employeeId, month, search, page, pageSize, tomorrowDeparture, tomorrowReturn],
     queryFn: () => {
       const sp = new URLSearchParams();
       if (tab !== 'all') sp.set('tab', tab);
@@ -269,6 +275,8 @@ export function useTravel(params: TravelPageParams = {}) {
       if (search.trim()) sp.set('search', search.trim());
       if (page > 1) sp.set('page', String(page));
       if (pageSize !== 50) sp.set('pageSize', String(pageSize));
+      if (tomorrowDeparture) sp.set('tomorrowDeparture', '1');
+      if (tomorrowReturn) sp.set('tomorrowReturn', '1');
       const qs = sp.toString();
       return apiFetch<TravelApiResponse>(`/api/travel${qs ? `?${qs}` : ''}`);
     },

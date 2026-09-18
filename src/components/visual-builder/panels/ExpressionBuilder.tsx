@@ -54,7 +54,7 @@ export const ExpressionBuilder = memo(function ExpressionBuilder({
     : emptyExprGroup('and');
 
   return (
-    <div className="space-y-3" dir="rtl">
+    <div className="space-y-3">
       {/* Toolbar */}
       <div className="flex items-center justify-between">
         <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">منشئ الشروط</span>
@@ -197,17 +197,17 @@ const ConditionEditor = memo(function ConditionEditor({
         value={condition.field}
         onChange={(e) => onChange({ ...condition, field: e.target.value })}
         placeholder="variable.path"
-        className="flex-1 min-w-0 bg-slate-900/60 border border-slate-700/40 rounded px-2 py-1 text-[10px] font-mono text-violet-300 focus:outline-none focus:border-violet-500/50"
+        className="flex-1 min-w-0 bg-slate-900/60 border border-slate-700/40 rounded px-2 py-1 text-[10px] font-mono text-brand-300 focus:outline-none focus:border-brand-500/50"
       />
       {onPickVariable && (
-        <button onClick={onPickVariable} className="text-[9px] text-violet-400 hover:text-violet-300 px-1">⌖</button>
+        <button onClick={onPickVariable} className="text-[9px] text-brand-400 hover:text-brand-300 px-1">⌖</button>
       )}
 
       {/* Operator */}
       <select
         value={condition.operator}
         onChange={(e) => onChange({ ...condition, operator: e.target.value as ConditionOperator })}
-        className="bg-slate-900/60 border border-slate-700/40 rounded px-1 py-1 text-[10px] text-slate-300 focus:outline-none focus:border-violet-500/50 cursor-pointer"
+        className="bg-slate-900/60 border border-slate-700/40 rounded px-1 py-1 text-[10px] text-slate-300 focus:outline-none focus:border-brand-500/50 cursor-pointer"
         title={op?.labelAr}
       >
         {OPERATORS.map((o) => (
@@ -221,7 +221,7 @@ const ConditionEditor = memo(function ConditionEditor({
           value={String(condition.value ?? '')}
           onChange={(e) => onChange({ ...condition, value: e.target.value })}
           placeholder="قيمة"
-          className="w-20 bg-slate-900/60 border border-slate-700/40 rounded px-2 py-1 text-[10px] text-slate-200 focus:outline-none focus:border-violet-500/50"
+          className="w-20 bg-slate-900/60 border border-slate-700/40 rounded px-2 py-1 text-[10px] text-slate-200 focus:outline-none focus:border-brand-500/50"
         />
       )}
       {needsValueTo && (
@@ -229,7 +229,7 @@ const ConditionEditor = memo(function ConditionEditor({
           value={String(condition.valueTo ?? '')}
           onChange={(e) => onChange({ ...condition, valueTo: e.target.value })}
           placeholder="إلى"
-          className="w-16 bg-slate-900/60 border border-slate-700/40 rounded px-2 py-1 text-[10px] text-slate-200 focus:outline-none focus:border-violet-500/50"
+          className="w-16 bg-slate-900/60 border border-slate-700/40 rounded px-2 py-1 text-[10px] text-slate-200 focus:outline-none focus:border-brand-500/50"
         />
       )}
 

@@ -109,7 +109,7 @@ export const NodeInspectorV2 = memo(function NodeInspectorV2({
         </div>
         <button
           onClick={() => setShowSaveTemplate(true)}
-          className="flex-shrink-0 p-1 rounded hover:bg-slate-800 text-slate-500 hover:text-violet-300 transition-colors"
+          className="flex-shrink-0 p-1 rounded hover:bg-slate-800 text-slate-500 hover:text-brand-300 transition-colors"
           title="حفظ كقالب"
           aria-label="حفظ كقالب"
         >
@@ -133,7 +133,7 @@ export const NodeInspectorV2 = memo(function NodeInspectorV2({
               className={cn(
                 'flex items-center gap-1 px-2.5 py-2 text-[10px] font-medium whitespace-nowrap transition-colors border-b-2 -mb-px flex-shrink-0',
                 activeTab === id
-                  ? 'border-violet-500 text-violet-300'
+                  ? 'border-brand-500 text-brand-300'
                   : 'border-transparent text-slate-500 hover:text-slate-300'
               )}
             >
@@ -193,12 +193,12 @@ const InspectorContent = memo(function InspectorContent({
   onPickVariable: NodeInspectorV2Props['onPickVariable'];
   onFocusIssue?: NodeInspectorV2Props['onFocusIssue'];
 }) {
-  const inputCls = 'w-full bg-slate-800/60 border border-slate-700/50 rounded-lg px-3 py-1.5 text-xs text-slate-200 placeholder:text-slate-500 focus:outline-none focus:border-violet-500/50';
+  const inputCls = 'w-full bg-slate-800/60 border border-slate-700/50 rounded-lg px-3 py-1.5 text-xs text-slate-200 placeholder:text-slate-500 focus:outline-none focus:border-brand-500/50';
 
   switch (tab) {
     case 'general':
       return (
-        <div className="space-y-3" dir="rtl">
+        <div className="space-y-3">
           <Field label="الاسم">
             <input value={node.data.label} onChange={(e) => onUpdateNode(node.id, { label: e.target.value })} className={inputCls} />
           </Field>
@@ -231,13 +231,13 @@ const InspectorContent = memo(function InspectorContent({
 
     case 'inputs':
       return (
-        <div className="space-y-2" dir="rtl">
+        <div className="space-y-2">
           <p className="text-[10px] text-slate-400">ربط المدخلات بمتغيرات أو قيم ثابتة</p>
           {(cfg.inputs ?? []).length === 0 && <p className="text-[10px] text-slate-600 text-center py-4">لا توجد مدخلات</p>}
           {(cfg.inputs ?? []).map((inp) => (
             <div key={inp.id} className="p-2 rounded-lg bg-slate-800/40 border border-slate-700/30">
               <div className="flex items-center justify-between mb-1">
-                <span className="text-[10px] font-mono text-violet-300">{inp.field}</span>
+                <span className="text-[10px] font-mono text-brand-300">{inp.field}</span>
                 <span className="text-[9px] text-slate-500">{inp.source}</span>
               </div>
               <p className="text-[10px] text-slate-400">{inp.variablePath ?? String(inp.literalValue ?? '')}</p>
@@ -248,7 +248,7 @@ const InspectorContent = memo(function InspectorContent({
 
     case 'outputs':
       return (
-        <div className="space-y-3" dir="rtl">
+        <div className="space-y-3">
           <Field label="متغير المخرجات">
             <div className="flex gap-1">
               <input
@@ -259,7 +259,7 @@ const InspectorContent = memo(function InspectorContent({
               />
               <button
                 onClick={() => onPickVariable({ kind: 'node-config', fieldKey: '__output__' })}
-                className="px-2 rounded-lg bg-violet-600/20 border border-violet-500/30 text-violet-300 text-xs"
+                className="px-2 rounded-lg bg-brand-600/20 border border-brand-500/30 text-brand-300 text-xs"
               >⌖</button>
             </div>
           </Field>
@@ -277,11 +277,11 @@ const InspectorContent = memo(function InspectorContent({
 
     case 'variables':
       return (
-        <div className="space-y-2" dir="rtl">
+        <div className="space-y-2">
           <p className="text-[10px] text-slate-400">المتغيرات المرتبطة بهذه العقدة</p>
           <button
             onClick={() => onPickVariable({ kind: 'node-config' })}
-            className="w-full py-2 rounded-lg border border-dashed border-slate-700/50 text-[10px] text-slate-500 hover:text-violet-300 hover:border-violet-500/40 transition-colors"
+            className="w-full py-2 rounded-lg border border-dashed border-slate-700/50 text-[10px] text-slate-500 hover:text-brand-300 hover:border-brand-500/40 transition-colors"
           >
             + ربط متغير
           </button>
@@ -290,7 +290,7 @@ const InspectorContent = memo(function InspectorContent({
 
     case 'permissions':
       return (
-        <div className="space-y-3" dir="rtl">
+        <div className="space-y-3">
           <Field label="الأدوار المطلوبة (مفصولة بفواصل)">
             <input
               value={(cfg.permissions?.requiredRoles ?? []).join(', ')}
@@ -312,7 +312,7 @@ const InspectorContent = memo(function InspectorContent({
 
     case 'assignments':
       return (
-        <div className="space-y-3" dir="rtl">
+        <div className="space-y-3">
           <Field label="نوع التعيين">
             <select
               value={cfg.assignment?.type ?? 'user'}
@@ -333,7 +333,7 @@ const InspectorContent = memo(function InspectorContent({
                 placeholder="{{employee.manager}}"
                 className={`${inputCls} flex-1 font-mono`}
               />
-              <button onClick={() => onPickVariable({ kind: 'node-config', fieldKey: '__assignee__' })} className="px-2 rounded-lg bg-violet-600/20 border border-violet-500/30 text-violet-300 text-xs">⌖</button>
+              <button onClick={() => onPickVariable({ kind: 'node-config', fieldKey: '__assignee__' })} className="px-2 rounded-lg bg-brand-600/20 border border-brand-500/30 text-brand-300 text-xs">⌖</button>
             </div>
           </Field>
         </div>
@@ -341,7 +341,7 @@ const InspectorContent = memo(function InspectorContent({
 
     case 'retry':
       return (
-        <div className="space-y-3" dir="rtl">
+        <div className="space-y-3">
           <Field label="أقصى عدد محاولات">
             <input type="number" value={cfg.retryPolicy?.maxAttempts ?? 3} onChange={(e) => onUpdateNode(node.id, { configPatch: { ...cfg, retryPolicy: { ...(cfg.retryPolicy ?? { maxAttempts: 3, backoffMs: 1000, backoffMultiplier: 2, maxBackoffMs: 30000 }), maxAttempts: Number(e.target.value) } } })} className={inputCls} />
           </Field>
@@ -359,7 +359,7 @@ const InspectorContent = memo(function InspectorContent({
 
     case 'timeout':
       return (
-        <div className="space-y-3" dir="rtl">
+        <div className="space-y-3">
           <Field label="المهلة (ms)">
             <input type="number" value={cfg.timeoutMs ?? 0} onChange={(e) => onUpdateNode(node.id, { configPatch: { ...cfg, timeoutMs: Number(e.target.value) } })} className={inputCls} />
           </Field>
@@ -369,7 +369,7 @@ const InspectorContent = memo(function InspectorContent({
 
     case 'error':
       return (
-        <div className="space-y-3" dir="rtl">
+        <div className="space-y-3">
           <Field label="استراتيجية الأخطاء">
             <select
               value={cfg.onError ?? 'abort'}
@@ -389,7 +389,7 @@ const InspectorContent = memo(function InspectorContent({
 
     case 'metadata':
       return (
-        <div className="space-y-3" dir="rtl">
+        <div className="space-y-3">
           <Field label="البيانات الوصفية (JSON)">
             <textarea
               value={JSON.stringify(cfg.metadata ?? {}, null, 2)}
@@ -415,7 +415,7 @@ const InspectorContent = memo(function InspectorContent({
 
     case 'docs':
       return (
-        <div className="space-y-3" dir="rtl">
+        <div className="space-y-3">
           <Field label="الوثائق">
             <textarea
               value={cfg.documentation ?? ''}
@@ -447,14 +447,14 @@ function AppearanceTab({
   node: VBNode;
   onUpdateNode: NodeInspectorV2Props['onUpdateNode'];
 }) {
-  const inputCls = 'w-full bg-slate-800/60 border border-slate-700/50 rounded-lg px-3 py-1.5 text-xs text-slate-200 placeholder:text-slate-500 focus:outline-none focus:border-violet-500/50';
+  const inputCls = 'w-full bg-slate-800/60 border border-slate-700/50 rounded-lg px-3 py-1.5 text-xs text-slate-200 placeholder:text-slate-500 focus:outline-none focus:border-brand-500/50';
   const currentColor = node.data.colorOverride ?? node.data.definition.color;
   const currentIcon = node.data.iconOverride ?? node.data.definition.icon;
   const isEnabled = node.data.enabled ?? true;
   const isCollapsed = node.data.collapsed ?? false;
 
   return (
-    <div className="space-y-3" dir="rtl">
+    <div className="space-y-3">
       {/* Color */}
       <Field label="اللون">
         <div className="grid grid-cols-5 gap-1.5">
@@ -486,7 +486,7 @@ function AppearanceTab({
                 className={cn(
                   'h-7 rounded-md flex items-center justify-center border transition-colors',
                   currentIcon === ic
-                    ? 'bg-violet-600/30 border-violet-500/40 text-violet-300'
+                    ? 'bg-brand-600/30 border-brand-500/40 text-brand-300'
                     : 'bg-slate-800/60 border-slate-700/40 text-slate-400 hover:text-slate-200',
                 )}
               >
@@ -531,7 +531,7 @@ function AppearanceTab({
           className={cn(
             'flex items-center justify-between w-full px-3 py-2 rounded-lg border transition-colors',
             isCollapsed
-              ? 'bg-violet-500/10 border-violet-500/20 text-violet-300'
+              ? 'bg-brand-500/10 border-brand-500/20 text-brand-300'
               : 'bg-slate-800/60 border-slate-700/40 text-slate-400',
           )}
         >
@@ -575,7 +575,7 @@ function ValidationIssuesTab({
 
   if (nodeIssues.length === 0 && globalIssues.length === 0) {
     return (
-      <div className="flex flex-col items-center py-8 text-emerald-500" dir="rtl">
+      <div className="flex flex-col items-center py-8 text-emerald-500">
         <CheckCircle2 className="w-8 h-8 opacity-40 mb-2" />
         <p className="text-xs">لا توجد مشاكل لهذه العقدة</p>
       </div>
@@ -612,7 +612,7 @@ function ValidationIssuesTab({
   );
 
   return (
-    <div className="space-y-2" dir="rtl">
+    <div className="space-y-2">
       {nodeIssues.map(renderIssue)}
       {showGlobal && globalIssues.length > 0 && (
         <>

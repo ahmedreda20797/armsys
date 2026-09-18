@@ -6,6 +6,7 @@ import { usePermissions } from '@/hooks/usePermissions';
 import { usePageState } from '@/hooks/use-page-state';
 import { formatMonthLabelAr } from '@/lib/month-label';
 import { useRecordHighlight } from '@/hooks/use-record-highlight';
+import { useAppStore } from '@/lib/store';
 import { todayDisplayDate } from '@/lib/date-utils';
 import { PagePeriodIndicator } from '@/components/shared/PagePeriodIndicator';
 import { PageHeaderBar } from '@/components/shared/PageHeaderBar';
@@ -49,7 +50,9 @@ import {
   Trash2,
   FileSpreadsheet,
   Pencil,
+  Building2,
 } from 'lucide-react';
+import { SmartActionMenu } from '@/components/shared/SmartActionMenu';
 import { EmployeeSearchInput } from '@/components/shared/EmployeeSearchInput';
 import type { Employee } from '@/types';
 import { logCreate, logUpdate, logDelete } from '@/lib/activity-logger';
@@ -142,6 +145,21 @@ export default function AttendancePage() {
   // for the date picker ('' disables the picker when a month is active).
   const dayFilterValue = monthFilter.startsWith('d:') ? monthFilter.slice(2) : '';
   const dayFilterIso = dayFilterValue ? displayToIso(dayFilterValue) : '';
+  // §5 OPERATIONS-CENTER contextual navigation: the Department Health
+  // dialog navigates here with navParams.department — focus the page
+  // on that department (session-only, clearable via the chip below).
+  const navDepartment = useAppStore((s) => s.navParams.department || null);
+  // Dismissal is the ONLY local state — the focus itself derives from
+  // navParams (the page remounts on navigation, so no sync effect is
+  // needed; clearing the chip just dismisses for this visit).
+  const [deptDismissed, setDeptDismissed] = useState(false);
+  const departmentFocus = deptDismissed ? null : navDepartment;
+  // §17 EXACT DEEP-LINKING — the dashboard "N موظف متأخر اليوم"
+  // navigates here with navParams.status='late' so the list shows
+  // EXACTLY those records (dismissable like the department focus).
+  const navStatus = useAppStore((s) => s.navParams.status || null);
+  const [statusDismissed, setStatusDismissed] = useState(false);
+  const statusFocus = statusDismissed ? null : (navStatus === 'late' || navStatus === 'absent' ? navStatus : null);
   // Phase 6.1 (Global Search §8): exact-record deep-link highlight via
   // the shared evidence mechanism — records carry data-record-id below.
   useRecordHighlight({ ready: !loading });
@@ -394,7 +412,7 @@ export default function AttendancePage() {
         </Badge>
       );
     }
-    return <Badge className="bg-violet-500/15 text-violet-400 border-violet-500/30">حاضر</Badge>;
+    return <Badge className="bg-brand-500/15 text-brand-400 border-brand-500/30">حاضر</Badge>;
   };
 
   const filtered = records.filter((rec) => {
@@ -407,7 +425,12 @@ export default function AttendancePage() {
         : monthFilter.startsWith('d:')
           ? rec.date === monthFilter.slice(2)
           : rec.date.toLowerCase().includes(monthFilter);
-    return matchesSearch && matchesMonth;
+    // §5 department focus (from the Operations Center dialog).
+    const matchesDepartment = departmentFocus
+      ? rec.employee?.department === departmentFocus
+      : true;
+    const matchesStatus = statusFocus ? rec.status === statusFocus : true;
+    return matchesSearch && matchesMonth && matchesDepartment && matchesStatus;
   });
 
   // Sort: newest date first, then latest checkIn time — "الأقرب أولاً"
@@ -442,26 +465,57 @@ export default function AttendancePage() {
   const totalAbsent = filtered.filter((r) => r.status === 'absent').length;
 
   return (
-    <div dir="rtl" className="space-y-6">
+    <div className="space-y-6">
       {/* Header (§25/§26 — sticky, period visible) */}
       <PageHeaderBar
         icon={<Clock className="size-5" />}
         iconClassName="bg-blue-500/15 border-blue-500/30 text-blue-400"
         title="سجل الحضور والانصراف"
-        subtitle={`${filtered.length} سجل حضور`}
+        description={`${filtered.length} سجل حضور`}
         extras={
-          <PagePeriodIndicator
-            testId="attendance-period-indicator"
-            label={
-              monthFilter === 'all'
-                ? 'كل السجلات'
-                : monthFilter.startsWith('d:')
-                  ? `يوم ${monthFilter.slice(2)}`
-                  : `شهر ${monthFilter}`
-            }
-            filtered={monthFilter !== 'all'}
-            onShowAll={() => setMonthFilter('all')}
-          />
+          <div className="flex items-center gap-2 flex-wrap">
+            <PagePeriodIndicator
+              testId="attendance-period-indicator"
+              label={
+                monthFilter === 'all'
+                  ? 'كل السجلات'
+                  : monthFilter.startsWith('d:')
+                    ? `يوم ${monthFilter.slice(2)}`
+                    : `شهر ${monthFilter}`
+              }
+              filtered={monthFilter !== 'all'}
+              onShowAll={() => setMonthFilter('all')}
+            />
+            {/* §5 — department focus from the Operations Center dialog */}
+            {departmentFocus && (
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-brand-500/15 border border-brand-500/30 text-brand-300 text-[11px] font-medium">
+                <Building2 className="size-3" />
+                {departmentFocus}
+                <button
+                  onClick={() => setDeptDismissed(true)}
+                  className="text-brand-400 hover:text-white"
+                  title="إزالة تركيز القسم"
+                  aria-label="إزالة تركيز القسم"
+                >
+                  <X className="size-3" />
+                </button>
+              </span>
+            )}
+            {/* §17 — status focus from the dashboard deep-link */}
+            {statusFocus && (
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-500/15 border border-amber-500/30 text-amber-300 text-[11px] font-medium">
+                {statusFocus === 'late' ? 'متأخر' : 'غائب'}
+                <button
+                  onClick={() => setStatusDismissed(true)}
+                  className="text-amber-300 hover:text-white"
+                  title="إزالة تصفية الحالة"
+                  aria-label="إزالة تصفية الحالة"
+                >
+                  <X className="size-3" />
+                </button>
+              </span>
+            )}
+          </div>
         }
         primaryAction={canCreate ? {
           label: 'تسجيل حضور',
@@ -522,7 +576,7 @@ export default function AttendancePage() {
         <Card className="border-slate-700/50 bg-slate-800/50">
           <CardContent className="p-4 text-center">
             <p className="text-slate-400 text-xs mb-1">حاضر</p>
-            <p className="text-violet-400 text-2xl font-bold">{totalPresent}</p>
+            <p className="text-brand-400 text-2xl font-bold">{totalPresent}</p>
           </CardContent>
         </Card>
         <Card className="border-slate-700/50 bg-slate-800/50">
@@ -709,28 +763,13 @@ export default function AttendancePage() {
                     </TableCell>
                     {(canUpdate || canDelete) && (
                       <TableCell>
-                        <div className="flex items-center gap-1">
-                          {canUpdate && (
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => openEditDialog(rec)}
-                            className="text-slate-400 hover:text-emerald-400 hover:bg-emerald-500/10"
-                          >
-                            <Pencil className="size-4" />
-                          </Button>
-                          )}
-                          {canDelete && (
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => setDeletingId(rec.id)}
-                            className="text-slate-400 hover:text-red-400 hover:bg-red-500/10"
-                          >
-                            <Trash2 className="size-4" />
-                          </Button>
-                          )}
-                        </div>
+                        {/* §2 — SmartActionMenu: icon fan with tooltips */}
+                        <SmartActionMenu
+                          actions={[
+                            { key: 'edit', label: 'تعديل', icon: <Pencil className="size-3.5" />, onSelect: () => openEditDialog(rec), hidden: !canUpdate },
+                            { key: 'delete', label: 'حذف', icon: <Trash2 className="size-3.5" />, destructive: true, onSelect: () => setDeletingId(rec.id), hidden: !canDelete },
+                          ]}
+                        />
                       </TableCell>
                     )}
                   </TableRow>
@@ -806,7 +845,7 @@ export default function AttendancePage() {
                         وقت الحضور: <span className="text-white" dir="ltr">{addForm.checkIn}</span>
                       </span>
                       <span className="text-slate-500">|</span>
-                      <span className={late > 0 ? 'text-amber-400' : 'text-violet-400'}>
+                      <span className={late > 0 ? 'text-amber-400' : 'text-brand-400'}>
                         {late > 0 ? `متأخر ${late} دقيقة` : 'في الوقت'}
                       </span>
                     </div>
@@ -826,7 +865,7 @@ export default function AttendancePage() {
             <Button
               onClick={handleAdd}
               disabled={saving || !addForm.employeeId || !addForm.date}
-              className="bg-linear-to-r from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white h-9 px-5 shadow-lg shadow-violet-500/20 transition-all"
+              className="bg-linear-to-r from-brand-600 to-brand-700 hover:from-brand-700 hover:to-brand-800 text-white h-9 px-5 shadow-lg shadow-brand-500/20 transition-all"
             >
               {saving ? 'جاري الحفظ...' : 'حفظ'}
             </Button>
@@ -873,7 +912,7 @@ export default function AttendancePage() {
             <Button
               onClick={handleCheckout}
               disabled={saving || !editForm.checkOut.trim()}
-              className="bg-linear-to-r from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white"
+              className="bg-linear-to-r from-brand-600 to-brand-700 hover:from-brand-700 hover:to-brand-800 text-white"
             >
               {saving ? 'جاري الحفظ...' : 'تسجيل الانصراف'}
             </Button>
@@ -1093,7 +1132,7 @@ export default function AttendancePage() {
           <DialogFooter>
             <Button
               onClick={() => setUploadResult(null)}
-              className="bg-linear-to-r from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white h-9 px-5 shadow-lg shadow-violet-500/20"
+              className="bg-linear-to-r from-brand-600 to-brand-700 hover:from-brand-700 hover:to-brand-800 text-white h-9 px-5 shadow-lg shadow-brand-500/20"
             >
               تم
             </Button>

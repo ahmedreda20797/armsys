@@ -41,14 +41,14 @@ interface DocumentationPanelProps {
 export const DocumentationPanel = memo(function DocumentationPanel({
   documentation, onChange,
 }: DocumentationPanelProps) {
-  const inputCls = 'w-full bg-slate-800/60 border border-slate-700/50 rounded-lg px-3 py-1.5 text-xs text-slate-200 placeholder:text-slate-500 focus:outline-none focus:border-violet-500/50';
+  const inputCls = 'w-full bg-slate-800/60 border border-slate-700/50 rounded-lg px-3 py-1.5 text-xs text-slate-200 placeholder:text-slate-500 focus:outline-none focus:border-brand-500/50';
   const set = <K extends keyof VBWorkflowDocumentation>(key: K, value: VBWorkflowDocumentation[K]) =>
     onChange({ ...documentation, [key]: value });
 
   return (
-    <div className="flex flex-col h-full overflow-y-auto arm-scroll p-3 space-y-4" dir="rtl">
+    <div className="flex flex-col h-full overflow-y-auto arm-scroll p-3 space-y-4">
       <div className="flex items-center gap-2 pb-2 border-b border-slate-800">
-        <BookOpen className="w-4 h-4 text-violet-400" />
+        <BookOpen className="w-4 h-4 text-brand-400" />
         <h3 className="text-xs font-bold text-slate-300 uppercase tracking-wider">وثائق المسار</h3>
       </div>
 
@@ -100,7 +100,7 @@ export const DocumentationPanel = memo(function DocumentationPanel({
                 }}
                 className={cn(
                   'px-2 py-0.5 rounded-full text-[9px] border transition-colors',
-                  active ? 'bg-violet-600/30 text-violet-300 border-violet-500/40' : 'text-slate-500 border-slate-700/40 hover:text-slate-300'
+                  active ? 'bg-brand-600/30 text-brand-300 border-brand-500/40' : 'text-slate-500 border-slate-700/40 hover:text-slate-300'
                 )}
               >
                 {m}

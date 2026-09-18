@@ -65,11 +65,11 @@ interface BulkActionConfig {
 
 const BULK_ACTIONS: BulkActionConfig[] = [
   { type: 'review', label: 'مراجعة', icon: Eye, colorClass: 'text-cyan-400' },
-  { type: 'assign', label: 'تعيين', icon: UserCheck, colorClass: 'text-violet-400' },
+  { type: 'assign', label: 'تعيين', icon: UserCheck, colorClass: 'text-brand-400' },
   { type: 'escalate', label: 'تصعيد', icon: ArrowUpRight, colorClass: 'text-red-400' },
   { type: 'close', label: 'إغلاق', icon: CheckCircle2, colorClass: 'text-emerald-400' },
   { type: 'notify', label: 'إشعار', icon: Bell, colorClass: 'text-amber-400' },
-  { type: 'open_capa', label: 'كابا', icon: ShieldAlert, colorClass: 'text-purple-400' },
+  { type: 'open_capa', label: 'كابا', icon: ShieldAlert, colorClass: 'text-brand-400' },
   { type: 'create_followup', label: 'متابعة', icon: Plus, colorClass: 'text-sky-400' },
   { type: 'export', label: 'تصدير', icon: Download, colorClass: 'text-slate-400', special: 'export' },
   { type: 'archive', label: 'أرشفة', icon: Archive, colorClass: 'text-slate-500' },

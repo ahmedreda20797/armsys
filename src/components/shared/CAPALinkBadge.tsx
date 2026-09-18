@@ -106,7 +106,7 @@ export function CAPALinkBadge({ capaId, compact = false }: { capaId: string; com
           <div className="flex-1 h-1 rounded-full bg-slate-700/50 overflow-hidden">
             <div
               className={`h-full rounded-full ${
-                summary.progress >= 85 ? 'bg-violet-500' : summary.progress >= 60 ? 'bg-sky-500' : summary.progress >= 35 ? 'bg-amber-500' : 'bg-red-500'
+                summary.progress >= 85 ? 'bg-brand-500' : summary.progress >= 60 ? 'bg-sky-500' : summary.progress >= 35 ? 'bg-amber-500' : 'bg-red-500'
               }`}
               style={{ width: `${summary.progress}%` }}
             />
@@ -143,13 +143,13 @@ export function CAPALinkBadge({ capaId, compact = false }: { capaId: string; com
         <div className="flex-1 h-1.5 rounded-full bg-slate-700/50 overflow-hidden">
           <div
             className={`h-full rounded-full transition-all ${
-              summary.progress >= 85 ? 'bg-violet-500' : summary.progress >= 60 ? 'bg-sky-500' : summary.progress >= 35 ? 'bg-amber-500' : 'bg-red-500'
+              summary.progress >= 85 ? 'bg-brand-500' : summary.progress >= 60 ? 'bg-sky-500' : summary.progress >= 35 ? 'bg-amber-500' : 'bg-red-500'
             }`}
             style={{ width: `${summary.progress}%` }}
           />
         </div>
         <span className={`text-[10px] font-medium min-w-[32px] text-left ${
-          summary.progress >= 85 ? 'text-violet-400' : summary.progress >= 60 ? 'text-sky-400' : summary.progress >= 35 ? 'text-amber-400' : 'text-red-400'
+          summary.progress >= 85 ? 'text-brand-400' : summary.progress >= 60 ? 'text-sky-400' : summary.progress >= 35 ? 'text-amber-400' : 'text-red-400'
         }`} dir="ltr">{summary.progress}%</span>
       </div>
     </div>

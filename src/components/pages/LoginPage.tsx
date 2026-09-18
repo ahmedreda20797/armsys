@@ -2,11 +2,15 @@
 
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useTheme } from 'next-themes';
+import { QnlysAtmosphere } from '@/components/brand/QnlysAtmosphere';
 import { useAuth, type LoginResult } from '@/contexts/AuthContext';
+import { useLanguage } from '@/lib/i18n/language-context';
+import { translate } from '@/lib/i18n/dictionary';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Lock, Mail, Eye, EyeOff, AlertCircle } from 'lucide-react';
+import { Lock, Mail, Eye, EyeOff, AlertCircle, Globe } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import {
@@ -41,78 +45,100 @@ function FieldError({ id, message }: { id: string; message: string }) {
   );
 }
 
-// ═══ Cosmic loading screen ═══
-// Foreground only — PersistentBackground is mounted once in App Shell (page.tsx)
-export function CosmicLoadingScreen() {
+// ── Official full-lockup logo, theme-aware ──
+// §BRAND — the brand statement uses the REAL complete Qnlys asset
+// (perfect internal proportions by definition): silver wordmark on
+// dark surfaces (qnlys.svg), the official print variant with the
+// charcoal wordmark on paper (qnlys-print.svg).
+function useQnlysLogo() {
+  const { resolvedTheme } = useTheme();
+  const [mounted, setMounted] = useState(false);
+  // Post-mount flip: resolvedTheme is only reliable after hydration.
+  useEffect(() => {
+    const raf = requestAnimationFrame(() => setMounted(true));
+    return () => cancelAnimationFrame(raf);
+  }, []);
+  const isLight = mounted && resolvedTheme === 'light';
+  return { src: isLight ? '/qnlys-print.svg' : '/qnlys.svg', isLight };
+}
+
+// ── §BRAND-VIZ — restrained "operational intelligence" cues. ──
+// A thin signal path with sparse connected nodes. Decorative only:
+// brand-red gradient stroke at low opacity, dash drift + node pulse,
+// fully static under prefers-reduced-motion (shared CSS classes).
+function SignalDefs({ id }: { id: string }) {
   return (
-    <div className="min-h-screen w-full relative">
-      <div className="flex flex-col items-center justify-center min-h-screen gap-8 px-4">
-        {/* Logo with cosmic glow */}
-        <motion.div
-          className="relative"
-          animate={{ scale: [1, 1.06, 1], rotate: [0, 2, -2, 0] }}
-          transition={{ duration: 4, repeat: Infinity, ease: 'easeInOut' }}
-        >
-          <div className="absolute inset-0 -m-8">
-            <motion.div
-              className="absolute inset-0 rounded-full opacity-20"
-              style={{
-                background:
-                  'conic-gradient(from 0deg, transparent, rgba(139,92,246,0.5), transparent, rgba(99,102,241,0.5), transparent)',
-              }}
-              animate={{ rotate: 360 }}
-              transition={{ duration: 8, repeat: Infinity, ease: 'linear' }}
-            />
-          </div>
-          <div
-            className="absolute inset-0 -m-4 rounded-full blur-2xl"
-            style={{
-              background:
-                'radial-gradient(circle, rgba(139,92,246,0.3) 0%, rgba(99,102,241,0.1) 50%, transparent 70%)',
-            }}
-          />
-          <div className="relative w-40 h-40 flex items-center justify-center">
-            <img
-              src="/logo-letter-a.png"
-              alt="ARM"
-              className="w-36 h-36 object-contain drop-shadow-[0_0_60px_rgba(139,92,246,0.3)]"
-            />
-          </div>
-        </motion.div>
+    <defs>
+      <linearGradient id={id} x1="0" y1="0" x2="1" y2="0">
+        <stop stopColor="#c22334" stopOpacity="0" />
+        <stop offset="0.5" stopColor="#db4a58" stopOpacity="0.6" />
+        <stop offset="1" stopColor="#7c1624" stopOpacity="0" />
+      </linearGradient>
+    </defs>
+  );
+}
 
-        {/* Orbital loading dots — deterministic positions */}
-        <div className="relative w-16 h-16">
-          {[0, 1, 2].map((i) => (
-            <motion.div
-              key={i}
-              className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2"
-              animate={{
-                x: [0, Math.cos((i * 120 * Math.PI) / 180) * 20, 0],
-                y: [0, Math.sin((i * 120 * Math.PI) / 180) * 20, 0],
-                opacity: [0.3, 1, 0.3],
-              }}
-              transition={{
-                duration: 1.5,
-                repeat: Infinity,
-                delay: i * 0.5,
-                ease: 'easeInOut',
-              }}
-            >
-              <div className="w-2.5 h-2.5 rounded-full bg-gradient-to-r from-violet-400 to-indigo-400 shadow-[0_0_8px_rgba(139,92,246,0.5)]" />
-            </motion.div>
-          ))}
-        </div>
-
-        <p className="text-slate-400 text-sm font-medium">جاري التحميل...</p>
-      </div>
+/** Strip under the application descriptor in the brand zone — the
+    quiet "live data" element that keeps the area from feeling empty. */
+function BrandSignalStrip() {
+  return (
+    <div aria-hidden="true" dir="ltr" className="mt-7 hidden w-full max-w-[420px] sm:block">
+      <svg viewBox="0 0 420 44" className="qnlys-connect h-11 w-full" fill="none">
+        <SignalDefs id="qnlys-strip-grad" />
+        <path
+          className="qnlys-connect-path"
+          d="M 6 24 C 80 12 140 34 210 24 S 350 14 414 24"
+          stroke="url(#qnlys-strip-grad)"
+          strokeWidth="1"
+        />
+        <circle className="qnlys-node" cx="112" cy="19" r="2" fill="#db4a58" />
+        <circle className="qnlys-node" cx="252" cy="26" r="2" fill="#db4a58" style={{ animationDelay: '1.5s' }} />
+        <circle className="qnlys-node" cx="356" cy="18" r="2" fill="#db4a58" style={{ animationDelay: '3s' }} />
+      </svg>
     </div>
   );
 }
 
-// ═══ Login Page ═══
-// Foreground only — PersistentBackground is mounted once in App Shell (page.tsx)
+/** The perceived connection between the login card and the brand
+    area: one faint analytical path drifting through the space
+    between the two zones (desktop only, felt rather than seen). */
+function ZoneBridge() {
+  return (
+    <div
+      aria-hidden="true"
+      dir="ltr"
+      className="pointer-events-none absolute left-1/2 top-1/2 z-[5] hidden h-40 w-[min(620px,42vw)] -translate-x-1/2 -translate-y-1/2 lg:block"
+    >
+      <svg viewBox="0 0 620 160" className="qnlys-connect h-full w-full" fill="none">
+        <SignalDefs id="qnlys-bridge-grad" />
+        <path
+          className="qnlys-connect-path"
+          d="M 8 118 C 130 118 160 46 310 46 S 500 112 612 112"
+          stroke="url(#qnlys-bridge-grad)"
+          strokeWidth="1"
+        />
+        <circle className="qnlys-node" cx="178" cy="70" r="2" fill="#db4a58" />
+        <circle className="qnlys-node" cx="452" cy="87" r="2" fill="#db4a58" style={{ animationDelay: '1.8s' }} />
+      </svg>
+    </div>
+  );
+}
+
+// ═══ Login Page — premium two-zone enterprise composition ═══
+// Desktop: brand zone (logo + official tagline + atmosphere) beside the
+// login card. Mobile: deliberate stacked composition — compact brand
+// header, then the card. Foreground only — PersistentBackground is
+// mounted once in App Shell (page.tsx); QnlysAtmosphere is this page's
+// scoped decorative layer.
+//
+// §BRAND-HIERARCHY: 1. logo  2. official tagline  3. login interaction
+// 4. data atmosphere  5. secondary metadata. Authentication behavior,
+// validation and error handling are untouched by this composition.
 export default function LoginPage() {
   const { login, error: sessionError, loading: sessionLoading, clearError } = useAuth();
+  const { locale, setLocale } = useLanguage();
+  const logo = useQnlysLogo();
+  const t = (key: Parameters<typeof translate>[0]) => translate(key, locale);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -218,7 +244,7 @@ export default function LoginPage() {
     try {
       const result = await login(trimmedEmail, password);
       if (result.ok) {
-        toast.success('تم تسجيل الدخول بنجاح!');
+        toast.success(t('login.success'));
         return;
       }
       applyLoginError(result);
@@ -235,52 +261,109 @@ export default function LoginPage() {
   const busy = isSubmitting || sessionLoading;
 
   return (
-    <div className="min-h-screen w-full relative">
-      <motion.div
-        className="flex items-center justify-center min-h-screen px-4"
-        initial={{ opacity: 0, y: 30 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.6, ease: 'easeOut' }}
+    <div className="relative min-h-dvh w-full overflow-hidden">
+      {/* §ATMOSPHERE — scoped data-intelligence layer (grid, signal
+          curves, monitoring points); sits between the app-wide
+          PersistentBackground and the login content. */}
+      <QnlysAtmosphere />
+
+      {/* Faint signal path bridging the card zone and the brand zone */}
+      <ZoneBridge />
+
+      {/* §20.1 — language switch on the login screen itself, at the
+          document's END edge (English/LTR → top-right, Arabic/RTL →
+          top-left — direction-independent by logical property). */}
+      <button
+        type="button"
+        onClick={() => setLocale(locale === 'ar' ? 'en' : 'ar')}
+        className="absolute top-5 end-5 z-20 inline-flex h-9 items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.04] px-3.5 text-xs font-bold text-slate-300 transition-colors hover:bg-white/[0.08] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50"
       >
-        <div dir="rtl" className="w-full max-w-md">
-          <motion.div
-            className="relative rounded-2xl p-8 md:p-10 shadow-2xl backdrop-blur-2xl bg-white/[0.03] border border-white/[0.06] shadow-black/40"
-            initial={{ scale: 0.9, opacity: 0, y: 20 }}
-            animate={{ scale: 1, opacity: 1, y: 0 }}
-            transition={{ duration: 0.6, delay: 0.1, ease: [0.4, 0, 0.2, 1] }}
+        <Globe className="size-3.5" aria-hidden="true" />
+        {locale === 'ar' ? 'English' : 'العربية'}
+      </button>
+
+      <motion.div
+        className="relative z-10 mx-auto flex min-h-dvh w-full max-w-[1560px] flex-col lg:grid lg:grid-cols-[1fr_1.1fr] lg:grid-rows-[1fr_auto]"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ duration: 0.5, ease: 'easeOut' }}
+      >
+        {/* ── Brand zone — logo → official tagline → descriptor ──
+            Grid column 2 (inline-END): the brand occupies the side
+            OPPOSITE the reading start in both directions — LEFT in
+            Arabic/RTL, RIGHT in English/LTR — from one placement, no
+            duplicated markup. DOM order is unchanged so mobile keeps
+            stacking brand → card. */}
+        <div className="relative flex flex-1 flex-col items-center justify-center px-6 pb-10 pt-16 text-center sm:pt-20 lg:col-start-2 lg:row-start-1 lg:px-12 lg:py-0">
+          {/* Localized red glow behind the lockup */}
+          <div
+            aria-hidden="true"
+            className="qnlys-login-brand-glow pointer-events-none absolute left-1/2 top-1/2 h-[560px] w-[560px] max-w-full -translate-x-1/2 -translate-y-1/2 rounded-full blur-3xl"
+          />
+          {/* Official complete Qnlys lockup — real asset, perfect
+              proportions; gentle entrance rise (§BRAND-HIERARCHY 1). */}
+          <motion.img
+            src={logo.src}
+            alt="Qnlys"
+            dir="ltr"
+            draggable={false}
+            initial={{ opacity: 0, y: 16, scale: 0.97 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
+            className={cn(
+              'h-24 w-auto object-contain sm:h-28 lg:h-36',
+              !logo.isLight && 'drop-shadow-[0_0_30px_rgba(180,0,34,0.28)]'
+            )}
+          />
+
+          {/* Official brand tagline — EXACT approved wording, always
+              English regardless of interface language (§BRAND). */}
+          <p
+            dir="ltr"
+            className="mt-7 max-w-[280px] text-sm font-medium leading-relaxed tracking-wide text-slate-300 sm:max-w-[440px] sm:text-base lg:max-w-none lg:text-lg"
           >
-            {/* Subtle inner glow */}
-            <div
-              className="absolute inset-0 rounded-2xl pointer-events-none"
-              style={{
-                background:
-                  'radial-gradient(ellipse at top, rgba(139,92,246,0.08), transparent 50%), radial-gradient(ellipse at bottom, rgba(99,102,241,0.05), transparent 50%)',
-              }}
-            />
-            <div
-              className="absolute -inset-px rounded-2xl pointer-events-none"
-              style={{
-                background:
-                  'linear-gradient(135deg, rgba(139,92,246,0.15), transparent 40%, transparent 60%, rgba(99,102,241,0.1))',
-              }}
-            />
+            {t('login.tagline')}
+          </p>
 
-            {/* Logo */}
-            <div className="flex justify-center mb-6">
-              <motion.div
-                animate={{ y: [0, -4, 0] }}
-                transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }}
-              >
-                <img
-                  src="/logo-full-clean.png"
-                  alt="ARM Logo"
-                  className="h-24 w-auto object-contain drop-shadow-[0_0_30px_rgba(139,92,246,0.25)]"
-                />
-              </motion.div>
+          <span aria-hidden="true" className="qnlys-brand-divider mt-6" />
+
+          {/* Application descriptor — readable but secondary to the
+              official tagline; no letter-spacing in Arabic (it breaks
+              the script's joined letterforms). */}
+          <p
+            className={cn(
+              'mt-4 text-[13px] font-semibold text-slate-400',
+              locale === 'en' && 'uppercase tracking-[0.3em]'
+            )}
+          >
+            {t('app.tagline')}
+          </p>
+
+          {/* Quiet live-data cue under the descriptor */}
+          <BrandSignalStrip />
+        </div>
+
+        {/* ── Card zone — the refined charcoal login card ──
+            Grid column 1 (inline-START): the login sits at the reading
+            start in BOTH directions — RIGHT in Arabic/RTL, LEFT in
+            English/LTR. The document `dir` drives everything; there is
+            no language-specific positioning. */}
+        <div className="relative flex flex-1 items-center justify-center px-4 pb-14 sm:px-6 lg:col-start-1 lg:row-start-1 lg:px-10 lg:py-0">
+          <motion.div
+            className="relative w-full max-w-[440px] rounded-2xl border border-white/[0.08] bg-white/[0.04] p-7 shadow-2xl shadow-black/40 backdrop-blur-2xl sm:p-9"
+            initial={{ opacity: 0, y: 24, scale: 0.985 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            transition={{ duration: 0.55, delay: 0.15, ease: [0.22, 1, 0.36, 1] }}
+          >
+            {/* Red atmospheric tint inside the card */}
+            <div aria-hidden="true" className="qnlys-card-aura absolute inset-0 rounded-2xl" />
+            {/* Brand hairline across the top edge */}
+            <div aria-hidden="true" className="qnlys-card-topline absolute inset-x-10 top-0 h-px" />
+
+            <div className="relative mb-7">
+              <h1 className="text-2xl font-bold tracking-tight text-white">{t('login.title')}</h1>
+              <p className="mt-2 text-sm leading-relaxed text-slate-300">{t('login.subtitle')}</p>
             </div>
-
-            <h1 className="text-2xl font-bold text-white text-center mb-2">تسجيل الدخول</h1>
-            <p className="text-slate-400 text-center text-sm mb-8">أدخل بياناتك للوصول إلى النظام</p>
 
             {/* General errors — session-level (e.g. suspended account) or
                 server/network failures. Never contains technical details. */}
@@ -291,7 +374,7 @@ export default function LoginPage() {
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: -10 }}
                   role="alert"
-                  className="mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-sm text-center"
+                  className="relative mb-4 rounded-lg border border-red-500/20 bg-red-500/10 p-3 text-center text-sm text-red-400"
                 >
                   {formError || sessionError}
                 </motion.div>
@@ -300,23 +383,23 @@ export default function LoginPage() {
 
             {/* noValidate — native browser tooltips are replaced by the
                 inline Arabic validation errors below each field */}
-            <form onSubmit={handleLogin} noValidate className="space-y-5">
+            <form onSubmit={handleLogin} noValidate className="relative space-y-5">
               <div className="space-y-2">
-                <Label htmlFor="email" className="text-slate-300 text-sm">
-                  البريد الإلكتروني
+                <Label htmlFor="email" className="text-[13px] font-medium text-slate-300">
+                  {t('login.email')}
                 </Label>
                 <div className="relative">
-                  <Mail className="absolute right-3 top-1/2 -translate-y-1/2 size-4 text-slate-400" />
+                  <Mail className="absolute right-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
                   <Input
                     id="email"
                     type="email"
-                    placeholder="user@arm.com"
+                    placeholder="user@qnlys.com"
                     value={email}
                     onChange={(e) => handleEmailChange(e.target.value)}
                     aria-invalid={!!emailError}
                     aria-describedby={emailError ? 'email-error' : undefined}
                     className={cn(
-                      'bg-white/[0.04] border-white/[0.08] text-white placeholder:text-slate-500 pr-10 focus:border-violet-500/50 focus:ring-violet-500/20',
+                      'h-11 bg-white/[0.04] border-white/[0.08] text-white placeholder:text-slate-500 pr-10 focus:border-brand-500/50 focus:ring-brand-500/20',
                       emailError && 'border-red-500/60 focus:border-red-500/60 focus:ring-red-500/20'
                     )}
                     dir="ltr"
@@ -329,11 +412,11 @@ export default function LoginPage() {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="password" className="text-slate-300 text-sm">
-                  كلمة المرور
+                <Label htmlFor="password" className="text-[13px] font-medium text-slate-300">
+                  {t('login.password')}
                 </Label>
                 <div className="relative">
-                  <Lock className="absolute right-3 top-1/2 -translate-y-1/2 size-4 text-slate-400" />
+                  <Lock className="absolute right-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
                   <Input
                     id="password"
                     type={showPassword ? 'text' : 'password'}
@@ -343,7 +426,7 @@ export default function LoginPage() {
                     aria-invalid={!!passwordError}
                     aria-describedby={passwordError ? 'password-error' : undefined}
                     className={cn(
-                      'bg-white/[0.04] border-white/[0.08] text-white placeholder:text-slate-500 pr-10 pl-10 focus:border-violet-500/50 focus:ring-violet-500/20',
+                      'h-11 bg-white/[0.04] border-white/[0.08] text-white placeholder:text-slate-500 pr-10 pl-10 focus:border-brand-500/50 focus:ring-brand-500/20',
                       passwordError && 'border-red-500/60 focus:border-red-500/60 focus:ring-red-500/20'
                     )}
                     dir="ltr"
@@ -352,7 +435,7 @@ export default function LoginPage() {
                   <button
                     type="button"
                     onClick={() => setShowPassword(!showPassword)}
-                    className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-300 transition-colors"
+                    className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 transition-colors hover:text-slate-300"
                   >
                     {showPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
                   </button>
@@ -365,7 +448,7 @@ export default function LoginPage() {
               <Button
                 type="submit"
                 disabled={busy}
-                className="w-full h-11 bg-linear-to-l from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white font-semibold text-base rounded-xl transition-all duration-300 shadow-lg shadow-violet-500/25 hover:shadow-violet-500/40 disabled:opacity-60"
+                className="h-12 w-full rounded-xl bg-linear-to-l from-brand-600 to-brand-700 text-[15px] font-semibold text-white shadow-lg shadow-brand-500/25 transition-all duration-200 hover:-translate-y-px hover:from-brand-700 hover:to-brand-800 hover:shadow-brand-500/40 active:translate-y-0 disabled:opacity-60 disabled:hover:translate-y-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50"
               >
                 {busy ? (
                   <>
@@ -374,18 +457,25 @@ export default function LoginPage() {
                       animate={{ rotate: 360 }}
                       transition={{ duration: 0.8, repeat: Infinity, ease: 'linear' }}
                     />
-                    <span>جاري تسجيل الدخول...</span>
+                    <span>{t('login.submitting')}</span>
                   </>
                 ) : (
-                  'تسجيل الدخول'
+                  t('login.submit')
                 )}
               </Button>
             </form>
-
-            <p className="mt-6 text-center text-slate-500 text-xs">
-              نظام إدارة الجودة © <CopyrightYear />
-            </p>
           </motion.div>
+        </div>
+
+        {/* ── Footer — brand + year (secondary metadata) ──
+            Direction-INDEPENDENT centering: flex justify-center keeps
+            the line at the viewport center in RTL and LTR alike (the
+            unlayered [dir=rtl] text-align rule overrides text-center,
+            so text alignment is not used here on purpose). */}
+        <div className="relative z-10 flex justify-center py-4 lg:col-span-2 lg:row-start-2">
+          <p className="text-[11px] text-slate-600">
+            Qnlys © <CopyrightYear />
+          </p>
         </div>
       </motion.div>
     </div>

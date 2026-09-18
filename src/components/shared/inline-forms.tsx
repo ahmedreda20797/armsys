@@ -223,7 +223,7 @@ export function EmployeeInlineForm({ onClose, employees, onCreated }: {
       </div>
       <div className="flex items-center gap-2 pt-2 border-t border-slate-700/50">
         <Button variant="ghost" size="sm" onClick={onClose} className="text-slate-400 hover:text-white">إلغاء</Button>
-        <Button size="sm" onClick={() => void handleSave()} disabled={!canSave || saving} className="bg-violet-600 hover:bg-violet-700 text-white">
+        <Button size="sm" onClick={() => void handleSave()} disabled={!canSave || saving} className="bg-brand-600 hover:bg-brand-700 text-white">
           {saving ? <Loader2 className="size-3.5 animate-spin ml-1" /> : <Plus className="size-3.5 ml-1" />}
           إضافة الموظف
         </Button>
@@ -601,7 +601,7 @@ export function RequestInlineForm({ onClose, employees, onCreated }: {
       </div>
       <div className="flex items-center gap-2 pt-2 border-t border-slate-700/50">
         <Button variant="ghost" size="sm" onClick={onClose} className="text-slate-400 hover:text-white">إلغاء</Button>
-        <Button size="sm" onClick={() => void handleSave()} disabled={!canSave || saving} className="bg-violet-600 hover:bg-violet-700 text-white">
+        <Button size="sm" onClick={() => void handleSave()} disabled={!canSave || saving} className="bg-brand-600 hover:bg-brand-700 text-white">
           {saving ? <Loader2 className="size-3.5 animate-spin ml-1" /> : <Plus className="size-3.5 ml-1" />}
           تقديم الطلب
         </Button>
@@ -747,7 +747,7 @@ export function ObservationInlineForm({ onClose, employees, categories, onCreate
       </div>
       <div className="flex items-center gap-2 pt-2 border-t border-slate-700/50">
         <Button variant="ghost" size="sm" onClick={onClose} className="text-slate-400 hover:text-white">إلغاء</Button>
-        <Button size="sm" onClick={() => void handleSave()} disabled={!canSave || saving} className="bg-violet-600 hover:bg-violet-700 text-white">
+        <Button size="sm" onClick={() => void handleSave()} disabled={!canSave || saving} className="bg-brand-600 hover:bg-brand-700 text-white">
           {saving ? <Loader2 className="size-3.5 animate-spin ml-1" /> : <Plus className="size-3.5 ml-1" />}
           إنشاء الملاحظة
         </Button>
@@ -929,7 +929,7 @@ export function CAPAInlineForm({ onClose, employees, systemUsers, onCreated, def
       </div>
       <div className="flex items-center gap-2 pt-2 border-t border-slate-700/50">
         <Button variant="ghost" size="sm" onClick={onClose} className="text-slate-400 hover:text-white">إلغاء</Button>
-        <Button size="sm" onClick={() => void handleSave()} disabled={!canSave || saving} className="bg-violet-600 hover:bg-violet-700 text-white">
+        <Button size="sm" onClick={() => void handleSave()} disabled={!canSave || saving} className="bg-brand-600 hover:bg-brand-700 text-white">
           {saving ? <Loader2 className="size-3.5 animate-spin ml-1" /> : <Plus className="size-3.5 ml-1" />}
           إنشاء الحالة
         </Button>

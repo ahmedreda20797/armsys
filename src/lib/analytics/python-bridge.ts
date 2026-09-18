@@ -224,7 +224,7 @@ async function detectPythonBinary(): Promise<ResolvedPythonBinary | null> {
     try {
       const probe = spawnSync(
         candidate.bin,
-        [...candidate.prefix, '-I', '-c', 'pass'],
+        [...candidate.prefix, '-I', '-X', 'utf8', '-c', 'pass'],
         {
           timeout: 5_000,
           encoding: 'utf8',
@@ -446,7 +446,12 @@ async function runPythonOnce(
     let child;
     try {
       // -I: isolated mode — ignore PYTHONPATH/user site-packages.
-      child = spawn(binary.bin, [...binary.prefix, '-I', scriptPath], {
+      // -X utf8: force UTF-8 stdio even under -I (which ignores the
+      // PYTHONUTF8 env var). Without it a piped Windows interpreter
+      // defaults to the legacy ANSI codepage and Arabic labels arrive
+      // as mojibake — the exact §8/§9 parity divergence this bridge
+      // must never produce.
+      child = spawn(binary.bin, [...binary.prefix, '-I', '-X', 'utf8', scriptPath], {
         stdio: ['pipe', 'pipe', 'pipe'],
         windowsHide: true,
       });

@@ -50,6 +50,7 @@ import {
   Upload,
   FileSpreadsheet,
 } from 'lucide-react';
+import { SmartActionMenu } from '@/components/shared/SmartActionMenu';
 import { EmployeeSearchInput } from '@/components/shared/EmployeeSearchInput';
 import type { RequestRecord, Employee } from '@/types';
 import { useAppStore } from '@/lib/store';
@@ -69,17 +70,30 @@ interface RequestWithEmployee extends RequestRecord {
 export default function RequestsPage() {
   const { canEdit, canCreate, canUpdate, canDelete, canApprove } = usePermissions('requests');
   const { user } = useAuth();
-  const { highlightId, setHighlightId } = useAppStore();
+  // Field selectors — a selectorless useAppStore() re-renders the page
+  // on EVERY store write (same loop hazard as EmployeesPage §loop).
+  const highlightId = useAppStore((s) => s.highlightId);
+  const setHighlightId = useAppStore((s) => s.setHighlightId);
   const highlightRef = useRef<HTMLDivElement>(null);
   const [requests, setRequests] = useState<RequestWithEmployee[]>([]);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [loading, setLoading] = useState(true);
+  // §17 EXACT DEEP-LINKING — the dashboard "N طلب بانتظار الموافقة"
+  // navigates here with navParams.status='pending' and the list shows
+  // EXACTLY those pending requests. The chosen status persists as
+  // part of the page filters (clearable back to 'all').
+  const navStatus = useAppStore((s) => s.navParams.status);
   // Phase 6.3 (§8): filter context persists per user (session-scoped).
-  const [requestsView, setRequestsView] = usePageState<{ search: string; monthFilter: string }>({
+  const [requestsView, setRequestsView] = usePageState<{ search: string; monthFilter: string; statusFilter?: string }>({
     page: 'requests',
     slot: 'filters',
     version: 1,
-    initial: () => ({ search: '', monthFilter: 'all' }),
+    skipRestore: Boolean(navStatus),
+    initial: () => ({
+      search: '',
+      monthFilter: 'all',
+      statusFilter: navStatus === 'pending' || navStatus === 'approved' || navStatus === 'rejected' ? navStatus : 'all',
+    }),
     validate: (raw) =>
       raw && typeof raw === 'object' && typeof (raw as { monthFilter?: unknown }).monthFilter === 'string'
         ? raw
@@ -89,6 +103,8 @@ export default function RequestsPage() {
   const setSearch = (v: string) => setRequestsView((s) => ({ ...s, search: v }));
   const monthFilter = requestsView.monthFilter;
   const setMonthFilter = (v: string) => setRequestsView((s) => ({ ...s, monthFilter: v }));
+  const statusFilter = requestsView.statusFilter ?? 'all';
+  const setStatusFilter = (v: string) => setRequestsView((s) => ({ ...s, statusFilter: v }));
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -340,17 +356,19 @@ export default function RequestsPage() {
     return matchesSearch && matchesMonth;
   };
 
-  const filteredPending = pending.filter(matchesFilter);
-  const filteredOther = other.filter(matchesFilter);
+  // §17 — status deep-link: 'pending' shows ONLY the pending section.
+  const statusVisible = (status: string) => statusFilter === 'all' || status === statusFilter;
+  const filteredPending = statusVisible('pending') ? pending.filter(matchesFilter) : [];
+  const filteredOther = statusFilter === 'all' ? other.filter(matchesFilter) : other.filter((r) => statusVisible(r.status) && matchesFilter(r));
 
   return (
-    <div dir="rtl" className="space-y-6">
+    <div className="space-y-6">
       {/* Header (§25/§26 — sticky) */}
       <PageHeaderBar
         icon={<FileText className="size-5" />}
-        iconClassName="bg-violet-500/15 border-violet-500/30 text-violet-400"
+        iconClassName="bg-brand-500/15 border-brand-500/30 text-brand-400"
         title="إدارة الطلبات"
-        subtitle={`${requests.length} طلب — ${pending.length} معلق`}
+        description={`${requests.length} طلب — ${pending.length} معلق`}
         primaryAction={canCreate ? {
           label: 'تقديم طلب',
           onClick: () => { setAddForm({ employeeId: '', type: 'leave', date: todayDayKey(), reason: '' }); setIsAddOpen(true); },
@@ -491,28 +509,13 @@ export default function RequestsPage() {
                             </div>
                             {/* Action buttons */}
                             <div className="flex items-center gap-2 flex-shrink-0">
-                              {canUpdate && (
-                                <Button
-                                  size="sm"
-                                  variant="ghost"
-                                  onClick={() => openEditDialog(req)}
-                                  className="text-slate-400 hover:text-blue-400 hover:bg-blue-500/10 h-8 px-2.5"
-                                >
-                                  <Pencil className="size-3.5" />
-                                  تعديل
-                                </Button>
-                              )}
-                              {canDelete && (
-                                <Button
-                                  size="sm"
-                                  variant="ghost"
-                                  onClick={() => setDeletingId(req.id)}
-                                  className="text-slate-400 hover:text-red-400 hover:bg-red-500/10 h-8 px-2.5"
-                                >
-                                  <Trash2 className="size-3.5" />
-                                  حذف
-                                </Button>
-                              )}
+                              {/* §2 — SmartActionMenu (approve/reject stay primary) */}
+                              <SmartActionMenu
+                                actions={[
+                                  { key: 'edit', label: 'تعديل', icon: <Pencil className="size-3.5" />, onSelect: () => openEditDialog(req), hidden: !canUpdate },
+                                  { key: 'delete', label: 'حذف', icon: <Trash2 className="size-3.5" />, destructive: true, onSelect: () => setDeletingId(req.id), hidden: !canDelete },
+                                ]}
+                              />
                               {canApprove && (
                                 <>
                                   <Button
@@ -604,26 +607,13 @@ export default function RequestsPage() {
                         {(canUpdate || canDelete) && (
                           <TableCell className="py-3 px-3">
                             <div className="flex items-center justify-center gap-1">
-                              {canUpdate && (
-                                <Button
-                                  size="sm"
-                                  variant="ghost"
-                                  onClick={() => openEditDialog(req)}
-                                  className="text-slate-500 hover:text-blue-400 hover:bg-blue-500/10 size-7 p-0"
-                                >
-                                  <Pencil className="size-3" />
-                                </Button>
-                              )}
-                              {canDelete && (
-                                <Button
-                                  size="sm"
-                                  variant="ghost"
-                                  onClick={() => setDeletingId(req.id)}
-                                  className="text-slate-500 hover:text-red-400 hover:bg-red-500/10 size-7 p-0"
-                                >
-                                  <Trash2 className="size-3" />
-                                </Button>
-                              )}
+                              <SmartActionMenu
+                                size="sm"
+                                actions={[
+                                  { key: 'edit', label: 'تعديل', icon: <Pencil className="size-3" />, onSelect: () => openEditDialog(req), hidden: !canUpdate },
+                                  { key: 'delete', label: 'حذف', icon: <Trash2 className="size-3" />, destructive: true, onSelect: () => setDeletingId(req.id), hidden: !canDelete },
+                                ]}
+                              />
                             </div>
                           </TableCell>
                         )}
@@ -705,7 +695,7 @@ export default function RequestsPage() {
             <Button
               onClick={handleAdd}
               disabled={saving || !addForm.employeeId || !addForm.date || !addForm.reason}
-              className="bg-linear-to-r from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white h-9 px-5 shadow-lg shadow-violet-500/20 transition-all"
+              className="bg-linear-to-r from-brand-600 to-brand-700 hover:from-brand-700 hover:to-brand-800 text-white h-9 px-5 shadow-lg shadow-brand-500/20 transition-all"
             >
               {saving ? 'جاري التقديم...' : 'تقديم'}
             </Button>
@@ -780,7 +770,7 @@ export default function RequestsPage() {
             <Button
               onClick={handleEdit}
               disabled={saving || !editForm.employeeId || !editForm.date || !editForm.reason}
-              className="bg-linear-to-r from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white h-9 px-5 shadow-lg shadow-violet-500/20 transition-all"
+              className="bg-linear-to-r from-brand-600 to-brand-700 hover:from-brand-700 hover:to-brand-800 text-white h-9 px-5 shadow-lg shadow-brand-500/20 transition-all"
             >
               {saving ? 'جاري الحفظ...' : 'حفظ التعديلات'}
             </Button>
@@ -833,7 +823,7 @@ export default function RequestsPage() {
           <DialogFooter>
             <Button
               onClick={() => setUploadResult(null)}
-              className="bg-linear-to-r from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white h-9 px-5 shadow-lg shadow-violet-500/20"
+              className="bg-linear-to-r from-brand-600 to-brand-700 hover:from-brand-700 hover:to-brand-800 text-white h-9 px-5 shadow-lg shadow-brand-500/20"
             >
               تم
             </Button>

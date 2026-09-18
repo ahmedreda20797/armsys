@@ -12,6 +12,7 @@
 import { NextRequest } from 'next/server';
 import { getAll, findWhere, createRecord, sortByDateField, getEmployeeMap, invalidateCache, TTL } from '@/lib/db';
 import { requireAuth, verifyPermission } from '@/lib/verify-permission';
+import { shapeAuditIdentityForViewer } from '@/lib/audit/audit-identity';
 import { validationError, unauthorizedError, forbiddenError, internalError, conflictError, lockedError, logServerFailure } from '@/lib/api-error';
 import { isValidPoints } from '@/lib/metrics/kpiMetrics';
 import { dedupByClientRequest } from '@/lib/idempotency';
@@ -80,7 +81,18 @@ export async function GET(request: NextRequest) {
     if (isBonusParam === 'false') records = records.filter((r) => r.isBonus === false);
 
     records = sortByDateField(records, 'createdAt', 'desc');
-    return Response.json(records);
+
+    // ── §AUDIT-PRIVACY (§2) — WHO registered an observation and WHO
+    // decided on it is audit metadata, gated SERVER-SIDE by the
+    // canonical 'qualityAuditLog' permission (shared with the
+    // discounts route via src/lib/audit/audit-identity.ts). Legacy
+    // rows without identity fields pass through untouched.
+    const payload = shapeAuditIdentityForViewer(
+      records as unknown as Array<Record<string, unknown>>,
+      auth.role,
+      auth.permissions,
+    );
+    return Response.json(payload);
   } catch (error) {
     logServerFailure('quality-observations', 'GET', error);
     return internalError();

@@ -581,12 +581,12 @@ export function EmployeePerformanceSection({ employeeId }: { employeeId: string 
         <CardContent className="p-5 space-y-4">
           <div className="flex items-center justify-between flex-wrap gap-2">
             <h3 className="text-white font-semibold flex items-center gap-2">
-              <div className="w-7 h-7 rounded-lg bg-purple-500/10 border border-purple-500/20 flex items-center justify-center">
-                <TrendingUp className="size-4 text-purple-400" />
+              <div className="w-7 h-7 rounded-lg bg-brand-500/10 border border-brand-500/20 flex items-center justify-center">
+                <TrendingUp className="size-4 text-brand-400" />
               </div>
               الملخص الوظيفي
             </h3>
-            <Badge variant="outline" className="border-purple-500/30 text-purple-400 bg-purple-500/5 text-xs rounded-lg">
+            <Badge variant="outline" className="border-brand-500/30 text-brand-400 bg-brand-500/5 text-xs rounded-lg">
               المسار الوظيفي (كل الفترات)
             </Badge>
           </div>

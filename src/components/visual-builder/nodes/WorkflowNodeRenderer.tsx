@@ -21,7 +21,7 @@ const ICON_MAP: Record<string, React.ElementType> = {
 
 const STATUS_RING: Record<string, string> = {
   idle:     'ring-slate-600/40',
-  active:   'ring-violet-500/60',
+  active:   'ring-brand-500/60',
   error:    'ring-red-500/70',
   warning:  'ring-amber-500/60',
   success:  'ring-emerald-500/60',
@@ -30,7 +30,7 @@ const STATUS_RING: Record<string, string> = {
 
 const STATUS_DOT: Record<string, string> = {
   idle:     'bg-slate-500',
-  active:   'bg-violet-400 animate-pulse',
+  active:   'bg-brand-400 animate-pulse',
   error:    'bg-red-400',
   warning:  'bg-amber-400',
   success:  'bg-emerald-400',
@@ -60,7 +60,7 @@ export const WorkflowNodeRenderer = memo(function WorkflowNodeRenderer({ data, s
         'relative min-w-[160px] max-w-[220px] rounded-xl border transition-all duration-150',
         'bg-slate-900/95 backdrop-blur-sm shadow-lg',
         selected
-          ? 'border-violet-500/80 shadow-violet-500/20 shadow-xl ring-2 ring-violet-500/30'
+          ? 'border-brand-500/80 shadow-brand-500/20 shadow-xl ring-2 ring-brand-500/30'
           : hasError
           ? 'border-red-500/60 shadow-red-500/10'
           : 'border-slate-700/60 hover:border-slate-500/60',
@@ -80,7 +80,7 @@ export const WorkflowNodeRenderer = memo(function WorkflowNodeRenderer({ data, s
           position={Position.Left}
           id={port.id}
           style={{ top: inputPorts.length === 1 ? '50%' : `${((i + 1) / (inputPorts.length + 1)) * 100}%` }}
-          className="!w-3 !h-3 !bg-slate-600 !border-2 !border-slate-400 hover:!bg-violet-500 hover:!border-violet-300 transition-colors"
+          className="!w-3 !h-3 !bg-slate-600 !border-2 !border-slate-400 hover:!bg-brand-500 hover:!border-brand-300 transition-colors"
         />
       ))}
 
@@ -123,7 +123,7 @@ export const WorkflowNodeRenderer = memo(function WorkflowNodeRenderer({ data, s
 
         {/* Execution badge */}
         {executionCount !== undefined && executionCount > 0 && (
-          <div className="absolute -top-2 -right-2 w-5 h-5 rounded-full bg-violet-600 border border-slate-900 flex items-center justify-center">
+          <div className="absolute -top-2 -right-2 w-5 h-5 rounded-full bg-brand-600 border border-slate-900 flex items-center justify-center">
             <span className="text-[9px] font-bold text-white">{executionCount > 9 ? '9+' : executionCount}</span>
           </div>
         )}
@@ -137,13 +137,13 @@ export const WorkflowNodeRenderer = memo(function WorkflowNodeRenderer({ data, s
           position={Position.Right}
           id={port.id}
           style={{ top: outputPorts.length === 1 ? '50%' : `${((i + 1) / (outputPorts.length + 1)) * 100}%` }}
-          className="!w-3 !h-3 !bg-slate-600 !border-2 !border-slate-400 hover:!bg-violet-500 hover:!border-violet-300 transition-colors"
+          className="!w-3 !h-3 !bg-slate-600 !border-2 !border-slate-400 hover:!bg-brand-500 hover:!border-brand-300 transition-colors"
         />
       ))}
 
       {/* Selection glow */}
       {selected && (
-        <div className="absolute inset-0 rounded-xl pointer-events-none ring-2 ring-violet-400/20 ring-offset-1 ring-offset-transparent" />
+        <div className="absolute inset-0 rounded-xl pointer-events-none ring-2 ring-brand-400/20 ring-offset-1 ring-offset-transparent" />
       )}
     </div>
   );

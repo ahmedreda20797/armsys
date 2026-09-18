@@ -191,9 +191,14 @@ export function buildReportHeader(dataset: EmployeePerformanceDataset): ReportHe
 
   const facts: KeyValueFact[] = [
     { label: 'القسم', value: employee.department ?? UNAVAILABLE, unavailable: employee.department === null },
-    // The analytical dataset carries no team field — an explicit
-    // unavailable state (spec §3), never an invented value.
-    { label: 'الفريق', value: UNAVAILABLE, unavailable: true },
+    {
+      // The team resolves from the ORGANIZATION TREE (service-side).
+      // Datasets built before the team field existed (and unassigned
+      // employees) render the explicit unavailable state — spec §3.
+      label: 'الفريق',
+      value: employee.team ?? UNAVAILABLE,
+      unavailable: !employee.team,
+    },
     { label: 'المسمى الوظيفي', value: employee.position ?? UNAVAILABLE, unavailable: employee.position === null },
     {
       label: 'حالة التوظيف',
@@ -253,12 +258,35 @@ export interface KpiHeroView {
   /** Arabic engine explanation for non-value outcomes (verbatim). */
   outcomeMessage: string | null;
   schemeLabel: string | null;
+  /**
+   * §6 STATE DISTINCTION — set only when the KPI engine returned NO
+   * value while REAL quality evidence exists in the dataset for the
+   * same employee/period. This is state B/D (evidence exists, KPI
+   * unavailable / not eligible) — never rendered for state A (no
+   * evidence). Pure projection of dataset counters; nothing invented.
+   */
+  evidenceNote: string | null;
 }
 
 export function buildKpiHero(dataset: EmployeePerformanceDataset): KpiHeroView {
   const { kpi, trend } = dataset;
   const quality = kpi.quality;
   const mom = trend.mom;
+
+  // §6 — the KPI engine verdict never suppresses quality evidence:
+  // when the engine produced no score/contribution while the dataset
+  // holds real period observations/deductions, say so explicitly
+  // (state B/D). Counts are the dataset's own — verbatim.
+  const kpiValueAvailable = quality?.rawScore != null || quality?.weightedContribution != null;
+  const obsTotal = dataset.quality.observations.total;
+  const dedCount = dataset.quality.deductions.count;
+  const evidenceParts: string[] = [];
+  if (obsTotal > 0) evidenceParts.push(`${obsTotal} ملاحظة جودة`);
+  if (dedCount > 0) evidenceParts.push(`${dedCount} خصم جودة`);
+  const evidenceNote =
+    !kpiValueAvailable && evidenceParts.length > 0
+      ? `توجد أدلة جودة حقيقية لهذه الفترة (${evidenceParts.join(' · ')}) وتُعرض في الأقسام أدناه — نتيجة KPI غير متاحة وفق قواعد المحرك، ولا تُختلق قيم بديلة.`
+      : null;
 
   return {
     rawScoreDisplay: formatScore(quality?.rawScore ?? null),
@@ -279,6 +307,7 @@ export function buildKpiHero(dataset: EmployeePerformanceDataset): KpiHeroView {
     directionLabel: trend.direction ? TREND_LABELS[trend.direction] ?? trend.direction : null,
     outcomeMessage: kpi.message,
     schemeLabel: kpi.scheme ? `${kpi.scheme.schemeName} — إصدار ${kpi.scheme.schemeVersion}` : null,
+    evidenceNote,
   };
 }
 

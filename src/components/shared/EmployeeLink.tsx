@@ -71,8 +71,8 @@ export function EmployeeLink({
   const avatarSize = compact ? 'size-5 text-[10px]' : 'size-6 text-xs';
   const avatarColors = [
     'from-emerald-500 to-cyan-600',
-    'from-violet-500 to-purple-600',
-    'from-blue-500 to-indigo-600',
+    'from-brand-500 to-brand-600',
+    'from-blue-500 to-brand-700',
     'from-orange-500 to-amber-600',
     'from-pink-500 to-rose-600',
     'from-teal-500 to-emerald-600',
@@ -86,9 +86,9 @@ export function EmployeeLink({
       onClick={handleClick}
       className={`
         inline-flex items-center gap-1.5 rounded-md
-        text-white hover:text-violet-400
+        text-white hover:text-brand-400
         transition-colors duration-150
-        hover:bg-violet-500/5
+        hover:bg-brand-500/5
         px-1 -mx-1 py-0.5 -my-0.5
         ${canOpen ? 'cursor-pointer group' : 'cursor-default'}
         ${className}

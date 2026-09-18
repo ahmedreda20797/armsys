@@ -81,7 +81,7 @@ export function AuditTrailList({
   }
 
   return (
-    <ul className={cn('space-y-2', className)} dir="rtl">
+    <ul className={cn('space-y-2', className)}>
       {entries.map((e) => {
         const actionLabel = ACTION_LABELS[e.action] ?? e.action;
         const entityLabel = ENTITY_LABELS[e.entityType] ?? e.entityType;

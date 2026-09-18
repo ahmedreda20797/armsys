@@ -57,7 +57,7 @@ function detectPython(): { bin: string; prefix: string[] } | null {
     { bin: 'py', prefix: ['-3'] },
   ]) {
     try {
-      const probe = spawnSync(candidate.bin, [...candidate.prefix, '-I', '-c', 'pass'], {
+      const probe = spawnSync(candidate.bin, [...candidate.prefix, '-I', '-X', 'utf8', '-c', 'pass'], {
         timeout: 5_000,
         encoding: 'utf8',
       });
@@ -92,7 +92,10 @@ function runPythonReference(
         (fixture as Record<string, unknown>).schemaVersion !== undefined
       ? fixture
       : { schemaVersion: 1, dataset: fixture };
-  const result = spawnSync(python!.bin, [...python!.prefix, '-I', ENGINE_PATH], {
+  // -X utf8: match the production bridge (python-bridge.ts) — a piped
+  // Windows interpreter defaults to the ANSI codepage and would return
+  // mojibake for the Arabic labels in the fixtures.
+  const result = spawnSync(python!.bin, [...python!.prefix, '-I', '-X', 'utf8', ENGINE_PATH], {
     input: JSON.stringify(envelope),
     encoding: 'utf8',
     timeout: 30_000,

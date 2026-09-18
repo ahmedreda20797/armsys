@@ -22,11 +22,11 @@
 //  (max-h min(70vh,600px) + overscroll-contain: no background scroll).
 // ══════════════════════════════════════════════════════════════
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  Bell, CheckCheck, ExternalLink, Eye, Loader2, Trash2, ChevronDown,
+  Bell, CheckCheck, ExternalLink, Eye, Loader2, Trash2,
 } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -40,18 +40,18 @@ import type { AppNotification } from '@/types';
 // ── Category → icon/color (single compact map for the popover) ──
 const CATEGORY_ICONS: Record<string, { emoji: string; tint: string }> = {
   attendance: { emoji: '⏰', tint: 'bg-blue-500/10' },
-  biometric: { emoji: '👆', tint: 'bg-purple-500/10' },
+  biometric: { emoji: '👆', tint: 'bg-brand-500/10' },
   requests: { emoji: '📋', tint: 'bg-cyan-500/10' },
   quality: { emoji: '🏆', tint: 'bg-orange-500/10' },
   hr: { emoji: '💰', tint: 'bg-pink-500/10' },
   risk: { emoji: '⚠️', tint: 'bg-red-500/10' },
-  followUp: { emoji: '📝', tint: 'bg-violet-500/10' },
+  followUp: { emoji: '📝', tint: 'bg-brand-500/10' },
   employee: { emoji: '👤', tint: 'bg-emerald-500/10' },
   travel: { emoji: '✈️', tint: 'bg-sky-500/10' },
   system: { emoji: '⚙️', tint: 'bg-slate-500/10' },
   automation: { emoji: '🤖', tint: 'bg-amber-500/10' },
   complaint: { emoji: '💬', tint: 'bg-rose-500/10' },
-  capa: { emoji: '🛡️', tint: 'bg-indigo-500/10' },
+  capa: { emoji: '🛡️', tint: 'bg-brand-500/10' },
 };
 const DEFAULT_ICON = { emoji: '🔔', tint: 'bg-slate-500/10' };
 
@@ -65,7 +65,7 @@ const PRIORITY_BADGE: Record<string, { label: string; className: string }> = {
 const PAGE_MAP: Record<string, string> = {
   attendance: 'attendance', biometric: 'biometric', requests: 'requests',
   quality: 'quality', hr: 'hrDeductions', risk: 'riskCenter', followUp: 'followUps',
-  employee: 'employees', travel: 'travel', system: 'notifications',
+  employee: 'employees', travel: 'travel', system: 'home',
   automation: 'rulesEngine', complaint: 'complaints', capa: 'capa',
 };
 const MODULE_PAGE_MAP: Record<string, string> = {
@@ -73,14 +73,17 @@ const MODULE_PAGE_MAP: Record<string, string> = {
   quality: 'quality', hrDeductions: 'hrDeductions', travel: 'travel',
   followUps: 'followUps', capa: 'capa', complaints: 'complaints',
   employees: 'employees', rulesEngine: 'rulesEngine', riskCenter: 'riskCenter',
-  system: 'notifications', automation: 'rulesEngine', manual: 'notifications',
+  system: 'home', automation: 'rulesEngine', manual: 'home',
 };
 
 function resolveTargetPage(notif: AppNotification): string {
+  // §NOTIFICATIONS-V2 — the standalone Notification Center page no
+  // longer exists; anything that pointed there lands on Home instead.
+  if (notif.targetPage === 'notifications') return 'home';
   if (notif.targetPage) return notif.targetPage;
   if (notif.actionUrl?.startsWith('employee360:')) return 'employee360';
   if (notif.actionUrl) return notif.actionUrl.startsWith('/') ? notif.actionUrl.slice(1) : notif.actionUrl;
-  return PAGE_MAP[notif.category] || MODULE_PAGE_MAP[notif.sourceModule] || 'notifications';
+  return PAGE_MAP[notif.category] || MODULE_PAGE_MAP[notif.sourceModule] || 'home';
 }
 
 function timeAgo(dateStr: string): string {
@@ -99,31 +102,53 @@ const PAGE_SIZE = 25;
 export function NotificationCenterPopover({ children }: { children: React.ReactNode }) {
   const navigateTo = useAppStore((s) => s.navigateTo);
   const openEmployee360 = useAppStore((s) => s.openEmployee360);
+  // §NOTIFICATIONS-V2 — cross-cutting "open the bell panel" requests
+  // (legacy navigateTo('notifications') callers, AOCC bell, etc.)
+  // arrive through the store flag; it is consumed and cleared here.
+  const panelOpenRequest = useAppStore((s) => s.notificationPanelOpen);
+  const setPanelOpenRequest = useAppStore((s) => s.setNotificationPanelOpen);
   const qc = useQueryClient();
-  const [open, setOpen] = useState(false);
+  // §NOTIFICATIONS-V2 — `open` DERIVES from the store request so an
+  // external open request needs no setState-in-effect mirror. Clearing
+  // the request IS the effect's external-system update (zustand).
+  const [openLocal, setOpenLocal] = useState(false);
+  const open = openLocal || panelOpenRequest;
+  // §16 — the bell primarily surfaces UNREAD/recent actionable items;
+  // a compact switch gives access to the full history (read + unread).
+  const [tab, setTab] = useState<'unread' | 'all'>('unread');
   const [deleting, setDeleting] = useState<AppNotification | null>(null);
   const [deletingNow, setDeletingNow] = useState(false);
   const [markAllPending, setMarkAllPending] = useState(false);
+
+  useEffect(() => {
+    if (panelOpenRequest) setPanelOpenRequest(false);
+  }, [panelOpenRequest, setPanelOpenRequest]);
+
+  const handleOpenChange = (next: boolean) => {
+    setOpenLocal(next);
+    if (!next) setPanelOpenRequest(false);
+  };
 
   // The panel owns its data: the LATEST notifications (any status, so
   // items stay visible after being marked read) — NOT the unread-only
   // context feed whose items vanish on read.
   const { data, isLoading, refetch, isRefetching } = useQuery({
     queryKey: ['notification-popover'],
-    queryFn: () => apiFetch<{ data: AppNotification[] }>('/api/notifications?limit=25'),
+    queryFn: () => apiFetch<{ data: AppNotification[]; unreadCount?: number }>('/api/notifications?limit=25'),
     staleTime: 30_000,
     enabled: open,
   });
+  // §16 — the badge uses the SERVER unreadCount (accurate beyond the
+  // 25-item page); the list applies the active tab.
+  const serverUnreadCount = typeof data?.unreadCount === 'number' ? data.unreadCount : null;
   const items = useMemo(
-    () => [...(data?.data ?? [])].sort((a, b) => {
-      const aU = a.status === 'unread' ? 1 : 0;
-      const bU = b.status === 'unread' ? 1 : 0;
-      if (aU !== bU) return bU - aU;
-      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
-    }).slice(0, PAGE_SIZE),
-    [data],
+    () => [...(data?.data ?? [])]
+      .filter((n) => (tab === 'unread' ? n.status === 'unread' : true))
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+      .slice(0, PAGE_SIZE),
+    [data, tab],
   );
-  const unreadCount = items.filter((n) => n.status === 'unread').length;
+  const unreadCount = serverUnreadCount ?? (data?.data ?? []).filter((n) => n.status === 'unread').length;
 
   const invalidateFeeds = () => {
     qc.invalidateQueries({ queryKey: ['notification-popover'] });
@@ -146,7 +171,7 @@ export function NotificationCenterPopover({ children }: { children: React.ReactN
     } else {
       navigateTo(page, notif.sourceRecordId || undefined);
     }
-    setOpen(false);
+    setOpenLocal(false);
   };
 
   const handleMarkRead = (notif: AppNotification, e: React.MouseEvent) => {
@@ -187,12 +212,12 @@ export function NotificationCenterPopover({ children }: { children: React.ReactN
 
   return (
     <>
-      <Popover open={open} onOpenChange={setOpen}>
+      <Popover open={open} onOpenChange={handleOpenChange}>
         <PopoverTrigger asChild aria-label="الإشعارات">
           {children}
         </PopoverTrigger>
         <PopoverContent
-          dir="rtl"
+         
           align="end"
           sideOffset={8}
           onOpenAutoFocus={(e) => e.preventDefault()}
@@ -223,11 +248,32 @@ export function NotificationCenterPopover({ children }: { children: React.ReactN
             </button>
           </div>
 
+          {/* ── §16 tab switch — unread (default) vs full history ── */}
+          <div className="flex items-center gap-1 px-4 py-2 border-b border-slate-700/40 shrink-0">
+            {([
+              { key: 'unread' as const, label: `غير مقروء${serverUnreadCount ? ` (${serverUnreadCount})` : ''}` },
+              { key: 'all' as const, label: 'السجل الكامل' },
+            ]).map((t) => (
+              <button
+                key={t.key}
+                type="button"
+                onClick={() => setTab(t.key)}
+                className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition-colors ${
+                  tab === t.key
+                    ? 'bg-brand-500/15 text-brand-300'
+                    : 'text-slate-500 hover:text-slate-300'
+                }`}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
+
           {/* ── LIST — the ONLY scrollable region (§5.2) ── */}
           <ScrollArea className="h-[min(70vh,600px)] [&>[data-radix-scroll-area-viewport]]:overscroll-contain">
             {isLoading ? (
               <div className="flex flex-col items-center justify-center py-16 px-4">
-                <Loader2 className="size-7 text-emerald-500 animate-spin mb-3" />
+                <Loader2 className="size-7 text-brand-500 animate-spin mb-3" />
                 <p className="text-slate-400 text-sm">جاري تحميل الإشعارات...</p>
               </div>
             ) : items.length === 0 ? (
@@ -235,8 +281,8 @@ export function NotificationCenterPopover({ children }: { children: React.ReactN
                 <div className="flex items-center justify-center size-14 rounded-2xl bg-slate-800 border border-slate-700/50 mb-3">
                   <Bell className="size-7 text-slate-600" />
                 </div>
-                <p className="text-slate-400 text-sm font-medium">لا توجد إشعارات</p>
-                <p className="text-slate-600 text-xs mt-1">ستتلقى إشعارات فورية عند حدوث أحداث جديدة</p>
+                <p className="text-slate-400 text-sm font-medium">{tab === 'unread' ? 'لا يوجد إشعارات غير مقروءة' : 'لا توجد إشعارات'}</p>
+                <p className="text-slate-600 text-xs mt-1">{tab === 'unread' ? 'كل الإشعارات قرأت — السجل الكامل متاح في التبويب الثاني' : 'ستتلقى إشعارات فورية عند حدوث أحداث جديدة'}</p>
               </div>
             ) : (
               <div className="py-1 divide-y divide-slate-800/60">
@@ -257,10 +303,10 @@ export function NotificationCenterPopover({ children }: { children: React.ReactN
                         tabIndex={0}
                         onClick={() => handleOpen(notif)}
                         onKeyDown={(e) => { if (e.key === 'Enter') handleOpen(notif); }}
-                        className={`group relative flex items-start gap-2.5 px-3 py-2.5 cursor-pointer transition-colors ${isUnread ? 'bg-slate-800/60 hover:bg-slate-800' : 'hover:bg-slate-800/50'}`}
+                        className={`group relative flex items-start gap-2.5 px-3 py-2.5 cursor-pointer transition-colors ${isUnread ? 'bg-brand-500/[0.07] hover:bg-brand-500/[0.12]' : 'hover:bg-slate-800/50'}`}
                       >
-                        {/* unread accent */}
-                        {isUnread && <span className="absolute inset-y-1 right-0 w-0.5 rounded-full bg-emerald-500" />}
+                        {/* §16 unread accent — clear but subtle BRAND emphasis */}
+                        {isUnread && <span className="absolute inset-y-1 right-0 w-0.5 rounded-full bg-brand-500" />}
 
                         {/* type icon */}
                         <span className={`flex items-center justify-center size-8 rounded-lg text-sm shrink-0 ${cat.tint}`}>{cat.emoji}</span>
@@ -326,18 +372,6 @@ export function NotificationCenterPopover({ children }: { children: React.ReactN
               </div>
             )}
           </ScrollArea>
-
-          {/* ── FIXED footer ── */}
-          <div className="border-t border-slate-700/50 px-4 py-2 shrink-0">
-            <button
-              type="button"
-              onClick={() => { navigateTo('notifications'); setOpen(false); }}
-              className="w-full flex items-center justify-center gap-1.5 text-xs text-emerald-500 hover:text-emerald-400 transition-colors font-medium py-1 rounded-lg hover:bg-emerald-500/5"
-            >
-              عرض جميع الإشعارات
-              <ChevronDown className="size-3 -rotate-90" />
-            </button>
-          </div>
         </PopoverContent>
       </Popover>
 

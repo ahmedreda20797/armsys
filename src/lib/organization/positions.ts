@@ -20,7 +20,7 @@
 //  employee accounts arrive) and is intentionally NOT implemented.
 // ══════════════════════════════════════════════════════════════
 
-import { migratePermission, type PermissionsMap } from '@/config/permissions';
+import { migratePermission, validatePermissionEntry, type PermissionsMap } from '@/config/permissions';
 import type { OrgNodeType } from './types';
 
 export type PositionStatus = 'active' | 'archived';
@@ -60,24 +60,17 @@ export function parsePositionTemplate(raw: unknown): PermissionsMap | null {
 }
 
 /**
- * Structural validation for a stored template: every entry must be
- * a known permission shape (string level or { level }). Returns the
- * list of invalid keys (empty = valid). Used by the positions API
+ * Structural validation for a stored template: every entry must be a
+ * known permission shape — a valid level string OR a full entry
+ * object ({ level, actions?, scope?, sections? } validated through
+ * the SINGLE vocabulary validator, validatePermissionEntry). Returns
+ * the list of invalid keys (empty = valid). Used by the positions API
  * so a corrupt template can never enter the resolver chain.
  */
 export function findInvalidTemplateKeys(map: Record<string, unknown>): string[] {
   const invalid: string[] = [];
   for (const [key, value] of Object.entries(map)) {
-    if (typeof value === 'string') {
-      if (value !== 'none' && value !== 'read' && value !== 'edit') invalid.push(key);
-      continue;
-    }
-    if (!value || typeof value !== 'object' || Array.isArray(value)) {
-      invalid.push(key);
-      continue;
-    }
-    const level = (value as Record<string, unknown>).level;
-    if (level !== 'none' && level !== 'read' && level !== 'edit') invalid.push(key);
+    if (validatePermissionEntry(value).length > 0) invalid.push(key);
   }
   return invalid;
 }

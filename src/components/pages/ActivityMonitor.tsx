@@ -75,12 +75,12 @@ function getLogTimestamp(log: ActivityLogItem): string {
 
 function getActionIcon(action: string) {
   switch (action) {
-    case 'login': return <LogIn className="size-4 text-violet-400" />;
+    case 'login': return <LogIn className="size-4 text-brand-400" />;
     case 'logout': return <LogOut className="size-4 text-slate-400" />;
     case 'create': return <Plus className="size-4 text-blue-400" />;
     case 'update': return <Pencil className="size-4 text-amber-400" />;
     case 'delete': return <Trash2 className="size-4 text-red-400" />;
-    case 'approve': return <CheckCircle2 className="size-4 text-violet-400" />;
+    case 'approve': return <CheckCircle2 className="size-4 text-brand-400" />;
     case 'page_visit': return <Eye className="size-4 text-slate-400" />;
     default: return <Activity className="size-4 text-slate-400" />;
   }
@@ -88,12 +88,12 @@ function getActionIcon(action: string) {
 
 function getActionBadge(action: string) {
   switch (action) {
-    case 'login': return <Badge className="bg-violet-500/15 text-violet-400 border-violet-500/30 text-[11px] px-2">دخول</Badge>;
+    case 'login': return <Badge className="bg-brand-500/15 text-brand-400 border-brand-500/30 text-[11px] px-2">دخول</Badge>;
     case 'logout': return <Badge className="bg-slate-500/15 text-slate-400 border-slate-500/20 text-[11px] px-2">خروج</Badge>;
     case 'create': return <Badge className="bg-blue-500/15 text-blue-400 border-blue-500/20 text-[11px] px-2">إنشاء</Badge>;
     case 'update': return <Badge className="bg-amber-500/15 text-amber-400 border-amber-500/20 text-[11px] px-2">تعديل</Badge>;
     case 'delete': return <Badge className="bg-red-500/15 text-red-400 border-red-500/20 text-[11px] px-2">حذف</Badge>;
-    case 'approve': return <Badge className="bg-violet-500/15 text-violet-400 border-violet-500/30 text-[11px] px-2">موافقة</Badge>;
+    case 'approve': return <Badge className="bg-brand-500/15 text-brand-400 border-brand-500/30 text-[11px] px-2">موافقة</Badge>;
     case 'page_visit': return <Badge className="bg-slate-500/15 text-slate-400 border-slate-500/20 text-[11px] px-2">زيارة</Badge>;
     default: return <Badge variant="outline" className="text-[11px] px-2">{action}</Badge>;
   }
@@ -119,14 +119,14 @@ function getPageLabel(page: string): string {
 function getPageBadge(page: string) {
   const colors: Record<string, string> = {
     home: 'bg-slate-500/15 text-slate-400 border-slate-500/20',
-    employees: 'bg-violet-500/15 text-violet-400 border-violet-500/20',
+    employees: 'bg-brand-500/15 text-brand-400 border-brand-500/20',
     biometric: 'bg-cyan-500/15 text-cyan-400 border-cyan-500/20',
     attendance: 'bg-blue-500/15 text-blue-400 border-blue-500/20',
     requests: 'bg-amber-500/15 text-amber-400 border-amber-500/20',
     rules: 'bg-orange-500/15 text-orange-400 border-orange-500/20',
-    quality: 'bg-violet-500/15 text-violet-400 border-violet-500/30',
+    quality: 'bg-brand-500/15 text-brand-400 border-brand-500/30',
     travel: 'bg-sky-500/15 text-sky-400 border-sky-500/20',
-    reports: 'bg-indigo-500/15 text-indigo-400 border-indigo-500/20',
+    reports: 'bg-brand-500/15 text-brand-400 border-brand-500/20',
     dashboard: 'bg-pink-500/15 text-pink-400 border-pink-500/20',
     firebase: 'bg-rose-500/15 text-rose-400 border-rose-500/20',
   };
@@ -346,8 +346,8 @@ export default function ActivityMonitor() {
       {/* ═══ Header ═══ */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div className="flex items-center gap-3">
-          <div className="flex items-center justify-center size-10 rounded-xl bg-violet-500/15 border border-violet-500/30">
-            <Activity className="size-5 text-violet-400" />
+          <div className="flex items-center justify-center size-10 rounded-xl bg-brand-500/15 border border-brand-500/30">
+            <Activity className="size-5 text-brand-400" />
           </div>
           <div>
             <h2 className="text-xl font-bold text-white">مراقب النشاط</h2>
@@ -372,13 +372,13 @@ export default function ActivityMonitor() {
         </div>
       </div>
 
-      <Tabs defaultValue="feed" dir="rtl" className="space-y-4">
+      <Tabs defaultValue="feed" className="space-y-4">
         <TabsList className="bg-slate-800/80 border border-slate-700/50">
-          <TabsTrigger value="feed" className="data-[state=active]:bg-linear-to-r data-[state=active]:from-violet-600 data-[state=active]:to-indigo-600 data-[state=active]:text-white text-xs px-3">
+          <TabsTrigger value="feed" className="data-[state=active]:bg-linear-to-r data-[state=active]:from-brand-600 data-[state=active]:to-brand-700 data-[state=active]:text-white text-xs px-3">
             <Activity className="size-3.5 ml-1" />
             سجل النشاط
           </TabsTrigger>
-          <TabsTrigger value="online" className="data-[state=active]:bg-linear-to-r data-[state=active]:from-violet-600 data-[state=active]:to-indigo-600 data-[state=active]:text-white text-xs px-3">
+          <TabsTrigger value="online" className="data-[state=active]:bg-linear-to-r data-[state=active]:from-brand-600 data-[state=active]:to-brand-700 data-[state=active]:text-white text-xs px-3">
             <Users className="size-3.5 ml-1" />
             المتصلون الآن
             {onlineUsers.length > 0 && (
@@ -387,7 +387,7 @@ export default function ActivityMonitor() {
               </span>
             )}
           </TabsTrigger>
-          <TabsTrigger value="stats" className="data-[state=active]:bg-linear-to-r data-[state=active]:from-violet-600 data-[state=active]:to-indigo-600 data-[state=active]:text-white text-xs px-3">
+          <TabsTrigger value="stats" className="data-[state=active]:bg-linear-to-r data-[state=active]:from-brand-600 data-[state=active]:to-brand-700 data-[state=active]:text-white text-xs px-3">
             <BarChart3 className="size-3.5 ml-1" />
             إحصائيات
           </TabsTrigger>
@@ -550,7 +550,7 @@ export default function ActivityMonitor() {
                       <Button
                         variant="ghost"
                         onClick={() => setDisplayCount((p) => p + 50)}
-                        className="text-violet-400 hover:text-violet-300 hover:bg-violet-500/10 text-xs h-7"
+                        className="text-brand-400 hover:text-brand-300 hover:bg-brand-500/10 text-xs h-7"
                       >
                         <ChevronDown className="size-3 ml-1" />
                         عرض المزيد ({filteredLogs.length - displayCount} سجل متبقي)
@@ -597,8 +597,8 @@ export default function ActivityMonitor() {
                         </TableCell>
                         <TableCell className="py-3 px-3">
                           <div className="flex items-center gap-2">
-                            <div className="flex-shrink-0 size-7 rounded-full bg-violet-500/10 flex items-center justify-center border border-violet-500/30">
-                              <span className="text-violet-400 text-[10px] font-bold">
+                            <div className="flex-shrink-0 size-7 rounded-full bg-brand-500/10 flex items-center justify-center border border-brand-500/30">
+                              <span className="text-brand-400 text-[10px] font-bold">
                                 {user.userName?.charAt(0) || '?'}
                               </span>
                             </div>
@@ -614,7 +614,7 @@ export default function ActivityMonitor() {
                           </span>
                         </TableCell>
                         <TableCell className="py-3 px-3 text-center">
-                          <span className="text-violet-400/70 text-[10px]" dir="ltr">
+                          <span className="text-brand-400/70 text-[10px]" dir="ltr">
                             {getRelativeTime(user.lastActivity)}
                           </span>
                         </TableCell>
@@ -631,9 +631,9 @@ export default function ActivityMonitor() {
         <TabsContent value="stats" className="space-y-4">
           {/* Stats Cards */}
           <div className="grid grid-cols-3 gap-2.5">
-            <div className="rounded-lg border border-violet-500/30 bg-emerald-500/8 px-3.5 py-2.5">
+            <div className="rounded-lg border border-brand-500/30 bg-emerald-500/8 px-3.5 py-2.5">
               <p className="text-slate-500 text-[11px] mb-0.5">أنشطة اليوم</p>
-              <p className="text-violet-400 font-bold text-lg leading-tight">{stats.totalToday}</p>
+              <p className="text-brand-400 font-bold text-lg leading-tight">{stats.totalToday}</p>
               <p className="text-slate-500 text-[10px]">نشاط</p>
             </div>
             <div className="rounded-lg border border-cyan-500/25 bg-cyan-500/8 px-3.5 py-2.5">
@@ -641,9 +641,9 @@ export default function ActivityMonitor() {
               <p className="text-cyan-400 font-bold text-lg leading-tight">{onlineUsers.length}</p>
               <p className="text-slate-500 text-[10px]">مستخدم</p>
             </div>
-            <div className="rounded-lg border border-violet-500/25 bg-violet-500/8 px-3.5 py-2.5">
+            <div className="rounded-lg border border-brand-500/25 bg-brand-500/8 px-3.5 py-2.5">
               <p className="text-slate-500 text-[11px] mb-0.5">إجمالي السجلات</p>
-              <p className="text-violet-400 font-bold text-lg leading-tight">{logs.length}</p>
+              <p className="text-brand-400 font-bold text-lg leading-tight">{logs.length}</p>
               <p className="text-slate-500 text-[10px]">سجل</p>
             </div>
           </div>
@@ -653,7 +653,7 @@ export default function ActivityMonitor() {
             <Card className="border-slate-700/40 bg-slate-800/50 overflow-hidden">
               <div className="px-4 py-3 border-b border-slate-700/30">
                 <h3 className="text-white font-semibold text-sm flex items-center gap-2">
-                  <Users className="size-4 text-violet-400" />
+                  <Users className="size-4 text-brand-400" />
                   أكثر المستخدمين نشاطاً اليوم
                 </h3>
               </div>
@@ -677,14 +677,14 @@ export default function ActivityMonitor() {
                           <TableCell className="py-2 px-3 text-slate-500 text-[10px]">{i + 1}</TableCell>
                           <TableCell className="py-2 px-3">
                             <div className="flex items-center gap-2">
-                              <div className="size-5 rounded-full bg-gradient-to-br from-emerald-500/20 to-emerald-600/10 flex items-center justify-center border border-violet-500/30">
-                                <span className="text-violet-400 text-[8px] font-bold">{u.userName.charAt(0)}</span>
+                              <div className="size-5 rounded-full bg-gradient-to-br from-emerald-500/20 to-emerald-600/10 flex items-center justify-center border border-brand-500/30">
+                                <span className="text-brand-400 text-[8px] font-bold">{u.userName.charAt(0)}</span>
                               </div>
                               <span className="text-white text-xs">{u.userName}</span>
                             </div>
                           </TableCell>
                           <TableCell className="py-2 px-3 text-center">
-                            <Badge className="bg-violet-500/15 text-violet-400 border-violet-500/30 text-[10px] px-2">
+                            <Badge className="bg-brand-500/15 text-brand-400 border-brand-500/30 text-[10px] px-2">
                               {u.count} نشاط
                             </Badge>
                           </TableCell>
@@ -700,7 +700,7 @@ export default function ActivityMonitor() {
             <Card className="border-slate-700/40 bg-slate-800/50 overflow-hidden">
               <div className="px-4 py-3 border-b border-slate-700/30">
                 <h3 className="text-white font-semibold text-sm flex items-center gap-2">
-                  <BarChart3 className="size-4 text-violet-400" />
+                  <BarChart3 className="size-4 text-brand-400" />
                   توزيع الأنشطة حسب النوع
                 </h3>
               </div>

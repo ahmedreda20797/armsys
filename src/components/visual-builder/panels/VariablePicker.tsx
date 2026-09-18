@@ -16,13 +16,13 @@ const TYPE_COLORS: Record<string, string> = {
   string: 'text-emerald-400',
   number: 'text-blue-400',
   boolean: 'text-amber-400',
-  date: 'text-violet-400',
+  date: 'text-brand-400',
   array: 'text-pink-400',
   object: 'text-cyan-400',
 };
 
 const SOURCE_ICON_COLORS: Record<string, string> = {
-  workflow: 'bg-violet-500/20 text-violet-300',
+  workflow: 'bg-brand-500/20 text-brand-300',
   employee: 'bg-blue-500/20 text-blue-300',
   attendance: 'bg-cyan-500/20 text-cyan-300',
   capa: 'bg-emerald-500/20 text-emerald-300',
@@ -30,7 +30,7 @@ const SOURCE_ICON_COLORS: Record<string, string> = {
   risk: 'bg-red-500/20 text-red-300',
   travel: 'bg-sky-500/20 text-sky-300',
   hr: 'bg-pink-500/20 text-pink-300',
-  requests: 'bg-indigo-500/20 text-indigo-300',
+  requests: 'bg-brand-500/20 text-brand-300',
   notifications: 'bg-orange-500/20 text-orange-300',
   system: 'bg-slate-500/20 text-slate-300',
 };
@@ -81,7 +81,7 @@ export const VariablePicker = memo(function VariablePicker({
       <div
         className="w-full max-w-2xl max-h-[80vh] flex flex-col bg-slate-900 border border-slate-700/60 rounded-xl shadow-2xl overflow-hidden"
         onClick={(e) => e.stopPropagation()}
-        dir="rtl"
+       
       >
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-slate-800">
@@ -100,7 +100,7 @@ export const VariablePicker = memo(function VariablePicker({
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="بحث في المتغيرات..."
-              className="w-full bg-slate-800/60 border border-slate-700/50 rounded-lg pr-8 pl-3 py-2 text-xs text-slate-200 placeholder:text-slate-500 focus:outline-none focus:border-violet-500/50"
+              className="w-full bg-slate-800/60 border border-slate-700/50 rounded-lg pr-8 pl-3 py-2 text-xs text-slate-200 placeholder:text-slate-500 focus:outline-none focus:border-brand-500/50"
             />
           </div>
           {/* Source chips */}
@@ -110,7 +110,7 @@ export const VariablePicker = memo(function VariablePicker({
               className={cn(
                 'px-2 py-0.5 rounded-full text-[9px] font-medium transition-colors border',
                 activeSource === null
-                  ? 'bg-violet-600/30 text-violet-300 border-violet-500/40'
+                  ? 'bg-brand-600/30 text-brand-300 border-brand-500/40'
                   : 'text-slate-500 border-slate-700/40 hover:text-slate-300'
               )}
             >
@@ -123,7 +123,7 @@ export const VariablePicker = memo(function VariablePicker({
                 className={cn(
                   'px-2 py-0.5 rounded-full text-[9px] font-medium transition-colors border',
                   activeSource === src.id
-                    ? 'bg-violet-600/30 text-violet-300 border-violet-500/40'
+                    ? 'bg-brand-600/30 text-brand-300 border-brand-500/40'
                     : 'text-slate-500 border-slate-700/40 hover:text-slate-300'
                 )}
               >
@@ -152,7 +152,7 @@ export const VariablePicker = memo(function VariablePicker({
               </div>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">
-                  <span className="text-xs font-mono text-violet-300 truncate">{v.name}</span>
+                  <span className="text-xs font-mono text-brand-300 truncate">{v.name}</span>
                   <span className={cn('text-[9px]', TYPE_COLORS[v.type] ?? 'text-slate-400')}>{v.type}</span>
                 </div>
                 <p className="text-[10px] text-slate-500 truncate">{v.labelAr}{v.description ? ` — ${v.description}` : ''}</p>
@@ -163,7 +163,7 @@ export const VariablePicker = memo(function VariablePicker({
               >
                 <Star className="w-3 h-3" fill={favorites.has(v.id) ? 'currentColor' : 'none'} />
               </button>
-              <ChevronRight className="w-3.5 h-3.5 text-slate-600 group-hover:text-violet-400 transition-colors" />
+              <ChevronRight className="w-3.5 h-3.5 text-slate-600 group-hover:text-brand-400 transition-colors" />
             </button>
           ))}
         </div>

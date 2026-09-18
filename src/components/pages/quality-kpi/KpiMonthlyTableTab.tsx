@@ -35,7 +35,8 @@ import {
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table';
-import { OverflowMenu, type OverflowMenuItem } from '@/components/shared/OverflowMenu';
+import { SmartActionMenu } from '@/components/shared/SmartActionMenu';
+import type { OverflowMenuItem } from '@/components/shared/OverflowMenu';
 import { PeriodComparisonDialog } from '@/components/shared/comparison/PeriodComparisonDialog';
 import { useAppStore } from '@/lib/store';
 import { useKpiReportTable } from '@/hooks/use-kpi-queries';
@@ -414,7 +415,7 @@ export default function KpiMonthlyTableTab({
                       ) : '—'}
                     </TableCell>
                     <TableCell className="text-right">
-                      <OverflowMenu items={rowMenu(row)} label={`إجراءات ${row.employeeName}`} />
+                      <SmartActionMenu actions={rowMenu(row)} label={`إجراءات ${row.employeeName}`} />
                     </TableCell>
                   </TableRow>
                 ))}

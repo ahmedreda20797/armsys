@@ -73,6 +73,13 @@ export interface EmployeeIdentityFacts {
   employeeName: string;
   employeeCode: string | null;
   department: string | null;
+  /**
+   * The employee's TEAM resolved from the ORGANIZATION TREE (nearest
+   * team-type ancestor; subteams roll up). Null when the employee is
+   * unassigned or no team node exists — callers render an explicit
+   * unavailable state, never an invented label.
+   */
+  team: string | null;
   position: string | null;
   /** Existing lifecycle vocabulary (normalizeEmployeeStatus). */
   employmentStatus: 'active' | 'inactive' | 'archived' | 'unknown';

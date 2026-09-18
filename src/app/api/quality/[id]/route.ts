@@ -55,7 +55,25 @@ export async function PUT(
       return NextResponse.json({ error: 'الشهر مغلق ولا يمكن تعديل خصوماته' }, { status: 423 });
     }
 
+    // §AUDIT — hidden updater metadata, resolved server-side. The
+    // archive stamp below reuses the SAME resolved actor identity.
+    const actor = await resolveActor(permCheck.user?.id);
+
     const updates: Record<string, any> = {
+      // §ARCHIVE — archive/restore is its own audited operation. It is
+      // NOT a business-field edit: it never invalidates the approval, and
+      // it is allowed even for closed months (the archived record stops
+      // affecting ACTIVE totals going forward while the closed snapshot
+      // and historical reports stay intact).
+      ...(body.archived === true && {
+        archived: true,
+        archivedAt: new Date().toISOString(),
+        archivedBy: actor.id,
+        archivedByName: actor.name,
+      }),
+      ...(body.archived === false && {
+        archived: false, archivedAt: null, archivedBy: null, archivedByName: null,
+      }),
       ...(date !== undefined && { date }),
       ...(type !== undefined && { type }),
       ...(description !== undefined && { description }),
@@ -66,8 +84,6 @@ export async function PUT(
       ...(relatedCapaId !== undefined && { relatedCapaId }),
     };
 
-    // §AUDIT — hidden updater metadata, resolved server-side.
-    const actor = await resolveActor(permCheck.user?.id);
     updates.updatedBy = actor.id;
     updates.updatedByName = actor.name;
 

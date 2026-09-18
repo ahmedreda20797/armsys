@@ -24,9 +24,14 @@ import {
   AoccQuickActions,
   AoccSystemStatus,
   AoccExecutiveSummary,
+  // §AOCC-ROUTING: the ONE shared department-health dialog (store intent).
 } from '@/components/aocc/AoccWidgets';
+import { DepartmentHealthDialog } from '@/components/aocc/DepartmentHealthDialog';
+import { OperationalDetailDialog, type OperationalDetailKind } from '@/components/shared/OperationalDetailDialog';
 import { DecisionCenterLayout } from '@/components/aocc/decisions/DecisionCenterLayout';
 import { useDecisions } from '@/hooks/use-decisions';
+import { useAppStore } from '@/lib/store';
+import { HomeQuickActionHost, type HomeQuickActionId } from '@/components/shared/HomeQuickActionHost';
 import {
   collectEvents,
   generateActions,
@@ -53,6 +58,9 @@ import {
   AlertCircle,
   BrainCircuit,
   Monitor,
+  Eye,
+  ShieldCheck,
+  Users,
 } from 'lucide-react';
 
 /* ═══════════════════════════════════════════════════════════════
@@ -229,6 +237,19 @@ export default function AoccLayout() {
   }, [stats, capaItems, complaintItems, followUpItems, riskSummary, notifStats, unreadCount]);
 
   // ── Quick Actions with urgent badges ──
+  // §AOCC-QUICK-ACTIONS — every action is classified by what it
+  // REPRESENTS:
+  //    kind: 'create'  → the creation of a record → opens the SAME
+  //      inline form family the Home page uses, IN THIS PAGE (§5).
+  //    kind: 'review'  → reviewing a backlog → navigates to the module
+  //      (the module's filters/table ARE the review surface).
+  //    kind: 'tool'    → a page-bound tool (biometric sync, reports,
+  //      automation) → navigation is the action.
+  const [inlineAction, setInlineAction] = useState<HomeQuickActionId | null>(null);
+  // §7 — the reusable IN-PLACE operational detail surface (e.g.
+  // اعتماد الطلبات): completable quick actions open the shared dialog
+  // instead of navigating away.
+  const [detailKind, setDetailKind] = useState<OperationalDetailKind | null>(null);
   const quickActions = useMemo(() => {
     const actionCounts: Record<string, number> = {};
     actions.forEach((a) => {
@@ -237,14 +258,16 @@ export default function AoccLayout() {
       }
     });
     return [
-      { id: 'approve-requests', label: 'اعتماد الطلبات', icon: <CheckCircle2 className="w-5 h-5" />, targetPage: 'requests', colorClass: 'text-sky-400', urgentCount: actionCounts['requests'] },
-      { id: 'review-capa', label: 'مراجعة كابا', icon: <ClipboardCheck className="w-5 h-5" />, targetPage: 'capa', colorClass: 'text-purple-400', urgentCount: actionCounts['capa'] },
-      { id: 'sync-biometric', label: 'مزامنة البصمة', icon: <Fingerprint className="w-5 h-5" />, targetPage: 'biometric', colorClass: 'text-violet-400' },
-      { id: 'create-followup', label: 'متابعة جديدة', icon: <Plus className="w-5 h-5" />, targetPage: 'followUps', colorClass: 'text-rose-400', urgentCount: actionCounts['followUps'] },
-      { id: 'review-complaints', label: 'مراجعة الشكاوى', icon: <AlertCircle className="w-5 h-5" />, targetPage: 'complaints', colorClass: 'text-orange-400', urgentCount: actionCounts['complaints'] },
-      { id: 'view-reports', label: 'التقارير', icon: <FileText className="w-5 h-5" />, targetPage: 'reports', colorClass: 'text-emerald-400' },
-      { id: 'notifications', label: 'الإشعارات', icon: <Bell className="w-5 h-5" />, targetPage: 'notifications', colorClass: 'text-amber-400', urgentCount: actionCounts['notifications'] },
-      { id: 'rules-engine', label: 'الأتمتة', icon: <Zap className="w-5 h-5" />, targetPage: 'rulesEngine', colorClass: 'text-yellow-400' },
+      { id: 'approve-requests', kind: 'detail' as const, detailId: 'approve-requests', label: 'اعتماد الطلبات', icon: <CheckCircle2 className="w-5 h-5" />, targetPage: 'requests', colorClass: 'text-sky-400', urgentCount: actionCounts['requests'] },
+      { id: 'review-capa', kind: 'review' as const, label: 'مراجعة كابا', icon: <ClipboardCheck className="w-5 h-5" />, targetPage: 'capa', colorClass: 'text-brand-400', urgentCount: actionCounts['capa'] },
+      { id: 'sync-biometric', kind: 'tool' as const, label: 'مزامنة البصمة', icon: <Fingerprint className="w-5 h-5" />, targetPage: 'biometric', colorClass: 'text-brand-400' },
+      { id: 'create-followup', kind: 'create' as const, inlineId: 'followUps' as HomeQuickActionId, label: 'متابعة جديدة', icon: <Plus className="w-5 h-5" />, targetPage: 'followUps', colorClass: 'text-rose-400', urgentCount: actionCounts['followUps'] },
+      { id: 'review-complaints', kind: 'review' as const, label: 'مراجعة الشكاوى', icon: <AlertCircle className="w-5 h-5" />, targetPage: 'complaints', colorClass: 'text-orange-400', urgentCount: actionCounts['complaints'] },
+      { id: 'create-observation', kind: 'create' as const, inlineId: 'observations' as HomeQuickActionId, label: 'ملاحظة جودة', icon: <Eye className="w-5 h-5" />, targetPage: 'observations', colorClass: 'text-cyan-400' },
+      { id: 'create-capa', kind: 'create' as const, inlineId: 'capa' as HomeQuickActionId, label: 'إنشاء CAPA', icon: <ShieldCheck className="w-5 h-5" />, targetPage: 'capa', colorClass: 'text-emerald-400' },
+      { id: 'create-employee', kind: 'create' as const, inlineId: 'employees' as HomeQuickActionId, label: 'إضافة موظف', icon: <Users className="w-5 h-5" />, targetPage: 'employees', colorClass: 'text-blue-400' },
+      { id: 'view-reports', kind: 'tool' as const, label: 'التقارير', icon: <FileText className="w-5 h-5" />, targetPage: 'reports', colorClass: 'text-emerald-400' },
+      { id: 'rules-engine', kind: 'tool' as const, label: 'الأتمتة', icon: <Zap className="w-5 h-5" />, targetPage: 'rulesEngine', colorClass: 'text-yellow-400' },
     ];
   }, [actions]);
 
@@ -257,6 +280,18 @@ export default function AoccLayout() {
 
   // ── View tab: "operational" (existing 10 widgets) ↔ "decisions" (V3) ──
   const [activeView, setActiveView] = useState<'operational' | 'decisions'>('operational');
+
+  // §AOCC-ROUTING — the ONE department-health dialog instance, driven by
+  // the store intent. Any element representing a DEPARTMENT context
+  // (health card, decline alert, coaching opportunity, executive
+  // priority) opens it here; the name resolves against the computed
+  // analyses. Unknown names close silently (never a broken dialog).
+  const departmentHealthName = useAppStore((s) => s.departmentHealthName);
+  const closeDepartmentHealth = useAppStore((s) => s.closeDepartmentHealth);
+  const departmentHealthTarget = useMemo(
+    () => departments.find((d) => d.name === departmentHealthName) ?? null,
+    [departments, departmentHealthName],
+  );
 
   // ── Decision Intelligence (memoized on pipeline outputs) ──
   const {
@@ -320,7 +355,7 @@ export default function AoccLayout() {
      ═══════════════════════════════════════════════════════════════ */
 
   return (
-    <div className="space-y-6 p-4 md:p-6" dir="rtl">
+    <div className="space-y-6 p-4 md:p-6">
       {/* ── Section 1: Mission Header (with operational pulse) ── */}
       <AoccMissionHeader
         unreadCount={unreadCount}
@@ -354,7 +389,7 @@ export default function AoccLayout() {
           onClick={() => setActiveView('decisions')}
           className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
             activeView === 'decisions'
-              ? 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 shadow-sm'
+              ? 'bg-brand-500/20 text-brand-300 border border-brand-500/30 shadow-sm'
               : 'text-slate-400 hover:text-slate-300'
           }`}
         >
@@ -363,7 +398,7 @@ export default function AoccLayout() {
           {decisionCounts.total > 0 && (
             <span className={`text-[10px] px-1.5 py-0 rounded-full ${
               activeView === 'decisions'
-                ? 'bg-indigo-500/30 text-indigo-300'
+                ? 'bg-brand-500/30 text-brand-300'
                 : 'bg-slate-700 text-slate-400'
             }`}>
               {decisionCounts.total}
@@ -421,7 +456,11 @@ export default function AoccLayout() {
               recommendations={recommendations}
               loading={riskCenterQuery.isLoading || capaQuery.isLoading}
             />
-            <AoccQuickActions actions={quickActions} />
+            <AoccQuickActions
+              actions={quickActions}
+              onQuickAction={(id) => setInlineAction(id)}
+              onOpenDetail={(id) => setDetailKind(id as OperationalDetailKind)}
+            />
           </DashboardGrid>
 
           {/* ── Section 9 + 10: System Status + Executive Summary ── */}
@@ -430,10 +469,31 @@ export default function AoccLayout() {
               data={systemStatusData}
               loading={homeStats.isLoading || notifStatsQuery.isLoading}
             />
-            <AoccExecutiveSummary data={executiveData} loading={homeStats.isLoading} />
+            <AoccExecutiveSummary data={executiveData} loading={homeStats.isLoading} departments={departments} />
           </DashboardGrid>
         </>
       )}
+
+      {/* §AOCC-ROUTING — shared department context (single instance). */}
+      <DepartmentHealthDialog
+        department={departmentHealthTarget}
+        riskData={riskCenterQuery.data ?? null}
+        onClose={closeDepartmentHealth}
+      />
+
+      {/* §7 — the reusable in-place operational detail surface. */}
+      <OperationalDetailDialog
+        kind={detailKind}
+        onClose={() => setDetailKind(null)}
+      />
+
+      {/* §AOCC-QUICK-ACTIONS — create actions open the SAME inline form
+          family the Home page uses, INSIDE the Operations Center (§5).
+          No navigation, no second form implementation. */}
+      <HomeQuickActionHost
+        activeAction={inlineAction}
+        onClose={() => setInlineAction(null)}
+      />
     </div>
   );
 }

@@ -82,10 +82,10 @@ const ToolBtn = memo(function ToolBtn({
       disabled={disabled || loading}
       className={cn(
         'flex items-center justify-center w-8 h-8 rounded-md transition-all duration-100',
-        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/40',
+        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/40',
         disabled && 'opacity-30 cursor-not-allowed',
         !disabled && 'hover:bg-slate-700/60 active:bg-slate-600/60',
-        active && 'bg-violet-600/30 text-violet-300 ring-1 ring-violet-500/30',
+        active && 'bg-brand-600/30 text-brand-300 ring-1 ring-brand-500/30',
         variant === 'danger' && !disabled && 'text-red-400 hover:bg-red-500/10',
         variant === 'success' && !disabled && 'text-emerald-400 hover:bg-emerald-500/10',
         variant === 'warning' && !disabled && 'text-amber-400 hover:bg-amber-500/10',

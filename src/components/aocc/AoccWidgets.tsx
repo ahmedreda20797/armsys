@@ -2,6 +2,7 @@
 
 import { memo, useState, useEffect } from 'react';
 import { DashboardCard, DashboardGrid } from '@/components/dashboard/DashboardCard';
+import { DepartmentHealthDialog } from '@/components/aocc/DepartmentHealthDialog';
 import { usePermissions } from '@/hooks/usePermissions';
 import { useAppStore } from '@/lib/store';
 import EmployeeLink from '@/components/shared/EmployeeLink';
@@ -129,12 +130,24 @@ export interface AoccIntelligenceCenterProps {
 export interface AoccQuickActionsProps {
   actions: Array<{
     id: string;
+    /** §AOCC-QUICK-ACTIONS — create = opens the in-page inline form;
+     *  detail = opens the in-place operational detail dialog (§7);
+     *  review/tool = navigates to the module that IS the surface. */
+    kind: 'create' | 'review' | 'tool' | 'detail';
+    /** HomeQuickActionId for create actions. */
+    inlineId?: 'employees' | 'observations' | 'capa' | 'complaints' | 'followUps' | 'requests';
+    /** OperationalDetailKind for detail actions (§7 reusable pattern). */
+    detailId?: string;
     label: string;
     icon: React.ReactNode;
     targetPage: string;
     colorClass: string;
     urgentCount?: number;
   }>;
+  /** Opens the shared inline create form IN THIS PAGE (§5). */
+  onQuickAction?: (inlineId: 'employees' | 'observations' | 'capa' | 'complaints' | 'followUps' | 'requests') => void;
+  /** Opens the reusable in-place operational detail dialog (§7). */
+  onOpenDetail?: (detailId: string) => void;
 }
 
 export interface AoccSystemStatusProps {
@@ -158,6 +171,9 @@ export interface AoccSystemStatusProps {
 export interface AoccExecutiveSummaryProps {
   data: ExecutiveIntelligence;
   loading: boolean;
+  /** Full department analyses — lets the worst-department row open the
+   *  in-place health details dialog (§5 contextual behavior). */
+  departments?: DepartmentHealth[];
 }
 
 /* ═══════════════════════════════════════════════════════════════
@@ -278,7 +294,7 @@ export const AoccMissionHeader = memo(function AoccMissionHeader({
         </div>
         <div>
           <h1 className="text-xl md:text-2xl font-bold text-white">مركز العمليات</h1>
-          <p className="text-xs text-slate-400 mt-0.5">لوحة التحكم التنفيذية — ARM ERP</p>
+          <p className="text-xs text-slate-400 mt-0.5">لوحة التحكم التنفيذية — Qnlys</p>
         </div>
 
         {/* Operational pulse indicator */}
@@ -303,7 +319,7 @@ export const AoccMissionHeader = memo(function AoccMissionHeader({
         <button
           onClick={() => navigateTo('notifications')}
           className="relative p-2 rounded-xl bg-slate-700/40 hover:bg-slate-700/60 transition-colors"
-          title="مركز الإشعارات"
+          title="الإشعارات"
         >
           <Bell className="w-5 h-5 text-slate-300" />
           {unreadCount > 0 && (
@@ -394,8 +410,8 @@ export const AoccOperationalOverview = memo(function AoccOperationalOverview({
       label: 'كابا مفتوحة',
       value: kpis.openCAPACount,
       icon: <ClipboardCheck className="w-4 h-4" />,
-      iconBg: 'bg-purple-500/15',
-      iconColor: 'text-purple-400',
+      iconBg: 'bg-brand-500/15',
+      iconColor: 'text-brand-400',
       targetPage: 'capa',
       permission: 'capa',
       priorityLevel: kpis.criticalCAPACount > 0 ? 'critical' : undefined,
@@ -448,7 +464,9 @@ export const AoccOperationalOverview = memo(function AoccOperationalOverview({
     },
     {
       key: 'violations',
-      label: 'انتهاكات اليوم',
+      // §5 DATA-TRUTH: the feed is the month total (qualitySummary),
+      // so the label says the month — the old 'اليوم' label lied.
+      label: 'انتهاكات الشهر',
       value: kpis.qualityViolationsToday,
       icon: <FileWarning className="w-4 h-4" />,
       iconBg: 'bg-orange-500/15',
@@ -462,8 +480,8 @@ export const AoccOperationalOverview = memo(function AoccOperationalOverview({
       label: 'إشعارات غير مقروءة',
       value: kpis.unreadNotifications,
       icon: <Bell className="w-4 h-4" />,
-      iconBg: 'bg-violet-500/15',
-      iconColor: 'text-violet-400',
+      iconBg: 'bg-brand-500/15',
+      iconColor: 'text-brand-400',
       targetPage: 'notifications',
       permission: 'notifications',
     },
@@ -565,9 +583,11 @@ export const AoccActionQueue = memo(function AoccActionQueue({
   const navigateTo = useAppStore((s) => s.navigateTo);
   const { canViewPage } = usePermissions();
 
-  // Permission filter
+  // Permission filter + in-place expansion (the overflow link grows the
+  // list; it never navigated to a meaningful page even when it existed).
+  const [expandedCount, setExpandedCount] = useState(50);
   const visibleItems = items.filter((item) => canViewPage(item.sourceModule));
-  const displayItems = visibleItems.slice(0, 50);
+  const displayItems = visibleItems.slice(0, expandedCount);
   const counts = countByPriority(visibleItems);
 
   const handleOpen = (item: ActionItem) => {
@@ -659,13 +679,16 @@ export const AoccActionQueue = memo(function AoccActionQueue({
             </div>
           );
         })}
+        {/* §AOCC-ROUTING — the overflow link used to jump to the removed
+            Notification Center page. It represents MORE ACTION-QUEUE
+            items, so it expands the queue in place (no navigation). */}
         {visibleItems.length > 50 && (
           <div className="text-center py-2">
             <button
-              onClick={() => navigateTo('notifications')}
+              onClick={() => setExpandedCount((c) => c + 100)}
               className="text-[11px] text-sky-400 hover:text-sky-300"
             >
-              +{visibleItems.length - 50} إجراءات أخرى — عرض الكل
+              +{visibleItems.length - Math.min(expandedCount, visibleItems.length)} إجراءات أخرى — عرض المزيد
             </button>
           </div>
         )}
@@ -683,7 +706,11 @@ export const AoccDepartmentHealth = memo(function AoccDepartmentHealth({
   loading,
   error,
 }: AoccDepartmentHealthProps) {
-  const navigateTo = useAppStore((s) => s.navigateTo);
+  // §AOCC-ROUTING — a department row IS a department context: it opens
+  // the shared Department Health dialog through the store intent
+  // (navigateTo('departmentHealth', name) semantics). No local dialog
+  // instance — the dialog lives ONCE in AoccLayout.
+  const openDepartmentHealth = useAppStore((s) => s.openDepartmentHealth);
 
   return (
     <DashboardCard
@@ -709,7 +736,7 @@ export const AoccDepartmentHealth = memo(function AoccDepartmentHealth({
           return (
             <button
               key={dept.name}
-              onClick={() => navigateTo('attendance')}
+              onClick={() => openDepartmentHealth(dept.name)}
               className={cn(
                 'group p-3 rounded-xl border transition-all text-right',
                 borderColor,
@@ -742,7 +769,7 @@ export const AoccDepartmentHealth = memo(function AoccDepartmentHealth({
                 </div>
                 {dept.capaCount > 0 && (
                   <div className="flex items-center gap-1">
-                    <ClipboardCheck className="w-2.5 h-2.5 text-purple-400" />
+                    <ClipboardCheck className="w-2.5 h-2.5 text-brand-400" />
                     <span className="text-[10px] text-slate-400">{dept.capaCount}</span>
                   </div>
                 )}
@@ -782,6 +809,7 @@ export const AoccDepartmentHealth = memo(function AoccDepartmentHealth({
           );
         })}
       </div>
+
     </DashboardCard>
   );
 });
@@ -873,7 +901,7 @@ export const AoccEmployeeWatchlist = memo(function AoccEmployeeWatchlist({
                   <span className="text-[10px] text-slate-400">حضور: {emp.attendanceIssues}</span>
                 </div>
                 <div className="flex items-center gap-1.5">
-                  <ClipboardCheck className="w-3 h-3 text-purple-400/60" />
+                  <ClipboardCheck className="w-3 h-3 text-brand-400/60" />
                   <span className="text-[10px] text-slate-400">كابا: {emp.capaCount}{emp.overdueCapaCount > 0 ? ` (${emp.overdueCapaCount} متأخرة)` : ''}</span>
                 </div>
                 <div className="flex items-center gap-1.5">
@@ -930,8 +958,8 @@ export const AoccActivityFeed = memo(function AoccActivityFeed({
     <DashboardCard
       title="التغذية التشغيلية المباشرة"
       icon={<Activity className="w-4 h-4" />}
-      iconBg="bg-violet-500/15"
-      iconColor="text-violet-400"
+      iconBg="bg-brand-500/15"
+      iconColor="text-brand-400"
       borderClr="border-slate-700/50"
       size="large"
       loading={loading}
@@ -1080,11 +1108,18 @@ export const AoccIntelligenceCenter = memo(function AoccIntelligenceCenter({
    WIDGET 8: AoccQuickActions — with urgent badges
    ═══════════════════════════════════════════════════════════════ */
 
-export const AoccQuickActions = memo(function AoccQuickActions({ actions }: AoccQuickActionsProps) {
+export const AoccQuickActions = memo(function AoccQuickActions({ actions, onQuickAction, onOpenDetail }: AoccQuickActionsProps) {
   const navigateTo = useAppStore((s) => s.navigateTo);
-  const { canViewPage } = usePermissions();
+  const { canViewPage, canDoAction } = usePermissions();
 
-  const visibleActions = actions.filter((a) => canViewPage(a.targetPage));
+  // §5 — CREATE actions are gated by the TARGET MODULE's create
+  // permission (the inline form enforces the same rule server-side);
+  // review/tool/detail actions by plain page visibility.
+  const visibleActions = actions.filter((a) =>
+    a.kind === 'create'
+      ? canDoAction(a.targetPage, 'create')
+      : canViewPage(a.targetPage),
+  );
 
   return (
     <DashboardCard
@@ -1100,7 +1135,21 @@ export const AoccQuickActions = memo(function AoccQuickActions({ actions }: Aocc
         {visibleActions.map((action) => (
           <button
             key={action.id}
-            onClick={() => navigateTo(action.targetPage)}
+            onClick={() => {
+              // §5/§7 — the ACTION decides, not convenience: creation
+              // opens in this page; completable operations open the
+              // in-place detail surface; everything else belongs to its
+              // module.
+              if (action.kind === 'create' && action.inlineId && onQuickAction) {
+                onQuickAction(action.inlineId);
+                return;
+              }
+              if (action.kind === 'detail' && action.detailId && onOpenDetail) {
+                onOpenDetail(action.detailId);
+                return;
+              }
+              navigateTo(action.targetPage);
+            }}
             className="group relative flex flex-col items-center gap-2 p-3 rounded-xl bg-slate-700/30 hover:bg-slate-700/50 border border-slate-600/15 hover:border-slate-500/30 transition-all"
           >
             {action.urgentCount && action.urgentCount > 0 ? (
@@ -1157,8 +1206,8 @@ export const AoccSystemStatus = memo(function AoccSystemStatus({
         {/* Biometric sync */}
         <div className="flex items-center justify-between p-2.5 rounded-xl bg-slate-700/30 border border-slate-600/15">
           <div className="flex items-center gap-2.5">
-            <div className="p-1.5 rounded-lg bg-violet-500/15">
-              <Fingerprint className="w-4 h-4 text-violet-400" />
+            <div className="p-1.5 rounded-lg bg-brand-500/15">
+              <Fingerprint className="w-4 h-4 text-brand-400" />
             </div>
             <div>
               <p className="text-sm text-slate-200">البصمة</p>
@@ -1186,8 +1235,8 @@ export const AoccSystemStatus = memo(function AoccSystemStatus({
         {/* Notification breakdown */}
         <div className="p-2.5 rounded-xl bg-slate-700/30 border border-slate-600/15">
           <div className="flex items-center gap-2.5 mb-2">
-            <div className="p-1.5 rounded-lg bg-violet-500/15">
-              <Bell className="w-4 h-4 text-violet-400" />
+            <div className="p-1.5 rounded-lg bg-brand-500/15">
+              <Bell className="w-4 h-4 text-brand-400" />
             </div>
             <span className="text-sm text-slate-200">الإشعارات غير المقروءة</span>
           </div>
@@ -1288,15 +1337,20 @@ function TrendIndicator({ value, label, invertColor }: { value: number; label: s
 export const AoccExecutiveSummary = memo(function AoccExecutiveSummary({
   data,
   loading,
+  departments = [],
 }: AoccExecutiveSummaryProps) {
   const navigateTo = useAppStore((s) => s.navigateTo);
+  // §AOCC-ROUTING — the worst-department row represents a DEPARTMENT
+  // context: routes through the shared departmentHealth intent.
+  const openDepartmentHealth = useAppStore((s) => s.openDepartmentHealth);
+  void departments;
 
   return (
     <DashboardCard
       title="الملخص التنفيذي"
       icon={<Target className="w-4 h-4" />}
-      iconBg="bg-indigo-500/15"
-      iconColor="text-indigo-400"
+      iconBg="bg-brand-500/15"
+      iconColor="text-brand-400"
       borderClr="border-slate-700/50"
       size="large"
       loading={loading}
@@ -1393,7 +1447,7 @@ export const AoccExecutiveSummary = memo(function AoccExecutiveSummary({
         <div className="space-y-2">
           {data.worstDepartment && (
             <button
-              onClick={() => navigateTo('attendance')}
+              onClick={() => openDepartmentHealth(data.worstDepartment!.name)}
               className="w-full flex items-center gap-2 p-2.5 rounded-xl bg-red-500/5 border border-red-500/20 text-right"
             >
               <TrendingDown className="w-4 h-4 text-red-400 shrink-0" />
@@ -1423,6 +1477,7 @@ export const AoccExecutiveSummary = memo(function AoccExecutiveSummary({
           )}
         </div>
       </div>
+
     </DashboardCard>
   );
 });

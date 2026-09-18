@@ -47,6 +47,10 @@ export async function GET(request: NextRequest) {
       name: user.name,
       role: user.role,
       rank: user.rank,
+      // §AVATAR-SYNC — the canonical profile photo feeds the global
+      // header avatar through AuthContext.buildAuthUser (no second
+      // avatar field anywhere).
+      photoURL: user.photoURL ?? null,
       permissions: safeParsePerms(user.permissions),
       positionId: user.positionId || null,
       positionPermissions,

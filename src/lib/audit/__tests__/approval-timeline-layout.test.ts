@@ -52,7 +52,10 @@ test('event dot and content sit in a flex row (aligned, shrink-protected)', () =
 });
 
 test('RTL direction and logical ordering preserved', () => {
-  assert.match(source, /dir="rtl"/, 'component keeps RTL direction');
+  // §I18N-BILINGUAL — hardcoded dir="rtl" was removed app-wide; the
+  // direction is inherited from <html dir> (LanguageProvider owns it),
+  // so the component must NOT pin a direction locally.
+  assert.doesNotMatch(source, /dir="rtl"/, 'direction inherits from the document (no hardcoded dir)');
   assert.match(source, /break-words/, 'long notes wrap instead of overflowing the dialog');
   // Event order still derives from the append-only events (newest-first sort kept).
   assert.match(source, /sort\(/, 'defensive newest-first sort retained');

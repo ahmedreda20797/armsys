@@ -101,12 +101,12 @@ const TYPE_META: Record<DecisionType, TypeMeta> = {
   manager_review: { label: 'مراجعة المدير', iconKey: 'manager', accentClass: 'text-amber-400', bgTintClass: 'bg-amber-500/5' },
   quality_investigation: { label: 'تحقيق جودة', iconKey: 'search', accentClass: 'text-emerald-400', bgTintClass: 'bg-emerald-500/5' },
   attendance_review: { label: 'مراجعة الحضور', iconKey: 'clock', accentClass: 'text-amber-400', bgTintClass: 'bg-amber-500/5' },
-  capa_required: { label: 'كابا مطلوبة', iconKey: 'shield', accentClass: 'text-purple-400', bgTintClass: 'bg-purple-500/5' },
+  capa_required: { label: 'كابا مطلوبة', iconKey: 'shield', accentClass: 'text-brand-400', bgTintClass: 'bg-brand-500/5' },
   complaint_escalation: { label: 'تصعيد شكوى', iconKey: 'alert', accentClass: 'text-orange-400', bgTintClass: 'bg-orange-500/5' },
   hr_action_required: { label: 'إجراء موارد بشرية', iconKey: 'banknote', accentClass: 'text-rose-400', bgTintClass: 'bg-rose-500/5' },
   risk_escalation: { label: 'تصعيد مخاطر', iconKey: 'shield-alert', accentClass: 'text-red-400', bgTintClass: 'bg-red-500/5' },
   customer_follow_up: { label: 'متابعة عميل', iconKey: 'user', accentClass: 'text-sky-400', bgTintClass: 'bg-sky-500/5' },
-  executive_attention: { label: 'انتباه تنفيذي', iconKey: 'crown', accentClass: 'text-indigo-400', bgTintClass: 'bg-indigo-500/5' },
+  executive_attention: { label: 'انتباه تنفيذي', iconKey: 'crown', accentClass: 'text-brand-400', bgTintClass: 'bg-brand-500/5' },
   policy_violation: { label: 'مخالفة سياسة', iconKey: 'gavel', accentClass: 'text-red-400', bgTintClass: 'bg-red-500/5' },
   training_required: { label: 'تدريب مطلوب', iconKey: 'graduation', accentClass: 'text-cyan-400', bgTintClass: 'bg-cyan-500/5' },
   repeated_behavior: { label: 'سلوك متكرر', iconKey: 'repeat', accentClass: 'text-amber-400', bgTintClass: 'bg-amber-500/5' },
@@ -956,8 +956,10 @@ export function predictiveAlerts(input: DecisionEngineInput): PredictiveAlert[] 
         etaLabel: 'خلال أسبوعين',
         severity: probability >= 70 ? 'high' : 'medium',
         suggestedAction: 'مراجعة شاملة للعمليات',
-        targetPage: 'attendance',
-        sourceRecordId: null,
+        // §AOCC-ROUTING — the alert REPRESENTS the department's health
+        // decline → department context dialog (record id = dept name).
+        targetPage: 'departmentHealth',
+        sourceRecordId: dept.name,
       });
     }
   }
@@ -1130,8 +1132,9 @@ export function generateExecutivePriorities(
     priority: d.healthScore < 50 ? 'critical' : d.healthScore < 70 ? 'high' : 'medium',
     score: d.healthScore,
     affectedName: d.name,
-    targetPage: 'attendance',
-    sourceRecordId: null,
+    // §AOCC-ROUTING — worst-department priority = department context.
+    targetPage: 'departmentHealth',
+    sourceRecordId: d.name,
   }));
 
   // Executive alerts — systemic issues
@@ -1145,7 +1148,8 @@ export function generateExecutivePriorities(
       scope: 'department',
       affectedName: criticalDept.name,
       description: `صحة القسم ${criticalDept.healthScore}% — ${criticalDept.criticalCount} قضايا حرجة`,
-      targetPage: 'attendance',
+      // §AOCC-ROUTING — critical department alert = department context.
+      targetPage: 'departmentHealth',
     });
   }
   const unresolvedCritical = decisions.filter((d) => d.priority === 'critical').length;

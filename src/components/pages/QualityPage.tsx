@@ -27,7 +27,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
-import {
+import { Archive,
   Award,
   Plus,
   Pencil,
@@ -65,7 +65,7 @@ import { PageHeaderBar } from '@/components/shared/PageHeaderBar';
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
 import { CAPALinkBadge } from '@/components/shared/CAPALinkBadge';
 import { InlineFormPanel } from '@/components/shared/InlineFormPanel';
-import { OverflowMenu } from '@/components/shared/OverflowMenu';
+import { SmartActionMenu } from '@/components/shared/SmartActionMenu';
 import { CAPAInlineForm, type CapaInlineFormState } from '@/components/shared/inline-forms';
 
 interface QualityWithEmployee extends QualityDeduction {
@@ -139,7 +139,7 @@ function getDaysColor(days: number): string {
   if (days >= 5) return 'bg-red-500/20 text-red-300 border-red-500/40';
   if (days >= 3) return 'bg-orange-500/20 text-orange-300 border-orange-500/40';
   if (days >= 1) return 'bg-amber-500/20 text-amber-300 border-amber-500/40';
-  return 'bg-violet-500/20 text-violet-300 border-violet-500/30';
+  return 'bg-brand-500/20 text-brand-300 border-brand-500/30';
 }
 
 function formatDeductionForCopy(deduction: QualityWithEmployee, empName: string): string {
@@ -197,7 +197,17 @@ function formatAllDeductionsForCopy(empName: string, deductions: QualityWithEmpl
 }
 
 export default function QualityPage() {
-  const { canEdit, canCreate, canUpdate, canDelete, canUpload, canApprove } = usePermissions('quality');
+  const { canEdit, canCreate, canUpdate, canDelete, canUpload, canApprove, canDoAction, canViewPage } = usePermissions('quality');
+  // §2 AUDIT-IDENTITY — WHO registered a discount is audit metadata: the
+  // canonical permission is the 'qualityAuditLog' page grant (System
+  // Owner bypasses; managers/quality staff hold it by preset). The API
+  // strips createdByName from the payload for everyone else, so this
+  // flag only controls whether the AUTHORIZED card-level chip renders.
+  const canSeeAuditIdentity = canViewPage('qualityAuditLog');
+  // §WORKFLOW — reject authority: the dedicated 'reject' action OR the
+  // legacy 'approve' grant (the API's verifyAnyAction mirrors this).
+  const canReject = canDoAction('quality', 'reject') || canApprove;
+  const isApprover = canApprove || canReject;
   // §12 GLOBAL INLINE FORM STANDARD — "إنشاء CAPA" from a quality note
   // opens the shared inline CAPA form HERE (gated by the CAPA page's
   // own create permission); it NEVER navigates away from Quality.
@@ -210,11 +220,18 @@ export default function QualityPage() {
   // Milestone 7 §12: the period DEFAULT is the CURRENT MONTH (applies
   // only when the user has no persisted filter state — §27) — 'all'
   // remains one click away and is never re-imposed after Clear.
-  const [qualityView, setQualityView] = usePageState<{ search: string; monthFilter: string }>({
+  // §17 — deep-link month seed: a navigation intent (search result /
+  // dashboard card) wins over the remembered month for this mount.
+  const navMonth = useAppStore((s) => {
+    const m = s.navParams.month;
+    return typeof m === 'string' && m.length === 7 && m[4] === '-' ? m : null;
+  });
+  const [qualityView, setQualityView] = usePageState<{ search: string; monthFilter: string; showArchived?: boolean }>({
     page: 'quality',
     slot: 'filters',
     version: 1,
-    initial: () => ({ search: '', monthFilter: currentMonthKey() }),
+    skipRestore: navMonth !== null,
+    initial: () => ({ search: '', monthFilter: navMonth ?? currentMonthKey() }),
     validate: (raw) =>
       raw && typeof raw === 'object' && typeof (raw as { monthFilter?: unknown }).monthFilter === 'string'
         ? raw
@@ -224,9 +241,17 @@ export default function QualityPage() {
   const setSearch = (v: string) => setQualityView((s) => ({ ...s, search: v }));
   const monthFilter = qualityView.monthFilter;
   const setMonthFilter = (v: string) => setQualityView((s) => ({ ...s, monthFilter: v }));
+  // §ARCHIVE — optional historical view of archived deductions.
+  const showArchived = qualityView.showArchived === true;
+  const setShowArchived = (v: boolean) => {
+    setQualityView((s) => ({ ...s, showArchived: v }));
+    void fetchData(v);
+  };
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [archivingId, setArchivingId] = useState<string | null>(null); // §ARCHIVE target
+  const [archiveLoadingId, setArchiveLoadingId] = useState<string | null>(null);
   const [expandedRow, setExpandedRow] = useState<string | null>(null);
   const [expandedEmp, setExpandedEmp] = useState<string | null>(null);
   const [copiedDedId, setCopiedDedId] = useState<string | null>(null);
@@ -254,17 +279,18 @@ export default function QualityPage() {
   useEffect(() => {
     fetchData();
     // System users for the inline CAPA form (assigned-to field).
-    authFetch('/api/dashboard/users')
+    authFetch('/api/dashboard/users?basic=1')
       .then((r) => (r.ok ? r.json() : []))
       .then((list) => setSystemUsers(Array.isArray(list) ? list : []))
       .catch(() => setSystemUsers([]));
   }, []);
 
-  async function fetchData() {
+  async function fetchData(withArchived?: boolean) {
+    const includeArchived = withArchived ?? showArchived;
     setError(null);
     try {
       const [qRes, empRes] = await Promise.all([
-        authFetch('/api/quality'),
+        authFetch(`/api/quality${includeArchived ? '?includeArchived=1' : ''}`),
         authFetch('/api/employees'),
       ]);
       if (qRes.ok) {
@@ -429,6 +455,35 @@ export default function QualityPage() {
     }
   };
 
+  // §ARCHIVE — archive/restore a discount (audited server-side).
+  // Archived = historical: excluded from every active total & KPI.
+  const handleArchive = async (id: string, archived: boolean) => {
+    setArchiveLoadingId(id);
+    try {
+      const res = await authFetch(`/api/quality/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ archived }),
+      });
+      if (res.ok) {
+        setDeductions((prev) =>
+          prev.filter((d) => (archived ? d.id !== id || showArchived : true)).map((d) =>
+            d.id === id ? { ...d, archived, archivedAt: archived ? new Date().toISOString() : null } : d,
+          ),
+        );
+        toast.success(archived ? 'تم أرشفة الخصم — لن يأثر على الإجماليات النشطة' : 'تم استعادة الخصم من الأرشيف');
+        setArchivingId(null);
+      } else {
+        const data = await res.json().catch(() => null);
+        toast.error(data?.error || 'تعذّر تغيير حالة الأرشيف');
+      }
+    } catch {
+      toast.error('تعذّر الاتصال بالخادم');
+    } finally {
+      setArchiveLoadingId(null);
+    }
+  };
+
   // ═══ §WORKFLOW — approve / reject a PENDING discount ═══
   // Only users with the 'approve' permission see these actions (the
   // API enforces the same permission — the UI never decides alone).
@@ -489,10 +544,32 @@ export default function QualityPage() {
     return matchesSearch && matchesMonth;
   });
 
+  // ═══ §WORKFLOW — approval visibility (§PENDING-VISIBILITY) ═══
+  // The pending queue is computed from the search/period view so an
+  // approver ALWAYS sees what awaits a decision, independent of the
+  // status filter below.
+  const pendingItems = filtered
+    .filter((d) => projectDeductionStatus(d) === 'pending')
+    .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
+  const [pendingOpen, setPendingOpen] = useState(true);
+  // Status chips (الكل / قيد الاعتماد / مرفوض) narrow the MAIN list.
+  const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'rejected'>('all');
+  const statusFiltered = statusFilter === 'all'
+    ? filtered
+    : filtered.filter((d) => projectDeductionStatus(d) === statusFilter);
+  const rejectedCount = filtered.filter((d) => projectDeductionStatus(d) === 'rejected').length;
+
+  /** Jump from the pending queue to the owning group in the main list. */
+  const jumpToDeduction = (d: QualityWithEmployee) => {
+    setStatusFilter('all');
+    useAppStore.getState().setHighlightId(d.id);
+    setExpandedRow(d.id);
+  };
+
   // ═══ Group by employee ═══
   // §WORKFLOW — totals (days/amount) count APPROVED discounts ONLY;
   // pending records are shown with a chip but never inflate totals.
-  const groupedByEmployee = filtered.reduce<Record<string, {
+  const groupedByEmployee = statusFiltered.reduce<Record<string, {
     name: string;
     department: string | null;
     deductions: QualityWithEmployee[];
@@ -560,13 +637,13 @@ export default function QualityPage() {
   }
 
   return (
-    <div dir="rtl" className="space-y-5">
+    <div className="space-y-5">
       {/* ═══ Header (§25/§26 — sticky, primary action always accessible) ═══ */}
       <PageHeaderBar
         icon={<Award className="size-5" />}
-        iconClassName="bg-violet-500/15 border-violet-500/30 text-violet-400"
+        iconClassName="bg-brand-500/15 border-brand-500/30 text-brand-400"
         title="خصومات الجودة"
-        subtitle={`${filtered.length} سجل خصم — ${sortedEmployees.length} موظف${grandPendingCount > 0 ? ` — ${grandPendingCount} قيد الاعتماد` : ''}`}
+        description={`${filtered.length} سجل خصم — ${sortedEmployees.length} موظف${grandPendingCount > 0 ? ` — ${grandPendingCount} قيد الاعتماد` : ''}`}
         extras={
           <PagePeriodIndicator
             testId="quality-period-indicator"
@@ -655,7 +732,144 @@ export default function QualityPage() {
             ))}
           </SelectContent>
         </Select>
+        {/* §ARCHIVE — optional historical view */}
+        <button
+          type="button"
+          onClick={() => setShowArchived(!showArchived)}
+          aria-pressed={showArchived}
+          className={`inline-flex items-center gap-1.5 px-3 h-9 rounded-lg border text-xs font-medium transition-colors ${
+            showArchived
+              ? 'bg-brand-500/15 text-brand-300 border-brand-500/30'
+              : 'bg-slate-800/50 text-slate-400 border-slate-700/50 hover:text-slate-200'
+          }`}
+        >
+          <Archive className="size-3.5" />
+          المؤرشفة
+        </button>
       </div>
+
+      {/* ═══ §PENDING-VISIBILITY — approval status chips ═══ */}
+      <div className="flex items-center gap-1.5 flex-wrap">
+        {([
+          { key: 'all' as const, label: 'الكل', count: filtered.length, cls: 'bg-slate-500/15 text-slate-300 border-slate-500/30' },
+          { key: 'pending' as const, label: 'قيد الاعتماد', count: pendingItems.length, cls: 'bg-amber-500/15 text-amber-300 border-amber-500/30' },
+          { key: 'rejected' as const, label: 'مرفوض', count: rejectedCount, cls: 'bg-red-500/15 text-red-300 border-red-500/30' },
+        ]).map((chip) => (
+          <button
+            key={chip.key}
+            onClick={() => setStatusFilter(chip.key)}
+            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-[11px] font-semibold transition-all ${
+              statusFilter === chip.key
+                ? chip.cls
+                : 'bg-slate-800/50 text-slate-400 border-slate-700/50 hover:text-slate-200'
+            }`}
+          >
+            {chip.label}
+            <span className={`min-w-4 text-center px-1 rounded-full text-[10px] ${statusFilter === chip.key ? 'bg-white/15' : 'bg-slate-700/60'}`}>
+              {chip.count}
+            </span>
+          </button>
+        ))}
+      </div>
+
+      {/* ═══ §PENDING-VISIBILITY — the Approval Queue ═══
+          Always rendered for the CURRENT view when anything is pending
+          (top of the page, amber, count-badged). Approvers act inline;
+          everyone else sees what is in flight. Hidden while the user
+          narrowed the list to the pending chip already. */}
+      {pendingItems.length > 0 && statusFilter !== 'pending' && (
+        <motion.section
+          initial={{ opacity: 0, y: 5 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="rounded-xl border border-amber-500/30 bg-amber-500/[0.04] overflow-hidden"
+          aria-label="بانتظار الاعتماد"
+        >
+          <button
+            onClick={() => setPendingOpen((v) => !v)}
+            className="w-full flex items-center gap-2.5 px-4 py-2.5 hover:bg-amber-500/[0.06] transition-colors"
+          >
+            <span className="flex items-center justify-center size-8 rounded-lg bg-amber-500/15 border border-amber-500/30 shrink-0">
+              <Clock className="size-4 text-amber-400" />
+            </span>
+            <div className="text-right flex-1 min-w-0">
+              <p className="text-sm font-bold text-amber-200 leading-tight">بانتظار الاعتماد</p>
+              <p className="text-[10px] text-slate-500 leading-tight mt-0.5">
+                {isApprover
+                  ? 'خصومات جديدة تنتظر قرارك — لا تدخل في التقارير حتى اعتمادها'
+                  : 'خصومات أُرسلت للمختصين ولن تدخل في التقارير حتى اعتمادها'}
+              </p>
+            </div>
+            <span className="flex items-center justify-center min-w-6 h-6 px-1.5 rounded-full bg-amber-500 text-slate-950 text-xs font-bold shrink-0">
+              {pendingItems.length}
+            </span>
+            <ChevronDown className={`size-4 text-amber-400/70 transition-transform ${pendingOpen ? 'rotate-180' : ''}`} />
+          </button>
+          <AnimatePresence initial={false}>
+            {pendingOpen && (
+              <motion.div
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: 'auto', opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                transition={{ duration: 0.2 }}
+                className="overflow-hidden"
+              >
+                <div className="divide-y divide-amber-500/10 max-h-72 overflow-y-auto arm-scroll">
+                  {pendingItems.map((d) => {
+                    const badge = getTypeBadge(d.type);
+                    const BadgeIcon = badge.icon;
+                    return (
+                      <div key={d.id} className="flex items-center gap-2 px-4 py-2">
+                        <span className={`flex-shrink-0 inline-flex items-center gap-1 px-1.5 py-0.5 rounded border text-[10px] font-medium ${badge.color}`}>
+                          <BadgeIcon className="size-2.5" />
+                          {badge.label}
+                        </span>
+                        <EmployeeLink employeeId={d.employeeId} name={d.employee?.name || 'غير معروف'} compact hideAvatar />
+                        <span className="flex-shrink-0 text-slate-500 text-[11px]" dir="ltr">{d.date}</span>
+                        <p className="flex-1 min-w-0 text-slate-400 text-xs truncate">{d.description || 'بدون وصف'}</p>
+                        <span className="flex-shrink-0 text-amber-400 font-bold text-xs">{d.deductionDays}ي</span>
+                        {isApprover && (
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            {canApprove && (
+                              <Button
+                                size="sm"
+                                className="h-7 text-[11px] bg-emerald-600/90 hover:bg-emerald-600 text-white"
+                                disabled={approvalLoadingId === d.id}
+                                onClick={() => void handleApproval(d.id, 'approve')}
+                              >
+                                <CheckCircle2 className="size-3 ml-1" />
+                                اعتماد
+                              </Button>
+                            )}
+                            {canReject && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="h-7 text-[11px] border-red-500/30 text-red-400 hover:bg-red-500/10"
+                                disabled={approvalLoadingId === d.id}
+                                onClick={() => void handleApproval(d.id, 'reject')}
+                              >
+                                <XCircle className="size-3 ml-1" />
+                                رفض
+                              </Button>
+                            )}
+                          </div>
+                        )}
+                        <button
+                          onClick={() => jumpToDeduction(d)}
+                          className="flex-shrink-0 text-[11px] text-cyan-400 hover:text-cyan-300 px-2 py-1 rounded-md bg-cyan-500/10 border border-cyan-500/20"
+                          title="الانتقال إلى السجل في القائمة"
+                        >
+                          عرض
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </motion.section>
+      )}
 
       {/* ═══ Loading ═══ */}
       {loading ? (
@@ -674,20 +888,22 @@ export default function QualityPage() {
             <Button variant="outline" size="sm" className="mt-4" onClick={() => fetchData()}>إعادة المحاولة</Button>
           </CardContent>
         </Card>
-      ) : filtered.length === 0 ? (
+      ) : statusFiltered.length === 0 ? (
         <Card className="border-slate-700/40 bg-slate-800/30">
           <CardContent className="flex flex-col items-center justify-center py-14">
             <div className="size-12 rounded-full bg-slate-800 flex items-center justify-center mb-3">
               <Award className="size-6 text-slate-600" />
             </div>
-            <p className="text-slate-400 text-sm font-medium">لا توجد خصومات</p>
+            <p className="text-slate-400 text-sm font-medium">
+              {statusFilter === 'pending' ? 'لا توجد خصومات قيد الاعتماد' : statusFilter === 'rejected' ? 'لا توجد خصومات مرفوضة' : 'لا توجد خصومات'}
+            </p>
             <p className="text-slate-600 text-xs mt-1">
               {/* §10/§56: the active period is NAMED in the empty state. */}
               {search
                 ? 'لم يتم العثور على نتائج'
-                : monthFilter && monthFilter !== 'all'
+                : statusFilter === 'all' && monthFilter && monthFilter !== 'all'
                   ? `لا توجد خصومات مسجلة في ${formatMonthLabelAr(monthFilter)}.`
-                  : 'لم يتم تسجيل أي خصومات بعد'}
+                  : statusFilter === 'all' ? 'لم يتم تسجيل أي خصومات بعد' : 'جرّب تغيير عامل التصفية'}
             </p>
           </CardContent>
         </Card>
@@ -771,8 +987,8 @@ export default function QualityPage() {
                     }}
                     className={`flex-shrink-0 transition-colors p-1 rounded-md ${
                       copiedAllEmpId === empId
-                        ? 'text-violet-400 bg-violet-500/10'
-                        : 'text-slate-600 hover:text-violet-400 hover:bg-violet-500/10'
+                        ? 'text-brand-400 bg-brand-500/10'
+                        : 'text-slate-600 hover:text-brand-400 hover:bg-brand-500/10'
                     }`}
                     title="نسخ كل الخصومات"
                   >
@@ -829,6 +1045,22 @@ export default function QualityPage() {
                                 {/* Date + Days */}
                                 <span className="flex-shrink-0 text-slate-500 text-[11px]" dir="ltr">{d.date}</span>
 
+                                {/* §2 AUDIT-IDENTITY — the SINGLE "recorded by"
+                                    display point: card level only (never
+                                    repeated in the expanded details), rendered
+                                    only when the server authorized this viewer
+                                    (createdByName is stripped from the payload
+                                    otherwise). Legacy rows without the field
+                                    render nothing. */}
+                                {canSeeAuditIdentity && d.createdByName && (
+                                  <span
+                                    className="hidden md:inline-flex flex-shrink-0 items-center gap-1 text-[10px] text-slate-500 bg-slate-800/60 border border-slate-700/40 px-1.5 py-0.5 rounded"
+                                    title="سجلها"
+                                  >
+                                    بواسطة: <span className="text-slate-400">{d.createdByName}</span>
+                                  </span>
+                                )}
+
                                 {/* §WORKFLOW — approval status chip. The creator
                                     identity is deliberately NOT shown anywhere on
                                     this card: it lives in the hidden audit metadata
@@ -839,6 +1071,14 @@ export default function QualityPage() {
                                   <span className={`hidden sm:inline-flex flex-shrink-0 items-center gap-1 px-1.5 py-0.5 rounded border text-[10px] font-medium ${approvalChip.cls}`}>
                                     <ApprovalChipIcon className="size-2.5" />
                                     {approvalChip.label}
+                                  </span>
+                                )}
+
+                                {/* §ARCHIVE — visible archived state (historical only) */}
+                                {d.archived && (
+                                  <span className="hidden sm:inline-flex flex-shrink-0 items-center gap-1 px-1.5 py-0.5 rounded border border-slate-500/30 bg-slate-500/15 text-slate-300 text-[10px] font-medium">
+                                    <Archive className="size-2.5" />
+                                    مؤرشف
                                   </span>
                                 )}
 
@@ -864,17 +1104,19 @@ export default function QualityPage() {
                                   <ChevronDown className="size-3" />
                                 </div>
 
-                                {/* §6 — edit/delete consolidated into the shared
-                                    ⋮ menu (the thin row was crowded with 4 icons);
+                                {/* §6/§2 — actions consolidated into the shared
+                                    SmartActionMenu (icon fan with tooltips);
                                     copy stays visible as the primary action. */}
                                 {(canUpdate || canDelete) && (
-                                  <div className="flex-shrink-0" onClick={(e) => e.stopPropagation()}>
-                                    <OverflowMenu
-                                      items={[
-                                        ...(canUpdate ? [{ key: 'edit', label: 'تعديل', icon: <Pencil className="size-3.5" />, onSelect: () => openEdit(d) }] : []),
-                                        ...(canDelete ? [{ key: 'delete', label: 'حذف', icon: <Trash2 className="size-3.5" />, destructive: true, separatorBefore: true, onSelect: () => setDeletingId(d.id) }] : []),
-                                      ]}
+                                  <div className="flex-shrink-0">
+                                    <SmartActionMenu
+                                      size="sm"
                                       label="إجراءات الخصم"
+                                      actions={[
+                                        { key: 'edit', label: 'تعديل', icon: <Pencil className="size-3.5" />, onSelect: () => openEdit(d), hidden: !canUpdate },
+                                        { key: 'archive', label: d.archived ? 'استعادة من الأرشيف' : 'أرشفة', icon: <Archive className="size-3.5" />, onSelect: () => (d.archived ? void handleArchive(d.id, false) : setArchivingId(d.id)), hidden: !canUpdate },
+                                        { key: 'delete', label: 'حذف', icon: <Trash2 className="size-3.5" />, destructive: true, onSelect: () => setDeletingId(d.id), hidden: !canDelete },
+                                      ]}
                                     />
                                   </div>
                                 )}
@@ -887,8 +1129,8 @@ export default function QualityPage() {
                                   }}
                                   className={`flex-shrink-0 transition-colors ${
                                     copiedDedId === d.id
-                                      ? 'text-violet-400'
-                                      : 'text-slate-600 hover:text-violet-400'
+                                      ? 'text-brand-400'
+                                      : 'text-slate-600 hover:text-brand-400'
                                   }`}
                                   title="نسخ تفاصيل الخصم"
                                 >
@@ -945,27 +1187,31 @@ export default function QualityPage() {
                                       </div>
                                       {/* §WORKFLOW — approver actions (pending only,
                                           permission-gated; the API enforces the same). */}
-                                      {approvalStatus === 'pending' && canApprove && (
+                                      {approvalStatus === 'pending' && (canApprove || canReject) && (
                                         <div className="flex items-center gap-2 mt-2">
-                                          <Button
-                                            size="sm"
-                                            className="h-7 text-[11px] bg-emerald-600/90 hover:bg-emerald-600 text-white"
-                                            disabled={approvalLoadingId === d.id}
-                                            onClick={(e) => { e.stopPropagation(); void handleApproval(d.id, 'approve'); }}
-                                          >
-                                            <CheckCircle2 className="size-3 ml-1" />
-                                            اعتماد
-                                          </Button>
-                                          <Button
-                                            size="sm"
-                                            variant="outline"
-                                            className="h-7 text-[11px] border-red-500/30 text-red-400 hover:bg-red-500/10"
-                                            disabled={approvalLoadingId === d.id}
-                                            onClick={(e) => { e.stopPropagation(); void handleApproval(d.id, 'reject'); }}
-                                          >
-                                            <XCircle className="size-3 ml-1" />
-                                            رفض
-                                          </Button>
+                                          {canApprove && (
+                                            <Button
+                                              size="sm"
+                                              className="h-7 text-[11px] bg-emerald-600/90 hover:bg-emerald-600 text-white"
+                                              disabled={approvalLoadingId === d.id}
+                                              onClick={(e) => { e.stopPropagation(); void handleApproval(d.id, 'approve'); }}
+                                            >
+                                              <CheckCircle2 className="size-3 ml-1" />
+                                              اعتماد
+                                            </Button>
+                                          )}
+                                          {canReject && (
+                                            <Button
+                                              size="sm"
+                                              variant="outline"
+                                              className="h-7 text-[11px] border-red-500/30 text-red-400 hover:bg-red-500/10"
+                                              disabled={approvalLoadingId === d.id}
+                                              onClick={(e) => { e.stopPropagation(); void handleApproval(d.id, 'reject'); }}
+                                            >
+                                              <XCircle className="size-3 ml-1" />
+                                              رفض
+                                            </Button>
+                                          )}
                                         </div>
                                       )}
                                       {d.evidence && (
@@ -1030,7 +1276,7 @@ export default function QualityPage() {
                           {canCreateCapa && capaPrefill?.empId === empId && (
                             <InlineFormPanel
                               tone="violet"
-                              icon={<ShieldAlert className="size-3.5 text-violet-400" />}
+                              icon={<ShieldAlert className="size-3.5 text-brand-400" />}
                               title="إنشاء CAPA من خصم الجودة"
                               onClose={() => setCapaPrefill(null)}
                             >
@@ -1065,9 +1311,11 @@ export default function QualityPage() {
             <DialogTitle className="text-white">{editingDeduction ? 'تعديل خصم جودة' : 'إضافة خصم جودة'}</DialogTitle>
             <DialogDescription className="text-slate-400">
               {editingDeduction ? 'عدّل تفاصيل الخصم' : 'أدخل تفاصيل الخصم'} - يتم حساب الشهر تلقائياً من التاريخ
-              {!editingDeduction && !canApprove && (
+              {!editingDeduction && (
                 <span className="block text-amber-400/90 text-[11px] mt-1">
-                  سيُرسل الخصم بحالة «قيد الاعتماد» ولن يؤثر في التقارير والإجماليات حتى اعتماده من المختصين.
+                  {isApprover
+                    ? 'سيُحفظ الخصم بحالة «قيد الاعتماد» — يمكنك اعتماده فوراً من قائمة الانتظار أعلى الصفحة.'
+                    : 'سيُرسل الخصم بحالة «قيد الاعتماد» ولن يؤثر في التقارير والإجماليات حتى اعتماده من المختصين.'}
                 </span>
               )}
             </DialogDescription>
@@ -1195,7 +1443,7 @@ export default function QualityPage() {
             <Button
               onClick={handleSaveDeduction}
               disabled={saving || !addForm.date}
-              className="bg-linear-to-r from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white h-9 px-5 shadow-lg shadow-violet-500/20 transition-all"
+              className="bg-linear-to-r from-brand-600 to-brand-700 hover:from-brand-700 hover:to-brand-800 text-white h-9 px-5 shadow-lg shadow-brand-500/20 transition-all"
             >
               {saving ? 'جاري الحفظ...' : (editingDeduction ? 'حفظ التعديل' : 'حفظ')}
             </Button>
@@ -1204,6 +1452,19 @@ export default function QualityPage() {
       </Dialog>
 
       {/* ═══ Delete Dialog ═══ */}
+      {/* ═══ Archive Dialog — unified ConfirmDialog (§4) ═══ */}
+      <ConfirmDialog
+        open={!!archivingId}
+        onOpenChange={(o) => { if (!o) setArchivingId(null); }}
+        title="أرشفة الخصم"
+        description="الخصم المؤرشف يصبح سجلاً تاريخياً: لن يحسب في الإجماليات النشطة أو مؤشرات KPI الحالية، ويبقى قابلاً للتدقيق في الأرشيف."
+        itemName={archivingId ? deductions.find((d: { id: string }) => d.id === archivingId)?.description : undefined}
+        confirmLabel="أرشفة"
+        destructive={false}
+        loading={archiveLoadingId === archivingId}
+        onConfirm={async () => { if (archivingId) await handleArchive(archivingId, true); }}
+      />
+
       {/* ═══ Delete Dialog — unified ConfirmDialog (§4) ═══ */}
       <ConfirmDialog
         open={!!deletingId}

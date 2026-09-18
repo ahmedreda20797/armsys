@@ -24,6 +24,7 @@ import { asScopeViewer, employeeInScope } from '@/lib/scope/server';
 import { dispatchAutomationEvent } from '@/lib/automation/event-bridge';
 import { makeApprovalEvent, appendApprovalEvent, projectLatestApprovalStatus } from '@/lib/approvals';
 import { writeAudit } from '@/lib/audit';
+import { notifyQualityDiscountDecided } from '@/lib/notifications/quality-approval-events';
 import { QUALITY_DEDUCTIONS_TABLE } from '@/lib/quality-deductions/domain';
 import { AUDIT_LOG_TABLE } from '../../route';
 
@@ -100,6 +101,17 @@ export async function POST(
       category: existing.type,
       sourceRecordId: id,
       extra: { month: existing.month, previousStatus: existing.approvalStatus ?? 'pending' },
+    });
+
+    // §APPROVAL-NOTIFY — the creator learns the outcome without
+    // polling the page (directed, permission-visibility-gated).
+    void notifyQualityDiscountDecided({
+      recordId: id,
+      decision: 'approved',
+      employeeId: existing.employeeId,
+      actorId: actor.id,
+      actorName: actor.name,
+      creatorUserId: existing.createdById ?? existing.createdByUserId ?? null,
     });
 
     return Response.json(updated);

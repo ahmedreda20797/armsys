@@ -1,10 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAll, getById, findWhere, findWhereContains } from '@/lib/db';
-import { verifyPermission } from '@/lib/verify-permission';
+import { authorize, authorizeRequest } from '@/lib/verify-permission';
+import { resolveEmployee360SectionGate, filterTimelineByGate } from '@/lib/permissions/employee360-access';
+import { loadScopeAssignments } from '@/lib/scope/server';
 import { resolveFieldAccess, resolvePageScope } from '@/config/permissions';
 import { isEffectiveDeduction } from '@/lib/quality-deductions/domain';
+import { resolveEmployeeOrgLabels, buildEmployeeOrgIndex } from '@/lib/reports/employee-org';
+import { resolveManagerChain } from '@/lib/organization/graph';
 import { resolveEmployeeScope } from '@/lib/scope';
 import { ORG_NODES_TABLE, type OrgNode } from '@/lib/organization';
+import type { Employee } from '@/types';
 // Canonical metric layer — single source of truth for risk + CAPA overdue.
 import {
   computeRisk,
@@ -38,10 +43,25 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const permCheck = await verifyPermission(request, 'employees', 'view');
-    if (!permCheck.allowed) {
+    // ═══ AUTHORIZATION (canonical decision path) ═══
+    // ONE authentication (authorizeRequest), TWO page decisions:
+    //   • 'employees' — carries the record DATA SCOPE for this route
+    //   • 'employee360' — the PAGE permission of the overlay itself
+    // Both resolve through the single authorizer; the caller keeps
+    // its raw permission tiers so no second DB read is needed.
+    const { caller, decision } = await authorizeRequest(request, { page: 'employees', action: 'view' });
+    if (!decision.allowed || !caller) {
       return NextResponse.json({ error: 'ليس لديك صلاحية' }, { status: 403 });
     }
+    const pageDecision = authorize(caller, { page: 'employee360' });
+    if (!pageDecision.allowed) {
+      return NextResponse.json({ error: pageDecision.reason }, { status: 403 });
+    }
+
+    // SECTION-LEVEL ENFORCEMENT (server-side, canonical resolver):
+    // a denied section's data is withheld below — never serialized.
+    // Resolved once from the already-loaded effective map (no extra reads).
+    const sectionGate = resolveEmployee360SectionGate(caller.permissions);
 
     const { id: employeeId } = await params;
 
@@ -64,7 +84,12 @@ export async function GET(
     // BEFORE any aggregation; the org graph is only loaded when the
     // viewer's scope is not already 'all' (admin/HR/quality fast
     // path).
-    const viewer = permCheck.user!;
+    const viewer = {
+      id: caller.userId,
+      role: caller.role,
+      permissions: caller.permissions,
+      linkedEmployeeId: caller.linkedEmployeeId ?? null,
+    };
     const scope = resolvePageScope(viewer.permissions, 'employees', viewer.role);
     if (scope !== 'all') {
       const [orgNodes, employees] = await Promise.all([
@@ -79,7 +104,13 @@ export async function GET(
         },
         'employees',
         viewer.permissions,
-        { orgNodes, employees },
+        {
+          orgNodes,
+          employees,
+          // §ASSIGNED — canonical assignment pairs, lazily loaded only
+          // for the assigned scope.
+          assignments: scope === 'assigned' ? await loadScopeAssignments() : undefined,
+        },
       );
       if (!scopeContext.includes(employeeId)) {
         return NextResponse.json({ error: 'الموظف غير موجود' }, { status: 404 });
@@ -103,6 +134,10 @@ export async function GET(
       getAll('travelDeals'),
       getAll('complaints'),
       getAll('capaCases'),
+      // §2 — quality observations + org identity sources.
+      getAll('qualityObservations'),
+      getAll<OrgNode>('orgNodes'),
+      getAll('users'),
     ]);
 
     // Extract fulfilled results or fall back to empty array
@@ -115,6 +150,9 @@ export async function GET(
     const allTravelDeals  = results[6].status === 'fulfilled' ? results[6].value : [];
     const allComplaints   = results[7].status === 'fulfilled' ? results[7].value : [];
     const allCapaCases    = results[8].status === 'fulfilled' ? results[8].value : [];
+    const allObservations = results[9].status === 'fulfilled' ? results[9].value : [];
+    const allOrgNodes     = results[10].status === 'fulfilled' ? results[10].value : [];
+    const allUsers        = results[11].status === 'fulfilled' ? results[11].value : [];
 
     // ═══ Filter by employee ═══
     const empAttendance = (allAttendance as any[]).filter((r) => r.employeeId === employeeId);
@@ -125,9 +163,25 @@ export async function GET(
     const empFollowUps = (allFollowUps as any[]).filter((r) => r.employeeId === employeeId);
     const empTravel = (allTravelDeals as any[]).filter((r) => r.employeeId === employeeId);
     const empComplaints = (allComplaints as any[]).filter((r) => r.employeeId === employeeId);
+    // §2 — CAPA links via employeeId OR relatedEmployeeIds (the SAME
+    // rule the risk-center uses — the two views can never disagree).
     const empCapa = (allCapaCases as any[]).filter((r) =>
-      (r.relatedEmployeeIds || []).includes(employeeId)
+      r.employeeId === employeeId || (r.relatedEmployeeIds || []).includes(employeeId)
     );
+
+    // §2 — quality observations for this employee.
+    const empObservations = (allObservations as any[]).filter((r) => r.employeeId === employeeId);
+
+    // §2 — repeated issues: same follow-up TYPE more than once within
+    // 30 days (canonical repeated-issue semantics from the risk engine).
+    const thirtyDaysAgoStr = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+    const repeatedIssueCount = empFollowUps.filter((f) =>
+      empFollowUps.some((other) =>
+        other.id !== f.id
+        && other.employeeId === f.employeeId
+        && other.followUpType === f.followUpType
+        && other.date >= thirtyDaysAgoStr),
+    ).length > 0 ? 1 : 0;
 
     // ═══ Attendance stats ═══
     const totalPresent = empAttendance.filter((a) => a.status === 'present').length;
@@ -192,7 +246,7 @@ export async function GET(
       highPriorityFollowUpCount: highPriorityFollowUps.length,
       criticalFollowUpCount: criticalFollowUps.length,
       openComplaintCount: openComplaints.length,
-      repeatedIssueCount: 0, // not tracked per-employee here yet
+      repeatedIssueCount, // §2 — computed above (same-type within 30 days)
       openCapaCount: openCapa.length,
       overdueCapaCount: overdueCapa.length,
       criticalCapaCount: criticalCapa.length,
@@ -322,91 +376,184 @@ export async function GET(
     timeline.sort((a, b) => new Date(b.date || 0).getTime() - new Date(a.date || 0).getTime());
 
     // ═══ Smart Recommendations ═══
+    // Derived ONLY from sections the viewer may see — a denied
+    // section must not leak its signals through advice text either.
     const recommendations: string[] = [];
-    if (totalAbsent > 6) recommendations.push('معدل الغياب مرتفع - يجب عمل خطة تحسين حضور');
-    if (totalLate > 5) recommendations.push('تأخير متكرر - يحتاج متابعة دورية');
-    if (qualityDeductionDays > 3) recommendations.push('خصومات جودة مرتفعة - يحتاج تدريب إضافي');
-    if (openFollowUps.length > 3) recommendations.push('عدد كبير من المتابعات المفتوحة - يجب تسريع الإغلاق');
-    if (criticalFollowUps.length > 0) recommendations.push('يوجد حالات حرجة تحتاج تدخل فوري');
-    if (openComplaints.length > 0) recommendations.push('شكاوى عملاء مفتوحة - يجب المعالجة بسرعة');
-    if (openCapa.length > 0) recommendations.push(`يوجد ${openCapa.length} حالات CAPA مفتوحة - يجب المتابعة`);
-    if (overdueCapa.length > 0) recommendations.push(`يوجد ${overdueCapa.length} حالات CAPA متأخرة - يجب التسريع`);
-    if (reopenedCapa.length > 0) recommendations.push(`يوجد ${reopenedCapa.length} حالات CAPA معاد فتحها - يجب مراجعة فعالية الحلول`);
-    if (healthScore < 40) recommendations.push('مستوى الأداء منخفض جداً - يحتاج خطة تحسين شاملة');
+    if (sectionGate.attendance && totalAbsent > 6) recommendations.push('معدل الغياب مرتفع - يجب عمل خطة تحسين حضور');
+    if (sectionGate.attendance && totalLate > 5) recommendations.push('تأخير متكرر - يحتاج متابعة دورية');
+    if (sectionGate.quality && qualityDeductionDays > 3) recommendations.push('خصومات جودة مرتفعة - يحتاج تدريب إضافي');
+    if (sectionGate.followUps && openFollowUps.length > 3) recommendations.push('عدد كبير من المتابعات المفتوحة - يجب تسريع الإغلاق');
+    if (sectionGate.followUps && criticalFollowUps.length > 0) recommendations.push('يوجد حالات حرجة تحتاج تدخل فوري');
+    if (sectionGate.complaints && openComplaints.length > 0) recommendations.push('شكاوى عملاء مفتوحة - يجب المعالجة بسرعة');
+    if (sectionGate.capa && openCapa.length > 0) recommendations.push(`يوجد ${openCapa.length} حالات CAPA مفتوحة - يجب المتابعة`);
+    if (sectionGate.capa && overdueCapa.length > 0) recommendations.push(`يوجد ${overdueCapa.length} حالات CAPA متأخرة - يجب التسريع`);
+    if (sectionGate.capa && reopenedCapa.length > 0) recommendations.push(`يوجد ${reopenedCapa.length} حالات CAPA معاد فتحها - يجب مراجعة فعالية الحلول`);
+    if (sectionGate.risk && healthScore < 40) recommendations.push('مستوى الأداء منخفض جداً - يحتاج خطة تحسين شاملة');
+
+    // §2 — ORG IDENTITY from the tree (single source of truth) +
+    // reporting line resolved to user names.
+    const orgIndex = buildEmployeeOrgIndex(allOrgNodes as OrgNode[]);
+    const orgLabels = resolveEmployeeOrgLabels(orgIndex, employee as unknown as Employee);
+    const node = employee.orgNodeId ? (allOrgNodes as OrgNode[]).find((n) => n.id === employee.orgNodeId) ?? null : null;
+    const managerUserIds = employee.orgNodeId ? resolveManagerChain(orgIndex, employee.orgNodeId) : [];
+    const userById = new Map((allUsers as any[]).map((u) => [u.id, u]));
+    const reportingLine = managerUserIds
+      .map((uid) => ({ id: uid, name: userById.get(uid)?.name ?? uid }))
+      .slice(0, 3);
+
+    // §2 — ACTIVITY summary: last-90-day writes per domain + the
+    // newest real timestamp per domain (derived from loaded data —
+    // no invented metrics).
+    const ninetyDaysAgo = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000).toISOString();
+    const recentOf = (rows: any[], field = 'createdAt') => {
+      const recent = rows.filter((r) => (r[field] || '') >= ninetyDaysAgo);
+      const latest = rows.reduce((acc, r) => ((r[field] || '') > acc ? (r[field] || '') : acc), '');
+      return { last90Days: recent.length, lastEventAt: latest || null };
+    };
+    const activity = {
+      attendance: recentOf(empAttendance, 'date'),
+      qualityDeductions: recentOf(empQuality),
+      hrDeductions: recentOf(empHrDeductions),
+      followUps: recentOf(empFollowUps),
+      complaints: recentOf(empComplaints),
+      capa: recentOf(empCapa),
+      requests: recentOf(empRequests),
+      travel: recentOf(empTravel),
+    };
+
+    // ═══ SECTION-GATED SERIALIZATION ═══
+    // A denied section's block is withheld entirely (null) and the
+    // timeline keeps only events whose owning section is visible.
+    // Unrestricted maps (no section overrides) serialize exactly as
+    // before — legacy users see no difference.
+    const gatedTimeline = filterTimelineByGate(timeline, sectionGate, viewer.permissions);
 
     return NextResponse.json({
-      employee: {
-        id: employee.id,
-        name: employee.name,
-        code: employee.code || null,
-        department: employee.department || null,
-        position: employee.position || null,
-        shiftStart: employee.shiftStart || null,
-        shiftEnd: employee.shiftEnd || null,
-        hireDate: employee.hireDate || null,
-        // Field-level access (Part J): sensitive personal data is
-        // omitted server-side for viewers without edit access.
-        mobile:
-          resolveFieldAccess(permCheck.user!.permissions, 'employees', 'mobile') === 'hidden'
-            ? null
-            : employee.mobile || null,
-        createdById: employee.createdById || null,
-      },
+      employee: sectionGate.basicInfo
+        ? {
+            id: employee.id,
+            name: employee.name,
+            code: employee.code || null,
+            department: employee.department || null,
+            position: employee.position || null,
+            shiftStart: employee.shiftStart || null,
+            shiftEnd: employee.shiftEnd || null,
+            hireDate: employee.hireDate || null,
+            // §2 — full identity: lifecycle + residence + org node.
+            status: employee.status || 'active',
+            residence:
+              resolveFieldAccess(viewer.permissions, 'employees', 'mobile') === 'hidden'
+                ? null
+                : employee.residence || null,
+            orgNodeId: employee.orgNodeId || null,
+            archivedAt: (employee as any).archivedAt || null,
+            archiveReason: (employee as any).archiveReason || null,
+            // Field-level access (Part J): sensitive personal data is
+            // omitted server-side for viewers without edit access.
+            mobile:
+              resolveFieldAccess(viewer.permissions, 'employees', 'mobile') === 'hidden'
+                ? null
+                : employee.mobile || null,
+            createdById: employee.createdById || null,
+          }
+        : null,
+      // §2 — Organization section: real tree labels + reporting line.
+      organization: sectionGate.basicInfo
+        ? {
+            node: node ? { id: node.id, name: node.name, type: node.type } : null,
+            department: orgLabels.department,
+            team: orgLabels.team,
+            reportingLine,
+          }
+        : null,
+      // §2 — Quality observations block (deductions already covered).
+      observations: sectionGate.observations
+        ? {
+            total: empObservations.length,
+            currentMonth: empObservations.filter((o) => typeof o.date === 'string' && o.date.startsWith(currentMonth)).length,
+            byStatus: empObservations.reduce<Record<string, number>>((acc, o) => {
+              const key = o.status || 'approved';
+              acc[key] = (acc[key] || 0) + 1;
+              return acc;
+            }, {}),
+          }
+        : null,
       stats: {
-        attendance: {
-          totalPresent,
-          totalLate,
-          totalAbsent,
-          totalExempt,
-          totalMinutesLate,
-        },
-        quality: {
-          totalDeductions: empQuality.length,
-          deductionDays: qualityDeductionDays,
-          deductionAmount: qualityDeductionAmount,
-        },
-        hrDeductions: {
-          totalDeductions: empHrDeductions.length,
-          deductionDays: hrDeductionDays,
-          deductionAmount: hrDeductionTotal,
-        },
-        requests: {
-          total: empRequests.length,
-          pending: pendingRequests.length,
-          approved: approvedRequests.length,
-          rejected: rejectedRequests.length,
-        },
-        followUps: {
-          total: empFollowUps.length,
-          open: openFollowUps.length,
-          critical: criticalFollowUps.length,
-        },
-        travel: {
-          total: empTravel.length,
-          active: activeTrips.length,
-          completed: completedTrips.length,
-        },
-        complaints: {
-          total: empComplaints.length,
-          open: openComplaints.length,
-        },
-        capa: {
-          total: empCapa.length,
-          open: openCapa.length,
-          closed: closedCapa.length,
-          overdue: overdueCapa.length,
-          critical: criticalCapa.length,
-          reopened: reopenedCapa.length,
-          effectiveness: capaEffectiveness,
-        },
+        attendance: sectionGate.attendance
+          ? {
+              totalPresent,
+              totalLate,
+              totalAbsent,
+              totalExempt,
+              totalMinutesLate,
+            }
+          : null,
+        quality: sectionGate.quality
+          ? {
+              totalDeductions: empQuality.length,
+              deductionDays: qualityDeductionDays,
+              deductionAmount: qualityDeductionAmount,
+            }
+          : null,
+        hrDeductions: sectionGate.hrDeductions
+          ? {
+              totalDeductions: empHrDeductions.length,
+              deductionDays: hrDeductionDays,
+              deductionAmount: hrDeductionTotal,
+            }
+          : null,
+        requests: sectionGate.requests
+          ? {
+              total: empRequests.length,
+              pending: pendingRequests.length,
+              approved: approvedRequests.length,
+              rejected: rejectedRequests.length,
+            }
+          : null,
+        followUps: sectionGate.followUps
+          ? {
+              total: empFollowUps.length,
+              open: openFollowUps.length,
+              critical: criticalFollowUps.length,
+            }
+          : null,
+        travel: sectionGate.travel
+          ? {
+              total: empTravel.length,
+              active: activeTrips.length,
+              completed: completedTrips.length,
+            }
+          : null,
+        complaints: sectionGate.complaints
+          ? {
+              total: empComplaints.length,
+              open: openComplaints.length,
+            }
+          : null,
+        capa: sectionGate.capa
+          ? {
+              total: empCapa.length,
+              open: openCapa.length,
+              closed: closedCapa.length,
+              overdue: overdueCapa.length,
+              critical: criticalCapa.length,
+              reopened: reopenedCapa.length,
+              effectiveness: capaEffectiveness,
+            }
+          : null,
       },
-      risk: {
-        score: riskScore,
-        level: riskLevel,
-        breakdown: riskBreakdown,
-      },
-      healthScore,
-      timeline,
+      // Risk/health derive from every section — withheld when the
+      // risk section itself is denied (its breakdown leaks factor
+      // counts from denied sections otherwise).
+      risk: sectionGate.risk
+        ? {
+            score: riskScore,
+            level: riskLevel,
+            breakdown: riskBreakdown,
+          }
+        : null,
+      healthScore: sectionGate.risk ? healthScore : null,
+      timeline: gatedTimeline,
       recommendations,
     });
   } catch (error) {

@@ -291,7 +291,7 @@ export function EmployeeQualityKpiPanel({ employeeId }: { employeeId: string }) 
             <StatRow icon={ArrowUpCircle} color="text-emerald-400" label="منها مكافآت" value={approvedBonuses.length} />
             <StatRow icon={Clock} color="text-amber-400" label="ملاحظات معلقة" value={pending.length} />
             {employeeEntry && employeeEntry.rank > 0 && (
-              <StatRow icon={Award} color="text-purple-400" label="الترتيب" value={`#${employeeEntry.rank}`} />
+              <StatRow icon={Award} color="text-brand-400" label="الترتيب" value={`#${employeeEntry.rank}`} />
             )}
             {employeeEntry && (
               <StatRow icon={Award} color="text-slate-400" label="القسم" value={employeeEntry.dept || employeeEntry.employeeSnapshot.departmentName} />
@@ -547,7 +547,7 @@ function HistoryTableRow({
       </td>
       <td className="text-center py-1.5 px-1 hidden md:table-cell">
         {entry?.rank ? (
-          <Badge variant="outline" className="text-purple-400 border-purple-500/20 text-[10px]">
+          <Badge variant="outline" className="text-brand-400 border-brand-500/20 text-[10px]">
             #{entry.rank}
           </Badge>
         ) : (

@@ -1,28 +1,29 @@
 'use client';
 
 // ══════════════════════════════════════════════════════════════
-//  Sidebar — enterprise navigation surface (UX Corrections §2-§5)
+//  Sidebar — enterprise navigation surface (§SIDEBAR-V2)
 //
-//  §2  CUSTOMIZATION HAPPENS HERE, not in a dialog: a ⋮ menu in the
-//      sidebar enters an in-place EDIT MODE — drag handles appear on
-//      the actual items, order changes live, [إلغاء]/[حفظ] finish.
-//      ORDER ONLY: the flat saved order is re-filtered through each
-//      page's registry group on render, so pages can never migrate
-//      across structural boundaries and permissions always win
-//      (reconcileSidebarOrder + useSidebarPages).
+//  TWO INDEPENDENT AXES (store §SIDEBAR-V2):
+//    PINNED ⇄ UNPINNED  — layout: pinned = sticky in-flow column the
+//      content always respects; unpinned = NO layout width, opens as
+//      an overlay drawer above the page (z above the header — the old
+//      "sidebar hides behind the header" bug is a layering contract,
+//      not a z-index hack: header z-30, overlay sidebar z-40/50).
+//    EXPANDED ⇄ COLLAPSED — pinned width: full surface (288) vs icon
+//      rail (72). Hover on the rail temporarily expands it as an
+//      overlay (z-40) WITHOUT touching content width.
 //
-//  §3  COLLAPSE BY DEFAULT + HOVER: the sidebar renders collapsed;
-//      hovering (desktop) temporarily expands it as an overlay; a
-//      manual toggle PINS the chosen state, persisted through the
-//      existing preferences record (sidebar.pinOpen — user-scoped).
-//      Three separated states: pinned preference (store+prefs),
-//      temporary hover (local), rendered result (derived).
+//  §2  CUSTOMIZATION HAPPENS HERE: the ⋮ menu enters in-place EDIT
+//      MODE — drag handles on the real items, [إلغاء]/[حفظ] finish.
+//      ORDER ONLY (reconcileSidebarOrder — permissions always win).
 //
-//  §4/§5 Favorites ⭐ and Pins 📌 live INSIDE the sidebar as
-//      dedicated workspace sections — never in the global Header.
-//      Entries are the existing compact navigation descriptors,
-//      reconciled against CURRENT visible pages before rendering,
-//      navigated with the store's navigateTo + useRecordHighlight.
+//  §SIDEBAR-STATE group open/closed state persists through surface
+//      swaps AND reloads (localStorage mirror) — collapsing the
+//      sidebar never destroys which groups the user opened.
+//
+//  §4/§5 Favorites ⭐ / Pins 📌 live INSIDE the sidebar.
+//  §SIDEBAR-BADGES unseen/activity badges are per-user, permission-
+//      filtered server-side, and NEVER render as group counters.
 // ══════════════════════════════════════════════════════════════
 
 import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react';
@@ -41,7 +42,6 @@ import {
   BarChart3,
   Settings,
   Database,
-  LogOut,
   X,
   ChevronRight,
   ChevronLeft,
@@ -79,11 +79,14 @@ import {
 } from 'lucide-react';
 import { usePermissions } from '@/hooks/usePermissions';
 import { useSidebarPages } from '@/hooks/use-sidebar-order';
-import { useUnseenCounts, unseenCountOf } from '@/hooks/use-unseen';
-import { useAuth } from '@/contexts/AuthContext';
-import { useIsMobile } from '@/hooks/use-mobile';
-import { SIDEBAR_GROUPS, APP_PAGES } from '@/config/permissions';
-import { useAppStore } from '@/lib/store';
+import { useUnseenCounts, unseenCountOf, pendingCountOf } from '@/hooks/use-unseen';
+import { SidebarActivityBadge } from '@/components/shared/SidebarActivityBadge';
+import { useIsMobile, useIsDesktop } from '@/hooks/use-mobile';
+import { SIDEBAR_GROUPS, APP_PAGES, localizedPageLabel, localizedGroupLabel } from '@/config/permissions';
+import { useLanguage } from '@/lib/i18n/language-context';
+import { MenuCustomizationDialog } from '@/components/shared/MenuCustomizationDialog';
+import { useAppStore, resolveInitialSidebarState } from '@/lib/store';
+import { SidebarLogo } from '@/components/layout/SidebarLogo';
 import {
   useUserPreferences,
   useSaveUserPreferences,
@@ -91,7 +94,6 @@ import {
 import {
   reconcileSidebarOrder,
   reconcileNavigationEntries,
-  navigationEntriesEqual,
   type FavoriteEntry,
   type NavigationDescriptor,
   type PinEntry,
@@ -101,7 +103,6 @@ import {
   usePinToggleAction,
   useMarkState,
 } from '@/components/shared/NavigationMarks';
-import { UserAvatar } from '@/components/shared/UserAvatar';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -250,39 +251,156 @@ function WorkspaceSection<T extends NavigationDescriptor & { id: string }>({
   onNavigate: (entry: T) => void;
   onRemove: (entry: T) => void;
 }) {
+  const { locale, t } = useLanguage();
   if (entries.length === 0) return null;
   return (
     <div className="px-1">
       <p className="px-2 py-1 text-[10px] font-bold text-slate-500 flex items-center gap-1.5">
         {icon}
         {title}
-        <span className="text-slate-600 font-mono">({entries.length})</span>
       </p>
       <ul className="space-y-0.5">
-        {entries.map((entry) => (
-          <li key={entry.id} className="group/item relative">
-            <button
-              type="button"
-              onClick={() => onNavigate(entry)}
-              className="w-full flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs text-slate-300 hover:bg-slate-800 hover:text-white transition-colors text-right focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/40"
-              title={entry.label}
-            >
-              <span className="shrink-0">{icon}</span>
-              <span className="truncate flex-1 min-w-0">{entry.label}</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => onRemove(entry)}
-              aria-label={`إزالة ${entry.label}`}
-              title="إزالة"
-              className="absolute left-1 top-1/2 -translate-y-1/2 p-1 rounded-md text-slate-600 hover:text-red-400 hover:bg-red-500/10 opacity-0 group-hover/item:opacity-100 transition-opacity"
-            >
-              <X className="size-3" />
-            </button>
-          </li>
-        ))}
+        {entries.map((entry) => {
+          // §ICON-PARITY — each entry shows ITS OWN page icon (looked up
+          // from the page registry), not the section's star/pin glyph
+          // (the section header already carries that).
+          const EntryIcon = ICON_MAP[APP_PAGES_BY_ID.get(entry.route)?.icon ?? ''];
+          // §I18N-BILINGUAL — the stored label is a page-title snapshot;
+          // the registry-localized label renders for the active locale.
+          const entryLabel = localizedPageLabel(entry.route, locale);
+          return (
+            <li key={entry.id} className="group/item relative">
+              <button
+                type="button"
+                onClick={() => onNavigate(entry)}
+                className="w-full flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs text-slate-300 hover:bg-slate-800 hover:text-white transition-colors text-right focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/40"
+                title={entryLabel}
+              >
+                <span className="shrink-0 flex items-center justify-center size-3.5">
+                  {EntryIcon ? <EntryIcon className="size-3.5" /> : icon}
+                </span>
+                <span className="truncate flex-1 min-w-0">{entryLabel}</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => onRemove(entry)}
+                aria-label={`${t('sidebar.removeEntry')} ${entryLabel}`}
+                title="إزالة"
+                className="absolute left-1 top-1/2 -translate-y-1/2 p-1 rounded-md text-slate-600 hover:text-red-400 hover:bg-red-500/10 opacity-0 group-hover/item:opacity-100 transition-opacity"
+              >
+                <X className="size-3" />
+              </button>
+            </li>
+          );
+        })}
       </ul>
     </div>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════
+//  QLogoToggle (§SIDEBAR-V3) — the SINGLE sidebar control.
+//
+//  COLLAPSED rail: the Q brand mark sits in the header; hovering it
+//  cross-fades the glyph into an expand chevron (clear affordance —
+//  "this opens the menu"), click expands the sidebar.
+//  EXPANDED surface: the full Qnlys brand mark; a small collapse
+//  chevron sits in its own layout slot BESIDE the logo (never
+//  overlapping). Click collapses back to the rail.
+//
+//  Both states use SidebarLogo for the mark (consistent asset,
+//  proper theme variants). The expanded state uses a flex row
+//  so the chevron has its own space — no absolute positioning
+//  that overlaps the logo.
+// ═══════════════════════════════════════════════════════════════
+function QLogoToggle({
+  expanded,
+  onToggle,
+}: {
+  expanded: boolean;
+  onToggle: () => void;
+}) {
+  const { t } = useLanguage();
+  const [hovered, setHovered] = useState(false);
+
+  if (!expanded) {
+    // ── Rail: square Q button; hover swaps the glyph for the expand chevron.
+    // Uses SidebarLogo (collapsed) for the Q mark — consistent asset.
+    return (
+      <button
+        type="button"
+        onClick={onToggle}
+        onMouseEnter={() => setHovered(true)}
+        onMouseLeave={() => setHovered(false)}
+        onFocus={() => setHovered(true)}
+        onBlur={() => setHovered(false)}
+        aria-label={t('sidebar.expand')}
+        aria-expanded={false}
+        title={t('sidebar.expand')}
+        className="relative flex h-9 w-9 items-center justify-center rounded-lg transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50 hover:bg-slate-800/60"
+      >
+        <motion.span
+          aria-hidden="true"
+          animate={{ opacity: hovered ? 0 : 1, scale: hovered ? 0.85 : 1 }}
+          transition={{ duration: 0.16, ease: [0.4, 0, 0.2, 1] }}
+          className="absolute inset-0 flex items-center justify-center"
+        >
+          <SidebarLogo variant="collapsed" />
+        </motion.span>
+        <motion.span
+          aria-hidden="true"
+          initial={false}
+          animate={{ opacity: hovered ? 1 : 0, scale: hovered ? 1 : 0.7 }}
+          transition={{ duration: 0.16, ease: [0.4, 0, 0.2, 1] }}
+          className="absolute inset-0 flex items-center justify-center text-brand-300"
+        >
+          <ChevronLeft className="h-5 w-5" />
+        </motion.span>
+      </button>
+    );
+  }
+
+  // ── Expanded: logo and collapse chevron as SIBLINGS in a flex row.
+  // The logo gets the available space; the chevron button sits at
+  // the leading edge (left in LTR, right in RTL — logical via flex).
+  // This guarantees NO overlap, NO clipping, clean transition.
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      onFocus={() => setHovered(true)}
+      onBlur={() => setHovered(false)}
+      aria-label={t('sidebar.collapse')}
+      aria-expanded
+      title={t('sidebar.collapse')}
+      className="group/qlogo relative flex h-11 items-center justify-between gap-2 rounded-lg px-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50 hover:bg-slate-800/60"
+      dir="ltr"
+    >
+      {/* Logo area — flexible, centered within remaining space */}
+      <motion.div
+        aria-hidden="true"
+        animate={{ opacity: hovered ? 0.75 : 1 }}
+        transition={{ duration: 0.16, ease: [0.4, 0, 0.2, 1] }}
+        className="flex-1 flex items-center justify-center min-w-0"
+      >
+        <SidebarLogo variant="expanded" />
+      </motion.div>
+
+      {/* Collapse chevron — own slot, fades in on hover.
+          In RTL (sidebar on right), this is the LEFT edge (start).
+          Points toward the rail (ChevronRight in RTL = "go back"). */}
+      <motion.span
+        aria-hidden="true"
+        initial={false}
+        animate={{ opacity: hovered ? 1 : 0, x: hovered ? 0 : 4 }}
+        transition={{ duration: 0.16, ease: [0.4, 0, 0.2, 1] }}
+        className="flex-shrink-0 flex h-6 w-6 items-center justify-center rounded-full border border-slate-700/60 bg-slate-800 text-brand-300 shadow-md"
+      >
+        <ChevronRight className="h-3.5 w-3.5" />
+      </motion.span>
+    </button>
   );
 }
 
@@ -295,8 +413,6 @@ interface SidebarProps {
   onNavigate: (page: string) => void;
   isOpen: boolean;
   onToggle: () => void;
-  isCollapsed: boolean;
-  onToggleCollapse: () => void;
 }
 
 export function Sidebar({
@@ -304,26 +420,36 @@ export function Sidebar({
   onNavigate,
   isOpen,
   onToggle,
-  isCollapsed,
-  onToggleCollapse,
 }: SidebarProps) {
   // Permission-filtered pages in the USER'S saved order (Milestone 10).
   // Permission resolution happens FIRST; the personal order only
   // reorders within the authorized set (never the other way round).
   const visiblePages = useSidebarPages();
-  const { user, logout } = useAuth();
   const isMobile = useIsMobile();
-  const { user: _authUser } = useAuth();
-  void _authUser;
+  // §SIDEBAR-TABLET — the pinned in-layout sidebar exists ONLY on
+  // desktop (≥1024px, the `lg:` breakpoint). Below that (including the
+  // 768–1023 tablet range that used to be a dead zone) the sidebar is
+  // the overlay drawer, opened by the header hamburger.
+  const isDesktop = useIsDesktop();
 
   const { data: preferences } = useUserPreferences();
   const savePrefs = useSaveUserPreferences();
-  const setSidebarCollapsed = useAppStore((s) => s.setSidebarCollapsed);
+  const { locale, t } = useLanguage();
+
+  // ── §SIDEBAR-V2 — the two axes live in the store ──
+  const sidebarPinned = useAppStore((s) => s.sidebarPinned);
+  const sidebarExpanded = useAppStore((s) => s.sidebarExpanded);
+  const sidebarHoverExpand = useAppStore((s) => s.sidebarHoverExpand);
+  const setSidebarPinned = useAppStore((s) => s.setSidebarPinned);
+  const setSidebarExpanded = useAppStore((s) => s.setSidebarExpanded);
+  const setSidebarHoverExpand = useAppStore((s) => s.setSidebarHoverExpand);
 
   // ── §SIDEBAR-BADGES — per-user unseen counters ──
   // ONE shared react-query for the whole sidebar: new records added by
   // OTHER users since THIS user last opened the page. The active page
   // is never badged (opening it marks it seen via the PageRouter).
+  // `pending` carries action-needed counts (quality approvals) — those
+  // are NOT cleared by visiting; only the decision clears them.
   const { data: unseen } = useUnseenCounts();
   const unseenBadgeFor = useCallback(
     (pageId: string) => {
@@ -332,19 +458,89 @@ export function Sidebar({
     },
     [unseen, currentPage],
   );
+  const pendingBadgeFor = useCallback(
+    (pageId: string) => pendingCountOf(unseen, pageId),
+    [unseen],
+  );
 
-  // ── §3: apply the user's PINNED preference once per session ──
+  // ── §SIDEBAR-V3: hydrate the persisted preference once ──
+  // One canonical rule (resolveInitialSidebarState): the DEFAULT
+  // experience is the sidebar PINNED in layout and COLLAPSED to the
+  // rail. A legacy `pinOpen === false` (explicitly unpinned) still
+  // resolves to drawer mode.
   const appliedPrefRef = useRef(false);
   useEffect(() => {
     if (appliedPrefRef.current) return;
     const pinOpen = preferences?.sidebar?.pinOpen;
-    if (pinOpen === undefined) return; // keep the system default (collapsed)
     appliedPrefRef.current = true;
-    setSidebarCollapsed(!pinOpen);
-  }, [preferences, setSidebarCollapsed]);
+    const resolved = resolveInitialSidebarState(pinOpen);
+    setSidebarPinned(resolved.pinned);
+    setSidebarExpanded(resolved.expanded);
+  }, [preferences, setSidebarPinned, setSidebarExpanded]);
 
-  // ── §3: temporary hover state (desktop, only when pinned closed) ──
-  const [hovering, setHovering] = useState(false);
+  // ── §SIDEBAR-V3: HOVER-TO-PREVIEW with 1.5s dwell ──
+  // Hovering the collapsed rail does NOT expand instantly — the user
+  // must dwell 1.5s (reading tooltips, scrolling, or just passing by
+  // keeps the rail stable). After the dwell, the surface unfolds as a
+  // temporary OVERLAY (layout width untouched); leaving collapses it.
+  // Deterministic timer, cleared on leave/unmount/open-menu freeze.
+  const HOVER_EXPAND_DELAY_MS = 1500;
+  const hoverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const clearHoverTimer = useCallback(() => {
+    if (hoverTimerRef.current) {
+      clearTimeout(hoverTimerRef.current);
+      hoverTimerRef.current = null;
+    }
+  }, []);
+
+  // ── §SIDEBAR-V3 — ONE toggle: the Q-logo ──
+  // Click toggles expanded ⇄ collapsed (pinned mode). The expanded
+  // choice persists (user-scoped `sidebar.pinOpen` reuses the same
+  // channel: true = expanded, false/undefined = collapsed rail).
+  // Expanding from the rail/hover-preview always clears the temporary
+  // hover overlay so exactly one surface owns the screen.
+  const handleToggleExpand = useCallback(() => {
+    const next = !useAppStore.getState().sidebarExpanded;
+    clearHoverTimer();
+    setSidebarHoverExpand(false);
+    setSidebarExpanded(next);
+    savePrefs.mutate({ sidebar: { pinOpen: next } }, {
+      onError: () => toast.error('تعذر حفظ تفضيل القائمة'),
+    });
+  }, [clearHoverTimer, setSidebarHoverExpand, setSidebarExpanded, savePrefs]);
+
+  const handleRailMouseEnter = useCallback(() => {
+    clearHoverTimer();
+    hoverTimerRef.current = setTimeout(() => {
+      hoverTimerRef.current = null;
+      setSidebarHoverExpand(true);
+    }, HOVER_EXPAND_DELAY_MS);
+  }, [clearHoverTimer, setSidebarHoverExpand]);
+
+  const handleRailMouseLeave = useCallback(() => {
+    clearHoverTimer();
+    setSidebarHoverExpand(false);
+  }, [clearHoverTimer, setSidebarHoverExpand]);
+
+  // Unmount hygiene — no stray timer fires after the sidebar is gone.
+  useEffect(() => clearHoverTimer, [clearHoverTimer]);
+
+  // ── §SIDEBAR-V3: NAV SCROLL CONTINUITY ──
+  // The rail nav and the expanded nav are separate DOM elements (the
+  // surface swaps). ONE shared scroll position: every nav writes its
+  // scrollTop into the ref while scrolling, and every nav RESTORES it
+  // on mount (callback ref) — collapsing/expanding/hover-preview never
+  // loses the user's place in the list.
+  const navScrollRef = useRef(0);
+  const handleNavScroll = useCallback((e: React.UIEvent<HTMLElement>) => {
+    navScrollRef.current = e.currentTarget.scrollTop;
+  }, []);
+  const railNavRefCb = useCallback((el: HTMLElement | null) => {
+    if (el) el.scrollTop = navScrollRef.current;
+  }, []);
+  const expandedNavRefCb = useCallback((el: HTMLElement | null) => {
+    if (el) el.scrollTop = navScrollRef.current;
+  }, []);
 
   // ── §1: OVERFLOW-MENU FIX (root cause) ──
   // The ⋮ menu content renders in a RADIX PORTAL on document.body —
@@ -355,31 +551,33 @@ export function Sidebar({
   // killing the open menu. Fix: while the ⋮ menu is open we FREEZE
   // whichever surface it was opened from — hover changes are ignored
   // and mouse-leave cannot collapse the sidebar mid-interaction.
-  // (State declared here; the callback wiring lives below, after
-  // `editing` is computed.)
   const [menuOpen, setMenuOpen] = useState(false);
   const [menuOpenSurface, setMenuOpenSurface] = useState(false);
 
   // ── §2: in-sidebar EDIT MODE ──
   const defaultOrder = useMemo(() => visiblePages.map((p) => p.id), [visiblePages]);
   const [editOrder, setEditOrder] = useState<string[] | null>(null);
+  // §21 — the full customization dialog (groups + cross-group DnD).
+  const [customizeOpen, setCustomizeOpen] = useState(false);
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [dropIndex, setDropIndex] = useState<number | null>(null);
-  const wasCollapsedBeforeEditRef = useRef<boolean | null>(null);
+  const wasExpandedBeforeEditRef = useRef<boolean | null>(null);
 
   const enterEditMode = () => {
-    wasCollapsedBeforeEditRef.current = isCollapsed;
-    if (isCollapsed) setSidebarCollapsed(false); // editing needs the full surface
+    wasExpandedBeforeEditRef.current = sidebarExpanded;
+    clearHoverTimer();
+    setSidebarHoverExpand(false);
+    if (!sidebarExpanded) setSidebarExpanded(true); // editing needs the full surface
     setEditOrder([...defaultOrder]);
   };
   const exitEditMode = () => {
     setEditOrder(null);
     setDragIndex(null);
     setDropIndex(null);
-    if (wasCollapsedBeforeEditRef.current && !isCollapsed) {
-      setSidebarCollapsed(true); // restore the pinned state
+    if (wasExpandedBeforeEditRef.current === false && sidebarExpanded) {
+      setSidebarExpanded(false); // restore the rail
     }
-    wasCollapsedBeforeEditRef.current = null;
+    wasExpandedBeforeEditRef.current = null;
   };
   const saveEdit = async () => {
     if (!editOrder) return;
@@ -407,14 +605,35 @@ export function Sidebar({
   // menu (that would unmount the trigger and close the menu).
   const handleMenuOpenChange = useCallback((open: boolean) => {
     setMenuOpen(open);
-    if (open) setMenuOpenSurface(editing || !isCollapsed || hovering);
-  }, [editing, isCollapsed, hovering]);
-  // While editing, the surface must stay expanded (hover cannot collapse it).
-  const expanded = isMobile
+    if (open) {
+      // Freeze the dwell timer too — the surface must not swap mid-menu.
+      clearHoverTimer();
+      setMenuOpenSurface(editing || sidebarExpanded || sidebarHoverExpand);
+    }
+  }, [clearHoverTimer, editing, sidebarExpanded, sidebarHoverExpand]);
+
+  // Full-surface visibility (pinned column): expanded, editing, or the
+  // dwell-triggered hover surface (§SIDEBAR-V3 1.5s).
+  const expanded = !isDesktop
     ? false
-    : menuOpen
-      ? menuOpenSurface
-      : editing || !isCollapsed || hovering;
+    : sidebarExpanded || editing;
+
+  // Hover-expand target (pinned collapsed rail, desktop only): active
+  // only AFTER the 1.5s dwell flips `sidebarHoverExpand`. While a ⋮
+  // menu is open the surface freezes to whatever it was when the menu
+  // opened (§1 menu fix).
+  const hoverSurfaceActive = isDesktop && sidebarPinned && !expanded &&
+    (menuOpen ? menuOpenSurface : sidebarHoverExpand);
+
+  // ── ESC closes the unpinned drawer (any non-desktop size) ──
+  useEffect(() => {
+    if (isDesktop || sidebarPinned || !isOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') useAppStore.getState().setSidebarOpen(false);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [isDesktop, sidebarPinned, isOpen]);
 
   const handleDrop = () => {
     if (dragIndex === null || dropIndex === null || !editOrder) return;
@@ -457,9 +676,6 @@ export function Sidebar({
   );
   const toggleFavorite = useFavoriteToggleAction();
   const togglePin = usePinToggleAction();
-
-  const userName = user?.name || '';
-  const userRank = user?.rank || '';
 
   const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>(() => {
     const initial: Record<string, boolean> = {};
@@ -509,65 +725,85 @@ export function Sidebar({
   // ── §SIDEBAR-MIRROR — the group containing the CURRENT page is
   //  always shown open. One source of truth (collapsedGroups) drives
   //  BOTH surfaces: navigating to a page of a closed group re-opens
-  //  that group, so the collapsed rail mirror always shows where the
-  //  user is (Bitrix-style active-section behavior). Explicit user
-  //  collapse of that same group is still respected until the next
-  //  navigation (the effect only runs on activeGroupId change).
+  //  that group. Explicit user collapse of that same group is still
+  //  respected until the next navigation.
   const activeGroupId = useMemo(() => {
     const active = visiblePages.find((p) => p.id === currentPage);
     return active?.groupId ?? null;
   }, [visiblePages, currentPage]);
   useEffect(() => {
     if (!activeGroupId) return;
-    // Route-driven group state sync: navigating to a page of a closed
-    // group re-opens that group so the collapsed rail mirror always
-    // shows where the user is. Same canonical post-mount-sync pattern
-    // as the hydration guard below — there is no render-safe
-    // alternative that doesn't read other state during render.
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- route-change sync of persisted group state; mirrors the file's canonical hydration guard pattern.
+    // Route-driven group state sync — mirrors the file's canonical
+    // hydration guard pattern (no render-safe alternative exists).
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- route-change sync of persisted group state.
     setCollapsedGroups((prev) => (prev[activeGroupId] ? { ...prev, [activeGroupId]: false } : prev));
   }, [activeGroupId]);
 
   // Groups that actually render (≥1 visible page) — shared by the
   // expanded nav and the collapsed rail (SAME structure, two sizes).
+  // §21 — menu customization: saved GROUP order + cross-group item
+  // overrides apply here (the single rendering path — no second
+  // navigation architecture). Permissions already filtered
+  // `visiblePages`; ordering can never resurrect a hidden page.
+  const sidebarPrefs = preferences?.sidebar;
   const visibleGroups = useMemo(() => {
+    const groupOf = (p: typeof visiblePages[number]) => {
+      const override = sidebarPrefs?.itemGroups?.[p.id];
+      return override && SIDEBAR_GROUPS.some((g) => g.id === override) ? override : p.groupId;
+    };
+    const groupRank = new Map<string, number>();
+    (sidebarPrefs?.groupOrder ?? []).forEach((id, i) => { if (!groupRank.has(id)) groupRank.set(id, i); });
     return SIDEBAR_GROUPS
-      .map((g) => ({ ...g, pages: visiblePages.filter((p) => p.groupId === g.id) }))
-      .filter((g) => g.pages.length > 0);
-  }, [visiblePages]);
+      .map((g) => ({ ...g, pages: visiblePages.filter((p) => groupOf(p) === g.id) }))
+      .filter((g) => g.pages.length > 0)
+      .sort((a, b) => {
+        const ra = groupRank.get(a.id) ?? Number.MAX_SAFE_INTEGER;
+        const rb = groupRank.get(b.id) ?? Number.MAX_SAFE_INTEGER;
+        return ra - rb;
+      });
+  }, [visiblePages, sidebarPrefs]);
 
   // ── Sidebar settings ⋮ menu (§2) — shared by expanded + collapsed ──
-  // §1: onOpenChange drives the surface-freeze so the menu survives
-  // pointer travel into its portal; §1 also owns logout here — it is
-  // NOT a standalone button consuming rail/footer space.
   const settingsMenu = (
     <DropdownMenu onOpenChange={handleMenuOpenChange}>
       <DropdownMenuTrigger asChild>
         <button
           type="button"
-          aria-label="إعدادات القائمة"
+          aria-label={t('sidebar.menuSettings')}
           aria-haspopup="menu"
-          title="إعدادات القائمة"
-          className="p-2 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/50"
+          title={t('sidebar.menuSettings')}
+          className="p-2 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50"
         >
           <MoreVertical className="size-4" />
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" side="top" sideOffset={6} className="bg-slate-900 border-slate-700/60 min-w-52 z-50">
         <DropdownMenuItem
-          onClick={() => enterEditMode()}
+          onClick={() => setCustomizeOpen(true)}
           className="gap-2 cursor-pointer text-xs text-slate-300 focus:text-white focus:bg-slate-800"
         >
           <SlidersHorizontal className="size-3.5" />
-          تخصيص القائمة
+          {t('sidebar.customize')}
         </DropdownMenuItem>
+        {!isMobile && (
+          <DropdownMenuItem
+            // §13 DIRECT MANIPULATION — in-place edit mode: drag handles
+            // on the REAL items with exact drop positioning (no dialog).
+            onClick={enterEditMode}
+            disabled={editing}
+            className="gap-2 cursor-pointer text-xs text-slate-300 focus:text-white focus:bg-slate-800"
+          >
+            <GripVertical className="size-3.5" />
+            ترتيب مباشر (سحب وإفلات)
+          </DropdownMenuItem>
+        )}
         <DropdownMenuItem
           onClick={() => void resetOrder()}
           disabled={savePrefs.isPending}
           className="gap-2 cursor-pointer text-xs text-slate-300 focus:text-white focus:bg-slate-800"
         >
           <RotateCcw className="size-3.5" />
-          إعادة للوضع الافتراضي
+          {t('sidebar.resetOrder')}
         </DropdownMenuItem>
         {pageDescriptor && (
           <>
@@ -580,55 +816,73 @@ export function Sidebar({
               className="gap-2 cursor-pointer text-xs text-slate-300 focus:text-white focus:bg-slate-800"
             >
               <Star className={cn('size-3.5', pageMarkState.favoriteActive && 'text-amber-400 fill-amber-400')} />
-              {pageMarkState.favoriteActive ? 'إزالة الصفحة من المفضلة' : 'إضافة للمفضلة ⭐'}
+              {pageMarkState.favoriteActive ? t('sidebar.removeFavorite') : t('sidebar.addFavorite')}
             </DropdownMenuItem>
             <DropdownMenuItem
               onClick={() => void togglePin(pageDescriptor)}
               className="gap-2 cursor-pointer text-xs text-slate-300 focus:text-white focus:bg-slate-800"
             >
               <PinIcon className={cn('size-3.5', pageMarkState.pinActive && 'text-cyan-400 fill-cyan-400')} />
-              {pageMarkState.pinActive ? 'إزالة تثبيت الصفحة' : 'تثبيت 📌'}
+              {pageMarkState.pinActive ? t('sidebar.unpinPage') : t('sidebar.pinPage')}
             </DropdownMenuItem>
           </>
         )}
-        <DropdownMenuSeparator className="bg-slate-700/50" />
-        <DropdownMenuItem
-          onClick={() => { handleMenuOpenChange(false); logout(); }}
-          className="gap-2 cursor-pointer text-xs text-red-400 focus:text-red-300 focus:bg-red-500/10"
-        >
-          <LogOut className="size-3.5" />
-          تسجيل الخروج 🚪
-        </DropdownMenuItem>
+        {/* §HEADER-V3 — logout moved to the Header profile menu (the
+            single profile surface); no duplicated control here. */}
       </DropdownMenuContent>
     </DropdownMenu>
   );
 
-  // ── Nav content (expanded, normal mode) ──
+  // ── Nav content (expanded surface) ──
+  // §7 EMERGE: page names slide OUT FROM BEHIND their icons (RTL: the
+  // icon sits at the row start/right; the label starts offset TOWARD
+  // the icon and settles left into place). Staggered per item — CSS
+  // class + framer transforms only, replayed when the surface mounts.
+  // §CUSTOMIZATION-PARITY: iterates `visibleGroups` — the SAME
+  // customized group order/membership the collapsed rail renders (the
+  // old SIDEBAR_GROUPS iteration ignored groupOrder/itemGroups, so the
+  // rail and the expanded surface disagreed after customization).
   const expandedNav = (
-    <nav className="flex-1 overflow-y-auto py-3 px-3 arm-scroll">
-      {SIDEBAR_GROUPS.map((group, groupIdx) => {
-        const groupPages = visiblePages.filter((p) => p.groupId === group.id);
+    <nav
+      ref={expandedNavRefCb}
+      onScroll={handleNavScroll}
+      className="flex-1 overflow-y-auto py-3 px-3 arm-scroll"
+      aria-label={t('sidebar.pagesNav')}
+    >
+      {visibleGroups.map((group, groupIdx) => {
+        const groupPages = group.pages;
         if (groupPages.length === 0) return null;
         const isGroupCollapsed = collapsedGroups[group.id] ?? false;
+        const isActiveGroup = activeGroupId === group.id;
 
         return (
           <motion.div
             key={group.id}
             initial={{ opacity: 0, y: 8 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: groupIdx * 0.06 + 0.15, duration: 0.3, ease: [0.4, 0, 0.2, 1] }}
+            transition={{ delay: groupIdx * 0.04 + 0.08, duration: 0.24, ease: [0.4, 0, 0.2, 1] }}
             className={cn(groupIdx > 0 && 'mt-2')}
           >
             <button
               onClick={() => toggleGroup(group.id)}
-              className="w-full flex items-center gap-2.5 px-2 py-2 rounded-lg hover:bg-slate-800/50 transition-colors group/header focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/40"
+              aria-expanded={!isGroupCollapsed}
+              className={cn(
+                'w-full flex items-center gap-2.5 px-2 py-2 rounded-lg hover:bg-slate-800/50 transition-colors group/header focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/40',
+              )}
             >
-              <span className="text-xs leading-none shrink-0">{group.emoji}</span>
-              <span className="flex-1 text-right text-[10px] font-bold tracking-wide text-slate-500 group-hover/header:text-slate-400 whitespace-nowrap transition-colors">
-                {group.label}
+              <span className="text-xs leading-none shrink-0" aria-hidden="true">{group.emoji}</span>
+              <span className={cn(
+                'flex-1 text-right text-[10px] font-bold tracking-wide whitespace-nowrap transition-colors',
+                isActiveGroup ? 'text-slate-300' : 'text-slate-500 group-hover/header:text-slate-400',
+              )}>
+                {localizedGroupLabel(group.id, locale)}
               </span>
-              <motion.span animate={{ rotate: isGroupCollapsed ? 0 : 180 }} transition={{ duration: 0.25, ease: [0.4, 0, 0.2, 1] }} className="flex items-center justify-center w-5 h-5 rounded-md bg-gradient-to-br from-violet-500/20 to-indigo-500/20 border border-violet-500/20 shrink-0">
-                <svg width="10" height="10" viewBox="0 0 10 10" fill="none" className="text-violet-400">
+              <motion.span
+                animate={{ rotate: isGroupCollapsed ? 0 : 180 }}
+                transition={{ duration: 0.25, ease: [0.4, 0, 0.2, 1] }}
+                className="flex items-center justify-center w-5 h-5 rounded-md bg-slate-800/80 border border-slate-700/60 text-slate-400 shrink-0"
+              >
+                <svg width="10" height="10" viewBox="0 0 10 10" fill="none" aria-hidden="true">
                   <path d="M7.5 3.75L5 6.25L2.5 3.75" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
                 </svg>
               </motion.span>
@@ -647,43 +901,53 @@ export function Sidebar({
                     const Icon = ICON_MAP[page.icon];
                     const isActive = currentPage === page.id;
                     const unseenBadge = unseenBadgeFor(page.id);
+                    const pendingBadge = pendingBadgeFor(page.id);
+                    const badgeCount = Math.max(unseenBadge, pendingBadge);
                     return (
                       <motion.li
                         key={page.id}
-                        initial={{ opacity: 0, x: -12 }}
+                        initial={{ opacity: 0, x: 16 }}
                         animate={{ opacity: 1, x: 0 }}
-                        transition={{ delay: index * 0.03 + 0.05, duration: 0.18 }}
+                        transition={{
+                          // §7 EMERGE — from the icon (row start) toward
+                          // its place; 180-280ms window, no bounce.
+                          delay: index * 0.025,
+                          duration: 0.22,
+                          ease: [0.4, 0, 0.2, 1],
+                        }}
                       >
                         <motion.button
                           onClick={() => onNavigate(page.id)}
                           whileHover={{ x: -4 }}
                           transition={{ duration: 0.12 }}
+                          aria-current={isActive ? 'page' : undefined}
                           className={cn(
-                            'w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/40',
+                            'w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/40',
                             isActive
-                              ? 'bg-gradient-to-r from-violet-600 to-indigo-600 text-white shadow-md shadow-violet-500/20'
-                              : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                              ? 'bg-gradient-to-l from-brand-600 to-brand-700 text-white shadow-md shadow-brand-500/20'
+                              : 'text-slate-300 hover:bg-slate-800 hover:text-white',
                           )}
                         >
                           {Icon && (
-                            <Icon className={cn('h-5 w-5 shrink-0', isActive && 'scale-110')} />
-                          )}
-                          <span className="truncate">{page.title}</span>
-                          {/* §SIDEBAR-BADGES — new-items counter (per user). */}
-                          {unseenBadge > 0 && (
-                            <span
-                              className="mr-auto shrink-0 inline-flex items-center justify-center min-w-5 h-5 px-1.5 rounded-full bg-violet-500/25 border border-violet-300/40 text-violet-100 text-[10px] font-bold tabular-nums"
-                              title={`${unseenBadge} عنصر جديد لم تشاهده بعد`}
-                              aria-label={`${unseenBadge} عنصر جديد`}
-                            >
-                              {unseenBadge > 99 ? '+99' : unseenBadge}
+                            <span className="shrink-0 flex items-center justify-center size-5">
+                              <Icon className={cn('h-5 w-5', isActive && 'scale-110')} />
                             </span>
                           )}
-                          {isActive && (
-                            <motion.div
-                              className="mr-auto w-1.5 h-1.5 rounded-full bg-violet-300"
-                              layoutId="activeIndicator"
-                              transition={{ type: 'spring', stiffness: 350, damping: 30 }}
+                          <span className="truncate min-w-0">{localizedPageLabel(page.id, locale)}</span>
+                          {/* §APPROVAL-NOTIFY — action-needed badge wins over
+                              the unseen badge (more urgent, different tone). */}
+                          {pendingBadge > 0 ? (
+                            <SidebarActivityBadge
+                              count={pendingBadge}
+                              tone="amber"
+                              title={`${pendingBadge} خصم جودة بانتظار الاعتماد`}
+                            />
+                          ) : (
+                            /* §SIDEBAR-BADGES — new-items counter (per user). */
+                            <SidebarActivityBadge
+                              count={badgeCount}
+                              tone="violet"
+                              title={`${badgeCount} عنصر جديد لم تشاهده بعد`}
                             />
                           )}
                         </motion.button>
@@ -734,7 +998,7 @@ export function Sidebar({
             onDrop={handleDrop}
             className={cn(
               'flex items-center gap-2 p-2 rounded-xl bg-slate-800/40 border transition-colors cursor-grab active:cursor-grabbing',
-              isDragging ? 'border-violet-500/60 opacity-60' : isDropTarget ? 'border-violet-500/80 ring-1 ring-violet-500/60' : 'border-slate-700/30',
+              isDragging ? 'border-brand-500/60 opacity-60' : isDropTarget ? 'border-brand-500/80 ring-1 ring-brand-500/60' : 'border-slate-700/30',
             )}
           >
             <GripVertical className="size-4 text-slate-600 shrink-0" aria-hidden="true" />
@@ -785,7 +1049,7 @@ export function Sidebar({
         type="button"
         onClick={() => void saveEdit()}
         disabled={savePrefs.isPending}
-        className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-violet-600 hover:bg-violet-700 text-white text-xs font-semibold transition-colors disabled:opacity-60"
+        className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-brand-600 hover:bg-brand-700 text-white text-xs font-semibold transition-colors disabled:opacity-60"
       >
         {savePrefs.isPending ? <Loader2 className="size-3.5 animate-spin" /> : <Save className="size-3.5" />}
         حفظ
@@ -793,69 +1057,65 @@ export function Sidebar({
     </div>
   );
 
-  // ── Normal-mode footer: user + ⋮ settings (logout lives INSIDE the ⋮ menu — §1) ──
+  // ── Normal-mode footer: sidebar's OWN controls only (⋮ settings).
+  //  §HEADER-V3 — the user's identity/profile lives in the HEADER
+  //  profile menu (the single profile surface); the sidebar ends with
+  //  navigation + its own settings control, no duplicate identity. ──
   const normalFooter = (
-    <div className="border-t border-slate-700/50 p-3 shrink-0">
-      <div className="flex items-center gap-2.5">
-        {/* §AVATAR-UNIFICATION — the ONE shared identity surface,
-            identical to the Header and the collapsed rail. */}
-        <UserAvatar name={userName} className="shrink-0" />
-        <div className="flex-1 min-w-0">
-          <p className="text-xs font-semibold text-white truncate">{userName}</p>
-          <span className="inline-block mt-0.5 px-1.5 py-0 text-[9px] font-medium rounded-full bg-violet-600/20 text-violet-400 border border-violet-600/30">
-            {userRank}
-          </span>
-        </div>
-        {settingsMenu}
-      </div>
+    <div className="border-t border-slate-700/50 p-2 shrink-0 flex items-center">
+      {settingsMenu}
     </div>
   );
 
-  const sidebarContent = (
+  // ── FULL SURFACE — shared by: pinned expanded column, hover surface,
+  // unpinned drawer, and the non-desktop drawer. Exactly ONE instance
+  // is ever mounted (the layout modes are mutually exclusive), so
+  // framer layoutIds inside it stay unique.
+  const showCloseButton = !isDesktop || !sidebarPinned;
+  const surface = (
     <div className="flex flex-col h-full bg-slate-900 text-white">
-      {/* Logo */}
-      <div className="relative flex items-center justify-center h-20 px-4 border-b border-slate-700/50 shrink-0">
-        {isMobile && (
-          <button
-            onClick={onToggle}
-            className="absolute top-4 left-4 p-1 rounded-md text-slate-400 hover:text-white hover:bg-slate-800 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/40"
-            aria-label="إغلاق القائمة"
-          >
-            <X className="h-5 w-5" />
-          </button>
-        )}
-        <motion.img
-          src="/logo-full-clean.png"
-          alt="ARM Logo"
-          className="h-16 w-auto object-contain drop-shadow-[0_0_15px_rgba(99,102,241,0.15)]"
-          animate={{ y: [0, -5, 0] }}
-          transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }}
-        />
-        {!isMobile && (
-          <button
-            onClick={onToggleCollapse}
-            className="absolute top-4 left-4 p-1.5 rounded-md text-slate-400 hover:text-white hover:bg-slate-800 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/40"
-            aria-label={isCollapsed ? 'تثبيت القائمة مفتوحة' : 'تصغير القائمة'}
-            title={isCollapsed ? 'تثبيت القائمة مفتوحة 📌' : 'تصغير القائمة'}
-          >
-            <ChevronRight className="h-5 w-5" />
-          </button>
-        )}
-      </div>
+      {/* §SIDEBAR-V3 — the Q-logo IS the toggle (hover = collapse chevron,
+          click = fold back to the rail). Drawer modes keep the close
+          button. §HEADER-V3 SYNC: glassmorphism + gradient line + 48px
+          baseline shared with the main header. */}
+      <header className="glass-header sticky top-0 z-10 flex flex-col shrink-0">
+        <div className="header-gradient-line" />
+        <div className="relative flex items-center h-12 px-4">
+          {/* Drawer close (mobile/tablet drawers + unpinned desktop) —
+              the ONLY extra control; pin/expand buttons are gone. */}
+          {showCloseButton ? (
+            <button
+              onClick={onToggle}
+              className="p-1.5 rounded-md text-slate-400 hover:text-white hover:bg-slate-800 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/40"
+              aria-label={t('sidebar.close')}
+            >
+              <X className="h-5 w-5" />
+            </button>
+          ) : (
+            <span className="w-2" aria-hidden="true" />
+          )}
+          {/* §BRAND + toggle — centered Qnlys, hover reveals collapse glyph */}
+          <div className="absolute inset-x-0 flex justify-center pointer-events-none">
+            <div className="pointer-events-auto">
+              <QLogoToggle expanded onToggle={handleToggleExpand} />
+            </div>
+          </div>
+        </div>
+      </header>
 
       {/* §2: editing replaces the nav; §4/§5: favorites/pins live here */}
       {editing ? editNav : expandedNav}
       {!editing && (
         <div className="px-2 pb-2 space-y-2 border-t border-slate-800/60 pt-2 overflow-y-auto arm-scroll max-h-56 shrink-0">
           <WorkspaceSection
-            title="المثبتة"
+            title={t('sidebar.pinnedPages')}
             icon={<PinIcon className="size-3 text-cyan-400" />}
             entries={pins}
             onNavigate={navigateEntry}
             onRemove={(entry) => void removePin(entry)}
           />
           <WorkspaceSection
-            title="المفضلة"
+            title={t('sidebar.favoritePages')}
             icon={<Star className="size-3 text-amber-400" />}
             entries={favorites}
             onNavigate={navigateEntry}
@@ -865,17 +1125,22 @@ export function Sidebar({
       )}
 
       {editing ? editFooter : normalFooter}
+      {/* a11y: surface is a navigation region; close control exists above */}
+      <span className="sr-only">{showCloseButton ? t('sidebar.escHint') : ''}</span>
     </div>
   );
 
-  // ── Mobile overlay (unchanged pattern) ──
-  if (isMobile) {
+  // ── Non-desktop overlay (mobile AND the 768–1023 tablet range — the
+  // §SIDEBAR-TABLET dead zone fix). Hidden entirely until the header's
+  // menu button opens it as an overlay DRAWER above the page. ──
+  if (!isDesktop) {
     return (
+      <>
       <AnimatePresence>
         {isOpen && (
           <>
             <motion.div
-              className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm"
+              className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm print:hidden"
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
@@ -883,74 +1148,193 @@ export function Sidebar({
               onClick={onToggle}
             />
             <motion.aside
-              className="fixed inset-y-0 right-0 z-50 w-72 shadow-2xl"
+              className="flex fixed inset-y-0 right-0 z-50 w-72 shadow-2xl print:hidden"
               initial={{ x: '100%' }}
               animate={{ x: 0 }}
               exit={{ x: '100%' }}
               transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+              aria-label={t('sidebar.mainNav')}
             >
-              {sidebarContent}
+              {surface}
             </motion.aside>
           </>
         )}
       </AnimatePresence>
+      {/* §21 — menu customization dialog (groups → items, DnD) */}
+      <MenuCustomizationDialog
+        open={customizeOpen}
+        onOpenChange={setCustomizeOpen}
+        groups={SIDEBAR_GROUPS.map((g) => ({ id: g.id, label: g.label }))}
+        pages={visiblePages.map((p) => ({ id: p.id, title: p.title, groupId: p.groupId }))}
+        state={{
+          order: sidebarPrefs?.order,
+          groupOrder: sidebarPrefs?.groupOrder,
+          itemGroups: sidebarPrefs?.itemGroups,
+        }}
+        saving={savePrefs.isPending}
+        onSave={async (next) => {
+          await savePrefs.mutateAsync({ sidebar: next });
+        }}
+      />
+      </>
     );
   }
 
-  // ── Desktop: ONE animated surface (§3) — width transitions between
-  // collapsed rail and full sidebar; hover temporarily expands as an
-  // overlay (content margin unchanged), pin state pushes content.
-  // The collapsed rail mirrors the SAME structure as the expanded
-  // sidebar (group → its open pages) with ICONS ONLY — no secondary
-  // floating panel, nothing covering the page content. ──
-  return (
-    <div
-        className={cn(
-          'hidden lg:flex lg:flex-col lg:fixed lg:inset-y-0 lg:right-0 z-20 bg-slate-900 text-white overflow-hidden shadow-xl',
-          // Hover-expanded overlay floats ABOVE content — stronger shadow + lift.
-          // §1: uses the FROZEN surface while the ⋮ menu is open so the
-          // overlay styling doesn't flicker when the pointer enters the menu.
-          (menuOpen ? menuOpenSurface : hovering) && !editing && isCollapsed && 'z-30 shadow-2xl shadow-black/60 ring-1 ring-slate-700/50',
+  // ── UNPINNED desktop: NO layout footprint. Hidden entirely until the
+  // header's menu button opens it as an overlay DRAWER above the page
+  // and header (z-50 backdrop / z-50 panel vs header z-30). ──
+  if (!sidebarPinned) {
+    return (
+      <>
+      <AnimatePresence>
+        {isOpen && (
+          <>
+            <motion.div
+              className="fixed inset-0 z-40 bg-black/50 backdrop-blur-[2px] print:hidden"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.18 }}
+              onClick={onToggle}
+              aria-hidden="true"
+            />
+            <motion.aside
+              className="flex fixed inset-y-0 right-0 z-50 w-[288px] shadow-2xl shadow-black/60 print:hidden"
+              initial={{ x: '100%' }}
+              animate={{ x: 0 }}
+              exit={{ x: '100%' }}
+              transition={{ duration: 0.22, ease: [0.4, 0, 0.2, 1] }}
+              aria-label="التنقل الرئيسي"
+            >
+              {surface}
+            </motion.aside>
+          </>
         )}
-        style={{
-          width: expanded ? WIDTH_EXPANDED : WIDTH_COLLAPSED,
-          transition: 'width 0.28s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.28s ease',
+      </AnimatePresence>
+
+      {/* §21 — menu customization dialog (groups → items, DnD) */}
+      <MenuCustomizationDialog
+        open={customizeOpen}
+        onOpenChange={setCustomizeOpen}
+        groups={SIDEBAR_GROUPS.map((g) => ({ id: g.id, label: g.label }))}
+        pages={visiblePages.map((p) => ({ id: p.id, title: p.title, groupId: p.groupId }))}
+        state={{
+          order: sidebarPrefs?.order,
+          groupOrder: sidebarPrefs?.groupOrder,
+          itemGroups: sidebarPrefs?.itemGroups,
         }}
-        onMouseEnter={() => setHovering(true)}
-        onMouseLeave={() => setHovering(false)}
-        aria-label="التنقل الرئيسي"
-      >
-        {expanded ? (
-          sidebarContent
-        ) : (
+        saving={savePrefs.isPending}
+        onSave={async (next) => {
+          await savePrefs.mutateAsync({ sidebar: next });
+        }}
+      />
+      </>
+    );
+  }
+
+  // ── PINNED desktop: the sidebar is PART OF THE LAYOUT — a sticky
+  // in-flow column. The page content is a flex sibling, so it ALWAYS
+  // responds to the sidebar width and the header (inside the content
+  // column) can never overlap the sidebar.
+  //
+  // §SIDEBAR-SINGLE-SURFACE (hover architecture): there is EXACTLY ONE
+  // navigation surface element. Hovering the collapsed rail does NOT
+  // mount a second aside/panel beside it — the expanded surface renders
+  // as an absolutely-positioned layer INSIDE this same <aside>, so:
+  //   • one ownership model for hover events (the aside subtree owns
+  //     mouseenter/leave; React's subtree-based semantics make phantom
+  //     mouseleave impossible — the §SIDEBAR-HOVER-BRIDGE guarantee,
+  //     now structural);
+  //   • no transparent duplicate navigation panel, no ghost menu, no
+  //     pointer conflicts (the old second motion.aside is gone);
+  //   • no layout jump — the in-flow rail keeps its 72px width while
+  //     the 288px surface overlays the content (z-40 above the header);
+  //   • deterministic, no timers.
+  return (
+    <>
+    <aside
+      onMouseEnter={handleRailMouseEnter}
+      onMouseLeave={handleRailMouseLeave}
+      className={cn(
+        'hidden lg:flex lg:sticky lg:top-0 lg:h-screen shrink-0 flex-col bg-slate-900 text-white print:hidden',
+        hoverSurfaceActive ? 'overflow-visible z-40' : 'overflow-hidden z-20',
+      )}
+      style={{
+        width: expanded ? WIDTH_EXPANDED : WIDTH_COLLAPSED,
+        transition: 'width 260ms cubic-bezier(0.4, 0, 0.2, 1)',
+      }}
+      aria-label="التنقل الرئيسي"
+    >
+      {expanded ? (
+        surface
+      ) : (
+        <>
           <CollapsedRail
             currentPage={currentPage}
             onNavigate={onNavigate}
-            onToggleCollapse={onToggleCollapse}
+            onExpand={handleToggleExpand}
             visibleGroups={visibleGroups}
             collapsedGroups={collapsedGroups}
             onToggleGroup={toggleGroup}
-            userName={userName}
             settingsMenu={settingsMenu}
+            navScrollRefCb={railNavRefCb}
+            onNavScroll={handleNavScroll}
             unseenBadgeFor={unseenBadgeFor}
+            pendingBadgeFor={pendingBadgeFor}
           />
-        )}
-      </div>
+          {/* The hover-expanded layer lives INSIDE the aside — the same
+              navigation surface, simply unfolded over the content. */}
+          <AnimatePresence>
+            {hoverSurfaceActive && (
+              <motion.div
+                key="sidebar-hover-surface"
+                className="absolute top-0 right-0 h-full w-[288px] shadow-2xl shadow-black/60 ring-1 ring-slate-700/50"
+                initial={{ opacity: 0, x: 24 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: 24 }}
+                transition={{ duration: 0.18, ease: [0.4, 0, 0.2, 1] }}
+                aria-label="التنقل الرئيسي — معاينة موسعة"
+              >
+                {surface}
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </>
+      )}
+    </aside>
+
+    {/* §21 — menu customization dialog (groups → items, DnD) */}
+    <MenuCustomizationDialog
+      open={customizeOpen}
+      onOpenChange={setCustomizeOpen}
+      groups={SIDEBAR_GROUPS.map((g) => ({ id: g.id, label: g.label }))}
+      pages={visiblePages.map((p) => ({ id: p.id, title: p.title, groupId: p.groupId }))}
+      state={{
+        order: sidebarPrefs?.order,
+        groupOrder: sidebarPrefs?.groupOrder,
+        itemGroups: sidebarPrefs?.itemGroups,
+      }}
+      saving={savePrefs.isPending}
+      onSave={async (next) => {
+        await savePrefs.mutateAsync({ sidebar: next });
+      }}
+    />
+    </>
   );
 }
 
 // ══════════════════════════════════════════════════════════════
-//  Collapsed rail (PHASE 8, §UNIFIED-RAIL revision) — the SAME
-//  navigation structure as the expanded sidebar (group → pages),
-//  rendered ICONS-ONLY inside the narrow rail itself:
-//    • The group icon toggles the SAME open/closed state the
-//      expanded sidebar uses (one source of truth: `collapsedGroups`).
-//    • The pages of OPEN groups render directly BENEATH their group
-//      icon as compact icon buttons (tooltip carries the label).
-//      NO secondary floating panel — nothing ever covers the page.
-//    • The group containing the CURRENT page is always shown open
-//      (route-driven sync at the parent) and the current page icon
-//      carries the active gradient + indicator.
+//  Collapsed rail (§UNIFIED-RAIL) — the SAME navigation structure as
+//  the expanded sidebar (group → pages), ICONS-ONLY:
+//    • The group icon toggles the SAME open/closed state (one source
+//      of truth: `collapsedGroups` — preserved across collapse).
+//    • Pages of OPEN groups render beneath their group icon; tooltips
+//      carry the labels. No counters, no flyouts.
+//    • §6 NEUTRAL HIERARCHY: group containers are NEVER filled with
+//      the active gradient — neutral icons, subtle hover, an accent
+//      bar for the group containing the CURRENT page, and a tiny
+//      state dot for open groups. Only the ACTIVE PAGE gets the
+//      gradient fill.
 // ══════════════════════════════════════════════════════════════
 
 const GROUP_META: Record<string, { label: string; emoji: string; representativeIcon: keyof typeof ICON_MAP }> = {
@@ -973,24 +1357,30 @@ interface RailGroup {
 function CollapsedRail({
   currentPage,
   onNavigate,
-  onToggleCollapse,
+  onExpand,
   visibleGroups,
   collapsedGroups,
   onToggleGroup,
-  userName,
   settingsMenu,
+  navScrollRefCb,
+  onNavScroll,
   unseenBadgeFor,
+  pendingBadgeFor,
 }: {
   currentPage: string;
   onNavigate: (page: string) => void;
-  onToggleCollapse: () => void;
+  onExpand: () => void;
   visibleGroups: RailGroup[];
   collapsedGroups: Record<string, boolean>;
   onToggleGroup: (groupId: string) => void;
-  userName: string;
   settingsMenu: React.ReactNode;
+  /** §SIDEBAR-V3 — shared nav scroll continuity (restore on mount). */
+  navScrollRefCb: (el: HTMLElement | null) => void;
+  onNavScroll: (e: React.UIEvent<HTMLElement>) => void;
   unseenBadgeFor?: (pageId: string) => number;
+  pendingBadgeFor?: (pageId: string) => number;
 }) {
+  const { locale, t } = useLanguage();
   // Determine which group the active page belongs to (for the active accent).
   const activeGroupId = useMemo(() => {
     const active = visibleGroups.find((g) => g.pages.some((p) => p.id === currentPage));
@@ -999,61 +1389,60 @@ function CollapsedRail({
 
   return (
     <div className="flex flex-col h-full w-full bg-slate-900">
-      {/* Logo */}
-      <div className="flex items-center justify-center h-20 border-b border-slate-700/50 shrink-0">
-        <motion.img
-          src="/logo-full-clean.png"
-          alt="ARM Logo"
-          className="h-10 w-auto object-contain"
-          animate={{ y: [0, -3, 0] }}
-          transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }}
-        />
-      </div>
+      {/* §SIDEBAR-V3 — the Q-logo IS the expand toggle: hover cross-fades
+          the glyph into an expand chevron, click expands the sidebar.
+          §HEADER-V3 SYNC: glassmorphism + gradient line + 48px baseline. */}
+      <header className="glass-header sticky top-0 z-10 flex flex-col shrink-0">
+        <div className="header-gradient-line" />
+        <div className="flex items-center justify-center h-12">
+          <QLogoToggle expanded={false} onToggle={onExpand} />
+        </div>
+      </header>
 
-      {/* Navigation — SAME structure as the expanded sidebar (group
-          → its pages) in ICONS-ONLY form: the group icon toggles the
-          SAME open/closed state as the expanded sidebar's chevron,
-          and the pages of every OPEN group render right below it as
-          compact icon buttons. The group containing the CURRENT page
-          is always shown open (route-driven sync at the parent). */}
+      {/* Navigation — group containers stay NEUTRAL (§6); only the
+          group holding the CURRENT page gets the accent bar + a faint
+          contextual surface, and only the current page gets the
+          gradient. Open-group state = a tiny dot, never a fill. */}
       <nav
+        ref={navScrollRefCb}
+        onScroll={onNavScroll}
         className="flex-1 overflow-y-auto py-3 flex flex-col items-center gap-1 px-2 arm-scroll"
-        aria-label="مجموعات التنقل"
+        aria-label={t('sidebar.groupsNav')}
       >
         {visibleGroups.map((group) => {
           const meta = GROUP_META[group.id];
           const GroupIcon = ICON_MAP[meta?.representativeIcon ?? 'LayoutDashboard'] ?? LayoutDashboard;
           const isActive = activeGroupId === group.id;
           const isGroupOpen = !collapsedGroups[group.id];
-          const groupLabel = meta?.label ?? group.label;
+          const groupLabel = localizedGroupLabel(group.id, locale);
           return (
             <div key={group.id} className="w-full flex flex-col items-center gap-0.5">
               <SidebarTooltip label={groupLabel}>
                 <motion.button
                   onClick={() => onToggleGroup(group.id)}
-                  whileHover={{ scale: 1.08 }}
+                  whileHover={{ scale: 1.06 }}
                   whileTap={{ scale: 0.95 }}
                   aria-label={groupLabel}
                   aria-expanded={isGroupOpen}
                   className={cn(
-                    'w-12 h-10 flex items-center justify-center rounded-lg transition-colors duration-150 relative focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/50',
-                    isActive || isGroupOpen
-                      ? 'bg-gradient-to-r from-violet-600 to-indigo-600 text-white shadow-lg shadow-violet-500/20'
-                      : 'text-slate-400 hover:bg-slate-800 hover:text-white',
+                    'w-12 h-10 flex items-center justify-center rounded-lg transition-colors duration-150 relative focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50',
+                    isActive
+                      ? 'bg-slate-800/90 text-white'
+                      : 'text-slate-400 hover:bg-slate-800/60 hover:text-white',
                   )}
                 >
                   <GroupIcon className="h-5 w-5 shrink-0" />
                   {isActive && (
-                    <motion.div
-                      className="absolute right-0 top-1/2 -translate-y-1/2 w-1 h-6 rounded-l-full bg-violet-400"
+                    <motion.span
+                      className="absolute right-0 top-1/2 -translate-y-1/2 w-1 h-6 rounded-l-full bg-brand-400"
                       layoutId="collapsedIndicator"
                       transition={{ type: 'spring', stiffness: 350, damping: 30 }}
                     />
                   )}
                   {/* §UNIFIED-RAIL — state dot: this group is currently
                       expanded (its page icons are visible beneath it). */}
-                  {isGroupOpen && !isActive && (
-                    <span aria-hidden="true" className="absolute top-1 left-1 size-1.5 rounded-full bg-violet-300 ring-2 ring-slate-900" />
+                  {isGroupOpen && (
+                    <span aria-hidden="true" className="absolute top-1 left-1 size-1.5 rounded-full bg-brand-300/80 ring-2 ring-slate-900" />
                   )}
                 </motion.button>
               </SidebarTooltip>
@@ -1077,32 +1466,49 @@ function CollapsedRail({
                         const PageIcon = ICON_MAP[page.icon];
                         const isCurrent = currentPage === page.id;
                         const unseenBadge = unseenBadgeFor?.(page.id) ?? 0;
+                        const pendingBadge = pendingBadgeFor?.(page.id) ?? 0;
                         return (
-                          <SidebarTooltip key={page.id} label={page.title + (unseenBadge > 0 ? ` — ${unseenBadge} عنصر جديد` : '')}>
+                          <SidebarTooltip
+                            key={page.id}
+                            label={localizedPageLabel(page.id, locale) + (pendingBadge > 0
+                              ? ` — ${pendingBadge} بانتظار الاعتماد`
+                              : unseenBadge > 0 ? ` — ${unseenBadge} عنصر جديد` : '')}
+                          >
                             <button
                               type="button"
                               onClick={() => onNavigate(page.id)}
                               aria-current={isCurrent ? 'page' : undefined}
-                              aria-label={page.title}
+                              aria-label={localizedPageLabel(page.id, locale)}
                               className={cn(
-                                'relative w-9 h-9 flex items-center justify-center rounded-lg transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/50',
+                                'relative w-9 h-9 flex items-center justify-center rounded-lg transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50',
                                 isCurrent
-                                  ? 'bg-gradient-to-br from-violet-600 to-indigo-600 text-white shadow-md shadow-violet-500/25'
+                                  ? 'bg-gradient-to-br from-brand-600 to-brand-700 text-white shadow-md shadow-brand-500/25'
                                   : 'text-slate-400 bg-slate-900 hover:bg-slate-800 hover:text-white',
                               )}
                             >
                               {PageIcon && <PageIcon className="size-4 shrink-0" />}
+                              {/* §APPROVAL-NOTIFY — amber action-needed dot wins. */}
+                              {pendingBadge > 0 && !isCurrent && (
+                                <SidebarActivityBadge
+                                  count={pendingBadge}
+                                  tone="amber"
+                                  variant="dot"
+                                  title={`${pendingBadge} بانتظار الاعتماد`}
+                                />
+                              )}
                               {/* §SIDEBAR-BADGES — tiny unread dot on the rail icon. */}
-                              {unseenBadge > 0 && !isCurrent && (
-                                <span
-                                  aria-hidden="true"
-                                  className="absolute top-1 left-1 size-2 rounded-full bg-violet-400 ring-2 ring-slate-900"
+                              {pendingBadge === 0 && unseenBadge > 0 && !isCurrent && (
+                                <SidebarActivityBadge
+                                  count={unseenBadge}
+                                  tone="violet"
+                                  variant="dot"
+                                  title={`${unseenBadge} عنصر جديد`}
                                 />
                               )}
                               {isCurrent && (
                                 <motion.span
                                   layoutId="collapsedPageIndicator"
-                                  className="absolute right-0 top-1/2 -translate-y-1/2 w-1 h-4 rounded-l-full bg-violet-300"
+                                  className="absolute right-0 top-1/2 -translate-y-1/2 w-1 h-4 rounded-l-full bg-brand-300"
                                 />
                               )}
                             </button>
@@ -1118,26 +1524,11 @@ function CollapsedRail({
         })}
       </nav>
 
-      {/* Bottom controls — logout lives inside the ⋮ menu (§1) */}
+      {/* Bottom controls — sidebar's own settings only; expand lives in
+          the Q-logo (§SIDEBAR-V3), identity in the Header profile menu. */}
       <div className="border-t border-slate-700/50 py-3 flex flex-col items-center gap-2 shrink-0">
-        <SidebarTooltip label={userName}>
-          {/* §AVATAR-UNIFICATION — same shared identity surface as the
-              Header and the expanded sidebar footer (photo-ready). */}
-          <UserAvatar name={userName} className="size-10 text-sm cursor-default" />
-        </SidebarTooltip>
-        <SidebarTooltip label="إعدادات القائمة">
+        <SidebarTooltip label={t('sidebar.menuSettings')}>
           {settingsMenu}
-        </SidebarTooltip>
-        <SidebarTooltip label="تثبيت القائمة مفتوحة 📌">
-          <motion.button
-            whileHover={{ scale: 1.1 }}
-            whileTap={{ scale: 0.9 }}
-            onClick={onToggleCollapse}
-            aria-label="تثبيت القائمة مفتوحة"
-            className="w-10 h-10 rounded-lg text-slate-400 hover:text-violet-400 hover:bg-violet-500/10 transition-colors flex items-center justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/50"
-          >
-            <ChevronLeft className="h-4 w-4" />
-          </motion.button>
         </SidebarTooltip>
       </div>
     </div>

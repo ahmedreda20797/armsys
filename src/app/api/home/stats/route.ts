@@ -7,6 +7,7 @@ import {
 import { requireAuth } from '@/lib/verify-permission';
 import { isOverdueFollowUp } from '@/lib/metrics';
 import { isEffectiveDeduction, deductionTypeLabel } from '@/lib/quality-deductions/domain';
+import { isActiveFollowUp, isTerminalFollowUp } from '@/lib/metrics/followUpMetrics';
 import { filterEmployeesInScope, authScopeViewer, filterRowsByEmployeeScope, resolveEmployeeScopeFromDb } from '@/lib/scope/server';
 
 function getTodayStr(): string {
@@ -435,10 +436,15 @@ export async function GET(request: NextRequest) {
       });
 
     // --- Follow-ups summary ---
+    // §26 DATA ACCURACY — canonical status predicates ONLY. The old
+    // inline list used 'in_progress'/'completed' which DO NOT EXIST in
+    // the follow-up status vocabulary (open | under_review |
+    // under_follow_up | resolved | closed | cancelled) — the dashboard
+    // disagreed with the Follow-ups page for the same metric.
     const followUpsSummary = {
-      totalActive: allFollowUps.filter((f: any) => f.status === 'open' || f.status === 'in_progress').length,
+      totalActive: allFollowUps.filter((f: any) => isActiveFollowUp(f)).length,
       totalOverdue: allFollowUps.filter((f: any) => isOverdueFollowUp(f)).length,
-      totalCompleted: allFollowUps.filter((f: any) => f.status === 'completed').length,
+      totalCompleted: allFollowUps.filter((f: any) => isTerminalFollowUp(f)).length,
       todaysScheduled: todaysFollowUps.length,
     };
 

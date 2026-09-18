@@ -33,6 +33,10 @@ export const NodeTemplateLibrary = memo(function NodeTemplateLibrary({
   const [search, setSearch] = useState('');
   const [category, setCategory] = useState<string | null>(null);
   const [favoritesOnly, setFavoritesOnly] = useState(false);
+  // §4: deletion goes through the unified ConfirmDialog.
+  // (Declared BEFORE the `if (!open) return null` early return — hook
+  // order must be identical on every render.)
+  const [deleteTarget, setDeleteTarget] = useState<VBNodeTemplate | null>(null);
 
   const filtered = useMemo(
     () => searchTemplates(search, { category, favoritesOnly }),
@@ -53,8 +57,6 @@ export const NodeTemplateLibrary = memo(function NodeTemplateLibrary({
     cloneTemplate(tpl.id);
   };
 
-  // §4: deletion goes through the unified ConfirmDialog.
-  const [deleteTarget, setDeleteTarget] = useState<VBNodeTemplate | null>(null);
   const handleDelete = (tpl: VBNodeTemplate) => {
     setDeleteTarget(tpl);
   };
@@ -64,12 +66,12 @@ export const NodeTemplateLibrary = memo(function NodeTemplateLibrary({
       <div
         className="w-full max-w-2xl h-[80vh] flex flex-col bg-slate-900 border border-slate-700/60 rounded-xl shadow-2xl overflow-hidden"
         onClick={(e) => e.stopPropagation()}
-        dir="rtl"
+       
       >
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-slate-800">
           <div className="flex items-center gap-2">
-            <Bookmark className="w-4 h-4 text-violet-400" />
+            <Bookmark className="w-4 h-4 text-brand-400" />
             <div>
               <h3 className="text-sm font-bold text-slate-200">قوالب العقد</h3>
               <p className="text-[10px] text-slate-500">قوالب جاهزة ومحفوظة</p>
@@ -89,7 +91,7 @@ export const NodeTemplateLibrary = memo(function NodeTemplateLibrary({
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="بحث في القوالب..."
-              className="w-full bg-slate-800/60 border border-slate-700/50 rounded-lg pr-8 pl-3 py-2 text-xs text-slate-200 placeholder:text-slate-500 focus:outline-none focus:border-violet-500/50"
+              className="w-full bg-slate-800/60 border border-slate-700/50 rounded-lg pr-8 pl-3 py-2 text-xs text-slate-200 placeholder:text-slate-500 focus:outline-none focus:border-brand-500/50"
             />
           </div>
           <div className="flex flex-wrap gap-1 items-center">
@@ -104,13 +106,13 @@ export const NodeTemplateLibrary = memo(function NodeTemplateLibrary({
             </button>
             <button
               onClick={() => setCategory(null)}
-              className={cn('px-2 py-0.5 rounded-full text-[9px] border transition-colors', category === null ? 'bg-violet-600/30 text-violet-300 border-violet-500/40' : 'text-slate-500 border-slate-700/40 hover:text-slate-300')}
+              className={cn('px-2 py-0.5 rounded-full text-[9px] border transition-colors', category === null ? 'bg-brand-600/30 text-brand-300 border-brand-500/40' : 'text-slate-500 border-slate-700/40 hover:text-slate-300')}
             >الكل</button>
             {categories.map((c) => (
               <button
                 key={c}
                 onClick={() => setCategory(c)}
-                className={cn('px-2 py-0.5 rounded-full text-[9px] border transition-colors', category === c ? 'bg-violet-600/30 text-violet-300 border-violet-500/40' : 'text-slate-500 border-slate-700/40 hover:text-slate-300')}
+                className={cn('px-2 py-0.5 rounded-full text-[9px] border transition-colors', category === c ? 'bg-brand-600/30 text-brand-300 border-brand-500/40' : 'text-slate-500 border-slate-700/40 hover:text-slate-300')}
               >{c}</button>
             ))}
           </div>
@@ -130,7 +132,7 @@ export const NodeTemplateLibrary = memo(function NodeTemplateLibrary({
               return (
                 <div
                   key={tpl.id}
-                  className="group rounded-xl bg-slate-900/60 border border-slate-800 hover:border-violet-500/40 transition-all p-3"
+                  className="group rounded-xl bg-slate-900/60 border border-slate-800 hover:border-brand-500/40 transition-all p-3"
                 >
                   <div className="flex items-start justify-between gap-2 mb-1.5">
                     <div className="min-w-0 flex-1">
@@ -178,7 +180,7 @@ export const NodeTemplateLibrary = memo(function NodeTemplateLibrary({
                       </button>
                       <button
                         onClick={() => handleApply(tpl)}
-                        className="flex items-center gap-1 px-2 py-1 rounded-md text-[10px] bg-violet-600/20 border border-violet-500/30 text-violet-300 hover:bg-violet-600/30 transition-colors"
+                        className="flex items-center gap-1 px-2 py-1 rounded-md text-[10px] bg-brand-600/20 border border-brand-500/30 text-brand-300 hover:bg-brand-600/30 transition-colors"
                       >
                         <Plus className="w-3 h-3" /> إضافة
                       </button>

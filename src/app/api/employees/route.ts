@@ -3,7 +3,7 @@ import { getAll, createRecord, sortByDateField, withRelatedCounts } from '@/lib/
 import { verifyPermission, requireAuth } from '@/lib/verify-permission';
 import { resolvePageScope, stripRestrictedFields } from '@/config/permissions';
 import { resolveEmployeeScope, filterEmployeesByScope } from '@/lib/scope';
-import { asScopeViewer, hasUnrestrictedEmployeeScope } from '@/lib/scope/server';
+import { asScopeViewer, hasUnrestrictedEmployeeScope, loadScopeAssignments } from '@/lib/scope/server';
 import { ORG_NODES_TABLE, DEFAULT_EMPLOYEE_STATUS, type OrgNode } from '@/lib/organization';
 
 export async function GET(request: NextRequest) {
@@ -52,7 +52,13 @@ export async function GET(request: NextRequest) {
         },
         'employees',
         auth.permissions,
-        { orgNodes, employees: employees as Array<{ id: string; orgNodeId?: string | null }> },
+        {
+          orgNodes,
+          employees: employees as Array<{ id: string; orgNodeId?: string | null }>,
+          // §ASSIGNED — materialize the canonical assignment pairs
+          // ONLY for the assigned scope (lazy; no other scope pays).
+          assignments: scope === 'assigned' ? await loadScopeAssignments() : undefined,
+        },
       );
       employees = filterEmployeesByScope(
         employees as Array<{ id: string }>,
@@ -127,6 +133,24 @@ export async function POST(request: NextRequest) {
 
     if (!name) {
       return NextResponse.json({ error: 'Name is required' }, { status: 400 });
+    }
+
+    // §IDENTITY — reject a duplicate employee CODE up front. The Risk
+    // Center and every factor aggregation merge duplicates by identity
+    // (code first), so a new record with an existing code would
+    // silently create a second profile for the same human.
+    const requestedCode = typeof code === 'string' ? code.trim() : '';
+    if (requestedCode) {
+      const allForCode = await getAll('employees');
+      const codeTaken = (allForCode as Array<{ code?: string | null }>).some(
+        (e) => typeof e.code === 'string' && e.code.trim().toLowerCase() === requestedCode.toLowerCase(),
+      );
+      if (codeTaken) {
+        return NextResponse.json(
+          { error: `الرقم الوظيفي مستخدم بالفعل لموظف آخر (${requestedCode})` },
+          { status: 409 },
+        );
+      }
     }
 
     // Auto-generate sequential code if not provided

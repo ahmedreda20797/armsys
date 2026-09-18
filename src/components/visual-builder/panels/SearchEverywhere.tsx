@@ -23,7 +23,7 @@ interface SearchEverywhereProps {
 }
 
 const KIND_META: Record<string, { icon: React.ElementType; color: string; labelAr: string }> = {
-  workflow:  { icon: Workflow, color: 'text-violet-300', labelAr: 'مسار' },
+  workflow:  { icon: Workflow, color: 'text-brand-300', labelAr: 'مسار' },
   node:      { icon: Hash, color: 'text-emerald-300', labelAr: 'عقدة' },
   variable:  { icon: VarIcon, color: 'text-cyan-300', labelAr: 'متغير' },
   condition: { icon: GitBranch, color: 'text-amber-300', labelAr: 'شرط' },
@@ -120,7 +120,7 @@ export const SearchEverywhere = memo(function SearchEverywhere({
       <div
         className="w-full max-w-xl bg-slate-900 border border-slate-700/60 rounded-xl shadow-2xl overflow-hidden"
         onClick={(e) => e.stopPropagation()}
-        dir="rtl"
+       
       >
         {/* Search input */}
         <div className="flex items-center gap-2 px-4 py-3 border-b border-slate-800">
@@ -158,7 +158,7 @@ export const SearchEverywhere = memo(function SearchEverywhere({
                 onMouseEnter={() => setActiveIdx(idx)}
                 className={cn(
                   'w-full flex items-center gap-3 px-4 py-2 text-right transition-colors border-b border-slate-800/40',
-                  activeIdx === idx ? 'bg-violet-600/15' : 'hover:bg-slate-800/40'
+                  activeIdx === idx ? 'bg-brand-600/15' : 'hover:bg-slate-800/40'
                 )}
               >
                 <Icon className={cn('w-4 h-4 flex-shrink-0', meta.color)} />

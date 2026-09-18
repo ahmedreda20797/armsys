@@ -302,7 +302,7 @@ export function AttentionPanel({
 
   return (
     <section
-      dir="rtl"
+     
       role="region"
       aria-label={ariaLabel ?? title}
       className={cn(
@@ -338,7 +338,7 @@ export function AttentionPanel({
         aria-expanded={!collapsed}
         aria-controls={`attention-panel-${persistKey ?? 'local'}`}
         className={cn(
-          'w-full flex items-center justify-between gap-2 px-3.5 py-2.5 text-right hover:bg-slate-800/50 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/40',
+          'w-full flex items-center justify-between gap-2 px-3.5 py-2.5 text-right hover:bg-slate-800/50 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/40',
           // Subtle attention pulse on the icon container when the
           // panel is closed AND items need attention. The pulse is a
           // 2.4s opacity flicker, not a scale/translation spring —
@@ -535,7 +535,7 @@ const DefaultAttentionRow = memo(function DefaultAttentionRow({ item }: { item: 
       }
       className={cn(
         'group flex items-center gap-2.5 px-3.5 py-2 transition-colors',
-        interactive && 'hover:bg-slate-800/50 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/40',
+        interactive && 'hover:bg-slate-800/50 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/40',
       )}
     >
       {/* leading severity badge (§5 — label + dot, not color only) */}

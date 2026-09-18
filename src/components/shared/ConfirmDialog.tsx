@@ -99,7 +99,7 @@ export function ConfirmDialog({
       }}
     >
       <AlertDialogContent
-        dir="rtl"
+       
         className="bg-slate-900 border-slate-700/60 max-w-md w-[calc(100%-2rem)] rounded-2xl p-5 gap-3 text-right data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95"
       >
         <AlertDialogHeader className="text-right gap-2">
@@ -149,7 +149,7 @@ export function ConfirmDialog({
               'flex-1 sm:flex-none h-9 rounded-xl text-xs font-semibold text-white shadow-md',
               destructive
                 ? 'bg-red-600 hover:bg-red-700 shadow-red-900/20'
-                : 'bg-violet-600 hover:bg-violet-700 shadow-violet-900/20',
+                : 'bg-brand-600 hover:bg-brand-700 shadow-brand-900/20',
             )}
           >
             {loading ? (

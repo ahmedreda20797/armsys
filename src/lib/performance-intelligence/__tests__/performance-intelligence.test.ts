@@ -627,12 +627,14 @@ function makeLoaders(over: LoaderOverrides = {}): PerformanceIntelligenceLoaders
             code: record.code,
             department: record.department,
             position: record.position,
+            orgNodeId: null,
             status: record.status,
             archivedAt: record.archivedAt,
             restoredAt: null,
           }
         : null;
     },
+    loadOrgNodes: async () => [],
     loadObservationsForWindow: async (employeeId, months) => {
       const monthSet = new Set(months);
       return observations.filter((o) => o.employeeId === employeeId && monthSet.has(o.month));

@@ -146,9 +146,9 @@ export const DECISION_TYPE_VISUALS: Record<DecisionType, TypeVisual> = {
   capa_required: {
     label: 'كابا مطلوبة',
     iconKey: 'shield-alert',
-    accentClass: 'text-purple-400',
-    bgTintClass: 'bg-purple-500/5',
-    borderClass: 'border-purple-500/25',
+    accentClass: 'text-brand-400',
+    bgTintClass: 'bg-brand-500/5',
+    borderClass: 'border-brand-500/25',
   },
   complaint_escalation: {
     label: 'تصعيد شكوى',
@@ -181,9 +181,9 @@ export const DECISION_TYPE_VISUALS: Record<DecisionType, TypeVisual> = {
   executive_attention: {
     label: 'انتباه تنفيذي',
     iconKey: 'crown',
-    accentClass: 'text-indigo-400',
-    bgTintClass: 'bg-indigo-500/5',
-    borderClass: 'border-indigo-500/25',
+    accentClass: 'text-brand-400',
+    bgTintClass: 'bg-brand-500/5',
+    borderClass: 'border-brand-500/25',
   },
   policy_violation: {
     label: 'مخالفة سياسة',
@@ -311,8 +311,8 @@ export const STATUS_VISUAL: Record<DecisionStatus, StatusVisual> = {
   },
   assigned: {
     label: 'معيّن',
-    colorClass: 'text-violet-400',
-    bgClass: 'bg-violet-500/20 border-violet-500/30',
+    colorClass: 'text-brand-400',
+    bgClass: 'bg-brand-500/20 border-brand-500/30',
   },
   in_progress: {
     label: 'قيد التنفيذ',
@@ -432,10 +432,10 @@ export const COACHING_CATEGORY_VISUAL: Record<CoachingCategory, { label: string;
 export const PREDICTIVE_TYPE_VISUAL: Record<PredictiveAlertType, { label: string; colorClass: string; iconKey: string }> = {
   likely_sla_breach: { label: 'تجاوز SLA محتمل', colorClass: 'text-red-400', iconKey: 'timer' },
   likely_complaint_escalation: { label: 'تصعيد شكوى محتمل', colorClass: 'text-orange-400', iconKey: 'message-warning' },
-  likely_capa_overdue: { label: 'كابا متأخرة محتملة', colorClass: 'text-purple-400', iconKey: 'shield-alert' },
+  likely_capa_overdue: { label: 'كابا متأخرة محتملة', colorClass: 'text-brand-400', iconKey: 'shield-alert' },
   likely_attendance_issue: { label: 'مشكلة حضور محتملة', colorClass: 'text-amber-400', iconKey: 'clock' },
   likely_burnout: { label: 'احتراق وظيفي محتمل', colorClass: 'text-red-400', iconKey: 'flame' },
-  likely_department_decline: { label: 'تدهور قسم محتمل', colorClass: 'text-indigo-400', iconKey: 'building' },
+  likely_department_decline: { label: 'تدهور قسم محتمل', colorClass: 'text-brand-400', iconKey: 'building' },
 } as const;
 
 // ═══════════════════════════════════════════════════════════════
@@ -902,8 +902,8 @@ export const ActionButton = memo(function ActionButton({
 
   const actionColorMap: Record<NextBestAction['kind'], string> = {
     navigate: 'text-sky-400 hover:text-sky-300',
-    employee: 'text-violet-400 hover:text-violet-300',
-    create_capa: 'text-purple-400 hover:text-purple-300',
+    employee: 'text-brand-400 hover:text-brand-300',
+    create_capa: 'text-brand-400 hover:text-brand-300',
     create_fu: 'text-emerald-400 hover:text-emerald-300',
     notify: 'text-amber-400 hover:text-amber-300',
     dialog: 'text-cyan-400 hover:text-cyan-300',

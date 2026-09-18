@@ -47,6 +47,9 @@ const eslintConfig = [...nextCoreWebVitals, ...nextTypescript, {
   ignores: [
     "node_modules/**",
     ".next/**",
+    // Firebase deploy staging output (a copied build tree) — generated
+    // artifacts, never hand-edited; linting it double-counts .next.
+    ".firebase/**",
     "out/**",
     "build/**",
     "next-env.d.ts",

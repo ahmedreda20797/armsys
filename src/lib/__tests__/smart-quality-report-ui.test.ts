@@ -70,6 +70,7 @@ function makeDataset(overrides?: {
       employeeName: 'أحمد محمد',
       employeeCode: '001',
       department: 'المبيعات',
+      team: null,
       position: 'مستشار سفر',
       employmentStatus: 'active',
       eligibleForPeriod: true,
@@ -759,15 +760,22 @@ describe('smart report §32.20/§26 — API error state', () => {
     assert.equal(src.includes('datasetQuery.isError'), true);
     assert.equal(src.includes('datasetQuery.refetch()'), true, 'an explicit retry action is required');
     assert.equal(/router\.(push|replace)/.test(src), false, 'errors must NOT redirect away');
-    assert.equal(src.includes('لن تُعرض أصفار بديلة'), true);
+    // §I18N-BILINGUAL — the message lives in the dictionary (smart.loadFailedNote).
+    assert.equal(src.includes("t('smart.loadFailedNote')"), true);
   });
 });
 
 describe('smart report §24 — print support', () => {
-  it('hides interactive controls with no-print and invokes window.print', () => {
+  it('prints through the dedicated report host (openPrintReport + shared adapter), never the live UI', () => {
     const src = stripComments(pageSrc);
+    // Header chrome never prints.
     assert.equal(src.includes('no-print'), true);
-    assert.equal(src.includes('window.print()'), true);
+    // §PRINT standardization: the page projects its dataset into the
+    // shared clean A4 model via the print host — raw window.print()
+    // of the live page was REMOVED system-wide.
+    assert.equal(src.includes('openPrintReport'), true);
+    assert.equal(src.includes('performanceDatasetToPrintModel'), true);
+    assert.equal(src.includes('window.print()'), false, 'live-UI printing is forbidden — use the print host');
   });
 });
 
