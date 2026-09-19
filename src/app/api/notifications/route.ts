@@ -31,7 +31,14 @@ export async function GET(request: NextRequest) {
     const limit = parseInt(searchParams.get('limit') || '100', 10);
     const offset = parseInt(searchParams.get('offset') || '0', 10);
 
-    let records = await getAll<AppNotification>('notifications', TTL.DEFAULT);
+    // §DOWNLOAD-OPT — TTL.POLL (30s): this route is polled every 45s per
+    // client, and every cache miss re-downloads the FULL notifications
+    // table. The long window is correctness-safe because every write
+    // path (create/PATCH/mark-all-read/delete) goes through db.ts and
+    // invalidates this table's cache immediately, so a new notification
+    // or a read-status change is visible on the first poll after the
+    // write — only unchanged history is shared between pollers.
+    let records = await getAll<AppNotification>('notifications', TTL.POLL);
 
     // ─── RECIPIENT + PERMISSION VISIBILITY ───
     // Single rule (admin bypass; directed exact-match; broadcast for

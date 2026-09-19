@@ -68,47 +68,99 @@ export interface AuthenticatedCaller {
   positionTemplate?: Record<string, unknown> | null;
 }
 
+// ══════════════════════════════════════════════════════════════
+//  §AUTH-REQUEST-MEMO — request-scoped authentication memoization.
+//
+//  WHY: routes commonly authenticate more than once per HTTP request
+//  (requireAuth for the caller identity + verifyPermission per gate,
+//  verifyAnyAction per candidate action). Each pass used to re-run
+//  the full lookup — an uncached getById('users') RTDB read (plus a
+//  positions read for positioned users) — so one browser request
+//  could pay the same user read 2+ times.
+//
+//  MECHANISM: the resolved caller is memoized ON THE REQUEST OBJECT
+//  (WeakMap keyed by the Request instance). Lifecycle semantics:
+//    • Same Request instance = same HTTP request → the lookup runs
+//      once and every later authenticate call on it reuses the
+//      settled result (authenticate once, authorize many times).
+//    • A new HTTP request is a NEW Request instance → no entry →
+//      a fresh lookup. Suspension / role / permission / position /
+//      linkage changes stay observable across requests, exactly as
+//      before; nothing here caches across requests and no TTL or
+//      process-global user state exists.
+//    • WeakMap: entries are collected with the request object — no
+//      growth, no leakage between concurrent users (each concurrent
+//      request carries its own Request instance).
+//    • A REJECTED lookup (transient RTDB failure) evicts itself so a
+//      later call within the same request re-attempts — preserving
+//      the pre-memo retry-per-call behavior. Successful memoized
+//      lookups are never re-validated mid-request, matching the old
+//      semantics (a single request observed one consistent snapshot).
+// ══════════════════════════════════════════════════════════════
+
+const requestAuthMemo = new WeakMap<object, Promise<AuthenticatedCaller | null>>();
+
+function authenticateFromRequestUncached(request: Request): Promise<AuthenticatedCaller | null> {
+  const promise = (async () => {
+    // 1. Verify JWT token
+    const payload = await authenticateRequestAsync(request);
+    if (!payload) return null;
+
+    // 2. Fetch user from database to get fresh permissions
+    const user = await getById('users', payload.userId);
+    if (!user) return null;
+
+    // 3. Check if suspended
+    if (user.isSuspended) return null;
+
+    // 4. Resolve EFFECTIVE permissions: role preset overridden by the
+    //    optional POSITION template, overridden by the user's stored
+    //    per-user map (same rule the client AuthContext uses). Without
+    //    this, users whose stored map predates a page key would be denied
+    //    pages their role grants — the stored map is an OVERRIDE, not a
+    //    replacement for the role preset.
+    //    The position lookup only runs when the user actually holds a
+    //    position — no legacy user does, so nothing changes for them.
+    const stored = safeParsePerms(user.permissions) as PermissionsMap;
+    let positionTemplate: Record<string, unknown> | null = null;
+    if (user.positionId) {
+      const position = await getById(POSITIONS_TABLE, user.positionId);
+      positionTemplate = position ? parsePositionTemplate(position.permissions) : null;
+    }
+    const permissions = resolveEffectivePermissions(user.role, stored, positionTemplate ?? undefined);
+
+    return {
+      userId: user.id,
+      role: user.role,
+      permissions,
+      linkedEmployeeId: user.linkedEmployeeId ?? null,
+      positionId: user.positionId ?? null,
+      storedPermissions: stored,
+      positionTemplate,
+    };
+  })();
+
+  // Failure isolation — see §AUTH-REQUEST-MEMO bullet above.
+  promise.catch(() => requestAuthMemo.delete(request));
+
+  return promise;
+}
+
 /**
  * Authenticate a request from its Bearer token and return user info.
  * This is the foundational auth check — used by verifyPermission and requireAuth.
+ *
+ * Request-scoped memoized (§AUTH-REQUEST-MEMO): repeated calls with the
+ * SAME Request instance share one user lookup; separate requests always
+ * perform independent lookups.
  */
-export async function authenticateFromRequest(request: Request): Promise<AuthenticatedCaller | null> {
-  // 1. Verify JWT token
-  const payload = await authenticateRequestAsync(request);
-  if (!payload) return null;
+export function authenticateFromRequest(request: Request): Promise<AuthenticatedCaller | null> {
+  const memoized = requestAuthMemo.get(request);
+  if (memoized) return memoized;
 
-  // 2. Fetch user from database to get fresh permissions
-  const user = await getById('users', payload.userId);
-  if (!user) return null;
-
-  // 3. Check if suspended
-  if (user.isSuspended) return null;
-
-  // 4. Resolve EFFECTIVE permissions: role preset overridden by the
-  //    optional POSITION template, overridden by the user's stored
-  //    per-user map (same rule the client AuthContext uses). Without
-  //    this, users whose stored map predates a page key would be denied
-  //    pages their role grants — the stored map is an OVERRIDE, not a
-  //    replacement for the role preset.
-  //    The position lookup only runs when the user actually holds a
-  //    position — no legacy user does, so nothing changes for them.
-  const stored = safeParsePerms(user.permissions) as PermissionsMap;
-  let positionTemplate: Record<string, unknown> | null = null;
-  if (user.positionId) {
-    const position = await getById(POSITIONS_TABLE, user.positionId);
-    positionTemplate = position ? parsePositionTemplate(position.permissions) : null;
-  }
-  const permissions = resolveEffectivePermissions(user.role, stored, positionTemplate ?? undefined);
-
-  return {
-    userId: user.id,
-    role: user.role,
-    permissions,
-    linkedEmployeeId: user.linkedEmployeeId ?? null,
-    positionId: user.positionId ?? null,
-    storedPermissions: stored,
-    positionTemplate,
-  };
+  const promise = authenticateFromRequestUncached(request);
+  requestAuthMemo.set(request, promise);
+  return promise;
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -365,17 +417,34 @@ export async function verifyPermission(
  * OR the legacy 'approve' grant so pre-existing approver maps keep
  * working — §WORKFLOW). Same authentication contract as
  * verifyPermission; the first listed action wins for the error text.
+ *
+ * §AUTH-REQUEST-MEMO: the caller is authenticated ONCE here and every
+ * candidate action is evaluated against that already-authenticated
+ * caller via the pure authorize() decision — identical results and
+ * denial messages to the previous per-action verifyPermission loop,
+ * without re-paying the user lookup per action.
  */
 export async function verifyAnyAction(
   request: Request,
   pageId: string,
   actions: ActionKey[],
 ): Promise<VerifyResult> {
+  const auth = await authenticateFromRequest(request);
+
+  if (!auth) {
+    return { allowed: false, error: 'لم يتم المصادقة على المستخدم' };
+  }
+
   let last: VerifyResult = { allowed: false, error: 'صلاحية غير كافية' };
   for (const action of actions) {
-    const result = await verifyPermission(request, pageId, action);
-    if (result.allowed) return result;
-    last = result;
+    const decision = authorize(auth, { page: pageId, action });
+    if (decision.allowed) {
+      return {
+        allowed: true,
+        user: { id: auth.userId, role: auth.role, permissions: auth.permissions, linkedEmployeeId: auth.linkedEmployeeId ?? null },
+      };
+    }
+    last = { allowed: false, error: decision.reason };
   }
   return last;
 }

@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { shouldPollNow, shouldRefreshOnForeground } from '@/lib/polling-policy';
 import { motion, AnimatePresence } from 'framer-motion';
 import { usePermissions } from '@/hooks/usePermissions';
 import { useAuth } from '@/contexts/AuthContext';
@@ -295,12 +296,27 @@ export default function ControlPanelPage() {
     finally { setLogsLoading(false); }
   }, [logActionFilter, logModuleFilter, logSearch]);
 
+  // §DOWNLOAD-OPT — online-sessions polling. Previously a bare 15s
+  // setInterval that kept re-downloading the activity-logs table even
+  // while the tab was hidden. Now: same 15s cadence, gated by the
+  // shared polling policy (hidden tabs never poll; returning to the
+  // foreground refreshes once when stale) and an in-flight guard so
+  // interval + visibility + manual refresh can never overlap.
+  const sessionsInFlightRef = useRef(false);
+  const lastSessionsFetchRef = useRef<number>(0);
+
   const fetchSessions = useCallback(async () => {
+    if (sessionsInFlightRef.current) return;
+    sessionsInFlightRef.current = true;
     try {
       const res = await authFetch('/api/activity-logs/online?minutes=5');
       if (res.ok) setSessions(await res.json());
     } catch { setSessions([]); }
-    finally { setSessionsLoading(false); }
+    finally {
+      sessionsInFlightRef.current = false;
+      lastSessionsFetchRef.current = Date.now();
+      setSessionsLoading(false);
+    }
   }, []);
 
   useEffect(() => {
@@ -313,8 +329,35 @@ export default function ControlPanelPage() {
   }, [fetchLogs]);
   useEffect(() => {
     void (async () => { await fetchSessions(); })();
-    const iv = setInterval(fetchSessions, 15000);
-    return () => clearInterval(iv);
+    const iv = setInterval(() => {
+      if (
+        shouldPollNow({
+          isVisible: typeof document === 'undefined' || !document.hidden,
+          lastPollAt: lastSessionsFetchRef.current || null,
+          now: Date.now(),
+          intervalMs: 15000,
+        })
+      ) {
+        void fetchSessions();
+      }
+    }, 15000);
+    const onVisibilityChange = () => {
+      if (typeof document === 'undefined' || document.hidden) return;
+      if (
+        shouldRefreshOnForeground({
+          lastFetchAt: lastSessionsFetchRef.current || null,
+          now: Date.now(),
+          staleThresholdMs: 30000,
+        })
+      ) {
+        void fetchSessions();
+      }
+    };
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    return () => {
+      clearInterval(iv);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+    };
   }, [fetchSessions]);
 
   // ═══ Filtered data ═══

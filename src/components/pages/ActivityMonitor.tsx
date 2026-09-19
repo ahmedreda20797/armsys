@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { shouldPollNow, shouldRefreshOnForeground } from '@/lib/polling-policy';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -234,7 +235,16 @@ export default function ActivityMonitor() {
   const [search, setSearch] = useState('');
   const refreshTimerRef = useRef<NodeJS.Timeout | null>(null);
 
+  // §DOWNLOAD-OPT — both fetchers guard against overlapping identical
+  // requests (interval tick + visibility change + filter change), and
+  // lastAutoRefreshRef records the last completed auto-refresh cycle.
+  const logsInFlightRef = useRef(false);
+  const onlineInFlightRef = useRef(false);
+  const lastAutoRefreshRef = useRef<number>(0);
+
   const fetchLogs = useCallback(async () => {
+    if (logsInFlightRef.current) return;
+    logsInFlightRef.current = true;
     try {
       const params = new URLSearchParams();
       if (filterUser !== 'all') params.set('userId', filterUser);
@@ -254,10 +264,14 @@ export default function ActivityMonitor() {
       }
     } catch {
       // Silent fail
+    } finally {
+      logsInFlightRef.current = false;
     }
   }, [filterUser]);
 
   const fetchOnlineUsers = useCallback(async () => {
+    if (onlineInFlightRef.current) return;
+    onlineInFlightRef.current = true;
     try {
       const res = await authFetch('/api/activity-logs/online');
       if (res.ok) {
@@ -266,6 +280,8 @@ export default function ActivityMonitor() {
       }
     } catch {
       // Silent fail
+    } finally {
+      onlineInFlightRef.current = false;
     }
   }, []);
 
@@ -301,19 +317,51 @@ export default function ActivityMonitor() {
   }, [logs]);
 
   // Initial load + auto-refresh every 10s
+  // §DOWNLOAD-OPT — previously a bare 10s setInterval that re-downloaded
+  // the FULL activity-logs table even while the tab was hidden. The same
+  // 10s cadence is now gated by the shared polling policy (hidden tabs
+  // never poll; returning to the foreground refreshes once when stale)
+  // and every fetch is overlap-guarded (see §DOWNLOAD-OPT above).
   useEffect(() => {
     const load = async () => {
       setLoading(true);
       await Promise.all([fetchLogs(), fetchOnlineUsers()]);
+      lastAutoRefreshRef.current = Date.now();
       setLoading(false);
     };
     load();
+    const refreshCycle = async () => {
+      await Promise.all([fetchLogs(), fetchOnlineUsers()]);
+      lastAutoRefreshRef.current = Date.now();
+    };
     refreshTimerRef.current = setInterval(() => {
-      fetchLogs();
-      fetchOnlineUsers();
+      if (
+        shouldPollNow({
+          isVisible: typeof document === 'undefined' || !document.hidden,
+          lastPollAt: lastAutoRefreshRef.current || null,
+          now: Date.now(),
+          intervalMs: 10000,
+        })
+      ) {
+        void refreshCycle();
+      }
     }, 10000);
+    const onVisibilityChange = () => {
+      if (typeof document === 'undefined' || document.hidden) return;
+      if (
+        shouldRefreshOnForeground({
+          lastFetchAt: lastAutoRefreshRef.current || null,
+          now: Date.now(),
+          staleThresholdMs: 30000,
+        })
+      ) {
+        void refreshCycle();
+      }
+    };
+    document.addEventListener('visibilitychange', onVisibilityChange);
     return () => {
       if (refreshTimerRef.current) clearInterval(refreshTimerRef.current);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
     };
   }, [fetchLogs, fetchOnlineUsers]);
 

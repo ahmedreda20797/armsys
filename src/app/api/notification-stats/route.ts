@@ -18,9 +18,12 @@ export async function GET(request: NextRequest) {
     const user = permCheck.user!;
 
     // Load notifications and rule execution logs in parallel
+    // §DOWNLOAD-OPT — TTL.POLL (30s): same shared-cache rationale as the
+    // list route; AOCC polls this every 30s while visible. Writes via
+    // db.ts invalidate immediately, so freshness is unchanged.
     const [allNotifications, ruleLogs] = await Promise.all([
-      getAll<any>('notifications', TTL.DEFAULT),
-      getAll<any>('ruleExecutionLogs', TTL.DEFAULT),
+      getAll<any>('notifications', TTL.POLL),
+      getAll<any>('ruleExecutionLogs', TTL.POLL),
     ]);
 
     // Recipient + permission visibility (same rule as the list route)

@@ -25,7 +25,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { requireAuth } from '@/lib/verify-permission';
-import { getById, createRecordWithId, updateRecord, getAllBatch } from '@/lib/db';
+import { getById, createRecordWithId, updateRecord, getAllBatch, TTL } from '@/lib/db';
 import {
   authScopeViewer, filterRowsByEmployeeScope, resolveEmployeeScopeFromDb,
 } from '@/lib/scope/server';
@@ -55,10 +55,14 @@ export async function GET(request: NextRequest) {
     // One batched read over the monitored tables — they are hot in
     // the server's TTL cache, so a summary call usually costs ZERO
     // additional RTDB reads beyond the tiny per-user record.
+    // §DOWNLOAD-OPT — TTL.POLL (30s): this route is polled every 90s per
+    // client; the shared window lets pollers reuse one download. Safe
+    // because every monitored table is written only through db.ts,
+    // whose create/update/delete helpers invalidateCache immediately.
     const tables = Object.values(UNSEEN_MONITORED_TABLES);
     if (!tables.includes(QUALITY_DEDUCTIONS_TABLE)) tables.push(QUALITY_DEDUCTIONS_TABLE);
     const [batch, scopeCtx] = await Promise.all([
-      getAllBatch(tables),
+      getAllBatch(tables, TTL.POLL),
       resolveEmployeeScopeFromDb(authScopeViewer(auth), undefined, auth.permissions),
     ]);
 

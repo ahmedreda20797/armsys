@@ -20,6 +20,15 @@ import {
   shouldPollNow,
   shouldRefreshOnForeground,
 } from '@/lib/polling-policy';
+import { mergeIncomingNotifications } from '@/lib/notifications/client-merge';
+
+// ══════════════════════════════════════════════════════════════
+//  §DOWNLOAD-OPT — bounded realtime window.
+//  Matches the poll's `limit=50` unread fetch: the listener only
+//  needs to see what the panel could show, so the initial sync is
+//  capped at the 50 newest records instead of the whole collection.
+// ══════════════════════════════════════════════════════════════
+const NOTIFICATION_LISTENER_WINDOW = 50;
 
 // ══════════════════════════════════════════════════════════════
 //  Types
@@ -178,8 +187,14 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
 
   // ── Fetch notifications and detect new ones (used for both initial + polling) ──
   const lastFetchAtRef = useRef<number>(0);
+  // §OVERLAP-GUARD — an interval tick + foreground event + manual refresh
+  // can all land while one fetch is still in flight; the guard turns the
+  // later callers into no-ops so identical requests never overlap.
+  const refreshInFlightRef = useRef(false);
 
   const refresh = useCallback(async () => {
+    if (refreshInFlightRef.current) return;
+    refreshInFlightRef.current = true;
     try {
       lastFetchAtRef.current = Date.now();
       // §16 — unread feed WITHOUT a 24h window: the badge must reflect
@@ -195,16 +210,17 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
         }
 
         setNotifications((prev) => {
-          const existingIds = new Set(prev.map((n) => n.id));
+          // §DEDUP — ID-based merge (see client-merge): a notification
+          // already shown is never duplicated, whichever channel
+          // delivered it (this poll or the realtime listener).
+          const { merged, added } = mergeIncomingNotifications(prev, data);
 
           // Detect genuinely new notifications (not seen before)
-          const newNotifs = data.filter((d) => !existingIds.has(d.id) && !seenIdsRef.current.has(d.id));
+          const newNotifs = added.filter((d) => !seenIdsRef.current.has(d.id));
 
           // Merge: new data first, then existing
-          const merged = [...data.filter((d) => !existingIds.has(d.id)), ...prev];
-          merged.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
           merged.forEach((n) => seenIdsRef.current.add(n.id));
-          const result = merged.slice(0, 100);
+          const result = merged;
 
           // If this is a polling round (not initial load) and we found new notifications
           if (newNotifs.length > 0 && lastFetchCountRef.current > 0) {
@@ -232,6 +248,7 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
       console.error('[NotificationProvider] refresh() error:', err);
       setError(true);
     } finally {
+      refreshInFlightRef.current = false;
       setLoading(false);
     }
   }, []);
@@ -253,7 +270,7 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
     const setupListener = async () => {
       try {
         // Dynamically import Firebase client SDK (browser-only)
-        const { ref: dbRef, onChildAdded, off } = await import('firebase/database');
+        const { ref: dbRef, onChildAdded, off, query, orderByChild, limitToLast } = await import('firebase/database');
         const { initializeFirebaseClient, getFirebaseDb } = await import('@/lib/firebase-client');
 
         // Get Firebase config from localStorage (same place FirebaseSettingsPage saves it)
@@ -274,10 +291,26 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
         // delivery mechanism.
         const notifRef = dbRef(db, 'erp/notifications');
 
-        // Query: ordered by createdAt, limitToLast(1) for new ones
+        // §DOWNLOAD-OPT — BOUNDED initial sync. Without a query,
+        // onChildAdded re-downloads the ENTIRE erp/notifications
+        // collection on every connect/reconnect. All broadcast writes
+        // (the only writers of this path) carry an ISO `createdAt`
+        // string, so the window is bounded to the NOTIFICATION_WINDOW
+        // newest records — the same window the 45s unread poll reads
+        // (limit=50). Older history is never alerted (the callback
+        // drops anything older than 60s) and remains available via
+        // the poll/API; anything missed beyond the window while
+        // disconnected is reconciled by the poll/foreground refresh.
+        const notifQuery = query(
+          notifRef,
+          orderByChild('createdAt'),
+          limitToLast(NOTIFICATION_LISTENER_WINDOW)
+        );
+
+        // Query: ordered by createdAt, limitToLast(N) for new ones
         // We use onChildAdded which fires for existing children first, then new ones
         const unsubscribe = onChildAdded(
-          notifRef,
+          notifQuery,
           (snapshot) => {
             if (cancelled) return;
             const data = snapshot.val();

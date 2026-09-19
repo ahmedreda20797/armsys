@@ -25,6 +25,16 @@ const TTL = {
   MEDIUM: 15_000,      // 15s — moderate change rate (employees, quality)
   LONG: 30_000,        // 30s — rarely changing (rules, biometrics)
   STATIC: 60_000,      // 60s — almost never changes (deduction rules)
+  /**
+   * §DOWNLOAD-OPT — polling-driven reads (notification list/stats,
+   * unseen summary). Safe to hold for 30s because EVERY write path to
+   * these tables goes through this module's create/update/delete
+   * helpers, which invalidateCache(table) immediately — a new or
+   * mutated record is visible on the very next read after the write.
+   * The long window lets a fleet of pollers share ONE full-table
+   * download instead of re-downloading per poll.
+   */
+  POLL: 30_000,
 } as const;
 
 function getCached(table: string): any[] | null {
@@ -72,8 +82,10 @@ export async function getAll<T = Record<string, any>>(table: string, ttl?: numbe
   return result;
 }
 
-/** Get multiple tables in a single parallel batch — avoids N separate sequential reads */
-export async function getAllBatch(tables: string[]): Promise<Map<string, any[]>> {
+/** Get multiple tables in a single parallel batch — avoids N separate sequential reads.
+ *  `ttl` (optional) overrides the per-table cache lifetime for every table in the
+ *  batch; defaults to TTL.DEFAULT exactly as before (backward compatible). */
+export async function getAllBatch(tables: string[], ttl?: number): Promise<Map<string, any[]>> {
   const result = new Map<string, any[]>();
   const uncachedTables: string[] = [];
 
@@ -95,7 +107,7 @@ export async function getAllBatch(tables: string[]): Promise<Map<string, any[]>>
         const parsed: any[] = Object.entries(data).map(
           ([id, val]) => ({ id, ...(val as Record<string, any>) })
         );
-        setCache(table, parsed);
+        setCache(table, parsed, ttl);
         return { table, data: parsed };
       })
     );
