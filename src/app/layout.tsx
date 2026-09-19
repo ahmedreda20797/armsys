@@ -28,6 +28,7 @@ export const metadata: Metadata = {
   description: "منصة متكاملة لإدارة الجودة والأداء وذكاء العمليات | Qnlys",
   icons: {
     icon: "/favicon.ico",
+    apple: "/apple-touch-icon.png",
   },
 };
 
