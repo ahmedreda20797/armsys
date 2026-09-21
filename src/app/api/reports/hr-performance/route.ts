@@ -1,19 +1,25 @@
 // ══════════════════════════════════════════════════════════════
-//  GET /api/kpi-reports/monthly — Monthly Quality KPI Report (Phase 2)
+//  GET /api/reports/hr-performance — HR Monthly Employee Performance
 //
-//  Thin route (project convention): authenticate → authorize →
-//  resolve the AUTHORIZED employee scope → delegate to the
-//  kpi-reporting service → JSON.
+//  The FIRST audience-specific report: HR receives the employee's
+//  final performance result + organizational context ONLY. The
+//  canonical monthly KPI pipeline is consumed verbatim — no second
+//  engine, no recomputation, no fabricated values:
 //
-//  Query parameters:
+//    requireAuth → 'reports' view permission → audience guard
+//    → AUTHORIZED employee scope (M0.5, server-resolved)
+//    → buildMonthlyKpiReport (canonical) → HR projection → JSON
+//
+//  The HR projection structurally excludes technical fields
+//  (observation counts, deduction/bonus points, component math,
+//  evidence) — they are never copied, so they never reach an HR
+//  client, independent of any UI hiding.
+//
+//  Query parameters (same vocabulary as /api/kpi-reports/monthly):
 //    month        (required, YYYY-MM)
-//    employeeQuery / department / team / status / minScore / maxScore
+//    department / team / employeeQuery / status / includeArchived
 //    sortBy       employeeName|department|team|score|status
 //    sortDir      asc|desc
-//
-//  Scope doctrine (M0.5): the authorized employee set (the
-//  'employees' permission entry) narrows the report BEFORE any
-//  presentation filter — a query parameter can only narrow it.
 // ══════════════════════════════════════════════════════════════
 
 import { NextRequest } from 'next/server';
@@ -28,8 +34,11 @@ import {
 import { validateMonthKey } from '@/lib/month-utils';
 import { asScopeViewer, resolveEmployeeScopeFromDb } from '@/lib/scope/server';
 import { buildMonthlyKpiReport } from '@/lib/kpi-reporting';
-import { technicalReportAudienceGuard } from '@/lib/report-audience/server-guard';
 import type { KpiMonthlySortKey, KpiReportRowStatus } from '@/lib/kpi-reporting';
+import {
+  resolveReportAudience,
+  buildHrPerformanceReport,
+} from '@/lib/report-audience';
 
 const VALID_STATUSES: ReadonlySet<string> = new Set([
   'AVAILABLE', 'PENDING', 'INCOMPLETE', 'ZERO', 'FINALIZED',
@@ -45,18 +54,22 @@ export async function GET(request: NextRequest) {
     const auth = await requireAuth(request);
     if (!auth) return unauthorizedError();
 
-    const permCheck = await verifyPermission(request, 'kpiReports', 'view');
+    // ── Permission: the existing reporting page (HR preset grants
+    //    'reports' edit → view; unconfigured roles fail closed).
+    const permCheck = await verifyPermission(request, 'reports', 'view');
     if (!permCheck.allowed || !permCheck.user) {
       return forbiddenError(permCheck.error);
     }
 
-    // ── Report-audience guard (Qnalys audience model): technical
-    //    detail leaves the server for TECHNICAL audiences only. HR /
-    //    TEAM_LEADER callers are directed to their own audience
-    //    report (/api/reports/hr-performance) — enforced HERE, not
-    //    hidden in a frontend.
-    const audienceRejection = technicalReportAudienceGuard(permCheck.user);
-    if (audienceRejection) return audienceRejection;
+    // ── Audience guard (server-side, from the SAME effective map):
+    //    TECHNICAL / TEAM_LEADER / HR audiences may all consume the
+    //    HR view (it is the sanitized subset); the projection is
+    //    identical regardless of who asks. The guard exists so the
+    //    audience model is resolved and auditable here too.
+    const audience = resolveReportAudience({
+      role: permCheck.user.role,
+      permissions: permCheck.user.permissions,
+    });
 
     const { searchParams } = new URL(request.url);
     const month = searchParams.get('month');
@@ -73,16 +86,8 @@ export async function GET(request: NextRequest) {
     }
     const sortDirParam = searchParams.get('sortDir') === 'desc' ? 'desc' : 'asc';
 
-    const minScoreRaw = searchParams.get('minScore');
-    const maxScoreRaw = searchParams.get('maxScore');
-    const minScore = minScoreRaw === null ? undefined : Number(minScoreRaw);
-    const maxScore = maxScoreRaw === null ? undefined : Number(maxScoreRaw);
-    if ((minScore !== undefined && !Number.isFinite(minScore)) ||
-        (maxScore !== undefined && !Number.isFinite(maxScore))) {
-      return validationError('نطاق الدرجات غير صالح');
-    }
-
-    // ── Authorized employee scope (M0.5) — resolved server-side ──
+    // ── Authorized employee scope (M0.5) — resolved server-side from
+    //    the caller's identity; client-supplied scope is never trusted.
     const scopeCtx = await resolveEmployeeScopeFromDb(
       asScopeViewer(permCheck.user),
       undefined,
@@ -90,7 +95,8 @@ export async function GET(request: NextRequest) {
     );
     const scopeLimit = scopeCtx.isUnrestricted ? null : [...scopeCtx.employeeIds];
 
-    const report = await buildMonthlyKpiReport({
+    // ── CANONICAL monthly report (existing engine-only assembly) ──
+    const monthly = await buildMonthlyKpiReport({
       monthKey: month!,
       reportKind: 'MONTHLY',
       filters: {
@@ -98,17 +104,18 @@ export async function GET(request: NextRequest) {
         department: searchParams.get('department') ?? undefined,
         team: searchParams.get('team') ?? undefined,
         status: (statusParam as KpiReportRowStatus | null) ?? undefined,
-        minScore,
-        maxScore,
         includeArchived: searchParams.get('includeArchived') === 'true',
         scopeLimit,
       },
       sort: { key: sortByParam as KpiMonthlySortKey, direction: sortDirParam },
     });
 
-    return Response.json(report);
+    // ── HR projection: sanitized by shape (no technical fields exist
+    //    on the view model at all) ──
+    const report = buildHrPerformanceReport(monthly);
+    return Response.json({ ...report, resolvedAudience: audience });
   } catch (error) {
-    logServerFailure('kpi-reports-monthly', 'GET', error);
+    logServerFailure('reports-hr-performance', 'GET', error);
     return internalError();
   }
 }

@@ -1,0 +1,142 @@
+QNALYS — KPI / REPORTING DATA PIPELINE ROOT-CAUSE FIX
+Delivery Note — 2026-09-21
+======================================================================
+
+ROOT CAUSE
+----------
+src/lib/organization/employment-periods.ts → toDayKey() compared
+STORED date strings as raw strings. The employee form's documented
+hireDate format is DD/MM/YYYY ("28/7/2026" — the form's own
+placeholder and parser contract, also produced by the Excel upload),
+while every reporting window is ISO ("2026-09-30"). The blind
+slice(0,10) kept the day-first string intact and the lexicographic
+comparison then fabricated "hired after the period":
+
+    "28/7/2026" > "2026-09-30"   ← position 1: '8' > '0'
+
+→ isEmployeeEligibleForPeriod() returned false
+→ NOT_ELIGIBLE_PERIOD in the canonical KPI engine
+→ the employee was SILENTLY OMITTED from Monthly/MTD/Historical rows
+  (monthly-report.ts `continue` on !eligible), absent from employee
+  reports and performance intelligence, despite real September
+  evidence (observations / follow-ups / deals).
+
+Affected boundary: employment-periods.ts is THE single lifecycle
+source consumed by kpi-framework (employee-result, month builder),
+kpi-reporting (monthly/mtd/historical/employee) and
+performance-intelligence — one fix propagates everywhere.
+
+SECONDARY CAUSE
+---------------
+The same blind-slice pattern existed in the archivedAt record-level
+guard inside isEmployeeEligibleForPeriod (kpi-framework/
+employee-result.ts). Same class of defect, fixed the same way.
+
+AFFECTED POPULATION
+-------------------
+Every employee whose hireDate was stored day-first AND whose
+position-1 day character compared greater than the window's.
+Real data (September 2026): 28 of 103 employees carry D/M/YYYY
+hire dates; 14 were wrongly NOT_ELIGIBLE_PERIOD. Visibility
+accidentally depended on the day's first digit: days 1–2 and
+10–20 passed (string prefix "1x/…" < "2026…" when year digits
+align), days 3–9 and 21–31 failed.
+
+WHY EMP-075 IS AFFECTED
+-----------------------
+امنيه السعيد: hireDate stored "28/7/2026" (hired July 28 — employed
+throughout September). Raw comparison vs "2026-09-30" = "hired after
+September" → NOT_ELIGIBLE_PERIOD → dropped from the monthly report
+and her employee report showed "no KPI result" while her evidence
+section still showed 3 approved September observations (evidence is
+loaded independently of eligibility).
+
+WHY SOME EMPLOYEES STILL APPEARED
+---------------------------------
+Two populations were immune:
+  • ISO-stored hire dates (majority): compared correctly.
+  • Closed months with frozen framework results: FROZEN_RESULT is
+    returned verbatim and never re-eligibility-checked, so earlier
+    closed months kept their results even for affected employees —
+    the bug struck OPEN/current months (live path) and legacy
+    derived paths. This matches the screenshots: September 2026
+    (current) broken while historical data existed.
+
+CORRECT BUSINESS RULE (existing, now actually enforced)
+-------------------------------------------------------
+"Was the employee employed at ANY point of the period?" (addendum
+§10) — employment periods fold from the ledger + fallbackStart and
+overlap the window at DAY-KEY granularity. The window is ISO; the
+stored hire date may be day-first; both must normalize to the same
+canonical YYYY-MM-DD space before comparison. An unparseable stored
+value is UNKNOWN presence (fail-open), never a fabricated "hired
+after the period".
+
+FIX
+---
+1. src/lib/organization/employment-periods.ts
+   • NEW normalizeDayKey(): ISO day keys/instants pass through;
+     D/M/YYYY and DD/MM/YYYY convert to canonical YYYY-MM-DD
+     (day-first = the app contract); impossible/garbage → null.
+   • employmentOverlapsRange() normalizes every period boundary
+     through it before comparing; unparseable start → predates
+     known history, unparseable end → still-employed (presence is
+     never destroyed by a corrupt string).
+2. src/lib/kpi-framework/employee-result.ts
+   • The archivedAt record-level guard compares through
+     normalizeDayKey (unparseable → guard declines; the ledger
+     stays the source of truth).
+
+No stored data was modified. No eligibility was loosened: ISO-only
+records behave byte-identically; future hires (ISO or day-first)
+stay ineligible for earlier periods.
+
+VERIFICATION — REAL DATA (read-only diagnostics)
+------------------------------------------------
+scripts/kpi-pipeline-diagnose.ts / scripts/kpi-report-verify.ts
+(read-only, safe against production; kept for the team).
+
+  • BEFORE: with-obs employees ineligible = 3 (EMP-075, EMP-079,
+    EMP-082); engine ineligible total = 14; verdicts flipped on the
+    day's first digit.
+  • AFTER:  all 23 September-evidence employees ELIGIBLE + scheme
+    RESOLVED; verdict counts 103/103 (every record was genuinely
+    employed during September — no over-inclusion).
+  • EMP-075 end-to-end (buildEmployeeKpiReport): outcomeStatus
+    RESOLVED, scheme "نظام مؤشرات أداء الشركة — 2026", 3 approved
+    observations counted, LIVE weightedTotal 13.2 (score 88),
+    department/team resolved. Trend shows the truthful states:
+    Apr–Jun NOT_ELIGIBLE (not yet employed), Jul PENDING (employed,
+    no quality data), Aug FINALIZED 93 (frozen, verbatim),
+    Sep INCOMPLETE 88 (live).
+  • EMP-079 / EMP-082: RESOLVED, present with LIVE score 94.
+  • Monthly 2026-09: 72 rows = 22 LIVE + 50 explicit PENDING,
+    0 notEligible, 0 noScheme, 0 fabricated zeros, no duplicates.
+  • Genuinely-ineligible stays ineligible: two legacy-archived
+    employees without dates (EMP-035, EMP-031) are excluded from the
+    default view by the existing §10 archived-status rule (unchanged);
+    engine-level ineligibility (archived-before-period, future
+    hires) is pinned by tests.
+
+REGRESSION TESTS
+----------------
+src/lib/organization/__tests__/kpi-eligibility-dates.test.ts — 17
+tests: normalizeDayKey contract (ISO instant/day, D/M/YYYY,
+DD/MM/YYYY, garbage → null), the EMP-075 production case, day-first
+future hire stays ineligible, ISO behavior byte-identical, unparseable
+= unknown presence, engine eligibility verdicts (mid-period hire,
+pre-period archive, during-period archive, restore), and NO_SCHEME
+vs NOT_ELIGIBLE_PERIOD remaining distinct states.
+
+RESULTS: 17/17 new; KPI+org regression set 177/177; full suite
+2121/2125 + 45/47 — only the 6 failures already present on the clean
+tree (unrelated: sidebar-state, travel-status, quality-ai-ui-contract,
+download-opt contracts, find-user-by-email). tsc source-clean;
+eslint clean on changed files.
+
+NOT TOUCHED
+-----------
+No employee data, no snapshots, no month state, no KPI calculations,
+no scheme/plan assignment, no scores fabricated, no UI redesign, no
+scope/permission/auth/notification changes. Existing correct pipelines
+are byte-identical for ISO-dated employees.

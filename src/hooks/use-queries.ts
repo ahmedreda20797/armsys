@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/query-provider';
 import { useCallback } from 'react';
 import type { CAPACase } from '@/types';
+import type { OrgAssignmentNode } from '@/lib/organization/assignment';
 
 // ═══════════════════════════════════════════════════
 //  Query Key Factory — Centralized, consistent keys
@@ -16,6 +17,11 @@ export const queryKeys = {
   // Employees
   employees: ['employees'] as const,
   employee: (id: string) => ['employees', id] as const,
+  // Minimal org-node list powering the employee form's assignment
+  // picker (department → dependent team). Separate key from the
+  // organization PAGE query ('organization') on purpose: this is the
+  // lightweight employees-workflow slice, cached independently.
+  orgNodesForAssignment: ['employees', 'org-nodes'] as const,
   
   // Attendance
   attendance: ['attendance'] as const,
@@ -114,6 +120,42 @@ export function useDeleteEmployee() {
       apiFetch(`/api/employees/${id}`, { method: 'DELETE' }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: queryKeys.employees });
+    },
+  });
+}
+
+// ── ORGANIZATION ASSIGNMENT (employee form picker data) ──
+// The DTO mirrors the shared picker-node type (lib/organization/
+// assignment) — one shape from the API through the hook to the UI.
+export type OrgAssignmentNodeDto = OrgAssignmentNode;
+
+/** Lazy-loaded node list for the assignment selector (loaded with the dialog). */
+export function useOrgNodesForAssignment(enabled: boolean) {
+  return useQuery({
+    queryKey: queryKeys.orgNodesForAssignment,
+    queryFn: () => apiFetch<{ nodes: OrgAssignmentNodeDto[] }>('/api/employees/org-nodes'),
+    staleTime: 60_000,
+    enabled,
+  });
+}
+
+/**
+ * The privileged organization transfer (M0.4 separation): moves an
+ * employee between org nodes through /api/organization/employees/move
+ * — the SAME route the organization page uses, with its own
+ * permission gate, membership ledger, audit and manager notifications.
+ */
+export function useMoveEmployeeOrg() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ employeeId, orgNodeId }: { employeeId: string; orgNodeId: string | null }) =>
+      apiFetch('/api/organization/employees/move', {
+        method: 'POST',
+        body: JSON.stringify({ employeeId, orgNodeId }),
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.employees });
+      qc.invalidateQueries({ queryKey: ['organization'] });
     },
   });
 }

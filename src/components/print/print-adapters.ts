@@ -593,3 +593,74 @@ export function tableToPrintModel(input: {
     footerNote: input.footerNote ?? 'تقرير رسمي — مصدر البيانات: قاعدة بيانات النظام للفترة المحددة.',
   };
 }
+
+// ─────────────────────────────────────────────────────────────
+//  4) تقرير الموارد البشرية — HR Monthly Employee Performance
+//
+//     Pure projection of the ALREADY-SANITIZED HR view model
+//     (/api/reports/hr-performance). The server structurally
+//     excludes technical evidence from that payload, so printing
+//     this model can never leak technical detail. Missing values
+//     render '—', never fabricated.
+// ─────────────────────────────────────────────────────────────
+
+interface HrPerformanceRowLike {
+  employeeName?: string | null;
+  employeeCode?: string | null;
+  department?: string | null;
+  team?: string | null;
+  position?: string | null;
+  employmentStatus?: string | null;
+  performanceScore?: number | null;
+  performanceStatus?: string | null;
+  schemeName?: string | null;
+}
+
+interface HrPerformanceReportLike {
+  monthKey?: string;
+  finalized?: boolean;
+  rows?: HrPerformanceRowLike[];
+  totals?: Partial<Record<'employees' | 'withResult' | 'pending' | 'incomplete' | 'finalized' | 'noScheme', number>>;
+  generatedAt?: string;
+}
+
+const HR_EMPLOYMENT_AR: Record<string, string> = {
+  active: 'نشط', inactive: 'غير نشط', archived: 'مؤرشف', unknown: '—',
+};
+
+export function hrPerformanceToPrintModel(report: HrPerformanceReportLike): PrintReportModel {
+  const rows = (report.rows ?? []).map((r) => [
+    r.employeeName ?? '—',
+    r.employeeCode ?? '—',
+    r.department ?? '—',
+    r.team ?? '—',
+    r.position ?? '—',
+    HR_EMPLOYMENT_AR[r.employmentStatus ?? 'unknown'] ?? '—',
+    r.performanceScore === null || r.performanceScore === undefined ? '—' : pct(r.performanceScore),
+    r.performanceStatus ?? '—',
+  ]);
+  const t = report.totals ?? {};
+  return {
+    title: 'تقرير أداء الموظفين الشهري — الموارد البشرية',
+    period: monthLabel(report.monthKey),
+    generatedAt: report.generatedAt,
+    stats: [
+      { label: 'الموظفون', value: num(t.employees ?? 0) },
+      { label: 'بنتيجة أداء', value: num(t.withResult ?? 0) },
+      { label: 'معلّق', value: num(t.pending ?? 0) },
+      { label: 'غير مكتمل', value: num(t.incomplete ?? 0) },
+      { label: 'مجمّد', value: num(t.finalized ?? 0) },
+    ],
+    sections: [
+      {
+        table: {
+          columns: ['الموظف', 'الكود', 'القسم', 'الفريق', 'الوظيفة', 'حالة العمل', 'نتيجة الأداء', 'الحالة'],
+          rows,
+          ltrColumns: [1, 6],
+        },
+      },
+    ],
+    footerNote:
+      'تقرير الموارد البشرية — نتيجة الأداء النهائية والسياق التنظيمي فقط. مصدر النتائج: خط مؤشرات الأداء القانوني للنظام (قيم حرفية بلا إعادة حساب).',
+  };
+}

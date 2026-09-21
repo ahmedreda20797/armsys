@@ -5,7 +5,14 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { usePermissions } from '@/hooks/usePermissions';
 import { usePageState } from '@/hooks/use-page-state';
 import { useAppStore } from '@/lib/store';
-import { useEmployees, useCreateEmployee, useUpdateEmployee, useDeleteEmployee } from '@/hooks/use-queries';
+import {
+  useEmployees,
+  useCreateEmployee,
+  useUpdateEmployee,
+  useDeleteEmployee,
+  useOrgNodesForAssignment,
+  useMoveEmployeeOrg,
+} from '@/hooks/use-queries';
 import { cn } from '@/lib/utils';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -40,8 +47,15 @@ import {
   FileSpreadsheet,
   X,
   Loader2,
+  ArrowRightLeft,
 } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import OrgAssignmentPicker from '@/components/shared/OrgAssignmentPicker';
+import {
+  projectAssignmentForPicker,
+  buildNodePathLabel,
+  type OrgAssignmentNode,
+} from '@/lib/organization/assignment';
 import {
   useMarkState,
   useFavoriteToggleAction,
@@ -62,10 +76,19 @@ import { logCreate, logUpdate, logDelete } from '@/lib/activity-logger';
 import { toast } from 'sonner';
 import { authFetch } from '@/lib/api-fetch';
 
+// ── Employee form shape ──
+// The free-text department field is GONE: department/team are selected
+// from the Organization Tree (OrgAssignmentPicker) and stored as the
+// canonical node id — `orgNodeId = teamNodeId ?? departmentId`.
+// `departmentId`/`teamNodeId` are FORM-ONLY state and are stripped
+// before any API call. The stored display `department` string is
+// derived server-side from the selected node at creation and is never
+// rewritten here (historical integrity — same doctrine as org moves).
 interface EmployeeFormData {
   code: string;
   name: string;
-  department: string;
+  departmentId: string | null;
+  teamNodeId: string | null;
   position: string;
   shiftStart: string;
   shiftEnd: string;
@@ -78,7 +101,8 @@ interface EmployeeFormData {
 const emptyForm: EmployeeFormData = {
   code: '',
   name: '',
-  department: '',
+  departmentId: null,
+  teamNodeId: null,
   position: '',
   shiftStart: '',
   shiftEnd: '',
@@ -87,6 +111,10 @@ const emptyForm: EmployeeFormData = {
   residence: '',
   status: 'active',
 };
+
+/** Canonical org node the current picker state resolves to. */
+const pickerOrgNodeId = (f: Pick<EmployeeFormData, 'departmentId' | 'teamNodeId'>): string | null =>
+  f.teamNodeId ?? f.departmentId ?? null;
 
 // M0.6-A lifecycle badges (display only)
 const STATUS_BADGE_CLASS: Record<EmployeeStatus, string> = {
@@ -171,9 +199,16 @@ const EmployeeRowActions = memo(function EmployeeRowActions({
 });
 
 export default function EmployeesPage() {
-  const { canEdit, canCreate, canUpdate, canDelete, canExport, canUpload, canSeeField } = usePermissions('employees');
+  const { canEdit, canCreate, canUpdate, canDelete, canExport, canUpload, canSeeField, canDoAction } = usePermissions('employees');
   const { canViewPage } = usePermissions('employee360');
   const canOpenEmployee360 = canViewPage('employee360');
+  // ── ORGANIZATION TRANSFER AUTHORITY (M0.4 separation preserved) ──
+  // Editing profile fields is the 'employees' permission; MOVING an
+  // employee between org nodes is the privileged organization
+  // operation ('organization' update — admin by stock preset). The
+  // edit dialog's org picker is editable only for holders; a change
+  // is applied through the SAME move route the org page uses.
+  const canManageOrg = canDoAction('organization', 'update');
   // Field selectors (NOT selectorless useAppStore()): a selectorless
   // subscription re-renders this whole page on EVERY store write —
   // including the header identity registration this page performs on
@@ -223,6 +258,26 @@ export default function EmployeesPage() {
   const [form, setForm] = useState<EmployeeFormData>(emptyForm);
   const [uploading, setUploading] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  // ── Organization assignment data ──
+  // Nodes load lazily with the form dialog (one cached request — no
+  // per-department reads). The picker derives departments/teams from
+  // these nodes with the SAME pure helpers the server validates with.
+  const formOpen = isAddOpen || !!editingEmployee;
+  const orgNodesQuery = useOrgNodesForAssignment(formOpen);
+  const orgNodes: OrgAssignmentNode[] = useMemo(
+    () => orgNodesQuery.data?.nodes ?? [],
+    [orgNodesQuery.data],
+  );
+  const moveEmployeeOrg = useMoveEmployeeOrg();
+  // Pending organization transfer (edit dialog): captured at save so
+  // the ConfirmDialog can gate the privileged move explicitly.
+  const [pendingTransfer, setPendingTransfer] = useState<{
+    employee: Employee;
+    fromNodeId: string | null;
+    toNodeId: string | null;
+    profilePayload: Record<string, unknown>;
+  } | null>(null);
   // M0.6-A addendum §2/§20: the management list defaults to the
   // CURRENT (active) workforce — archived employees "disappear" from
   // the default list and remain reachable through this filter (the
@@ -278,10 +333,35 @@ export default function EmployeesPage() {
     }
   };
 
+  // Form-only org fields never reach an API payload.
+  const stripOrgFormFields = (f: EmployeeFormData): Record<string, unknown> => {
+    const { departmentId: _d, teamNodeId: _t, ...profile } = f;
+    return profile;
+  };
+
   const handleSave = async () => {
+    const profilePayload = stripOrgFormFields(form);
     if (editingEmployee) {
+      const currentOrgNodeId = editingEmployee.orgNodeId ?? null;
+      const requestedOrgNodeId = pickerOrgNodeId(form);
+      if (requestedOrgNodeId !== currentOrgNodeId) {
+        // ── ORGANIZATION TRANSFER (§7) ── a department/team change on
+        // an existing employee is a transfer: profile save + the
+        // privileged move, gated by an explicit confirmation.
+        if (!canManageOrg) {
+          toast.error('نقل الموظف بين العقد التنظيمية يتم من صفحة الهيكل التنظيمي فقط');
+          return;
+        }
+        setPendingTransfer({
+          employee: editingEmployee,
+          fromNodeId: currentOrgNodeId,
+          toNodeId: requestedOrgNodeId,
+          profilePayload,
+        });
+        return;
+      }
       updateEmployee.mutate(
-        { id: editingEmployee.id, data: form },
+        { id: editingEmployee.id, data: profilePayload },
         {
           onSuccess: () => {
             logUpdate('employees', 'موظف', form.name);
@@ -300,20 +380,58 @@ export default function EmployeesPage() {
         }
       );
     } else {
-      createEmployee.mutate(form, {
-        onSuccess: () => {
-          logCreate('employees', 'موظف', form.name);
-          setIsAddOpen(false);
-          setForm(emptyForm);
+      // Creation accepts the canonical node: the server validates it
+      // against the live tree and derives the display department.
+      createEmployee.mutate(
+        { ...profilePayload, orgNodeId: pickerOrgNodeId(form) },
+        {
+          onSuccess: () => {
+            logCreate('employees', 'موظف', form.name);
+            setIsAddOpen(false);
+            setForm(emptyForm);
+          },
+          onError: (error: Error) => {
+            toast.error('فشل إنشاء الموظف', {
+              description: error?.message || 'لم يتم إنشاء الموظف — حاول مرة أخرى',
+            });
+          },
         },
-        onError: (error: Error) => {
-          toast.error('فشل إنشاء الموظف', {
-            description: error?.message || 'لم يتم إنشاء الموظف — حاول مرة أخرى',
-          });
-        },
+      );
+    }
+  };
+
+  // Confirmed transfer: profile fields first, then the privileged
+  // move (membership ledger + audit + manager notifications run
+  // server-side inside that route).
+  const executeConfirmedTransfer = async () => {
+    const t = pendingTransfer;
+    if (!t) return;
+    setPendingTransfer(null);
+    try {
+      await updateEmployee.mutateAsync({ id: t.employee.id, data: t.profilePayload });
+      await moveEmployeeOrg.mutateAsync({ employeeId: t.employee.id, orgNodeId: t.toNodeId });
+      toast.success('تم حفظ البيانات ونقل الموظف تنظيمياً');
+      logUpdate('employees', 'موظف', t.employee.name);
+      setEditingEmployee(null);
+      setIsAddOpen(false);
+      setForm(emptyForm);
+    } catch (error) {
+      toast.error('فشل النقل التنظيمي', {
+        description: error instanceof Error ? error.message : 'تم حفظ البيانات الأساسية — أعد المحاولة من صفحة الهيكل التنظيمي',
       });
     }
   };
+
+  // Seed the edit form's org selection once the node list arrives
+  // (the dialog can open before the lazy fetch resolves).
+  const seededEditIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!editingEmployee || !orgNodesQuery.isSuccess) return;
+    if (seededEditIdRef.current === editingEmployee.id) return;
+    seededEditIdRef.current = editingEmployee.id;
+    const assignment = projectAssignmentForPicker(orgNodes, editingEmployee.orgNodeId);
+    setForm((prev) => ({ ...prev, departmentId: assignment.departmentId, teamNodeId: assignment.teamNodeId }));
+  }, [editingEmployee, orgNodesQuery.isSuccess, orgNodes]);
 
   // §19 — archive/restore straight from the row menu, with the
   // unified ConfirmDialog for the archive step. Uses the SAME
@@ -347,11 +465,12 @@ export default function EmployeesPage() {
   };
 
   const openEdit = (emp: Employee) => {
+    seededEditIdRef.current = null;
     setEditingEmployee(emp);
     setForm({
+      ...emptyForm,
       code: emp.code || '',
       name: emp.name,
-      department: emp.department || '',
       position: emp.position || '',
       shiftStart: emp.shiftStart || '',
       shiftEnd: emp.shiftEnd || '',
@@ -430,14 +549,46 @@ export default function EmployeesPage() {
               required
             />
           </div>
-          <div className="space-y-2">
-            <Label className="text-slate-300">القسم</Label>
-            <Input
-              value={form.department}
-              onChange={(e) => updateForm('department', e.target.value)}
-              className="bg-slate-800 border-slate-600 text-white"
-            />
-          </div>
+          <OrgAssignmentPicker
+            nodes={orgNodes}
+            departmentId={form.departmentId}
+            teamNodeId={form.teamNodeId}
+            onDepartmentChange={(departmentId, teamNodeId) =>
+              setForm((prev) => ({ ...prev, departmentId, teamNodeId }))
+            }
+            onTeamChange={(teamNodeId) => setForm((prev) => ({ ...prev, teamNodeId }))}
+            disabled={!!editingEmployee && !canManageOrg}
+          />
+          {editingEmployee && (
+            <div className="sm:col-span-2 space-y-1">
+              <p className="text-[10px] text-slate-500">
+                الإسناد الحالي:{' '}
+                <span className="text-slate-300">
+                  {editingEmployee.orgNodeId
+                    ? (buildNodePathLabel(orgNodes, editingEmployee.orgNodeId) || 'عقدة تنظيمية')
+                    : 'بدون إسناد تنظيمي'}
+                </span>
+              </p>
+              {(() => {
+                const requested = pickerOrgNodeId(form);
+                const changed = requested !== (editingEmployee.orgNodeId ?? null);
+                if (!changed) return null;
+                if (canManageOrg) {
+                  return (
+                    <p className="text-[11px] text-amber-400 flex items-center gap-1.5">
+                      <ArrowRightLeft className="size-3 shrink-0" />
+                      تغيير الإسناد = نقل تنظيمي — سيُطلب التأكيد عند الحفظ
+                    </p>
+                  );
+                }
+                return (
+                  <p className="text-[10px] text-slate-500">
+                    للعرض فقط — نقل الموظف بين العقد يتم من صفحة الهيكل التنظيمي
+                  </p>
+                );
+              })()}
+            </div>
+          )}
           <div className="space-y-2">
             <Label className="text-slate-300">الوظيفة</Label>
             <Input
@@ -774,6 +925,29 @@ export default function EmployeesPage() {
             },
           );
         }}
+      />
+
+      {/* ── Organization transfer confirm (edit dialog, §7/§13) ──
+              An already-assigned employee is NEVER moved silently:
+              the explicit confirmation names both nodes before the
+              privileged move route runs. */}
+      <ConfirmDialog
+        open={!!pendingTransfer}
+        onOpenChange={(o) => { if (!o) setPendingTransfer(null); }}
+        title="تأكيد النقل التنظيمي"
+        description={`سيُنقل الموظف من "${
+          pendingTransfer?.fromNodeId
+            ? (buildNodePathLabel(orgNodes, pendingTransfer.fromNodeId) || 'عقدة تنظيمية')
+            : 'بدون إسناد'
+        }" إلى "${
+          pendingTransfer?.toNodeId
+            ? (buildNodePathLabel(orgNodes, pendingTransfer.toNodeId) || 'عقدة تنظيمية')
+            : 'بدون إسناد'
+        }". نطاق بياناته يتحدث تلقائياً، ولا يمس النقل أي سجل تاريخي.`}
+        itemName={pendingTransfer?.employee.name}
+        confirmLabel="تأكيد النقل"
+        loading={updateEmployee.isPending || moveEmployeeOrg.isPending}
+        onConfirm={() => void executeConfirmedTransfer()}
       />
 
       {/* Delete Confirm Dialog — unified ConfirmDialog (§4) */}

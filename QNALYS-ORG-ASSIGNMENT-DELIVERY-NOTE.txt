@@ -1,0 +1,145 @@
+QNALYS FEATURE — ORGANIZATION TREE EMPLOYEE ASSIGNMENT & WORKFORCE STRENGTH
+Delivery Note — 2026-09-20
+======================================================================
+
+SCOPE
+-----
+Employee create/edit is now organization-aware: department/team are
+selected from the canonical Organization Tree (no free text), the
+selection becomes the employee's canonical orgNodeId, and workforce
+strength derives deterministically from active employee records.
+Also fixes the two reported layout defects (long node names on tree
+cards; overlapping member-management modal).
+
+The existing organization model, scope engine, permission
+architecture, membership ledger, audit trails and Firebase Rules are
+REUSED unchanged — no parallel org structure was introduced.
+
+FILES
+-----
+New:
+  src/lib/organization/assignment.ts
+      Pure assignment layer over lib/organization/graph:
+        validateOrgAssignmentTarget   — node exists + active
+        resolveDepartmentDisplayName  — nearest department ancestor
+        teamNodeIdsInDepartment       — team/subteam subtree options
+        isTeamInDepartment            — dependent-selector guard
+        projectAssignmentForPicker    — orgNodeId → (dept, team) pair
+        buildNodePathLabel            — "الأب › الابن" display paths
+      Accepts both the full OrgNode model and the minimal DTO slice
+      (structural type OrgAssignmentNode).
+
+  src/app/api/employees/org-nodes/route.ts
+      GET — minimal node list for the form selector. Gated by the
+      'employees' view permission (the employees workflow), one
+      batched read, no manager/user data. NOT the admin org API.
+
+  src/components/shared/OrgAssignmentPicker.tsx
+      Searchable department combobox + DEPENDENT team combobox
+      (cmdk). Active nodes only; type badges قسم/فريق/فريق فرعي;
+      team list restricted to the department subtree (nested subteams
+      preserved); department change resets a non-descendant team;
+      "بدون فريق" = department-only assignment. Values are canonical
+      node ids; long names truncate at the END with title tooltips.
+
+  src/lib/organization/__tests__/employee-org-assignment.test.ts   (23 tests)
+  src/lib/__tests__/employee-org-assignment-routes.test.ts         (14 tests)
+
+Modified:
+  src/app/api/employees/route.ts           POST accepts orgNodeId
+  src/app/api/organization/route.ts        active-only counts; DTO +status/+position
+  src/components/pages/EmployeesPage.tsx   picker integration + transfer flow
+  src/components/pages/organization/OrganizationPage.tsx
+                                           member modal rebuild; truncation hardening
+  src/components/pages/organization/OrgTreeWorkspace.tsx
+                                           card overflow hardening (min-w-0)
+  src/hooks/use-queries.ts                 useOrgNodesForAssignment / useMoveEmployeeOrg
+  src/lib/organization/index.ts            barrel export
+
+EMPLOYEE FLOW — BEFORE / AFTER
+------------------------------
+Before: free-text القسم input; POST /api/employees accepted no
+orgNodeId; assignment possible only from the admin Organization page.
+
+After (create):
+  picker → orgNodeId = teamNodeId ?? departmentId
+  → server validates node (exists, active) against the live tree
+  → display department string DERIVED from the node (nearest
+    department ancestor) — never from a client label
+  → membershipEvents appends 'joined'
+  → tree immediately reflects the employee (counts are derived).
+
+After (edit): a department/team change is an ORGANIZATION TRANSFER.
+The generic PUT /api/employees/[id] still REFUSES orgNodeId changes
+(M0.4 separation — verified by test). The edit dialog instead shows
+an explicit ConfirmDialog naming both nodes, then applies profile
+fields via PUT + the pointer via the EXISTING privileged route
+POST /api/organization/employees/move (ledger + audit + manager
+notifications unchanged). The picker is read-only for users without
+'organization' update action (HR preset unchanged).
+
+Legacy contract preserved: POST without orgNodeId keeps the free-text
+department path (Excel upload / API consumers byte-identical).
+
+WORKFORCE STRENGTH
+------------------
+employeeCount / subtreeEmployeeCount / unassignedEmployeeCount are
+computed in GET /api/organization from ACTIVE employees' canonical
+orgNodeId (filterCurrentEmployees → groupEmployeesByNode →
+buildOrgTree). No stored counters exist or were added. Archived and
+inactive employees never inflate current strength; restore returns
+them to the roster automatically (orgNodeId untouched by lifecycle).
+Each employee is counted exactly once — the single-pointer model
+makes double counting structurally impossible (test-pinned).
+
+ADD-EMPLOYEE-TO-NODE (member modal)
+-----------------------------------
+Default filter "بدون إسناد (N)" lists unassigned employees first;
+"الكل" shows all eligible. Rows show code, position and the current
+node ("ينتمي حالياً إلى: …"); already-assigned employees get a نقل
+button gated by an explicit transfer confirmation — never a silent
+move. Current rosters exclude non-active employees.
+
+LAYOUT FIXES
+------------
+Tree cards + list rows + details dialog: every truncatable text sits
+in a min-w-0 flex context, so long names truncate at the inline end
+(correct ellipsis side for Arabic RTL and English LTR — no direction
+hacks) and can never push out badges/buttons; full names remain on
+title tooltips + the details interaction.
+Member modal: rebuilt on fixed-height rows (h-10/min-h-10), divide-y
+separators, non-overlapping flex regions, contained plain scroll
+areas (arm-scroll) inside the viewport-bounded dialog.
+
+PERFORMANCE
+-----------
+Selector data = ONE getAll(orgNodes) (cached 60s, lazy with the
+dialog). No per-department/per-team reads, no new listeners.
+/api/organization read shape unchanged.
+
+TESTS
+-----
+Focused: 37/37 pass (pure assignment semantics + real route handlers
+against the in-memory db harness).
+Regression: org/scope/report/employee suites 196/196 pass; full
+suite 2104/2108 + 45/47 — the 6 failures were verified IDENTICAL on
+the clean tree (pre-existing, unrelated: sidebar-state, travel-status,
+quality-ai-ui-contract, download-opt-route-contracts,
+find-user-by-email). tsc clean; eslint clean on changed files;
+production next build succeeds.
+
+LIMITATIONS
+-----------
+- No live GUI pass: the running :3000 server points at the real
+  production Firebase database (no test credentials) — verification
+  is code-level plus route/pure tests.
+- A team hanging directly under the company root (no department
+  ancestor) projects as "outside any department" in the edit picker;
+  it can be re-assigned by picking a department (form vocabulary is
+  department → team).
+
+NOT TOUCHED
+-----------
+Firebase Rules, authentication, notification architecture, permission
+architecture, scope engine, Employee 360, reports, archive behavior,
+RTL/LTR, dark/light theme, Qnalys branding.

@@ -34,6 +34,7 @@ import type { QualityObservation, EmployeeScoreEntry } from '@/types/quality-kpi
 import {
   foldEmploymentPeriods,
   employmentOverlapsRange,
+  normalizeDayKey,
 } from '@/lib/organization/employment-periods';
 import { normalizeEmployeeStatus } from '@/lib/organization/employee-status';
 import type {
@@ -88,11 +89,17 @@ export function isEmployeeEligibleForPeriod(
 ): boolean {
   const { start, end } = monthDayRange(period);
 
-  // Record-level guard (ledger absence safety net).
+  // Record-level guard (ledger absence safety net). The archivedAt
+  // stamp is compared in CANONICAL YYYY-MM-DD space (normalizeDayKey)
+  // — never as a raw string slice, which misjudged day-first values.
+  // An unparseable stamp is UNKNOWN: the ledger below stays the
+  // source of truth, so the guard simply declines to judge.
+  const archivedDay =
+    typeof employee.archivedAt === 'string' ? normalizeDayKey(employee.archivedAt) : null;
   if (
     normalizeEmployeeStatus(employee.status) === 'archived' &&
-    typeof employee.archivedAt === 'string' &&
-    employee.archivedAt.slice(0, 10) < start &&
+    archivedDay !== null &&
+    archivedDay < start &&
     !events.some((e) => e.kind === 'restored' && e.effectiveAt.slice(0, 10) >= start)
   ) {
     return false;

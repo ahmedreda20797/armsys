@@ -24,6 +24,7 @@ import {
 import { validateMonthKey } from '@/lib/month-utils';
 import { asScopeViewer, resolveEmployeeScopeFromDb } from '@/lib/scope/server';
 import { buildEmployeeKpiReport } from '@/lib/kpi-reporting';
+import { technicalReportAudienceGuard } from '@/lib/report-audience/server-guard';
 
 export async function GET(request: NextRequest) {
   try {
@@ -34,6 +35,14 @@ export async function GET(request: NextRequest) {
     if (!permCheck.allowed || !permCheck.user) {
       return forbiddenError(permCheck.error);
     }
+
+    // ── Report-audience guard (Qnalys audience model): technical
+    //    detail leaves the server for TECHNICAL audiences only. HR /
+    //    TEAM_LEADER callers are directed to their own audience
+    //    report (/api/reports/hr-performance) — enforced HERE, not
+    //    hidden in a frontend.
+    const audienceRejection = technicalReportAudienceGuard(permCheck.user);
+    if (audienceRejection) return audienceRejection;
 
     const { searchParams } = new URL(request.url);
     const employeeId = searchParams.get('employeeId');

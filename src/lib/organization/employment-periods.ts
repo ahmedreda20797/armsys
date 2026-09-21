@@ -135,9 +135,56 @@ export function foldEmploymentPeriods(
   return periods;
 }
 
+/**
+ * Normalize a stored date/datetime value into a canonical
+ * `YYYY-MM-DD` day key. Accepts the formats this system actually
+ * stores:
+ *
+ *   • ISO day keys and instants — "2026-09-20", "2026-09-20T14:03:00Z"
+ *     (server-stamped fields: createdAt, archivedAt, ledger events)
+ *   • Day-first slash dates — "28/7/2026", "05/04/2025" (the
+ *     employee form's documented DD/MM/YYYY contract, also produced
+ *     by the Excel upload; day-first is the app contract, and a first
+ *     component > 12 is unambiguous anyway)
+ *
+ * Returns null for anything else — an UNPARSEABLE value must never be
+ * compared as a raw string: that historically fabricated "hired after
+ * the period" verdicts (e.g. "28/7/2026" > "2026-09-30" lexicographic-
+ * ally) and silently excluded real employees from KPI reporting.
+ */
+export function normalizeDayKey(value: string): string | null {
+  const raw = value.trim();
+  if (!raw) return null;
+
+  // ISO: YYYY-MM-DD (optionally with time / zone suffix).
+  const iso = /^(\d{4})-(\d{2})-(\d{2})/.exec(raw);
+  if (iso) {
+    const [, y, m, d] = iso;
+    return isValidDay(+y, +m, +d) ? `${y}-${m}-${d}` : null;
+  }
+
+  // Day-first slash date: D/M/YYYY or DD/MM/YYYY (time suffix ignored).
+  const slash = /^(\d{1,2})\/(\d{1,2})\/(\d{4})/.exec(raw);
+  if (slash) {
+    const [, d, m, y] = slash;
+    return isValidDay(+y, +m, +d)
+      ? `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`
+      : null;
+  }
+
+  return null;
+}
+
+function isValidDay(year: number, month: number, day: number): boolean {
+  if (month < 1 || month > 12) return false;
+  if (day < 1 || day > 31) return false;
+  if (year < 1900 || year > 2999) return false;
+  return true;
+}
+
 /** Convert an ISO instant / day key to a `YYYY-MM-DD` day key. */
-function toDayKey(value: string): string {
-  return value.slice(0, 10);
+function toDayKey(value: string): string | null {
+  return normalizeDayKey(value);
 }
 
 /**
@@ -149,6 +196,16 @@ function toDayKey(value: string): string {
  * This answers ELIGIBILITY only — it never produces metric values,
  * so the no-zero-filling rule (§11) is structural: "not eligible"
  * and "zero activity" cannot be conflated by callers.
+ *
+ * Boundary normalization: period endpoints pass through
+ * {@link normalizeDayKey} first, so a DD/MM/YYYY hire date (the
+ * employee form's own format) is compared in the same canonical
+ * YYYY-MM-DD space as the window. A store value that parses to
+ * NOTHING is treated as UNKNOWN, not as a boundary: an unparseable
+ * start keeps the period's presence meaningful (treated as
+ * "predates known history") instead of fabricating a "hired after
+ * the period" verdict that silently deletes a real employee from
+ * every report.
  */
 export function employmentOverlapsRange(
   periods: ReadonlyArray<EmploymentPeriod>,
@@ -161,6 +218,9 @@ export function employmentOverlapsRange(
     const endDay = period.end ? toDayKey(period.end) : null;
     // open-ended period → employed through "now" → overlaps any
     // window that starts before the period could have ended.
+    // Unparseable boundary → UNKNOWN, not "after the window":
+    //   • start unparseable → treat as predating known history
+    //   • end unparseable   → treat as still-employed (open)
     const effectiveEnd = endDay ?? '9999-12-31';
     const effectiveStart = startDay ?? '0000-01-01';
     if (effectiveStart <= rangeEndDay && effectiveEnd >= rangeStartDay) {

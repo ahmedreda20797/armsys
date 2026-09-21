@@ -28,14 +28,16 @@ import {
 } from '@/components/ui/select';
 import { useMonthSnapshots } from '@/hooks/use-kpi-queries';
 import { usePageState } from '@/hooks/use-page-state';
+import { usePermissions } from '@/hooks/usePermissions';
 import KpiEmployeeReportTab from './KpiEmployeeReportTab';
 import KpiMonthlyTableTab, { type TableTabKind } from './KpiMonthlyTableTab';
 import KpiSummaryTab from './KpiSummaryTab';
 import ManagementReportTab from './ManagementReportTab';
 import PerformanceAnalysisTab from './PerformanceAnalysisTab';
+import HrPerformanceReportTab from './HrPerformanceReportTab';
 import { buildMonthOptions, currentMonthKey, formatMonth } from './kpi-reports-shared';
 
-type TabKey = 'table' | 'employee' | 'summary' | 'management' | 'performance';
+type TabKey = 'table' | 'employee' | 'summary' | 'management' | 'performance' | 'hr';
 /** Legacy tab values (pre-§10) map onto the merged table tab. */
 type LegacyTabKey = 'monthly' | 'mtd' | 'historical' | TabKey;
 type BasisKind = TableTabKind;
@@ -46,6 +48,7 @@ const TAB_PURPOSE: Record<TabKey, string> = {
   summary: 'إحصائيات جودة الفترة: كم موظفاً متاحاً/معلقاً/غير مكتمل، المتوسطات، وأفضل وأدنى درجة.',
   management: 'التقرير الإداري الشامل: ملخص الجودة + أعداد تشغيلية (شكاوى، كابا، متابعات، خصومات HR) لكل قسم.',
   performance: 'تحليل الأداء بالوقائع: ما حدث فعلاً لكل موظف خلال الفترة (سجلات، حالات، أدلة).',
+  hr: 'تقرير الموارد البشرية: نتيجة الأداء النهائية لكل موظف والسياق التنظيمي — دون أي تفاصيل فنية أو أدلة.',
 };
 
 const BASIS_OPTIONS: Array<{ value: BasisKind; label: string; hint: string }> = [
@@ -66,7 +69,7 @@ function normalizeView(raw: { tab?: unknown; month?: unknown; basis?: unknown } 
   if (tabRaw === 'monthly' || tabRaw === 'mtd' || tabRaw === 'historical') {
     // Legacy 3-tab values → merged table tab with the matching basis.
     basis = tabRaw;
-  } else if (tabRaw === 'employee' || tabRaw === 'summary' || tabRaw === 'management' || tabRaw === 'performance') {
+  } else if (tabRaw === 'employee' || tabRaw === 'summary' || tabRaw === 'management' || tabRaw === 'performance' || tabRaw === 'hr') {
     tab = tabRaw;
   }
   if (typeof raw.basis === 'string' && (raw.basis === 'monthly' || raw.basis === 'mtd' || raw.basis === 'historical')) {
@@ -89,8 +92,18 @@ export default function KpiReportsPage() {
     initial: () => ({ tab: 'table', month: currentMonthKey(), basis: 'monthly' }),
     validate: (raw) => normalizeView(raw as { tab?: unknown; month?: unknown; basis?: unknown } | null),
   });
+  // ── Audience-aware tab visibility (client mirror of the SERVER
+  //    gate in /api/reports/hr-performance): the HR tab renders only
+  //    for callers the route would admit — an existing 'reports'
+  //    page view grant (usePermissions resolves role → position →
+  //    override with the admin bypass, same map the server reads).
+  //    A hidden tab is UX only; the route enforces the same rule.
+  const { canView: canViewHrReport } = usePermissions('reports');
   const tab = kpiReportsView.tab;
   const setTab = (v: TabKey) => setKpiReportsView((s) => ({ ...s, tab: v }));
+  // A persisted 'hr' tab for a viewer without the grant falls back to
+  // the table tab (UX only — the route denies the data regardless).
+  const activeTab: TabKey = tab === 'hr' && !canViewHrReport ? 'table' : tab;
   const month = kpiReportsView.month;
   const setMonth = (v: string) => setKpiReportsView((s) => ({ ...s, month: v }));
   const basis = kpiReportsView.basis;
@@ -137,17 +150,22 @@ export default function KpiReportsPage() {
         }
       />
 
-      <Tabs value={tab} onValueChange={(v) => setTab(v as TabKey)} className="space-y-4">
+      <Tabs
+        value={activeTab}
+        onValueChange={(v) => setTab(v as TabKey)}
+        className="space-y-4"
+      >
         <TabsList className="no-print bg-slate-800/50 flex-wrap h-auto">
           <TabsTrigger value="table">جدول الأداء</TabsTrigger>
           <TabsTrigger value="employee">أداء الموظف</TabsTrigger>
           <TabsTrigger value="summary">ملخص الجودة</TabsTrigger>
           <TabsTrigger value="management">التقرير الإداري الشامل</TabsTrigger>
           <TabsTrigger value="performance">تحليل الأداء</TabsTrigger>
+          {canViewHrReport && <TabsTrigger value="hr">تقرير الموارد البشرية</TabsTrigger>}
         </TabsList>
 
         {/* §10 — every tab states its purpose up-front */}
-        <p className="no-print text-[11px] text-slate-500 -mt-2 px-1">{TAB_PURPOSE[tab]}</p>
+        <p className="no-print text-[11px] text-slate-500 -mt-2 px-1">{TAB_PURPOSE[activeTab]}</p>
 
         <TabsContent value="table" className="space-y-3">
           {/* §16 — Period + Month TOGETHER: the basis switcher (the former
@@ -199,6 +217,11 @@ export default function KpiReportsPage() {
         <TabsContent value="performance">
           <PerformanceAnalysisTab month={effectiveMonth} />
         </TabsContent>
+        {canViewHrReport && (
+          <TabsContent value="hr">
+            <HrPerformanceReportTab month={effectiveMonth} />
+          </TabsContent>
+        )}
       </Tabs>
 
       {!snapshotsQuery.isLoading && monthOptions.length === 0 && (

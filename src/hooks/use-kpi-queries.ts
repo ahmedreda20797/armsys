@@ -522,6 +522,22 @@ export function useKpiMonthlyReport(month: string | null, params: KpiReportTable
   });
 }
 
+/**
+ * HR Monthly Employee Performance Report — the audience-sanitized
+ * view (/api/reports/hr-performance). The server resolves the
+ * audience + scope and projects the CANONICAL monthly report; the
+ * response never carries technical evidence fields.
+ */
+export function useHrPerformanceReport(month: string | null, params: KpiReportTableParams = {}) {
+  const qs = kpiReportQueryString(params, month);
+  return useQuery({
+    queryKey: [...reportsKey('hr-performance'), month ?? 'none', qs],
+    queryFn: () => apiFetch(`/api/reports/hr-performance?${qs.startsWith('?') ? qs.slice(1) : qs}`),
+    enabled: !!month,
+    staleTime: 15_000,
+  });
+}
+
 /** MTD report (spec §7/§8) — month optional (defaults server-side). */
 export function useKpiMtdReport(month: string | null, params: KpiReportTableParams = {}) {
   const qs = kpiReportQueryString(params, month);

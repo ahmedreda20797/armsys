@@ -24,6 +24,8 @@ import {
   buildOrgIndex,
   buildOrgTree,
   groupEmployeesByNode,
+  filterCurrentEmployees,
+  isCurrentEmployee,
   type OrgNode,
   type OrgNodeType,
   type OrgNodeStatus,
@@ -43,13 +45,23 @@ export async function GET(request: NextRequest) {
 
     const [nodes, employees, users, positions] = await Promise.all([
       getAll<OrgNode>(ORG_NODES_TABLE),
-      getAll<{ id: string; name: string | null; code: string | null; orgNodeId?: string | null }>('employees'),
+      getAll<{ id: string; name: string | null; code: string | null; position?: string | null; status?: unknown; orgNodeId?: string | null }>('employees'),
       getAll<{ id: string; name: string; role: string; positionId?: string | null; linkedEmployeeId?: string | null }>('users'),
       getAll<Position>(POSITIONS_TABLE),
     ]);
 
+    // ── CURRENT WORKFORCE STRENGTH (canonical assignments) ──
+    // employeeCount / subtreeEmployeeCount / unassignedEmployeeCount
+    // are DERIVED here from the employees' canonical orgNodeId —
+    // never stored, never user-editable (§17) — and count the
+    // CURRENT (active) population only: archived/inactive employees
+    // keep their historical records but do not inflate today's
+    // strength (§10). Every employee has exactly ONE orgNodeId
+    // pointer, so each employee is counted once, at its own node —
+    // no dedup needed, no double counting possible.
+    const currentEmployees = filterCurrentEmployees(employees);
     const index = buildOrgIndex(nodes);
-    const byNode = groupEmployeesByNode(employees);
+    const byNode = groupEmployeesByNode(currentEmployees);
 
     return Response.json({
       tree: buildOrgTree(index, byNode),
@@ -58,9 +70,13 @@ export async function GET(request: NextRequest) {
         id: e.id,
         name: e.name,
         code: e.code ?? null,
+        position: e.position ?? null,
         orgNodeId: e.orgNodeId ?? null,
+        // Lifecycle rides along so membership UIs can exclude
+        // non-current employees from CURRENT rosters client-side.
+        status: isCurrentEmployee(e) ? 'active' : 'not-current',
       })),
-      unassignedEmployeeCount: employees.filter((e) => !e.orgNodeId).length,
+      unassignedEmployeeCount: currentEmployees.filter((e) => !e.orgNodeId).length,
       // Minimal user list for the manager picker + the User Access
       // tab (position assignment / employee linking). Includes each
       // user's current access links so the tab renders truthfully.

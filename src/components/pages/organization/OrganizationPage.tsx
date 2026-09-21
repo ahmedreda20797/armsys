@@ -26,8 +26,8 @@ import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import { Checkbox } from '@/components/ui/checkbox';
+import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
 } from '@/components/ui/dialog';
@@ -52,7 +52,10 @@ import {
 } from '@/lib/organization';
 
 // ─── API types (mirrors /api/organization + /api/positions) ───
-interface OrgEmployeeRefDto { id: string; name: string | null; code: string | null; orgNodeId: string | null }
+// status is the server-coerced currency flag: 'active' = current
+// workforce, 'not-current' = archived/inactive (history kept, hidden
+// from current rosters and counts).
+interface OrgEmployeeRefDto { id: string; name: string | null; code: string | null; position: string | null; orgNodeId: string | null; status: 'active' | 'not-current' }
 interface OrgUserDto {
   id: string; name: string; role: string;
   positionId: string | null; positionTitle: string | null; linkedEmployeeId: string | null;
@@ -133,6 +136,9 @@ export default function OrganizationPage() {
   }
 
   const org = orgQuery.data;
+  // Header shows the CURRENT workforce (active records) so the three
+  // numbers stay semantically coherent — unassigned is active-only too.
+  const currentEmployeeCount = org.employees.filter((e) => e.status === 'active').length;
 
   return (
     <div className="space-y-5 pb-8">
@@ -144,7 +150,7 @@ export default function OrganizationPage() {
         description="إدارة الأقسام والفرق والوظائف وربط المستخدمين — أساس الصلاحيات والنطاقات"
         actions={
           <Badge variant="outline" className="border-slate-600/60 text-slate-400 text-[10px]">
-            {org.nodes.length} عقدة · {org.employees.length} موظف · {org.unassignedEmployeeCount} بدون عقدة
+            {org.nodes.length} عقدة · {currentEmployeeCount} موظف · {org.unassignedEmployeeCount} بدون عقدة
           </Badge>
         }
       />
@@ -196,10 +202,12 @@ function TreeTab({ org, canCreate, canUpdate, canDelete, onDone }: TreeTabProps)
 
   // §ORG-TREE-V2 — direct members per node for the workspace's
   // in-card rosters (grouped once from the same employees array).
+  // CURRENT workforce only: archived/inactive employees keep their
+  // historical records but are not today's roster (§10).
   const employeesByNode = useMemo(() => {
     const map = new Map<string, { id: string; name: string | null; code: string | null }[]>();
     for (const e of org.employees) {
-      if (!e.orgNodeId) continue;
+      if (!e.orgNodeId || e.status !== 'active') continue;
       const bucket = map.get(e.orgNodeId) ?? [];
       bucket.push({ id: e.id, name: e.name, code: e.code });
       map.set(e.orgNodeId, bucket);
@@ -240,7 +248,17 @@ function TreeTab({ org, canCreate, canUpdate, canDelete, onDone }: TreeTabProps)
         <Building2 className="size-4 text-slate-400 shrink-0" />
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
-            <span className={`text-sm font-semibold truncate ${node.status === 'archived' ? 'text-slate-500 line-through' : 'text-white'}`}>{node.name}</span>
+            {/* Long names: truncate the END with ellipsis (natural
+                inline-end rule for Arabic RTL and English LTR alike);
+                the full name stays on the title tooltip. min-w-0 lets
+                the flex item actually shrink so the badges and action
+                buttons can never be pushed out of the row. */}
+            <span
+              className={`text-sm font-semibold truncate min-w-0 max-w-full ${node.status === 'archived' ? 'text-slate-500 line-through' : 'text-white'}`}
+              title={node.name}
+            >
+              {node.name}
+            </span>
             <Badge variant="outline" className={`text-[9px] border ${TYPE_STYLES[node.type]}`}>{ORG_NODE_TYPE_LABELS_AR[node.type]}</Badge>
             {node.status === 'archived' && (
               <Badge variant="outline" className="text-[9px] border-slate-600 text-slate-400">{ORG_NODE_STATUS_LABELS_AR.archived}</Badge>
@@ -740,9 +758,9 @@ function NodeDetailsDialog({ node, org, onClose }: {
               ) : (
                 <div className="space-y-1">
                   {childNodes.map((c) => (
-                    <div key={c.id} className="flex items-center justify-between rounded-lg border border-slate-700/40 bg-slate-800/30 px-2.5 py-1.5">
-                      <span className="text-slate-200 text-xs">{c.name}</span>
-                      <span className="text-slate-500 text-[10px]">{ORG_NODE_TYPE_LABELS_AR[c.type]} · {c.subtreeEmployeeCount} موظف</span>
+                    <div key={c.id} className="flex items-center justify-between gap-2 rounded-lg border border-slate-700/40 bg-slate-800/30 px-2.5 py-1.5">
+                      <span className="text-slate-200 text-xs truncate min-w-0 flex-1" title={c.name}>{c.name}</span>
+                      <span className="text-slate-500 text-[10px] shrink-0">{ORG_NODE_TYPE_LABELS_AR[c.type]} · {c.subtreeEmployeeCount} موظف</span>
                     </div>
                   ))}
                 </div>
@@ -753,11 +771,11 @@ function NodeDetailsDialog({ node, org, onClose }: {
               {directEmployees.length === 0 ? (
                 <p className="text-slate-600 text-xs">لا يوجد موظفون معينون مباشرة لهذه العقدة</p>
               ) : (
-                <div className="space-y-1 max-h-40 overflow-y-auto">
+                <div className="space-y-1 max-h-40 overflow-y-auto arm-scroll">
                   {directEmployees.map((e) => (
-                    <div key={e.id} className="flex items-center justify-between rounded-lg border border-slate-700/40 bg-slate-800/30 px-2.5 py-1.5">
-                      <span className="text-slate-200 text-xs">{e.name}</span>
-                      <span className="text-slate-500 text-[10px]" dir="ltr">{e.code || ''}</span>
+                    <div key={e.id} className="flex items-center justify-between gap-2 rounded-lg border border-slate-700/40 bg-slate-800/30 px-2.5 py-1.5">
+                      <span className="text-slate-200 text-xs truncate min-w-0 flex-1" title={e.name ?? undefined}>{e.name}</span>
+                      <span className="text-slate-500 text-[10px] shrink-0" dir="ltr">{e.code || ''}</span>
                     </div>
                   ))}
                 </div>
@@ -770,29 +788,59 @@ function NodeDetailsDialog({ node, org, onClose }: {
   );
 }
 
+// ─── Node members (employee assignment) ───
+// §12 — fixed-height rows, min-width-zero truncation (long names,
+// codes, titles and Arabic text can never overlap the action column),
+// contained scroll areas inside a viewport-bounded dialog.
+// §13 — the picker prioritizes employees WITHOUT an organization
+// assignment (default filter); employees already assigned elsewhere
+// carry their current node on the row and are moved only through an
+// explicit confirmation.
 function NodeMembersDialog({ node, org, onClose, onDone }: {
   node: OrgTreeNode | null; org: OrganizationData; onClose: () => void; onDone: () => void;
 }) {
   const [search, setSearch] = useState('');
-  const [pickEmployeeId, setPickEmployeeId] = useState('');
-  const [moving, setMoving] = useState(false);
+  // §13 — default filter: employees without an org assignment first.
+  const [scopeFilter, setScopeFilter] = useState<'unassigned' | 'all'>('unassigned');
+  const [movingId, setMovingId] = useState<string | null>(null);
+  // §13 — explicit transfer confirmation (never a silent move).
+  const [confirmTransfer, setConfirmTransfer] = useState<OrgEmployeeRefDto | null>(null);
 
+  const nodeNameById = useMemo(
+    () => new Map(org.nodes.map((n) => [n.id, n.name])),
+    [org.nodes],
+  );
+
+  // CURRENT members only — archived/inactive employees are history,
+  // not today's roster.
   const members = useMemo(() => {
     if (!node) return [];
-    return org.employees.filter((e) => e.orgNodeId === node.id);
+    return org.employees.filter((e) => e.orgNodeId === node.id && e.status === 'active');
   }, [node, org.employees]);
+
+  const unassignedCount = useMemo(
+    () => org.employees.filter((e) => e.status === 'active' && !e.orgNodeId).length,
+    [org.employees],
+  );
 
   const assignable = useMemo(() => {
     if (!node) return [];
     const q = search.trim();
-    return org.employees
-      .filter((e) => e.orgNodeId !== node.id)
-      .filter((e) => !q || (e.name ?? '').includes(q) || (e.code ?? '').includes(q))
-      .slice(0, 30);
-  }, [node, org.employees, search]);
+    const eligible = org.employees.filter((e) => e.status === 'active' && e.orgNodeId !== node.id);
+    const scoped = scopeFilter === 'unassigned'
+      ? eligible.filter((e) => !e.orgNodeId)
+      : eligible;
+    const matched = scoped.filter(
+      (e) => !q || (e.name ?? '').includes(q) || (e.code ?? '').includes(q),
+    );
+    // Unassigned candidates first, then a stable name order.
+    return matched
+      .sort((a, b) => Number(Boolean(a.orgNodeId)) - Number(Boolean(b.orgNodeId)) || (a.name ?? '').localeCompare(b.name ?? '', 'ar'))
+      .slice(0, 50);
+  }, [node, org.employees, search, scopeFilter]);
 
   const moveEmployee = async (employeeId: string, targetNodeId: string | null) => {
-    setMoving(true);
+    setMovingId(employeeId);
     try {
       await apiFetch('/api/organization/employees/move', {
         method: 'POST',
@@ -802,7 +850,13 @@ function NodeMembersDialog({ node, org, onClose, onDone }: {
       onDone();
     } catch {
       toast.error('تعذر نقل الموظف');
-    } finally { setMoving(false); }
+    } finally { setMovingId(null); }
+  };
+
+  const requestAssign = (e: OrgEmployeeRefDto) => {
+    // Already assigned to another node → explicit confirmation first.
+    if (e.orgNodeId) setConfirmTransfer(e);
+    else void moveEmployee(e.id, node?.id ?? null);
   };
 
   return (
@@ -815,55 +869,110 @@ function NodeMembersDialog({ node, org, onClose, onDone }: {
           </DialogDescription>
         </DialogHeader>
 
-        <div className="flex-1 overflow-hidden space-y-3">
+        <div className="flex-1 min-h-0 overflow-hidden space-y-3">
           <div className="space-y-1.5">
             <p className="text-xs text-slate-400 font-semibold">الأعضاء الحاليون ({members.length})</p>
-            <ScrollArea className="max-h-40">
-              <div className="space-y-1 pl-2">
-                {members.length === 0 && <p className="text-[11px] text-slate-500 py-2">لا يوجد أعضاء مباشرون</p>}
-                {members.map((m) => (
-                  <div key={m.id} className="flex items-center justify-between gap-2 p-2 rounded-lg bg-slate-800/40 border border-slate-700/30">
-                    <span className="text-xs text-slate-200 truncate">{m.name} {m.code ? <span className="text-slate-500">({m.code})</span> : null}</span>
-                    <Button variant="ghost" size="sm" className="h-7 text-[10px] text-red-400 hover:text-red-300 hover:bg-red-500/10 gap-1" disabled={moving} onClick={() => void moveEmployee(m.id, null)}>
-                      <Trash2 className="size-3" /> إزالة
-                    </Button>
-                  </div>
-                ))}
-              </div>
-            </ScrollArea>
+            <div className="arm-scroll max-h-44 overflow-y-auto rounded-lg border border-slate-700/30 divide-y divide-slate-700/20">
+              {members.length === 0 && <p className="text-[11px] text-slate-500 py-3 px-2">لا يوجد أعضاء مباشرون</p>}
+              {members.map((m) => (
+                <div key={m.id} className="flex items-center gap-2 h-10 px-2 bg-slate-800/40 hover:bg-slate-800/60 transition-colors">
+                  <span className="shrink-0 size-6 rounded-full bg-slate-700/80 border border-slate-600/60 grid place-items-center text-[10px] font-bold text-slate-300">
+                    {(m.name ?? '؟').trim().charAt(0)}
+                  </span>
+                  <span className="text-xs text-slate-200 truncate min-w-0 flex-1" title={m.name ?? undefined}>{m.name ?? '—'}</span>
+                  {m.code && <span className="text-[10px] font-mono text-slate-500 shrink-0" dir="ltr">{m.code}</span>}
+                  <Button variant="ghost" size="sm" className="h-7 text-[10px] text-red-400 hover:text-red-300 hover:bg-red-500/10 gap-1 shrink-0" disabled={movingId === m.id} onClick={() => void moveEmployee(m.id, null)}>
+                    {movingId === m.id ? <Loader2 className="size-3 animate-spin" /> : <Trash2 className="size-3" />} إزالة
+                  </Button>
+                </div>
+              ))}
+            </div>
           </div>
 
           <div className="space-y-1.5 pt-2 border-t border-slate-700/40">
             <p className="text-xs text-slate-400 font-semibold">إسناد موظف لهذه العقدة</p>
-            <div className="relative">
-              <Search className="absolute right-2.5 top-2.5 size-3.5 text-slate-500" />
-              <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="ابحث بالاسم أو الكود..." className="pr-8 bg-slate-800/50 border-slate-700 text-xs h-9" />
+            {/* §13 — filter chips: unassigned (default) vs all eligible */}
+            <div className="flex items-center gap-2 flex-wrap">
+              <div className="flex items-center gap-1 p-0.5 rounded-lg border border-slate-700/50 bg-slate-800/40">
+                {([
+                  { v: 'unassigned' as const, label: `بدون إسناد (${unassignedCount})` },
+                  { v: 'all' as const, label: 'الكل' },
+                ]).map((opt) => (
+                  <button
+                    key={opt.v}
+                    type="button"
+                    onClick={() => setScopeFilter(opt.v)}
+                    aria-pressed={scopeFilter === opt.v}
+                    className={cn(
+                      'px-2.5 py-1 rounded-md text-[11px] font-semibold transition-colors',
+                      scopeFilter === opt.v ? 'bg-slate-700/70 text-white' : 'text-slate-400 hover:text-slate-200',
+                    )}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+              <div className="relative flex-1 min-w-[140px]">
+                <Search className="absolute right-2.5 top-2.5 size-3.5 text-slate-500" />
+                <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="ابحث بالاسم أو الكود..." className="pr-8 bg-slate-800/50 border-slate-700 text-xs h-9" />
+              </div>
             </div>
-            <ScrollArea className="max-h-40">
-              <div className="space-y-1 pl-2">
-                {assignable.length === 0 && <p className="text-[11px] text-slate-500 py-2">لا توجد نتائج</p>}
-                {assignable.map((e) => (
-                  <div key={e.id} className="flex items-center justify-between gap-2 p-2 rounded-lg bg-slate-800/40 border border-slate-700/30">
-                    <div className="min-w-0">
-                      <p className="text-xs text-slate-200 truncate">{e.name} {e.code ? <span className="text-slate-500">({e.code})</span> : null}</p>
-                      <p className="text-[10px] text-slate-500 truncate">
-                        {e.orgNodeId ? org.nodes.find((n) => n.id === e.orgNodeId)?.name ?? '—' : 'بدون عقدة'}
+            <div className="arm-scroll max-h-44 overflow-y-auto rounded-lg border border-slate-700/30 divide-y divide-slate-700/20">
+              {assignable.length === 0 && (
+                <p className="text-[11px] text-slate-500 py-3 px-2">
+                  {scopeFilter === 'unassigned' ? 'لا يوجد موظفون بدون إسناد — جرّب فلتر "الكل"' : 'لا توجد نتائج'}
+                </p>
+              )}
+              {assignable.map((e) => {
+                const currentNodeName = e.orgNodeId ? nodeNameById.get(e.orgNodeId) ?? 'عقدة أخرى' : null;
+                return (
+                  <div key={e.id} className="flex items-center gap-2 min-h-10 px-2 py-1.5 bg-slate-800/40 hover:bg-slate-800/60 transition-colors">
+                    <div className="min-w-0 flex-1">
+                      <p className="text-xs text-slate-200 truncate" title={e.name ?? undefined}>{e.name ?? '—'}</p>
+                      <p className="text-[10px] text-slate-500 truncate flex items-center gap-1" title={currentNodeName ?? undefined}>
+                        {e.code && <span className="font-mono shrink-0" dir="ltr">{e.code}</span>}
+                        {e.position && <span className="shrink-0">· {e.position}</span>}
+                        {currentNodeName && (
+                          <span className="text-amber-400/80 truncate min-w-0">
+                            · ينتمي حالياً إلى: {currentNodeName}
+                          </span>
+                        )}
+                        {!currentNodeName && <span className="text-emerald-400/80">· بدون إسناد تنظيمي</span>}
                       </p>
                     </div>
                     <Button variant="ghost" size="sm" className="h-7 text-[10px] text-emerald-400 hover:text-emerald-300 hover:bg-emerald-500/10 gap-1 shrink-0"
-                      disabled={moving || pickEmployeeId === e.id} onClick={() => void moveEmployee(e.id, node?.id ?? null)}>
-                      {pickEmployeeId === e.id ? <Loader2 className="size-3 animate-spin" /> : <Plus className="size-3" />} إسناد
+                      disabled={movingId === e.id} onClick={() => requestAssign(e)}>
+                      {movingId === e.id ? <Loader2 className="size-3 animate-spin" /> : <Plus className="size-3" />}
+                      {e.orgNodeId ? 'نقل' : 'إسناد'}
                     </Button>
                   </div>
-                ))}
-              </div>
-            </ScrollArea>
+                );
+              })}
+            </div>
           </div>
         </div>
 
         <div className="flex justify-end pt-2 border-t border-slate-700/40">
           <Button variant="outline" size="sm" className="border-slate-700 text-slate-300" onClick={onClose}>إغلاق</Button>
         </div>
+
+        {/* §13 — explicit transfer confirmation; never a silent move */}
+        <ConfirmDialog
+          open={!!confirmTransfer}
+          onOpenChange={(o) => { if (!o) setConfirmTransfer(null); }}
+          title="نقل موظف من عقدة أخرى"
+          description={`هذا الموظف ينتمي حالياً إلى "${
+            confirmTransfer?.orgNodeId ? nodeNameById.get(confirmTransfer.orgNodeId) ?? 'عقدة أخرى' : '—'
+          }". هل تريد نقله إلى "${node?.name ?? '—'}"؟ نطاق بياناته يتحدث تلقائياً ولا يمس النقل أي سجل تاريخي.`}
+          itemName={confirmTransfer?.name ?? undefined}
+          confirmLabel="تأكيد النقل"
+          loading={!!movingId}
+          onConfirm={() => {
+            const target = confirmTransfer;
+            setConfirmTransfer(null);
+            if (target && node) void moveEmployee(target.id, node.id);
+          }}
+        />
       </DialogContent>
     </Dialog>
   );

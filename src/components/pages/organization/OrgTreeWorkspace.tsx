@@ -659,12 +659,21 @@ export function OrgTreeWorkspace({
                   <div className="flex items-start gap-2">
                     <Building2 className={cn('size-4 mt-0.5 shrink-0', textStyle)} />
                     <div className="min-w-0 flex-1">
-                      <p className="text-xs font-bold text-slate-100 truncate" title={node.name}>{node.name}</p>
+                      {/* Long node names truncate at the END (inline-end
+                          ellipsis — natural for Arabic RTL and English
+                          LTR alike); the full name stays reachable via
+                          the title tooltip / double-click details.
+                          min-w-0 lets the column shrink so the
+                          collapse/roster buttons can never be pushed
+                          out of the card. */}
+                      <p className="text-xs font-bold text-slate-100 truncate min-w-0" title={node.name}>{node.name}</p>
                       <p className={cn('text-[9px] font-semibold mt-0.5', textStyle)}>{ORG_NODE_TYPE_LABELS_AR[node.type]}</p>
-                      <p className="text-[9px] text-slate-500 mt-0.5 flex items-center gap-1">
-                        <Users className="size-2.5" />
-                        {node.subtreeEmployeeCount} موظف
-                        {node.managerUserName ? <span className="truncate">· {node.managerUserName}</span> : null}
+                      <p className="text-[9px] text-slate-500 mt-0.5 flex items-center gap-1 min-w-0">
+                        <Users className="size-2.5 shrink-0" />
+                        <span className="shrink-0">{node.subtreeEmployeeCount} موظف</span>
+                        {node.managerUserName ? (
+                          <span className="truncate min-w-0" title={`مدير: ${node.managerUserName}`}>· {node.managerUserName}</span>
+                        ) : null}
                       </p>
                     </div>
                     <div className="flex flex-col items-center gap-1 shrink-0">

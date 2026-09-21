@@ -1,10 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getAll, createRecord, sortByDateField, withRelatedCounts } from '@/lib/db';
+import { getAll, createRecord, createRecordWithId, sortByDateField, withRelatedCounts } from '@/lib/db';
 import { verifyPermission, requireAuth } from '@/lib/verify-permission';
 import { resolvePageScope, stripRestrictedFields } from '@/config/permissions';
 import { resolveEmployeeScope, filterEmployeesByScope } from '@/lib/scope';
 import { asScopeViewer, hasUnrestrictedEmployeeScope, loadScopeAssignments } from '@/lib/scope/server';
-import { ORG_NODES_TABLE, DEFAULT_EMPLOYEE_STATUS, type OrgNode } from '@/lib/organization';
+import { resolveActor } from '@/lib/auth/actor-resolver';
+import {
+  ORG_NODES_TABLE,
+  DEFAULT_EMPLOYEE_STATUS,
+  MEMBERSHIP_EVENTS_TABLE,
+  buildMembershipEvent,
+  validateOrgAssignmentTarget,
+  resolveDepartmentDisplayName,
+  type OrgNode,
+} from '@/lib/organization';
 
 export async function GET(request: NextRequest) {
   try {
@@ -129,10 +138,36 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { code, name, department, position, shiftStart, shiftEnd, hireDate, mobile, residence, createdById } = body;
+    const { code, name, department, position, shiftStart, shiftEnd, hireDate, mobile, residence, createdById, orgNodeId } = body;
 
     if (!name) {
       return NextResponse.json({ error: 'Name is required' }, { status: 400 });
+    }
+
+    // ── ORGANIZATION ASSIGNMENT AT CREATION (canonical orgNodeId) ──
+    // The create form selects an EXISTING Organization Tree node; the
+    // server — never the client label — is authoritative: the node
+    // must exist and be active, and the display `department` string
+    // is DERIVED from the node (nearest department ancestor), not
+    // stored from client input. Legacy records keep their free-text
+    // `department`; the tree pointer remains the single relationship
+    // source of truth (same doctrine as reports/employee-org.ts).
+    // Scope note: creation already requires an UNRESTRICTED employee
+    // scope (checked above), so accepting the assignment here does
+    // not widen who can create or where the record can land.
+    let assignmentNodeId: string | null = null;
+    let assignmentDepartment: string | null = null;
+    if (orgNodeId !== undefined && orgNodeId !== null && orgNodeId !== '') {
+      if (typeof orgNodeId !== 'string') {
+        return NextResponse.json({ error: 'معرّف العقدة التنظيمية غير صالح' }, { status: 400 });
+      }
+      const orgNodes = await getAll<OrgNode>(ORG_NODES_TABLE);
+      const assignment = validateOrgAssignmentTarget(orgNodes, orgNodeId);
+      if (!assignment.ok) {
+        return NextResponse.json({ error: assignment.reason }, { status: 400 });
+      }
+      assignmentNodeId = assignment.node.id;
+      assignmentDepartment = resolveDepartmentDisplayName(orgNodes, assignment.node.id);
     }
 
     // §IDENTITY — reject a duplicate employee CODE up front. The Risk
@@ -186,7 +221,10 @@ export async function POST(request: NextRequest) {
     const employee = await createRecord('employees', {
       code: finalCode,
       name,
-      department: department || null,
+      // The org node is the canonical assignment; the display string
+      // is derived from it at write time. Without an org selection the
+      // legacy free-text path (Excel upload, API contracts) is unchanged.
+      department: assignmentDepartment ?? (department || null),
       position: position || null,
       shiftStart: shiftStart || null,
       shiftEnd: shiftEnd || null,
@@ -194,10 +232,31 @@ export async function POST(request: NextRequest) {
       mobile: mobile || null,
       residence: residence || null,
       createdById: createdById || null,
+      orgNodeId: assignmentNodeId,
       // M0.6-A: lifecycle default. Legacy employees (no field) keep
       // reading as active via normalizeEmployeeStatus.
       status: DEFAULT_EMPLOYEE_STATUS,
     });
+
+    // ── APPEND-ONLY MEMBERSHIP LEDGER ('joined') ──
+    // Same bookkeeping the privileged move route appends: creation
+    // with an org selection is the employee's FIRST assignment. A
+    // ledger failure never undoes the creation.
+    if (assignmentNodeId) {
+      try {
+        const actor = await resolveActor(permCheck.user?.id);
+        const event = buildMembershipEvent({
+          employeeId: employee.id,
+          employeeName: employee.name ?? null,
+          previousNodeId: null,
+          nextNodeId: assignmentNodeId,
+          actorUserId: actor.id,
+        });
+        await createRecordWithId(MEMBERSHIP_EVENTS_TABLE, event.id, event);
+      } catch (ledgerError) {
+        console.error('membershipEvents append failed:', ledgerError);
+      }
+    }
 
     return NextResponse.json(employee, { status: 201 });
   } catch (error) {
