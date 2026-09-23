@@ -31,10 +31,17 @@ import {
   useObservationCategories,
 } from '@/hooks/use-kpi-queries';
 import type { ObservationTemplate, Severity } from '@/types/quality-kpi';
+import { T } from '@/lib/i18n/T';
+import { translateUIText } from '@/lib/i18n/ui-text';
+import { useLanguage } from '@/lib/i18n/language-context';
 
 // ─── Constants ────────────────────────────────────────────────
-const SEVERITY_LABELS: Record<string, string> = {
-  low: 'منخفض', medium: 'متوسط', high: 'عالٍ', critical: 'حرج',
+const SEVERITY_LABELS: Record<string, [string, string]> = {
+  low: ['منخفض', 'Low'], medium: ['متوسط', 'Medium'], high: ['عالٍ', 'High'], critical: ['حرج', 'Critical'],
+};
+const severityLabel = (code: string, locale: 'ar' | 'en'): string => {
+  const pair = SEVERITY_LABELS[code];
+  return pair ? (locale === 'en' ? pair[1] : pair[0]) : code;
 };
 
 const SEVERITY_COLORS: Record<string, string> = {
@@ -60,6 +67,7 @@ function CreateTemplateDialog({
   onOpenChange: (o: boolean) => void;
   categories: Array<{ id: string; name: string }>;
 }) {
+  const { locale } = useLanguage();
   const [title, setTitle] = useState('');
   const [categoryId, setCategoryId] = useState('');
   const [defaultPoints, setDefaultPoints] = useState<number | ''>('');
@@ -101,23 +109,23 @@ function CreateTemplateDialog({
         <DialogHeader>
           <DialogTitle className="text-slate-100 flex items-center gap-2">
             <Plus className="size-5 text-blue-400" />
-            قالب ملاحظة جديد
+            <T>قالب ملاحظة جديد</T>
           </DialogTitle>
           <DialogDescription className="text-slate-400">
-            القوالب تُسرّع إدخال الملاحظات المتكررة بنقاط وملاحظات افتراضية
+            <T>القوالب تُسرّع إدخال الملاحظات المتكررة بنقاط وملاحظات افتراضية</T>
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-3">
           <div className="space-y-1">
-            <Label>عنوان القالب *</Label>
-            <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="مثال: تأخر متابعة دوري" className="bg-slate-800/50 border-slate-700" />
+            <Label><T>عنوان القالب *</T></Label>
+            <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder={translateUIText('مثال: تأخر متابعة دوري', locale)} className="bg-slate-800/50 border-slate-700" />
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1">
-              <Label>التصنيف *</Label>
+              <Label><T>التصنيف *</T></Label>
               <Select value={categoryId} onValueChange={setCategoryId}>
-                <SelectTrigger className="bg-slate-800/50 border-slate-700"><SelectValue placeholder="اختر التصنيف" /></SelectTrigger>
+                <SelectTrigger className="bg-slate-800/50 border-slate-700"><SelectValue placeholder={translateUIText('اختر التصنيف', locale)} /></SelectTrigger>
                 <SelectContent>
                   {categories.map((c) => (
                     <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
@@ -126,42 +134,42 @@ function CreateTemplateDialog({
               </Select>
             </div>
             <div className="space-y-1">
-              <Label>الخطورة</Label>
+              <Label><T>الخطورة</T></Label>
               <Select value={severity} onValueChange={(v) => setSeverity(v as Severity)}>
                 <SelectTrigger className="bg-slate-800/50 border-slate-700"><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="low">منخفض</SelectItem>
-                  <SelectItem value="medium">متوسط</SelectItem>
-                  <SelectItem value="high">عالٍ</SelectItem>
-                  <SelectItem value="critical">حرج</SelectItem>
+                  <SelectItem value="low"><T>منخفض</T></SelectItem>
+                  <SelectItem value="medium"><T>متوسط</T></SelectItem>
+                  <SelectItem value="high"><T>عالٍ</T></SelectItem>
+                  <SelectItem value="critical"><T>حرج</T></SelectItem>
                 </SelectContent>
               </Select>
             </div>
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1">
-              <Label>النقاط الافتراضية</Label>
+              <Label><T>النقاط الافتراضية</T></Label>
               <Input type="number" min={0} value={defaultPoints} onChange={(e) => setDefaultPoints(e.target.value === '' ? '' : Number(e.target.value))} className="bg-slate-800/50 border-slate-700" />
             </div>
             <div className="space-y-1 flex items-end pb-1">
               <div className="flex items-center gap-2">
                 <Switch checked={isBonus} onCheckedChange={setIsBonus} />
-                <Label>مكافأة بدل خصم</Label>
+                <Label><T>مكافأة بدل خصم</T></Label>
               </div>
             </div>
           </div>
           <div className="space-y-1">
-            <Label>الملاحظات الافتراضية</Label>
-            <Textarea value={defaultNotes} onChange={(e) => setDefaultNotes(e.target.value)} rows={2} placeholder="تُملأ تلقائياً عند اختيار القالب" className="bg-slate-800/50 border-slate-700" />
+            <Label><T>الملاحظات الافتراضية</T></Label>
+            <Textarea value={defaultNotes} onChange={(e) => setDefaultNotes(e.target.value)} rows={2} placeholder={translateUIText('تُملأ تلقائياً عند اختيار القالب', locale)} className="bg-slate-800/50 border-slate-700" />
           </div>
           <div className="space-y-1">
-            <Label>الإجراء التصحيحي الافتراضي</Label>
-            <Textarea value={correctiveAction} onChange={(e) => setCorrectiveAction(e.target.value)} rows={1} placeholder="إجراء تصحيحي مقترح" className="bg-slate-800/50 border-slate-700" />
+            <Label><T>الإجراء التصحيحي الافتراضي</T></Label>
+            <Textarea value={correctiveAction} onChange={(e) => setCorrectiveAction(e.target.value)} rows={1} placeholder={translateUIText('إجراء تصحيحي مقترح', locale)} className="bg-slate-800/50 border-slate-700" />
           </div>
         </div>
 
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>إلغاء</Button>
+          <Button variant="outline" onClick={() => onOpenChange(false)}><T>إلغاء</T></Button>
           <Button onClick={handleSubmit} disabled={createMut.isPending} className="gap-2">
             <Plus className="size-4" />
             {createMut.isPending ? 'جاري الإنشاء...' : 'إنشاء'}
@@ -181,6 +189,7 @@ function TemplateCard({
   onToggleFavorite: () => void;
   onDelete: () => void;
 }) {
+  const { locale } = useLanguage();
   // NOTE: Full edit UI is intentionally omitted.
   // The backend PATCH endpoint only supports toggle_favorite — there is no
   // generic update endpoint for templates. Editing fields (title, notes, etc.)
@@ -199,7 +208,7 @@ function TemplateCard({
               size="icon"
               className="size-7"
               onClick={onToggleFavorite}
-              title="تفضيل"
+              title={translateUIText('تفضيل', locale)}
             >
               {template.favoriteUserIds && template.favoriteUserIds.length > 0 ? (
                 <Heart className="size-3.5 text-rose-400 fill-rose-400" />
@@ -231,7 +240,7 @@ function TemplateCard({
             {template.isBonus ? `+${template.defaultPoints} مكافأة` : `−${template.defaultPoints} خصم`}
           </Badge>
           <Badge variant="outline" className={SEVERITY_COLORS[template.severity] ?? SEVERITY_COLORS.medium}>
-            {SEVERITY_LABELS[template.severity] ?? template.severity}
+            {severityLabel(template.severity, locale)}
           </Badge>
           <Badge variant="outline" className="text-slate-400 border-slate-600/40">
             <Sparkles className="size-3 mr-1" />
@@ -245,6 +254,7 @@ function TemplateCard({
 
 // ─── Page ─────────────────────────────────────────────────────
 export default function ObservationTemplatesPage() {
+  const { locale } = useLanguage();
   const { canView, canCreate, canDelete } = usePermissions('observationTemplates');
 
   const [sortTab, setSortTab] = useState<SortTab>('recent');
@@ -298,7 +308,7 @@ export default function ObservationTemplatesPage() {
   if (!canView) {
     return (
       <div className="flex flex-col items-center justify-center py-24 text-slate-400">
-        <p>ليس لديك صلاحية للوصول إلى هذه الصفحة</p>
+        <p><T>ليس لديك صلاحية للوصول إلى هذه الصفحة</T></p>
       </div>
     );
   }
@@ -310,12 +320,12 @@ export default function ObservationTemplatesPage() {
         pageId="observationTemplates"
         icon={<FileText className="size-5" />}
         iconClassName="bg-blue-500/15 border-blue-500/30 text-blue-400"
-        title="قوالب الملاحظات"
-        description="قوالب جاهزة لإدخال الملاحظات بسرعة — مع نقاط وملاحظات وإجراءات تصحيحية افتراضية"
+        title={translateUIText('قوالب الملاحظات', locale)}
+        description={translateUIText('قوالب جاهزة لإدخال الملاحظات بسرعة — مع نقاط وملاحظات وإجراءات تصحيحية افتراضية', locale)}
         actions={canCreate && (
           <Button onClick={() => setCreateOpen(true)} className="gap-2">
             <Plus className="size-4" />
-            قالب جديد
+            <T>قالب جديد</T>
           </Button>
         )}
       />
@@ -344,7 +354,7 @@ export default function ObservationTemplatesPage() {
         <div className="relative flex-1 min-w-[200px]">
           <Search className="absolute right-3 top-1/2 -translate-y-1/2 size-4 text-slate-500" />
           <Input
-            placeholder="بحث في القوالب..."
+            placeholder={translateUIText('بحث في القوالب...', locale)}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="pr-9 bg-slate-800/50 border-slate-700"
@@ -365,7 +375,7 @@ export default function ObservationTemplatesPage() {
             <div className="size-12 rounded-full bg-slate-800 flex items-center justify-center mb-3">
               <FileText className="size-6 text-slate-600" />
             </div>
-            <p className="text-slate-400 text-sm font-medium">لا توجد قوالب</p>
+            <p className="text-slate-400 text-sm font-medium"><T>لا توجد قوالب</T></p>
             <p className="text-slate-600 text-xs mt-1">
               {search || sortTab !== 'all'
                 ? 'لم يتم العثور على قوالب مع المعايير المحددة'
@@ -398,7 +408,7 @@ export default function ObservationTemplatesPage() {
         <CardContent className="p-3">
           <p className="text-[11px] text-slate-500 flex items-center gap-1.5">
             <FileText className="size-3" />
-            القوالب تدعم الإنشاء والحذف والتفضيل فقط. تعديل محتوى القالب غير مدعوم حالياً — يمكن حذف القالب وإعادة إنشائه.
+            <T>القوالب تدعم الإنشاء والحذف والتفضيل فقط. تعديل محتوى القالب غير مدعوم حالياً — يمكن حذف القالب وإعادة إنشائه.</T>
           </p>
         </CardContent>
       </Card>
@@ -416,7 +426,7 @@ export default function ObservationTemplatesPage() {
       <ConfirmDialog
         open={!!deleteTarget}
         onOpenChange={(open) => { if (!open) setDeleteTarget(null); }}
-        description="سيتم حذف القالب نهائياً. الملاحظات المنشأة منه لا تتأثر."
+        description={translateUIText('سيتم حذف القالب نهائياً. الملاحظات المنشأة منه لا تتأثر.', locale)}
         itemName={deleteTarget?.title}
         loading={deleteMut.isPending}
         onConfirm={confirmDelete}

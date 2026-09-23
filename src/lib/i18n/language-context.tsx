@@ -19,6 +19,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { translate, type Locale, type TranslationKey } from './dictionary';
 import { setRuntimeLocale } from './runtime-translator';
+import { setDisplayLocale } from './format';
 
 const LANGUAGE_STORAGE_KEY = 'qnlys:language';
 
@@ -55,8 +56,11 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
     // SSR completes; localStorage is unavailable during server render,
     // so there is no render-safe alternative for this mount-only sync.
     const stored = readStoredLocale();
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- canonical one-time hydration guard
-    if (stored && stored !== 'ar') setLocaleState(stored);
+    if (stored && stored !== 'ar') {
+      setDisplayLocale(stored);
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- canonical one-time hydration guard
+      setLocaleState(stored);
+    }
   }, []);
 
   const dir = locale === 'ar' ? 'rtl' : 'ltr';
@@ -67,14 +71,24 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
     document.documentElement.setAttribute('lang', locale);
   }, [dir, locale]);
 
-  // §20.1-RUNTIME — full-system EN coverage: the runtime translator
-  // swaps the rendered DOM (exact + bounded-phrase passes) and watches
-  // incremental mutations. Inert in 'ar' (restore + no observer).
+  // §20.1-RUNTIME — LEGACY zone-scoped EN coverage: the runtime layer
+  // translates ONLY subtrees explicitly claimed as application-owned UI
+  // (data-i18n="true") — it can never reach user/business data, which is
+  // rendered raw outside claimed zones. The PRIMARY mechanism is explicit
+  // source-level claims: t() keys and <T>/translateUIText (§I18N-BOUNDARY).
+  // Inert in 'ar' (restore + no observer).
+  // §20.1-FORMAT — the module-current display locale is synced in the
+  // SAME effect so shared formatters (numbers/dates) follow the locale
+  // even in non-React modules (print adapters, lib helpers).
   useEffect(() => {
+    setDisplayLocale(locale);
     setRuntimeLocale(locale);
   }, [locale]);
 
   const setLocale = useCallback((next: Locale) => {
+    // Sync the display locale FIRST so any render flushed by this state
+    // change already formats with the new locale (numbers/dates).
+    setDisplayLocale(next);
     setLocaleState(next);
     try {
       window.localStorage.setItem(LANGUAGE_STORAGE_KEY, next);

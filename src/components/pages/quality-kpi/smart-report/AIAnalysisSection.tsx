@@ -40,6 +40,10 @@ import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
 import { apiFetch } from '@/lib/query-provider';
+import { useLanguage } from '@/lib/i18n/language-context';
+import { T } from '@/lib/i18n/T';
+import { translateUIText } from '@/lib/i18n/ui-text';
+import { formatInteger } from '@/lib/i18n/format';
 import type { QualityAIApiResponse, QualityAIAnalysisResult } from '@/lib/ai/quality/contracts';
 import { fetchEvidencePreview } from '@/hooks/use-evidence';
 import type { EvidenceDetailSelection } from './report-sections';
@@ -75,6 +79,7 @@ export function AIAnalysisSection({
 }) {
   const [state, setState] = useState<AiState>({ kind: 'IDLE' });
   const abortRef = useRef<AbortController | null>(null);
+  const { locale } = useLanguage();
 
   const runAnalysis = useCallback(async () => {
     if (!employeeId) return;
@@ -104,12 +109,13 @@ export function AIAnalysisSection({
       }
     } catch (error) {
       if (controller.signal.aborted) return; // superseded/unmounted — keep quiet
+      // §I18N-BOUNDARY: only the static sentence is claimed UI — the raw
+      // error detail is NOT interpolated into a claimed string; the
+      // failure view composes them without passing data through T.
       setState({
         kind: 'FAILED',
         status: 'NETWORK_ERROR',
-        message: error instanceof Error && error.message
-          ? `تعذر الاتصال بخدمة التحليل الذكي (${error.message})`
-          : 'تعذر الاتصال بخدمة التحليل الذكي',
+        message: error instanceof Error && error.message ? error.message : '',
       });
     }
   }, [employeeId, month]);
@@ -156,15 +162,15 @@ export function AIAnalysisSection({
   return (
     <SectionCard
       icon={Brain}
-      title="التحليل الذكي (AI)"
-      subtitle="تفسير مولّد بالذكاء الاصطناعي فوق الحقائق المتحقق منها والتحليل الحتمي — للمراجعة الإدارية، ولا ينفذ أي إجراء"
+      title={translateUIText('التحليل الذكي (AI)', locale)}
+      subtitle={translateUIText('تفسير مولّد بالذكاء الاصطناعي فوق الحقائق المتحقق منها والتحليل الحتمي — للمراجعة الإدارية، ولا ينفذ أي إجراء', locale)}
       actions={<AiGeneratedBadge />}
     >
       {state.kind === 'IDLE' && (
         <div className="space-y-3">
           <p className="text-xs text-slate-400">
-            اضغط الزر لتشغيل التحليل الذكي على بيانات الفترة الحالية. لا يعمل التحليل تلقائيًا مع تحميل الصفحة،
-            ولا يُغيّر أي بيانات — مخرجاته مقترحات للمراجعة فقط، وكل استنتاج مرتبط بأدلته.
+            <T>اضغط الزر لتشغيل التحليل الذكي على بيانات الفترة الحالية. لا يعمل التحليل تلقائيًا مع تحميل الصفحة،
+            ولا يُغيّر أي بيانات — مخرجاته مقترحات للمراجعة فقط، وكل استنتاج مرتبط بأدلته.</T>
           </p>
           <Button
             size="sm"
@@ -174,7 +180,7 @@ export function AIAnalysisSection({
             disabled={!employeeId}
           >
             <Sparkles className="h-4 w-4" />
-            تشغيل التحليل الذكي
+            <T>تشغيل التحليل الذكي</T>
           </Button>
         </div>
       )}
@@ -236,28 +242,29 @@ function ReadyView({
   onRerun: () => void;
   onOpenEvidence: (collection: string, recordIds: string[]) => void;
 }) {
+  const { locale } = useLanguage();
   const periodLabel = formatMonthLabelAr(result.period.from);
   return (
     <div className="space-y-5">
       {/* Meta row — §68: the period is ALWAYS visible, named */}
       <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-400">
         <Badge variant="outline" className="border-slate-500/30 bg-slate-500/15 font-normal text-[11px] text-slate-300">
-          الفترة: {periodLabel}
+          <T>الفترة: </T>{periodLabel}
         </Badge>
         {result.period.mtd && (
           <Badge variant="outline" className="border-sky-500/30 bg-sky-500/15 font-normal text-[11px] text-sky-300">
-            حتى تاريخه (MTD) — البيانات المتاحة الآن، ليست شهرًا نهائيًا
+            <T>حتى تاريخه (MTD) — البيانات المتاحة الآن، ليست شهرًا نهائيًا</T>
           </Badge>
         )}
         <Badge variant="outline" className="border-slate-500/30 bg-slate-500/15 font-normal text-[11px] text-slate-300">
-          حالة البيانات: {aiSufficiencyLabel(result.dataSufficiency)}
+          <T>حالة البيانات: </T>{aiSufficiencyLabel(result.dataSufficiency)}
         </Badge>
         <Badge variant="outline" className="border-slate-500/30 bg-slate-500/15 font-normal text-[11px] text-slate-300">
-          مستوى الثقة: {AI_CONFIDENCE_LABELS[result.confidence]}
+          <T>مستوى الثقة: </T>{AI_CONFIDENCE_LABELS[result.confidence]}
         </Badge>
         {cached && (
           <Badge variant="outline" className="border-slate-600/40 bg-slate-600/10 font-normal text-[10px] text-slate-400">
-            نتيجة مخزّنة
+            <T>نتيجة مخزّنة</T>
           </Badge>
         )}
         <span className="font-mono text-[9px] text-slate-600" dir="ltr" title="AI provenance">
@@ -270,7 +277,7 @@ function ReadyView({
         <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-3">
           <h4 className="mb-1 flex items-center gap-1.5 text-[12px] font-semibold text-amber-200">
             <Info className="h-3.5 w-3.5" />
-            حدود هذا التحليل
+            <T>حدود هذا التحليل</T>
           </h4>
           <ul className="space-y-1">
             {result.limitations.map((l, i) => (
@@ -284,10 +291,10 @@ function ReadyView({
       <div className="space-y-3">
         <h4 className="flex items-center gap-1.5 text-[13px] font-semibold text-slate-200">
           <Sparkles className="h-3.5 w-3.5 text-brand-400" />
-          أبرز الاستنتاجات
+          <T>أبرز الاستنتاجات</T>
         </h4>
         {result.insights.length === 0 && (
-          <p className="text-xs text-slate-500">لا توجد استنتاجات مدعومة بالأدلة لهذه الفترة.</p>
+          <p className="text-xs text-slate-500"><T>لا توجد استنتاجات مدعومة بالأدلة لهذه الفترة.</T></p>
         )}
         {result.insights.map((insight, idx) => (
           <div
@@ -296,20 +303,20 @@ function ReadyView({
             className="rounded-lg border border-slate-700/40 bg-slate-900/20 p-3 space-y-2"
           >
             <div className="flex flex-wrap items-center gap-1.5">
-              <span className="text-[11px] text-slate-500 tabular-nums">①{idx + 1}</span>
+              <span className="text-[11px] text-slate-500 tabular-nums">①{formatInteger(idx + 1, locale)}</span>
               <ToneBadge level={insight.severity} label={AI_INSIGHT_TYPE_LABELS[insight.type]} />
               <ToneBadge level={insight.severity} label={AI_SEVERITY_LABELS[insight.severity]} />
-              <ToneBadge level={insight.confidence} label={`ثقة ${AI_CONFIDENCE_LABELS[insight.confidence]}`} />
+              <ToneBadge level={insight.severity} label={`ثقة ${AI_CONFIDENCE_LABELS[insight.confidence]}`} />
             </div>
             <p className="text-[13px] font-medium text-slate-100">{insight.title}</p>
             <p className="text-[12px] leading-6 text-slate-300">{insight.summary}</p>
             <div className="space-y-1 rounded-lg bg-slate-900/40 p-2.5">
               <p className="text-[11px] leading-5 text-slate-400">
-                <span className="font-semibold text-emerald-300">الحقائق: </span>
+                <span className="font-semibold text-emerald-300"><T>الحقائق: </T></span>
                 {insight.factBasis}
               </p>
               <p className="text-[11px] leading-5 text-slate-400">
-                <span className="font-semibold text-brand-300">التفسير: </span>
+                <span className="font-semibold text-brand-300"><T>التفسير: </T></span>
                 {insight.interpretation}
               </p>
             </div>
@@ -329,10 +336,10 @@ function ReadyView({
       <div className="space-y-3">
         <h4 className="flex items-center gap-1.5 text-[13px] font-semibold text-slate-200">
           <ClipboardCheck className="h-3.5 w-3.5 text-brand-400" />
-          التوصيات المقترحة (لا تُنفَّذ آليًا)
+          <T>التوصيات المقترحة (لا تُنفَّذ آليًا)</T>
         </h4>
         {result.recommendations.length === 0 && (
-          <p className="text-xs text-slate-500">لا توجد توصيات مدعومة بالأدلة لهذه الفترة.</p>
+          <p className="text-xs text-slate-500"><T>لا توجد توصيات مدعومة بالأدلة لهذه الفترة.</T></p>
         )}
         {result.recommendations.map((rec, idx) => (
           <div
@@ -341,25 +348,25 @@ function ReadyView({
             className="rounded-lg border border-slate-700/40 bg-slate-900/20 p-3 space-y-2"
           >
             <div className="flex flex-wrap items-center gap-1.5">
-              <span className="text-[11px] text-slate-500 tabular-nums">①{idx + 1}</span>
+              <span className="text-[11px] text-slate-500 tabular-nums">①{formatInteger(idx + 1, locale)}</span>
               <Badge variant="outline" className="border-slate-500/30 bg-slate-500/15 font-normal text-[10px] text-slate-300">
                 {AI_CATEGORY_LABELS[rec.category]}
               </Badge>
               <ToneBadge level={rec.priority} label={`أولوية ${AI_PRIORITY_LABELS[rec.priority]}`} />
               <ToneBadge level={rec.confidence} label={`ثقة ${AI_CONFIDENCE_LABELS[rec.confidence]}`} />
               <Badge variant="outline" className="border-brand-500/30 bg-brand-500/10 font-normal text-[10px] text-brand-300">
-                مقترحة — بانتظار قرار إداري
+                <T>مقترحة — بانتظار قرار إداري</T>
               </Badge>
             </div>
             <p className="text-[13px] font-medium text-slate-100">{rec.title}</p>
             <p className="text-[12px] leading-6 text-slate-300">{rec.recommendation}</p>
             <div className="space-y-1 rounded-lg bg-slate-900/40 p-2.5">
               <p className="text-[11px] leading-5 text-slate-400">
-                <span className="font-semibold text-emerald-300">لماذا يقترح النظام هذا؟ </span>
+                <span className="font-semibold text-emerald-300"><T>لماذا يقترح النظام هذا؟ </T></span>
                 {rec.reason}
               </p>
               <p className="text-[11px] leading-5 text-slate-400">
-                <span className="font-semibold text-brand-300">الأثر المتوقع: </span>
+                <span className="font-semibold text-brand-300"><T>الأثر المتوقع: </T></span>
                 {AI_IMPACT_LABELS[rec.expectedImpact.direction] ?? rec.expectedImpact.direction} — {rec.expectedImpact.description}
               </p>
             </div>
@@ -370,8 +377,8 @@ function ReadyView({
 
       <div className="flex items-center justify-between gap-2 border-t border-slate-800/60 pt-3">
         <p className="text-[10px] leading-5 text-slate-500">
-          هذا القسم مولّد بالذكاء الاصطناعي (AI GENERATED) كطبقة تفسير فوق الحقائق والتحليل الحتمي — لا يعيد حساب
-          أي رقم، ولا ينفذ أي إجراء، ولا يخزَّن كقرار. كل استنتاج يعرض أدلته ومستوى ثقته وحدوده للمراجعة الإدارية.
+          <T>هذا القسم مولّد بالذكاء الاصطناعي (AI GENERATED) كطبقة تفسير فوق الحقائق والتحليل الحتمي — لا يعيد حساب
+          أي رقم، ولا ينفذ أي إجراء، ولا يخزَّن كقرار. كل استنتاج يعرض أدلته ومستوى ثقته وحدوده للمراجعة الإدارية.</T>
         </p>
         <Button
           variant="outline"
@@ -381,7 +388,7 @@ function ReadyView({
           className="no-print shrink-0 border-slate-700/50 text-slate-300 hover:bg-slate-800/60"
         >
           <RefreshCw className="h-3.5 w-3.5 ml-1" />
-          تحديث التحليل
+          <T>تحديث التحليل</T>
         </Button>
       </div>
     </div>
@@ -396,12 +403,13 @@ function EvidenceChips({
   evidence: Array<{ collection: string; recordIds: string[]; completeRecordList: boolean }>;
   onOpen: (collection: string, recordIds: string[]) => void;
 }) {
+  const { locale } = useLanguage();
   if (evidence.length === 0) return null;
   return (
     <div className="flex flex-wrap items-center gap-1.5">
       <span className="flex items-center gap-1 text-[10px] text-slate-500">
         <FileText className="h-3 w-3" />
-        الأدلة:
+        <T>الأدلة:</T>
       </span>
       {evidence.map((ref, i) => (
         <button
@@ -410,10 +418,10 @@ function EvidenceChips({
           data-testid="ai-evidence-chip"
           onClick={() => onOpen(ref.collection, ref.recordIds)}
           className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-0.5 text-[10px] text-emerald-300 hover:bg-emerald-500/20"
-          title="عرض السجل المصدر ثم الانتقال إليه"
+          title={translateUIText('عرض السجل المصدر ثم الانتقال إليه', locale)}
         >
-          {ref.collection === 'qualityObservations' ? 'ملاحظات الجودة' : ref.collection}
-          {ref.recordIds.length > 1 ? ` (${ref.recordIds.length})` : ''}
+          {ref.collection === 'qualityObservations' ? <T>ملاحظات الجودة</T> : ref.collection}
+          {ref.recordIds.length > 1 ? ` (${formatInteger(ref.recordIds.length, locale)})` : ''}
         </button>
       ))}
     </div>
@@ -451,16 +459,24 @@ function FailureView({
         <Icon className={`mt-0.5 h-5 w-5 shrink-0 ${iconTone}`} />
         <div className="min-w-0 space-y-1">
           <p className={`text-sm font-semibold ${textTone}`}>{aiFailureHeading(status)}</p>
-          <p className="text-[12px] leading-6 text-slate-300">{message}</p>
+          <p className="text-[12px] leading-6 text-slate-300">
+            {/* §I18N-BOUNDARY: the static sentence is claimed UI; the raw
+                error detail (message) is composed OUTSIDE the claim. */}
+            {status === 'NETWORK_ERROR' ? (
+              <><T>تعذر الاتصال بخدمة التحليل الذكي</T>{message ? <> ({message})</> : ''}</>
+            ) : (
+              message
+            )}
+          </p>
           {hint && (
             <p className="text-[11px] leading-5 text-slate-400" data-testid="ai-diagnostic-hint">
-              <span className="font-semibold text-slate-300">التصنيف الفعلي ({diagnosticStatus}): </span>
+              <span className="font-semibold text-slate-300"><T>التصنيف الفعلي</T> ({diagnosticStatus}): </span>
               {hint}
             </p>
           )}
           {!isInfo && (
             <p className="text-[11px] text-slate-500">
-              الحقائق والتحليل الإحصائي والأدلة في التقرير تبقى متاحة بشكل طبيعي — فشل التحليل الذكي لا يؤثر عليها.
+              <T>الحقائق والتحليل الإحصائي والأدلة في التقرير تبقى متاحة بشكل طبيعي — فشل التحليل الذكي لا يؤثر عليها.</T>
             </p>
           )}
         </div>
@@ -473,7 +489,7 @@ function FailureView({
         className="no-print border-slate-700/50 text-slate-300 hover:bg-slate-800/60"
       >
         <RefreshCw className="h-3.5 w-3.5 ml-1" />
-        إعادة المحاولة
+        <T>إعادة المحاولة</T>
       </Button>
     </div>
   );

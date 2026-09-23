@@ -73,6 +73,9 @@ interface ImpactPreview {
 }
 
 const TYPE_OPTIONS: Array<{ value: OrgNodeType; label: string }> = [
+  // §ORG-LEVELS — GA is created once as the root; the editor keeps it
+  // selectable for retyping a legacy root, hence part of the options.
+  { value: 'general_administration', label: ORG_NODE_TYPE_LABELS_AR.general_administration },
   { value: 'company', label: ORG_NODE_TYPE_LABELS_AR.company },
   { value: 'department', label: ORG_NODE_TYPE_LABELS_AR.department },
   { value: 'team', label: ORG_NODE_TYPE_LABELS_AR.team },
@@ -80,6 +83,7 @@ const TYPE_OPTIONS: Array<{ value: OrgNodeType; label: string }> = [
 ];
 
 const TYPE_STYLES: Record<OrgNodeType, string> = {
+  general_administration: 'bg-violet-500/10 text-violet-300 border-violet-500/20',
   company: 'bg-brand-500/10 text-brand-300 border-brand-500/20',
   department: 'bg-blue-500/10 text-blue-300 border-blue-500/20',
   team: 'bg-emerald-500/10 text-emerald-300 border-emerald-500/20',

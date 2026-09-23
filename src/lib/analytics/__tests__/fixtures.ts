@@ -126,7 +126,8 @@ export function makeOkResult(): EmployeeAnalyticsResult {
       deals: {
         relationship: 'CONFIRMED',
         status: 'OK',
-        total: 3,
+        travelTotal: 3,
+        closedTotal: null,
         byStatus: emptyDist(),
         cancellationRatePct: null,
         completionRatePctEcho: null,

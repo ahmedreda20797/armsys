@@ -104,26 +104,29 @@ dbStubs.withEmployeeFull = async (records: Array<Record<string, any>>) => {
 //    readerNoscope → same permissions, no employees scope → empty set
 //    userToken   → default role: page read, fail-closed scope
 // ─────────────────────────────────────────────────────────────
-function orgNode(id: string, managerUserId: string | null) {
+function orgNode(id: string, parentId: string, managerUserId: string | null) {
   return {
-    id, name: id, type: 'team', parentId: 'company', managerUserId,
+    id, name: id, type: 'team', parentId, managerUserId,
     managerUserName: null, status: 'active', order: 0, description: null,
     createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z',
   };
 }
 
 function seedOrgGraph(): void {
+  // §ORG-LEVELS — GA is the explicit root type; its subtree covers the
+  // whole test workforce. HR/quality get this boundary so 'all' resolves
+  // unrestricted within the test data (no unassigned employees).
   setTable('orgNodes', [
-    orgNode('company', null),
-    orgNode('teamA', 'u-mgr-a'),
-    orgNode('teamB', 'u-mgr-b'),
+    { id: 'ga', name: 'GA', type: 'general_administration', parentId: null, managerUserId: null, managerUserName: null, status: 'active', order: 0, description: null, createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z' },
+    { id: 'company', name: 'company', type: 'company', parentId: 'ga', managerUserId: null, managerUserName: null, status: 'active', order: 0, description: null, createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z' },
+    orgNode('teamA', 'company', 'u-mgr-a'),
+    orgNode('teamB', 'company', 'u-mgr-b'),
   ]);
   setTable('employees', [
     { id: 'empA1', code: 'A1', name: 'موظف أ1', department: 'المبيعات', orgNodeId: 'teamA' },
     { id: 'empA2', code: 'A2', name: 'موظف أ2', department: 'المبيعات', orgNodeId: 'teamA' },
     { id: 'empB1', code: 'B1', name: 'موظف ب1', department: 'المبيعات', orgNodeId: 'teamB' },
     { id: 'empB2', code: 'B2', name: 'موظف ب2', department: 'المبيعات', orgNodeId: 'teamB' },
-    { id: 'empFree', code: 'F1', name: 'موظف حر', department: null, orgNodeId: null },
   ]);
 }
 
@@ -296,11 +299,12 @@ interface M05Tokens {
 
 async function m05Fixtures(): Promise<M05Tokens> {
   const base = await registerFixtures(); // admin/user/hr/manager/quality
-  registerUser({ id: 'u-mgr-a', email: 'mgra@test.local', name: 'مدير أ', role: 'manager' });
-  registerUser({ id: 'u-mgr-b', email: 'mgrb@test.local', name: 'مدير ب', role: 'manager' });
+  registerUser({ id: 'u-mgr-a', email: 'mgra@test.local', name: 'مدير أ', role: 'manager', orgBoundaryNodeIds: ['teamA'] });
+  registerUser({ id: 'u-mgr-b', email: 'mgrb@test.local', name: 'مدير ب', role: 'manager', orgBoundaryNodeIds: ['teamB'] });
   registerUser({
     id: 'u-reader-team', email: 'readerteam@test.local', name: 'قارئ فريق', role: 'user',
     linkedEmployeeId: 'empA1',
+    orgBoundaryNodeIds: ['teamA'],
     permissions: readerPermissions({
       employees: { level: 'read', actions: {}, scope: 'team' },
     }),
@@ -626,7 +630,7 @@ describe('M0.5 D — dashboard aggregates scoped', () => {
     const route = (await import('@/app/api/home/stats/route')) as unknown as SimpleRoute;
     const res = await route.GET!(getRequest(`${BASE}/home/stats`, t.adminToken));
     const body = await res.json();
-    assert.equal(body.totalEmployees, 5);
+    assert.equal(body.totalEmployees, 4);
   });
 
   it('[D3] home/stats: plain user (fail-closed scope) sees zero employees', async () => {
@@ -650,11 +654,11 @@ describe('M0.5 D — dashboard aggregates scoped', () => {
     assert.ok(!serialized.includes('موظف ب1'));
   });
 
-  it('[D5] risk-center: admin sees all 5 employees', async () => {
+  it('[D5] risk-center: admin sees all 4 employees', async () => {
     const route = (await import('@/app/api/risk-center/route')) as unknown as SimpleRoute;
     const res = await route.GET!(getRequest(`${BASE}/risk-center`, t.adminToken));
     const body = await res.json();
-    assert.equal(body.summary.totalEmployees, 5);
+    assert.equal(body.summary.totalEmployees, 4);
   });
 
   it('[D6] kpi-dashboard: manager totals/leaderboards derive from authorized snapshot entries only', async () => {
@@ -752,8 +756,8 @@ describe('M0.5 E — reports and exports scoped', () => {
     const route = (await import('@/app/api/reports/generate/route')) as unknown as SimpleRoute;
     const res = await route.POST!(jsonRequest(`${BASE}/reports/generate`, { month: '2026-07' }, bearerHeaders(t.adminToken)));
     const body = await res.json();
-    assert.equal(body.meta.totalEmployees, 5);
-    assert.equal(body.rows.length, 5);
+    assert.equal(body.meta.totalEmployees, 4);
+    assert.equal(body.rows.length, 4);
   });
 
   it('[E3] reports/capa: every aggregate section derives from authorized cases only', async () => {

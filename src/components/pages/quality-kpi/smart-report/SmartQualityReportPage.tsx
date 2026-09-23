@@ -43,6 +43,9 @@ import { useEmployees } from '@/hooks/use-queries';
 import { usePerformanceIntelligence, useMonthSnapshots } from '@/hooks/use-kpi-queries';
 import { usePageState } from '@/hooks/use-page-state';
 import { useLanguage } from '@/lib/i18n/language-context';
+import { T } from '@/lib/i18n/T';
+import { translateUIText } from '@/lib/i18n/ui-text';
+import { formatDateTime } from '@/lib/i18n/format';
 import { usePermissions } from '@/hooks/usePermissions';
 import { useAppStore } from '@/lib/store';
 import type { EmployeePerformanceDataset } from '@/lib/performance-intelligence';
@@ -109,9 +112,9 @@ function UnauthorizedState() {
       <div className="w-20 h-20 rounded-2xl bg-red-500/10 border border-red-500/20 flex items-center justify-center mb-6">
         <ShieldX className="w-10 h-10 text-red-400" />
       </div>
-      <h2 className="text-xl font-bold text-slate-200 mb-2">صلاحية غير كافية</h2>
+      <h2 className="text-xl font-bold text-slate-200 mb-2"><T>صلاحية غير كافية</T></h2>
       <p className="text-slate-400 text-center max-w-md">
-        لا تملك صلاحية عرض تقرير الجودة الذكي. هذا التقرير يتطلب صلاحية تقارير KPI.
+        <T>لا تملك صلاحية عرض تقرير الجودة الذكي. هذا التقرير يتطلب صلاحية تقارير KPI.</T>
       </p>
     </div>
   );
@@ -119,7 +122,7 @@ function UnauthorizedState() {
 
 // ─── Report body ─────────────────────────────────────────────
 function ReportBody() {
-  const { t } = useLanguage();
+  const { t, locale } = useLanguage();
   // Phase 6.3 (§8/§51): Smart Quality Report is a LIVE view — the
   // dataset refetches for the selection; only the SELECTION
   // (employee + period) persists per user (never a data snapshot).
@@ -147,8 +150,8 @@ function ReportBody() {
   const snapshotsQuery = useMonthSnapshots();
 
   const monthOptions = useMemo(
-    () => buildMonthOptions(snapshotsQuery.data as Array<{ monthKey: string; status: 'open' | 'closed' }> | undefined),
-    [snapshotsQuery.data],
+    () => buildMonthOptions(snapshotsQuery.data as Array<{ monthKey: string; status: 'open' | 'closed' }> | undefined, locale),
+    [snapshotsQuery.data, locale],
   );
 
   // Keep the selector valid when options load/refresh. §PERIOD-TRUTH:
@@ -201,23 +204,23 @@ function ReportBody() {
     const dataset = datasetQuery.data as EmployeePerformanceDataset | undefined;
     if (!dataset) return null;
     return {
-      header: buildReportHeader(dataset),
-      hero: buildKpiHero(dataset),
-      components: buildKpiComponents(dataset),
-      trend: buildTrend(dataset),
-      observations: buildObservations(dataset),
-      repeatedIssues: buildRepeatedIssues(dataset),
-      deductions: buildDeductions(dataset),
-      complaints: buildComplaints(dataset),
-      capa: buildCapa(dataset),
-      followUps: buildFollowUps(dataset),
-      deals: buildDeals(dataset),
-      attendance: buildAttendance(dataset),
-      evidence: buildEvidenceGroups(dataset),
-      dataQuality: buildDataQuality(dataset),
+      header: buildReportHeader(dataset, locale),
+      hero: buildKpiHero(dataset, locale),
+      components: buildKpiComponents(dataset, locale),
+      trend: buildTrend(dataset, locale),
+      observations: buildObservations(dataset, locale),
+      repeatedIssues: buildRepeatedIssues(dataset, locale),
+      deductions: buildDeductions(dataset, locale),
+      complaints: buildComplaints(dataset, locale),
+      capa: buildCapa(dataset, locale),
+      followUps: buildFollowUps(dataset, locale),
+      deals: buildDeals(dataset, locale),
+      attendance: buildAttendance(dataset, locale),
+      evidence: buildEvidenceGroups(dataset, locale),
+      dataQuality: buildDataQuality(dataset, locale),
       generatedAt: dataset.generatedAt,
     };
-  }, [datasetQuery.data]);
+  }, [datasetQuery.data, locale]);
 
   // §PRINT — the dedicated clean A4 report host (not the live UI):
   // the tab's dataset projects into the shared print model adapter.
@@ -225,7 +228,7 @@ function ReportBody() {
     if (!datasetQuery.data) return;
     openPrintReport(
       performanceDatasetToPrintModel(datasetQuery.data as Parameters<typeof performanceDatasetToPrintModel>[0], {
-        title: 'تقرير الجودة الذكي',
+        title: translateUIText('تقرير الجودة الذكي', locale),
       }),
     );
   };
@@ -412,7 +415,7 @@ function ReportBody() {
           />
 
           <p className="text-[10px] text-slate-600 font-mono text-left" dir="ltr">
-            generatedAt: {views.generatedAt}
+            generatedAt: {formatDateTime(views.generatedAt, locale)}
           </p>
         </div>
       )}

@@ -165,10 +165,15 @@ const WIDTH_EXPANDED = 288;
 // ══════════════════════════════════════════════════════════════
 //  Fixed-position Tooltip — rendered in a portal so it NEVER
 //  affects layout flow or causes any horizontal shift.
+//  §DIR-AWARE — anchors to the side the rail actually sits on:
+//  RTL rail (right edge) → tooltip opens leftward into the viewport;
+//  LTR rail (left edge)  → tooltip opens rightward. Physical left/
+//  right values here rendered the tooltip off-screen in English.
 // ══════════════════════════════════════════════════════════════
 function SidebarTooltip({ label, children }: { label: string; children: React.ReactNode }) {
+  const { dir } = useLanguage();
   const [show, setShow] = useState(false);
-  const [pos, setPos] = useState({ top: 0, right: 0 });
+  const [pos, setPos] = useState({ top: 0, inlineStart: 0 });
   const triggerRef = useRef<HTMLDivElement>(null);
   const [mounted, setMounted] = useState(false);
 
@@ -180,10 +185,13 @@ function SidebarTooltip({ label, children }: { label: string; children: React.Re
     const rect = triggerRef.current.getBoundingClientRect();
     setPos({
       top: rect.top + rect.height / 2,
-      right: window.innerWidth - rect.left + 8,
+      // Distance from the viewport edge the tooltip grows AWAY from.
+      inlineStart: dir === 'rtl'
+        ? window.innerWidth - rect.left + 8   // grows leftward from the rail's left face
+        : rect.right + 8,                     // grows rightward from the rail's right face
     });
     setShow(true);
-  }, []);
+  }, [dir]);
 
   const handleMouseLeave = useCallback(() => setShow(false), []);
 
@@ -198,7 +206,9 @@ function SidebarTooltip({ label, children }: { label: string; children: React.Re
           style={{
             position: 'fixed',
             top: pos.top,
-            right: pos.right,
+            // Logical anchor: inset-inline-start flips with direction, so
+            // the tooltip always opens INTO the viewport, never outside.
+            insetInlineStart: pos.inlineStart,
             transform: 'translateY(-50%)',
             zIndex: 9999,
             pointerEvents: 'none',
@@ -207,8 +217,15 @@ function SidebarTooltip({ label, children }: { label: string; children: React.Re
           role="tooltip"
         >
           {label}
-          {/* Arrow pointing right */}
-          <div className="absolute top-1/2 -translate-y-1/2 -right-1.5 w-2.5 h-2.5 bg-slate-800/98 rotate-45 border-r border-t border-slate-600/50" />
+          {/* Arrow pointing toward the rail (inline-end side) */}
+          <div
+            className={cn(
+              'absolute top-1/2 -translate-y-1/2 w-2.5 h-2.5 bg-slate-800/98 rotate-45 border-slate-600/50',
+              dir === 'rtl'
+                ? '-right-1.5 border-r border-t'
+                : '-left-1.5 border-l border-b',
+            )}
+          />
         </motion.div>,
         document.body
       )
@@ -273,7 +290,7 @@ function WorkspaceSection<T extends NavigationDescriptor & { id: string }>({
               <button
                 type="button"
                 onClick={() => onNavigate(entry)}
-                className="w-full flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs text-slate-300 hover:bg-slate-800 hover:text-white transition-colors text-right focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/40"
+                className="w-full flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs text-slate-300 hover:bg-slate-800 hover:text-white transition-colors text-start focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/40"
                 title={entryLabel}
               >
                 <span className="shrink-0 flex items-center justify-center size-3.5">
@@ -285,8 +302,8 @@ function WorkspaceSection<T extends NavigationDescriptor & { id: string }>({
                 type="button"
                 onClick={() => onRemove(entry)}
                 aria-label={`${t('sidebar.removeEntry')} ${entryLabel}`}
-                title="إزالة"
-                className="absolute left-1 top-1/2 -translate-y-1/2 p-1 rounded-md text-slate-600 hover:text-red-400 hover:bg-red-500/10 opacity-0 group-hover/item:opacity-100 transition-opacity"
+                title={t('sidebar.removeEntry')}
+                className="absolute end-1 top-1/2 -translate-y-1/2 p-1 rounded-md text-slate-600 hover:text-red-400 hover:bg-red-500/10 opacity-0 group-hover/item:opacity-100 transition-opacity"
               >
                 <X className="size-3" />
               </button>
@@ -320,8 +337,15 @@ function QLogoToggle({
   expanded: boolean;
   onToggle: () => void;
 }) {
-  const { t } = useLanguage();
+  const { t, dir } = useLanguage();
   const [hovered, setHovered] = useState(false);
+
+  // §DIR-AWARE — the chevron must point where expansion actually goes:
+  // RTL rail (right edge) expands leftward → ChevronLeft;
+  // LTR rail (left edge) expands rightward → ChevronRight.
+  const ExpandChevron = dir === 'rtl' ? ChevronLeft : ChevronRight;
+  // …and the collapse chevron points back at the rail.
+  const CollapseChevron = dir === 'rtl' ? ChevronRight : ChevronLeft;
 
   if (!expanded) {
     // ── Rail: square Q button; hover swaps the glyph for the expand chevron.
@@ -354,7 +378,7 @@ function QLogoToggle({
           transition={{ duration: 0.16, ease: [0.4, 0, 0.2, 1] }}
           className="absolute inset-0 flex items-center justify-center text-brand-300"
         >
-          <ChevronLeft className="h-5 w-5" />
+          <ExpandChevron className="h-5 w-5" />
         </motion.span>
       </button>
     );
@@ -389,8 +413,8 @@ function QLogoToggle({
       </motion.div>
 
       {/* Collapse chevron — own slot, fades in on hover.
-          In RTL (sidebar on right), this is the LEFT edge (start).
-          Points toward the rail (ChevronRight in RTL = "go back"). */}
+          Points toward the rail: ChevronRight in RTL (rail on the
+          right), ChevronLeft in LTR (rail on the left). */}
       <motion.span
         aria-hidden="true"
         initial={false}
@@ -398,7 +422,7 @@ function QLogoToggle({
         transition={{ duration: 0.16, ease: [0.4, 0, 0.2, 1] }}
         className="flex-shrink-0 flex h-6 w-6 items-center justify-center rounded-full border border-slate-700/60 bg-slate-800 text-brand-300 shadow-md"
       >
-        <ChevronRight className="h-3.5 w-3.5" />
+        <CollapseChevron className="h-3.5 w-3.5" />
       </motion.span>
     </button>
   );
@@ -434,7 +458,7 @@ export function Sidebar({
 
   const { data: preferences } = useUserPreferences();
   const savePrefs = useSaveUserPreferences();
-  const { locale, t } = useLanguage();
+  const { locale, t, dir } = useLanguage();
 
   // ── §SIDEBAR-V2 — the two axes live in the store ──
   const sidebarPinned = useAppStore((s) => s.sidebarPinned);
@@ -505,9 +529,9 @@ export function Sidebar({
     setSidebarHoverExpand(false);
     setSidebarExpanded(next);
     savePrefs.mutate({ sidebar: { pinOpen: next } }, {
-      onError: () => toast.error('تعذر حفظ تفضيل القائمة'),
+      onError: () => toast.error(t('sidebar.prefSaveFailed')),
     });
-  }, [clearHoverTimer, setSidebarHoverExpand, setSidebarExpanded, savePrefs]);
+  }, [clearHoverTimer, setSidebarHoverExpand, setSidebarExpanded, savePrefs, t]);
 
   const handleRailMouseEnter = useCallback(() => {
     clearHoverTimer();
@@ -583,19 +607,19 @@ export function Sidebar({
     if (!editOrder) return;
     try {
       await savePrefs.mutateAsync({ sidebar: { order: editOrder } });
-      toast.success('تم حفظ ترتيب القائمة');
+      toast.success(t('sidebar.orderSaved'));
       exitEditMode();
     } catch {
-      toast.error('تعذر حفظ ترتيب القائمة');
+      toast.error(t('sidebar.orderSaveFailed'));
     }
   };
   const resetOrder = async () => {
     try {
       await savePrefs.mutateAsync({ sidebar: { order: defaultOrder } });
-      toast.success('تمت إعادة القائمة للوضع الافتراضي');
+      toast.success(t('sidebar.orderReset'));
       setEditOrder(null);
     } catch {
-      toast.error('تعذر إعادة الترتيب الافتراضي');
+      toast.error(t('sidebar.orderResetFailed'));
     }
   };
   const editing = editOrder !== null;
@@ -794,7 +818,7 @@ export function Sidebar({
             className="gap-2 cursor-pointer text-xs text-slate-300 focus:text-white focus:bg-slate-800"
           >
             <GripVertical className="size-3.5" />
-            ترتيب مباشر (سحب وإفلات)
+            {t('sidebar.directOrder')}
           </DropdownMenuItem>
         )}
         <DropdownMenuItem
@@ -809,7 +833,7 @@ export function Sidebar({
           <>
             <DropdownMenuSeparator className="bg-slate-700/50" />
             <DropdownMenuLabel className="text-[10px] font-semibold text-slate-500 py-1.5">
-              إدارة الصفحة الحالية
+              {t('sidebar.currentPageSection')}
             </DropdownMenuLabel>
             <DropdownMenuItem
               onClick={() => void toggleFavorite(pageDescriptor)}
@@ -872,7 +896,7 @@ export function Sidebar({
             >
               <span className="text-xs leading-none shrink-0" aria-hidden="true">{group.emoji}</span>
               <span className={cn(
-                'flex-1 text-right text-[10px] font-bold tracking-wide whitespace-nowrap transition-colors',
+                'flex-1 text-start text-[10px] font-bold tracking-wide whitespace-nowrap transition-colors',
                 isActiveGroup ? 'text-slate-300' : 'text-slate-500 group-hover/header:text-slate-400',
               )}>
                 {localizedGroupLabel(group.id, locale)}
@@ -918,7 +942,7 @@ export function Sidebar({
                       >
                         <motion.button
                           onClick={() => onNavigate(page.id)}
-                          whileHover={{ x: -4 }}
+                          whileHover={{ x: dir === 'rtl' ? -4 : 4 }}
                           transition={{ duration: 0.12 }}
                           aria-current={isActive ? 'page' : undefined}
                           className={cn(
@@ -940,14 +964,14 @@ export function Sidebar({
                             <SidebarActivityBadge
                               count={pendingBadge}
                               tone="amber"
-                              title={`${pendingBadge} خصم جودة بانتظار الاعتماد`}
+                              title={`${pendingBadge} ${t('sidebar.qualityDeductionPending')}`}
                             />
                           ) : (
                             /* §SIDEBAR-BADGES — new-items counter (per user). */
                             <SidebarActivityBadge
                               count={badgeCount}
                               tone="violet"
-                              title={`${badgeCount} عنصر جديد لم تشاهده بعد`}
+                              title={`${badgeCount} ${t('sidebar.newItemsHint')}`}
                             />
                           )}
                         </motion.button>
@@ -969,14 +993,13 @@ export function Sidebar({
       className="flex-1 overflow-y-auto py-3 px-3 arm-scroll space-y-1"
       onDragOver={(e) => e.preventDefault()}
       onDrop={handleDrop}
-      aria-label="ترتيب الصفحات — وضع التحرير"
+      aria-label={t('sidebar.editOrderAria')}
     >
       <p className="text-[10px] text-slate-500 px-2 pb-1 leading-relaxed">
-        اسحب الصفوف (أو استخدم الأسهم) لإعادة الترتيب — الترتيب فقط؛ الصفحة تبقى دائماً داخل مجموعتها.
+        {t('sidebar.editHint')}
       </p>
       {(editOrder ?? []).map((pageId, index) => {
         const page = APP_PAGES_BY_ID.get(pageId);
-        const groupLabel = SIDEBAR_GROUPS.find((g) => g.id === page?.groupId)?.label ?? '';
         const Icon = page ? ICON_MAP[page.icon] : undefined;
         const isDragging = dragIndex === index;
         const isDropTarget = dropIndex === index && dragIndex !== null && dragIndex !== index;
@@ -1005,15 +1028,15 @@ export function Sidebar({
             <span className="text-[10px] text-slate-500 font-mono w-5 text-center shrink-0">{index + 1}</span>
             {Icon && <Icon className="size-4 text-slate-400 shrink-0" />}
             <div className="flex-1 min-w-0">
-              <p className="text-xs text-slate-200 truncate">{page?.title ?? pageId}</p>
-              <p className="text-[9px] text-slate-500">{groupLabel}</p>
+              <p className="text-xs text-slate-200 truncate">{localizedPageLabel(pageId, locale)}</p>
+              <p className="text-[9px] text-slate-500">{localizedGroupLabel(page?.groupId ?? '', locale)}</p>
             </div>
             <div className="flex items-center gap-0.5 shrink-0">
               <button
                 type="button"
                 disabled={index === 0}
                 onClick={() => setEditOrder(moveItem(editOrder ?? [], index, index - 1))}
-                aria-label={`نقل ${page?.title ?? pageId} لأعلى`}
+                aria-label={`${t('sidebar.moveUp')}: ${localizedPageLabel(pageId, locale)}`}
                 className="p-1.5 rounded-md text-slate-400 hover:text-white hover:bg-slate-700/60 disabled:opacity-30"
               >
                 <ArrowUp className="size-3.5" />
@@ -1022,7 +1045,7 @@ export function Sidebar({
                 type="button"
                 disabled={index === (editOrder ?? []).length - 1}
                 onClick={() => setEditOrder(moveItem(editOrder ?? [], index, index + 1))}
-                aria-label={`نقل ${page?.title ?? pageId} لأسفل`}
+                aria-label={`${t('sidebar.moveDown')}: ${localizedPageLabel(pageId, locale)}`}
                 className="p-1.5 rounded-md text-slate-400 hover:text-white hover:bg-slate-700/60 disabled:opacity-30"
               >
                 <ArrowDown className="size-3.5" />
@@ -1043,7 +1066,7 @@ export function Sidebar({
         className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg border border-slate-600/60 text-slate-300 hover:bg-slate-800 hover:text-white text-xs font-semibold transition-colors"
       >
         <X className="size-3.5" />
-        إلغاء
+        {t('action.cancel')}
       </button>
       <button
         type="button"
@@ -1052,7 +1075,7 @@ export function Sidebar({
         className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-brand-600 hover:bg-brand-700 text-white text-xs font-semibold transition-colors disabled:opacity-60"
       >
         {savePrefs.isPending ? <Loader2 className="size-3.5 animate-spin" /> : <Save className="size-3.5" />}
-        حفظ
+        {t('action.save')}
       </button>
     </div>
   );
@@ -1132,8 +1155,11 @@ export function Sidebar({
 
   // ── Non-desktop overlay (mobile AND the 768–1023 tablet range — the
   // §SIDEBAR-TABLET dead zone fix). Hidden entirely until the header's
-  // menu button opens it as an overlay DRAWER above the page. ──
+  // menu button opens it as an overlay DRAWER above the page.
+  // §DIR-AWARE — the drawer anchors to the sidebar's edge (inline-start:
+  // right in RTL, left in LTR) and slides in FROM that edge. ──
   if (!isDesktop) {
+    const drawerSlide = dir === 'rtl' ? '100%' : '-100%';
     return (
       <>
       <AnimatePresence>
@@ -1148,10 +1174,10 @@ export function Sidebar({
               onClick={onToggle}
             />
             <motion.aside
-              className="flex fixed inset-y-0 right-0 z-50 w-72 shadow-2xl print:hidden"
-              initial={{ x: '100%' }}
+              className="flex fixed inset-y-0 start-0 z-50 w-72 shadow-2xl print:hidden"
+              initial={{ x: drawerSlide }}
               animate={{ x: 0 }}
-              exit={{ x: '100%' }}
+              exit={{ x: drawerSlide }}
               transition={{ type: 'spring', stiffness: 300, damping: 30 }}
               aria-label={t('sidebar.mainNav')}
             >
@@ -1182,8 +1208,10 @@ export function Sidebar({
 
   // ── UNPINNED desktop: NO layout footprint. Hidden entirely until the
   // header's menu button opens it as an overlay DRAWER above the page
-  // and header (z-50 backdrop / z-50 panel vs header z-30). ──
+  // and header (z-50 backdrop / z-50 panel vs header z-30).
+  // §DIR-AWARE — same anchoring contract as the non-desktop drawer. ──
   if (!sidebarPinned) {
+    const drawerSlide = dir === 'rtl' ? '100%' : '-100%';
     return (
       <>
       <AnimatePresence>
@@ -1199,12 +1227,12 @@ export function Sidebar({
               aria-hidden="true"
             />
             <motion.aside
-              className="flex fixed inset-y-0 right-0 z-50 w-[288px] shadow-2xl shadow-black/60 print:hidden"
-              initial={{ x: '100%' }}
+              className="flex fixed inset-y-0 start-0 z-50 w-[288px] shadow-2xl shadow-black/60 print:hidden"
+              initial={{ x: drawerSlide }}
               animate={{ x: 0 }}
-              exit={{ x: '100%' }}
+              exit={{ x: drawerSlide }}
               transition={{ duration: 0.22, ease: [0.4, 0, 0.2, 1] }}
-              aria-label="التنقل الرئيسي"
+              aria-label={t('sidebar.mainNav')}
             >
               {surface}
             </motion.aside>
@@ -1283,17 +1311,22 @@ export function Sidebar({
             pendingBadgeFor={pendingBadgeFor}
           />
           {/* The hover-expanded layer lives INSIDE the aside — the same
-              navigation surface, simply unfolded over the content. */}
+              navigation surface, simply unfolded over the content.
+              §DIR-AWARE — anchored to the INLINE-START edge (the edge
+              hugging the viewport: right in RTL, left in LTR), so the
+              288px surface expands INTO the viewport in both languages.
+              The physical `right-0` anchor rendered it off-screen left
+              in English (the aside is the layout's first flex child). */}
           <AnimatePresence>
             {hoverSurfaceActive && (
               <motion.div
                 key="sidebar-hover-surface"
-                className="absolute top-0 right-0 h-full w-[288px] shadow-2xl shadow-black/60 ring-1 ring-slate-700/50"
-                initial={{ opacity: 0, x: 24 }}
+                className="absolute top-0 start-0 h-full w-[288px] shadow-2xl shadow-black/60 ring-1 ring-slate-700/50"
+                initial={{ opacity: 0, x: dir === 'rtl' ? 24 : -24 }}
                 animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: 24 }}
+                exit={{ opacity: 0, x: dir === 'rtl' ? 24 : -24 }}
                 transition={{ duration: 0.18, ease: [0.4, 0, 0.2, 1] }}
-                aria-label="التنقل الرئيسي — معاينة موسعة"
+                aria-label={t('sidebar.mainNav')}
               >
                 {surface}
               </motion.div>
@@ -1380,7 +1413,7 @@ function CollapsedRail({
   unseenBadgeFor?: (pageId: string) => number;
   pendingBadgeFor?: (pageId: string) => number;
 }) {
-  const { locale, t } = useLanguage();
+  const { locale, t, dir } = useLanguage();
   // Determine which group the active page belongs to (for the active accent).
   const activeGroupId = useMemo(() => {
     const active = visibleGroups.find((g) => g.pages.some((p) => p.id === currentPage));
@@ -1434,7 +1467,7 @@ function CollapsedRail({
                   <GroupIcon className="h-5 w-5 shrink-0" />
                   {isActive && (
                     <motion.span
-                      className="absolute right-0 top-1/2 -translate-y-1/2 w-1 h-6 rounded-l-full bg-brand-400"
+                      className="absolute start-0 top-1/2 -translate-y-1/2 w-1 h-6 rounded-e-full bg-brand-400"
                       layoutId="collapsedIndicator"
                       transition={{ type: 'spring', stiffness: 350, damping: 30 }}
                     />
@@ -1461,7 +1494,7 @@ function CollapsedRail({
                   >
                     <div className="relative flex flex-col items-center gap-0.5 py-0.5">
                       {/* tree spine connecting the group icon to its pages */}
-                      <span aria-hidden="true" className="absolute top-0 bottom-0 right-[27px] w-px bg-slate-700/50" />
+                      <span aria-hidden="true" className="absolute top-0 bottom-0 start-[27px] w-px bg-slate-700/50" />
                       {group.pages.map((page) => {
                         const PageIcon = ICON_MAP[page.icon];
                         const isCurrent = currentPage === page.id;
@@ -1471,8 +1504,8 @@ function CollapsedRail({
                           <SidebarTooltip
                             key={page.id}
                             label={localizedPageLabel(page.id, locale) + (pendingBadge > 0
-                              ? ` — ${pendingBadge} بانتظار الاعتماد`
-                              : unseenBadge > 0 ? ` — ${unseenBadge} عنصر جديد` : '')}
+                              ? ` — ${pendingBadge} ${t('sidebar.awaitingApproval')}`
+                              : unseenBadge > 0 ? ` — ${unseenBadge} ${t('sidebar.newItems')}` : '')}
                           >
                             <button
                               type="button"
@@ -1493,7 +1526,7 @@ function CollapsedRail({
                                   count={pendingBadge}
                                   tone="amber"
                                   variant="dot"
-                                  title={`${pendingBadge} بانتظار الاعتماد`}
+                                  title={`${pendingBadge} ${t('sidebar.awaitingApproval')}`}
                                 />
                               )}
                               {/* §SIDEBAR-BADGES — tiny unread dot on the rail icon. */}
@@ -1502,13 +1535,13 @@ function CollapsedRail({
                                   count={unseenBadge}
                                   tone="violet"
                                   variant="dot"
-                                  title={`${unseenBadge} عنصر جديد`}
+                                  title={`${unseenBadge} ${t('sidebar.newItems')}`}
                                 />
                               )}
                               {isCurrent && (
                                 <motion.span
                                   layoutId="collapsedPageIndicator"
-                                  className="absolute right-0 top-1/2 -translate-y-1/2 w-1 h-4 rounded-l-full bg-brand-300"
+                                  className="absolute start-0 top-1/2 -translate-y-1/2 w-1 h-4 rounded-e-full bg-brand-300"
                                 />
                               )}
                             </button>

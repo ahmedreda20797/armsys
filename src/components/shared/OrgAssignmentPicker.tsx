@@ -60,6 +60,7 @@ interface OrgAssignmentPickerProps {
 
 /** Type badge colors — mirrors the organization page vocabulary. */
 const PICKER_TYPE_STYLES: Record<OrgNodeType, string> = {
+  general_administration: 'bg-violet-500/10 text-violet-300 border-violet-500/20',
   company: 'bg-brand-500/10 text-brand-300 border-brand-500/20',
   department: 'bg-blue-500/10 text-blue-300 border-blue-500/20',
   team: 'bg-emerald-500/10 text-emerald-300 border-emerald-500/20',

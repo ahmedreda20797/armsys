@@ -80,6 +80,7 @@ function makeCaller(overrides: {
       scope: 'department',
       pageKey: 'employees',
       source: 'configured',
+      boundary: { source: 'assignment', nodeIds: [] },
       isUnrestricted: false,
       employeeIds: new Set(['emp-1']),
       includes: overrides.scopeIncludes ?? ((id: string) => id === 'emp-1'),

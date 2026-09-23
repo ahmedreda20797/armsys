@@ -5,18 +5,28 @@
 //
 //  Renders the full authorization story for a single page:
 //
-//    collapsed:  title · effective level · scope · source · override dot
+//    collapsed:  title · effective level · DATA scope · source · override dot
 //    expanded:   tier chain (Role → Position → Override) · access
-//                level · scope (+ resolved organization context) ·
-//                actions (tri-state) · sections (tri-state) · field
-//                restrictions · canonical explanation
+//                level · DATA scope (+ source + resolved organization
+//                context) · actions (tri-state) · sections
+//                (tri-state) · field restrictions · canonical
+//                explanation
 //
 //  EVERY displayed value comes from the canonical resolvers
-//  (resolveEffectivePermissions / resolvePageScope /
+//  (resolveEffectivePermissions / explainScopeSource /
 //  resolveSectionAccess / resolveFieldAccess / canDoAction) applied
 //  to the DRAFT override tier — the same functions the server
 //  enforcement uses, so the preview can never diverge from what
 //  saving will produce. The server remains authoritative.
+//
+//  §SCOPE-SOURCE (display = enforcement): a page's employee-linked
+//  DATA scope is governed by the ONE canonical data-scope entry
+//  (DATA_SCOPE_PAGE_KEY — the Employees permission key), exactly as
+//  the server resolves it for every API. The scope badge on every
+//  row therefore shows THAT scope and its tier source — the UI can
+//  never say OWN while the server applies TEAM. The scope EDITOR is
+//  offered on the canonical entry only: a scope saved on any other
+//  page's entry would be dead configuration the server ignores.
 // ══════════════════════════════════════════════════════════════
 
 import { useMemo, type ReactNode } from 'react';
@@ -27,10 +37,11 @@ import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
 import {
-  canDoAction, explainAuthorization, getActionLabel, migratePermission, resolveEffectivePermissions,
-  resolveFieldAccess, resolvePageScope, resolveSectionAccess,
+  canDoAction, DATA_SCOPE_PAGE_KEY, explainAuthorization, explainScopeSource,
+  getActionLabel, migratePermission, resolveEffectivePermissions,
+  resolveFieldAccess, resolveSectionAccess,
   type ActionKey, type DataScope, type PagePermission, type PermissionLevel,
-  type PermissionsMap,
+  type PermissionsMap, type ScopeSource,
 } from '@/config/permissions';
 import { describeDataScope } from '@/lib/scope';
 import type { AuthorizationProfile, ProfilePage } from './types';
@@ -50,10 +61,10 @@ const LEVEL_CHIP: Record<PermissionLevel, string> = {
 };
 
 const SCOPE_OPTIONS: Array<{ value: DataScope; label: string }> = [
-  { value: 'all', label: 'الكل' },
-  { value: 'department', label: 'القسم' },
-  { value: 'team', label: 'الفريق' },
-  { value: 'subtree', label: 'الفروع المدارة' },
+  { value: 'all', label: 'الكل (داخل الحد التنظيمي)' },
+  { value: 'department', label: 'القسم المحدد' },
+  { value: 'team', label: 'الفريق المحدد فقط' },
+  { value: 'subtree', label: 'العقدة والفروع التابعة' },
   { value: 'assigned', label: 'المسند إليّ' },
   { value: 'own', label: 'سجلي فقط' },
 ];
@@ -65,6 +76,15 @@ const SOURCE_LABELS: Record<string, string> = {
   role: 'الدور الأساسي',
   'default-deny': 'رفض افتراضي',
   'page-level': 'حسب مستوى الصفحة',
+};
+
+/** Scope-source vocabulary (§scope must show its source). */
+const SCOPE_SOURCE_LABELS: Record<ScopeSource, string> = {
+  admin: 'مالك النظام',
+  stored: 'تجاوز مباشر',
+  position: 'قالب الوظيفة',
+  role: 'الدور الأساسي',
+  'fail-closed': 'افتراضي مقيّد (بلا نطاق مُهيّأ)',
 };
 
 export type TriChoice = 'inherit' | 'allow' | 'deny';
@@ -122,11 +142,14 @@ function TriSelect({
 }) {
   return (
     <Select value={value} onValueChange={(v) => onChange(v as TriChoice)} disabled={disabled}>
-      <SelectTrigger className="h-6 w-[86px] text-[10px] bg-slate-900/60 border-slate-700/60 px-2">
+      <SelectTrigger
+        title="«تلقائي» = لا تجاوز مباشر — تُطبَّق قيمة الدور الأساسي أو قالب الوظيفة"
+        className="h-6 w-[86px] text-[10px] bg-slate-900/60 border-slate-700/60 px-2"
+      >
         <SelectValue />
       </SelectTrigger>
       <SelectContent>
-        <SelectItem value="inherit" className="text-xs">توريث</SelectItem>
+        <SelectItem value="inherit" className="text-xs">تلقائي</SelectItem>
         <SelectItem value="allow" className="text-xs">{allowLabel}</SelectItem>
         <SelectItem value="deny" className="text-xs">ممنوع</SelectItem>
       </SelectContent>
@@ -148,7 +171,25 @@ export function PageAccessRow({ page, profile, draft, handlers, expanded, onTogg
     [role, draft, positionTemplate],
   );
   const effLevel = migratePermission(preview[pageKey]).level;
-  const effScope = resolvePageScope(preview, pageKey, role);
+  // §SCOPE-SOURCE — the DATA scope the SERVER enforces on employee-
+  // linked records: always resolved from the ONE canonical data-scope
+  // entry (DATA_SCOPE_PAGE_KEY), never from this row's own key, and
+  // always WITH its tier source. The draft feeds the preview, so what
+  // the administrator sees is exactly what saving will enforce.
+  const canonicalScope = useMemo(
+    () => explainScopeSource(role, draft, DATA_SCOPE_PAGE_KEY, positionTemplate ?? undefined),
+    [role, draft, positionTemplate],
+  );
+  const effScope = canonicalScope.scope;
+  const effScopeSource = canonicalScope.source;
+  // What "تلقائي" (no direct scope override) would resolve to — the
+  // role/position tiers below the override, for the select's label.
+  const inheritScopePreview = useMemo(() => {
+    if (!(DATA_SCOPE_PAGE_KEY in draft)) return canonicalScope.scope;
+    const withoutPage = { ...draft };
+    delete withoutPage[DATA_SCOPE_PAGE_KEY];
+    return explainScopeSource(role, withoutPage, DATA_SCOPE_PAGE_KEY, positionTemplate ?? undefined).scope;
+  }, [role, draft, positionTemplate, canonicalScope.scope]);
   // Live canonical explanation of the DRAFT — same function the
   // server reports through; identical to page.explanation when the
   // draft is unmodified.
@@ -156,6 +197,15 @@ export function PageAccessRow({ page, profile, draft, handlers, expanded, onTogg
     () => explainAuthorization(role, draft, pageKey, positionTemplate ?? undefined),
     [role, draft, pageKey, positionTemplate],
   );
+
+  // Scope resolution honesty: a people scope without any organization
+  // placement resolves restricted — show it, never fake ALL.
+  const peopleScope = effScope !== 'all' && effScope !== 'own';
+  const scopeUnresolved =
+    (peopleScope && !profile.organization.resolvable) ||
+    (effScope === 'own' && !profile.identity.linkedEmployeeId);
+
+  const isDataScopeRow = pageKey === DATA_SCOPE_PAGE_KEY;
 
   // Tier values (raw, for the transparency chain). The override tier
   // reflects the LIVE draft — what saving will actually store.
@@ -177,13 +227,6 @@ export function PageAccessRow({ page, profile, draft, handlers, expanded, onTogg
     return deniedInDraft && grantedAbove;
   });
 
-  // Scope resolution honesty: a people scope without any organization
-  // placement resolves restricted — show it, never fake ALL.
-  const peopleScope = effScope !== 'all' && effScope !== 'own';
-  const scopeUnresolved =
-    (peopleScope && !profile.organization.resolvable) ||
-    (effScope === 'own' && !profile.identity.linkedEmployeeId);
-
   const currentDraftAction = (a: ActionKey): TriChoice => {
     const flag = draftEntry?.actions?.[a];
     return flag === true ? 'allow' : flag === false ? 'deny' : 'inherit';
@@ -193,7 +236,7 @@ export function PageAccessRow({ page, profile, draft, handlers, expanded, onTogg
     return v === 'none' || v === 'read' || v === 'edit' ? v : 'inherit';
   };
 
-  const scopeContext = buildScopeContext(pageKey, effScope, profile, scopeUnresolved);
+  const scopeContext = buildScopeContext(effScope, profile, scopeUnresolved);
 
   return (
     <div className={cn(
@@ -230,11 +273,19 @@ export function PageAccessRow({ page, profile, draft, handlers, expanded, onTogg
         </div>
         <div className="flex items-center gap-1.5 shrink-0">
           <LevelChip level={effLevel} />
-          <Badge variant="outline" className="text-[10px] border-slate-700 text-slate-300 bg-slate-900/50 gap-1">
+          <Badge
+            variant="outline"
+            title="نطاق البيانات المُطبَّق من الخادم على سجلات الموظفين (من إدخال صفحة الموظفين)"
+            className="text-[10px] border-slate-700 text-slate-300 bg-slate-900/50 gap-1"
+          >
             <Layers className="size-2.5 text-slate-500" />
             {describeDataScope(effScope)}
           </Badge>
-          <Badge variant="outline" className="text-[9px] border-slate-700/60 text-slate-400 hidden sm:inline-flex">
+          <Badge
+            variant="outline"
+            title={`مصدر المستوى: ${SOURCE_LABELS[liveExplanation.winner] ?? ''} · مصدر النطاق: ${SCOPE_SOURCE_LABELS[effScopeSource]}`}
+            className="text-[9px] border-slate-700/60 text-slate-400 hidden sm:inline-flex"
+          >
             {SOURCE_LABELS[liveExplanation.winner] ?? liveExplanation.winner}
           </Badge>
         </div>
@@ -257,13 +308,19 @@ export function PageAccessRow({ page, profile, draft, handlers, expanded, onTogg
               <TierCard
                 label="التجاوز المباشر"
                 level={draftLevel}
-                note={conflict ? 'هذا الرفض يقيد صلاحية موروثة' : undefined}
+                note={conflict ? 'هذا الرفض المباشر يقيد صلاحية الدور/الوظيفة' : undefined}
               />
               <div className="flex-1 min-w-0 rounded-lg border border-brand-600/40 bg-brand-600/10 px-2.5 py-2">
                 <p className="text-[10px] text-brand-300 font-medium">النتيجة الفعلية</p>
-                <div className="mt-0.5 flex items-center gap-1.5">
+                <div className="mt-0.5 flex items-center gap-1.5 flex-wrap">
                   <LevelChip level={effLevel} />
-                  <span className="text-[9px] text-slate-400">{SOURCE_LABELS[liveExplanation.winner] ?? ''}</span>
+                  <span className="text-[9px] text-slate-400">المستوى: {SOURCE_LABELS[liveExplanation.winner] ?? ''}</span>
+                </div>
+                <div className="mt-1 flex items-center gap-1.5 flex-wrap">
+                  <Badge variant="outline" className="text-[9px] border-slate-700 text-slate-300 bg-slate-900/50">
+                    {describeDataScope(effScope)}
+                  </Badge>
+                  <span className="text-[9px] text-slate-400">النطاق: {SCOPE_SOURCE_LABELS[effScopeSource]}</span>
                 </div>
               </div>
             </div>
@@ -283,32 +340,45 @@ export function PageAccessRow({ page, profile, draft, handlers, expanded, onTogg
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="inherit" className="text-xs">توريث ({LEVEL_LABELS[positionLevel ?? roleLevel]})</SelectItem>
+                  <SelectItem value="inherit" className="text-xs">
+                    تلقائي — من الدور/الوظيفة ({LEVEL_LABELS[positionLevel ?? roleLevel]})
+                  </SelectItem>
                   <SelectItem value="none" className="text-xs">ممنوع</SelectItem>
                   <SelectItem value="read" className="text-xs">قراءة</SelectItem>
                   <SelectItem value="edit" className="text-xs">تحرير</SelectItem>
                 </SelectContent>
               </Select>
             </div>
-            {/* Scope — separate axis from the level */}
-            <div className="flex items-center gap-1.5">
+            {/* Scope — separate axis from the level. §SCOPE-SOURCE: the
+                EDITOR exists only on the canonical data-scope entry
+                (Employees) — the one the server reads. Every row
+                displays the SAME enforced scope + its tier source. */}
+            <div className="flex items-center gap-1.5 flex-wrap">
               <Building2 className="size-3.5 text-slate-500" />
               <span className="text-[11px] text-slate-400 font-medium">النطاق:</span>
-              <Select
-                value={draftEntry?.scope ?? 'inherit'}
-                onValueChange={(v) => handlers.onSetScope(pageKey, v as DataScope | 'inherit')}
-                disabled={!editable}
-              >
-                <SelectTrigger className="h-7 w-36 text-[11px] bg-slate-900/60 border-slate-700/60">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="inherit" className="text-xs">توريث</SelectItem>
-                  {SCOPE_OPTIONS.map((o) => (
-                    <SelectItem key={o.value} value={o.value} className="text-xs">{o.label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              {isDataScopeRow ? (
+                <Select
+                  value={draftEntry?.scope ?? 'inherit'}
+                  onValueChange={(v) => handlers.onSetScope(pageKey, v as DataScope | 'inherit')}
+                  disabled={!editable}
+                >
+                  <SelectTrigger className="h-7 w-36 text-[11px] bg-slate-900/60 border-slate-700/60">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="inherit" className="text-xs">
+                      تلقائي — من الدور/الوظيفة{inheritScopePreview ? ` (${describeDataScope(inheritScopePreview)})` : ''}
+                    </SelectItem>
+                    {SCOPE_OPTIONS.map((o) => (
+                      <SelectItem key={o.value} value={o.value} className="text-xs">{o.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : (
+                <span className="text-[10px] text-slate-500">
+                  يُدار من إدخال صفحة «الموظفين» — يُعدَّل من صفّ الموظفين
+                </span>
+              )}
               <Badge variant="outline" className={cn(
                 'text-[10px] border',
                 scopeUnresolved
@@ -317,7 +387,14 @@ export function PageAccessRow({ page, profile, draft, handlers, expanded, onTogg
               )}>
                 {describeDataScope(effScope)}{scopeUnresolved ? ' — مقيد' : ''}
               </Badge>
+              <Badge variant="outline" className="text-[9px] border-slate-700/60 text-slate-400">
+                مصدر النطاق: {SCOPE_SOURCE_LABELS[effScopeSource]}
+              </Badge>
             </div>
+            <p className="text-[9px] text-slate-500 leading-snug">
+              «تلقائي» تعني: لا يوجد تجاوز مباشر لهذا الإعداد — تُطبَّق القيمة القادمة من الدور الأساسي أو قالب الوظيفة.
+              نطاق البيانات الموضح هو نفسه الذي يطبّقه الخادم على سجلات الموظفين في كل الصفحات.
+            </p>
           </div>
 
           {/* Resolved organization context for the scope */}
@@ -390,7 +467,7 @@ export function PageAccessRow({ page, profile, draft, handlers, expanded, onTogg
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="inherit" className="text-xs">توريث</SelectItem>
+                          <SelectItem value="inherit" className="text-xs">تلقائي</SelectItem>
                           <SelectItem value="none" className="text-xs">ممنوع</SelectItem>
                           <SelectItem value="read" className="text-xs">قراءة</SelectItem>
                           <SelectItem value="edit" className="text-xs">تحرير</SelectItem>
@@ -433,7 +510,7 @@ export function PageAccessRow({ page, profile, draft, handlers, expanded, onTogg
             <p className="text-[10px] text-slate-400 leading-relaxed">{liveExplanation.reason}</p>
             {conflict && (
               <p className="text-[10px] text-brand-300 mt-1">
-                التجاوز المباشر يسبق الصلاحيات الموروثة — الرفض الصريح يعلو أي منح من الدور أو الوظيفة.
+                التجاوز المباشر يسبق صلاحيات الدور والوظيفة — الرفض الصريح يعلو أي منح من الدور أو الوظيفة.
               </p>
             )}
           </div>
@@ -444,26 +521,53 @@ export function PageAccessRow({ page, profile, draft, handlers, expanded, onTogg
 }
 
 // ── scope context builder (presentation over server-provided facts) ──
+//
+// Describes the CANONICAL WHERE × HOW-MUCH model (§ORG-BOUNDARY):
+// the boundary (server-resolved: override / assignment / admin /
+// unresolved) says WHERE; the scope says HOW MUCH inside it. The
+// same semantics the engine enforces:
+//   team       → DIRECT members of the exact team/subteam boundary
+//                node — never the parent team, siblings or subteams
+//   department → the department boundary node's full membership
+//                (its teams/subteams belong to it per the tree)
+//   subtree    → the boundary node + ALL descendants
+//   all        → everything inside the boundary — no further
+//                narrowing; never "ignore the boundary"
 
 function buildScopeContext(
-  pageKey: string,
   scope: DataScope,
   profile: AuthorizationProfile,
   unresolved: boolean,
 ): ReactNode {
   const org = profile.organization;
   const identity = profile.identity;
+  const boundary = org.boundary;
+  const boundaryLabel = boundary.nodes.length > 0
+    ? boundary.nodes.map((n) => n.name).join('، ')
+    : null;
 
   if (scope === 'all') {
-    return <p className="text-[11px] text-slate-300">كل السجلات المسموح بها بمستوى الصلاحية — بدون تقييد تنظيمي.</p>;
+    if (boundary.source === 'unresolved' || boundary.nodes.length === 0) {
+      return (
+        <p className="text-[11px] text-amber-300">
+          «الكل» تعني كل السجلات داخل الحد التنظيمي — لكنه تعذر الحل (لا تعيين تنظيمي ولا تجاوز)،
+          فالنطاق يبقى مقيداً بسجله الشخصي ولن يتوسع تلقائياً. حدّد الحد من بطاقة «موقع الوصول التنظيمي».
+        </p>
+      );
+    }
+    return (
+      <p className="text-[11px] text-slate-300">
+        كل السجلات المسموح بها داخل الحد التنظيمي فقط{boundaryLabel ? ` (${boundaryLabel})` : ''} — لا تضييق إضافي، ولا خروج عن الحد أبداً.
+      </p>
+    );
   }
   if (scope === 'assigned') {
     return <p className="text-[11px] text-slate-300">السجلات المسندة صراحةً إلى هذا المستخدم (المتابعات المسندة وحالات الكابا) + سجله الشخصي.</p>;
   }
   if (scope === 'own') {
     return identity.linkedEmployeeId
-      ? <p className="text-[11px] text-slate-300">سجلات {identity.linkedEmployeeName ?? 'الموظف المرتبط'} فقط.</p>
-      : <p className="text-[11px] text-amber-300">تعذر الحل — لا يوجد موظف مرتبط بهذا الحساب؛ النطاق يبقى فارغاً (مقيد).</p>;
+      ? <p className="text-[11px] text-slate-300">سجل الموظف المرتبط بهذا الحساب فقط ({identity.linkedEmployeeName ?? identity.linkedEmployeeCode ?? identity.linkedEmployeeId}) — ولا شيء غيره.</p>
+      : <p className="text-[11px] text-amber-300">تعذر الحل — لا يوجد موظف مرتبط بهذا الحساب؛ النطاق يبقى فارغاً (مقيد) ولا يتوسع تلقائياً إلى الفريق أو القسم.</p>;
   }
 
   if (unresolved) {
@@ -474,13 +578,26 @@ function buildScopeContext(
     );
   }
 
-  const branchLabel = org.managedBranches.map((b) => b.name).join('، ');
-  const chain = [org.department, org.team].filter(Boolean).join(' ← ');
+  if (scope === 'team') {
+    return (
+      <p className="text-[11px] text-slate-300">
+        أعضاء العقدة المحددة في الحد التنظيمي بالضبط{boundaryLabel ? ` (${boundaryLabel})` : ''} — أعضاؤها المباشرون فقط،
+        دون الفرق الفرعية التابعة لها أو الفريق الأب أو الفرق الشقيقة (لعرض الفروع التابعة استخدم «العقدة والفروع التابعة»).
+      </p>
+    );
+  }
+  if (scope === 'department') {
+    return (
+      <p className="text-[11px] text-slate-300">
+        عضوية القسم المحدد في الحد التنظيمي وفق الشجرة{boundaryLabel ? ` (${boundaryLabel})` : ''} — القسم وأعضاء فرقه وفرقه الفرعية،
+        دون الأقسام الشقيقة أو الشركات الأخرى.
+      </p>
+    );
+  }
+  // subtree — the boundary node + all descendants
   return (
     <p className="text-[11px] text-slate-300">
-      {chain && <span>التوطين: {chain}. </span>}
-      {branchLabel && <span>الفروع المُدارة: {branchLabel}. </span>}
-      {org.ownNode && !branchLabel && !chain && <span>العقدة: {org.ownNode.name}.</span>}
+      العقدة المحددة في الحد التنظيمي وجميع أبنائها{boundaryLabel ? ` (${boundaryLabel})` : ''}.
     </p>
   );
 }

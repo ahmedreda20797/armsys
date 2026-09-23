@@ -1,14 +1,22 @@
 // ══════════════════════════════════════════════════════════════
-//  Organization model — Milestone 10
+//  Organization model — Milestone 10 (+ §ORG-BOUNDARY canonical levels)
 //
 //  A configurable parent/child hierarchy of organization nodes:
 //
-//    Company → Department → Team → Sub-Team → Employee
+//    General Administration → Company → Department → Team →
+//    Sub-Team → Employee
 //
 //  The DEPTH is generic — any node may nest to MAX_ORG_DEPTH. The
-//  four canonical types below are vocabulary, not structure: the
-//  graph engine is type-agnostic and unknown future types degrade
+//  canonical types below are vocabulary, not structure: the graph
+//  engine is type-agnostic and unknown future types degrade
 //  gracefully (they resolve like their nearest typed ancestor).
+//
+//  §ORG-LEVELS — the semantic LEVEL of a node (what the authorization
+//  engine reasons about) is resolved by the normalization layer in
+//  ./levels — NEVER assumed from the stored type alone: legacy trees
+//  store the General Administration root as type 'company' (it is the
+//  company-typed node whose subtree contains other company nodes).
+//  Stored data is never renamed; the level is DERIVED.
 //
 //  IMPORTANT — USER vs EMPLOYEE:
 //    • Employees are DATA records (personnel), NOT system users.
@@ -24,20 +32,49 @@ export const ORG_NODES_TABLE = 'orgNodes';
 /** RTDB table for positions (arm_erp/positions/{id}). */
 export const POSITIONS_TABLE = 'positions';
 
-export type OrgNodeType = 'company' | 'department' | 'team' | 'subteam';
+export type OrgNodeType = 'general_administration' | 'company' | 'department' | 'team' | 'subteam';
 export type OrgNodeStatus = 'active' | 'archived';
 
+// §I18N-ENUM — display labels are locale-aware; the stored type/status
+// values never change (company stays company; a status stays its enum).
+// 'general_administration' is the explicit stored vocabulary for NEW
+// trees; legacy trees keep their company-typed GA root and the level
+// normalization layer resolves its semantic level without a rename.
 export const ORG_NODE_TYPE_LABELS_AR: Record<OrgNodeType, string> = {
+  general_administration: 'الإدارة العامة',
   company: 'شركة',
   department: 'قسم',
   team: 'فريق',
   subteam: 'فريق فرعي',
 };
 
+export const ORG_NODE_TYPE_LABELS_EN: Record<OrgNodeType, string> = {
+  general_administration: 'General Administration',
+  company: 'Company',
+  department: 'Department',
+  team: 'Team',
+  subteam: 'Sub-team',
+};
+
 export const ORG_NODE_STATUS_LABELS_AR: Record<OrgNodeStatus, string> = {
   active: 'نشط',
   archived: 'مؤرشف',
 };
+
+export const ORG_NODE_STATUS_LABELS_EN: Record<OrgNodeStatus, string> = {
+  active: 'Active',
+  archived: 'Archived',
+};
+
+export type OrgLabelLocale = 'ar' | 'en';
+
+export function orgNodeTypeLabel(type: OrgNodeType, locale: OrgLabelLocale = 'ar'): string {
+  return locale === 'en' ? ORG_NODE_TYPE_LABELS_EN[type] : ORG_NODE_TYPE_LABELS_AR[type];
+}
+
+export function orgNodeStatusLabel(status: OrgNodeStatus, locale: OrgLabelLocale = 'ar'): string {
+  return locale === 'en' ? ORG_NODE_STATUS_LABELS_EN[status] : ORG_NODE_STATUS_LABELS_AR[status];
+}
 
 export interface OrgNode {
   id: string;

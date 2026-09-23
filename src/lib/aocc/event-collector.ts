@@ -8,6 +8,7 @@
 
 import { isOverdue, getSLAInfo } from '@/lib/capa-helpers';
 import { SLA_DAYS } from '@/lib/capa-constants';
+import { formatTime } from '@/lib/i18n/format';
 import {
   calculatePriorityScore,
   getPriorityLevel,
@@ -928,7 +929,7 @@ function formatTimeLabel(timestamp: string): string {
   if (!timestamp) return '--:--';
   const d = new Date(timestamp);
   if (isNaN(d.getTime())) return '--:--';
-  return d.toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' });
+  return formatTime(d, undefined, { hour: '2-digit', minute: '2-digit' });
 }
 
 // ═══════════════════════════════════════════════════════════════

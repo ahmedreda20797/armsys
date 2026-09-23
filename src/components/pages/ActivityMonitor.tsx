@@ -26,6 +26,18 @@ import {
   TableCell,
 } from '@/components/ui/table';
 import { authFetch } from '@/lib/api-fetch';
+import { T } from '@/lib/i18n/T';
+import { useLanguage } from '@/lib/i18n/language-context';
+import { translateUIText } from '@/lib/i18n/ui-text';
+import {
+  displayLocale,
+  formatDateTime as localeDateTime,
+  formatDate as localeDate,
+  formatTime as localeTime,
+  formatInteger,
+  formatPercentage,
+} from '@/lib/i18n/format';
+import type { Locale } from '@/lib/i18n/dictionary';
 import {
   Activity,
   Users,
@@ -89,35 +101,39 @@ function getActionIcon(action: string) {
 
 function getActionBadge(action: string) {
   switch (action) {
-    case 'login': return <Badge className="bg-brand-500/15 text-brand-400 border-brand-500/30 text-[11px] px-2">دخول</Badge>;
-    case 'logout': return <Badge className="bg-slate-500/15 text-slate-400 border-slate-500/20 text-[11px] px-2">خروج</Badge>;
-    case 'create': return <Badge className="bg-blue-500/15 text-blue-400 border-blue-500/20 text-[11px] px-2">إنشاء</Badge>;
-    case 'update': return <Badge className="bg-amber-500/15 text-amber-400 border-amber-500/20 text-[11px] px-2">تعديل</Badge>;
-    case 'delete': return <Badge className="bg-red-500/15 text-red-400 border-red-500/20 text-[11px] px-2">حذف</Badge>;
-    case 'approve': return <Badge className="bg-brand-500/15 text-brand-400 border-brand-500/30 text-[11px] px-2">موافقة</Badge>;
-    case 'page_visit': return <Badge className="bg-slate-500/15 text-slate-400 border-slate-500/20 text-[11px] px-2">زيارة</Badge>;
+    case 'login': return <Badge className="bg-brand-500/15 text-brand-400 border-brand-500/30 text-[11px] px-2"><T>دخول</T></Badge>;
+    case 'logout': return <Badge className="bg-slate-500/15 text-slate-400 border-slate-500/20 text-[11px] px-2"><T>خروج</T></Badge>;
+    case 'create': return <Badge className="bg-blue-500/15 text-blue-400 border-blue-500/20 text-[11px] px-2"><T>إنشاء</T></Badge>;
+    case 'update': return <Badge className="bg-amber-500/15 text-amber-400 border-amber-500/20 text-[11px] px-2"><T>تعديل</T></Badge>;
+    case 'delete': return <Badge className="bg-red-500/15 text-red-400 border-red-500/20 text-[11px] px-2"><T>حذف</T></Badge>;
+    case 'approve': return <Badge className="bg-brand-500/15 text-brand-400 border-brand-500/30 text-[11px] px-2"><T>موافقة</T></Badge>;
+    case 'page_visit': return <Badge className="bg-slate-500/15 text-slate-400 border-slate-500/20 text-[11px] px-2"><T>زيارة</T></Badge>;
     default: return <Badge variant="outline" className="text-[11px] px-2">{action}</Badge>;
   }
 }
 
-function getPageLabel(page: string): string {
-  const labels: Record<string, string> = {
-    home: 'الرئيسية',
-    employees: 'الموظفين',
-    biometric: 'البصمة',
-    attendance: 'الحضور',
-    requests: 'الطلبات',
-    rules: 'القواعد',
-    quality: 'الجودة',
-    travel: 'السفر',
-    reports: 'التقارير',
-    dashboard: 'لوحة التحكم',
-    firebase: 'الإعدادات',
-  };
-  return labels[page] || page;
+/** [ar, en] — system page-code vocabulary (never user data). */
+const PAGE_LABELS: Record<string, [string, string]> = {
+  home: ['الرئيسية', 'Home'],
+  employees: ['الموظفين', 'Employees'],
+  biometric: ['البصمة', 'Biometric'],
+  attendance: ['الحضور', 'Attendance'],
+  requests: ['الطلبات', 'Requests'],
+  rules: ['القواعد', 'Rules'],
+  quality: ['الجودة', 'Quality'],
+  travel: ['السفر', 'Travel'],
+  reports: ['التقارير', 'Reports'],
+  dashboard: ['لوحة التحكم', 'Dashboard'],
+  firebase: ['الإعدادات', 'Settings'],
+};
+
+function getPageLabel(page: string, locale: Locale): string {
+  const entry = PAGE_LABELS[page];
+  if (!entry) return page;
+  return locale === 'en' ? entry[1] : entry[0];
 }
 
-function getPageBadge(page: string) {
+function getPageBadge(page: string, locale: Locale) {
   const colors: Record<string, string> = {
     home: 'bg-slate-500/15 text-slate-400 border-slate-500/20',
     employees: 'bg-brand-500/15 text-brand-400 border-brand-500/20',
@@ -132,7 +148,7 @@ function getPageBadge(page: string) {
     firebase: 'bg-rose-500/15 text-rose-400 border-rose-500/20',
   };
   const color = colors[page] || 'bg-slate-500/15 text-slate-400 border-slate-500/20';
-  return <Badge className={`${color} text-[10px] px-1.5 py-0`}>{getPageLabel(page)}</Badge>;
+  return <Badge className={`${color} text-[10px] px-1.5 py-0`}>{getPageLabel(page, locale)}</Badge>;
 }
 
 // ═══ Date/Time Helpers ═══
@@ -167,10 +183,10 @@ function parseTimestamp(ts: string): Date | null {
   }
 }
 
-function formatDateTime(ts: string): string {
+function formatDateTime(ts: string, locale: Locale = displayLocale()): string {
   const d = parseTimestamp(ts);
   if (!d) return '—';
-  return d.toLocaleString('ar-EG', {
+  return localeDateTime(d, locale, {
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',
@@ -181,10 +197,10 @@ function formatDateTime(ts: string): string {
   });
 }
 
-function formatTimeOnly(ts: string): string {
+function formatTimeOnly(ts: string, locale: Locale = displayLocale()): string {
   const d = parseTimestamp(ts);
   if (!d) return '—';
-  return d.toLocaleTimeString('ar-EG', {
+  return localeTime(d, locale, {
     hour: '2-digit',
     minute: '2-digit',
     second: '2-digit',
@@ -192,34 +208,42 @@ function formatTimeOnly(ts: string): string {
   });
 }
 
-function formatDateOnly(ts: string): string {
+function formatDateOnly(ts: string, locale: Locale = displayLocale()): string {
   const d = parseTimestamp(ts);
   if (!d) return '—';
-  return d.toLocaleDateString('ar-EG', {
+  return localeDate(d, locale, {
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',
   });
 }
 
-function getRelativeTime(ts: string): string {
+function getRelativeTime(ts: string, locale: Locale = displayLocale()): string {
   const d = parseTimestamp(ts);
   if (!d) return '—';
   const now = Date.now();
   const time = d.getTime();
   const diffMs = now - time;
-  if (diffMs < 0) return 'الآن';
   const diffSec = Math.floor(diffMs / 1000);
   const diffMin = Math.floor(diffSec / 60);
   const diffHour = Math.floor(diffMin / 60);
   const diffDay = Math.floor(diffHour / 24);
 
+  if (locale === 'en') {
+    if (diffMs < 0 || diffSec < 10) return 'now';
+    if (diffSec < 60) return `${diffSec}s ago`;
+    if (diffMin < 60) return `${diffMin}m ago`;
+    if (diffHour < 24) return `${diffHour}h ago`;
+    if (diffDay < 7) return `${diffDay}d ago`;
+    return formatDateOnly(ts, locale);
+  }
+  if (diffMs < 0) return 'الآن';
   if (diffSec < 10) return 'الآن';
-  if (diffSec < 60) return `منذ ${diffSec} ثانية`;
-  if (diffMin < 60) return `منذ ${diffMin} دقيقة`;
-  if (diffHour < 24) return `منذ ${diffHour} ساعة`;
-  if (diffDay < 7) return `منذ ${diffDay} يوم`;
-  return formatDateOnly(ts);
+  if (diffSec < 60) return `منذ ${formatInteger(diffSec, locale)} ثانية`;
+  if (diffMin < 60) return `منذ ${formatInteger(diffMin, locale)} دقيقة`;
+  if (diffHour < 24) return `منذ ${formatInteger(diffHour, locale)} ساعة`;
+  if (diffDay < 7) return `منذ ${formatInteger(diffDay, locale)} يوم`;
+  return formatDateOnly(ts, locale);
 }
 
 // ═══ Component ═══
@@ -228,6 +252,7 @@ export default function ActivityMonitor() {
   const [logs, setLogs] = useState<ActivityLogItem[]>([]);
   const [onlineUsers, setOnlineUsers] = useState<OnlineUser[]>([]);
   const [loading, setLoading] = useState(true);
+  const { locale } = useLanguage();
   const [filterUser, setFilterUser] = useState<string>('all');
   const [filterAction, setFilterAction] = useState<string>('all');
   const [displayCount, setDisplayCount] = useState(50);
@@ -301,7 +326,7 @@ export default function ActivityMonitor() {
       userNames.set(l.userId, l.userName);
     });
     const mostActiveUsers = Array.from(userCounts.entries())
-      .map(([userId, count]) => ({ userName: userNames.get(userId) || 'غير معروف', count }))
+      .map(([userId, count]) => ({ userName: userNames.get(userId) || translateUIText('غير معروف', locale), count }))
       .sort((a, b) => b.count - a.count)
       .slice(0, 5);
 
@@ -314,7 +339,7 @@ export default function ActivityMonitor() {
       .sort((a, b) => b.count - a.count);
 
     return { totalToday: todayLogs.length, mostActiveUsers, actionBreakdown };
-  }, [logs]);
+  }, [logs, locale]);
 
   // Initial load + auto-refresh every 10s
   // §DOWNLOAD-OPT — previously a bare 10s setInterval that re-downloaded
@@ -398,15 +423,15 @@ export default function ActivityMonitor() {
             <Activity className="size-5 text-brand-400" />
           </div>
           <div>
-            <h2 className="text-xl font-bold text-white">مراقب النشاط</h2>
+            <h2 className="text-xl font-bold text-white"><T>مراقب النشاط</T></h2>
             <p className="text-slate-500 text-xs mt-0.5">
-              تتبع نشاط المستخدمين في الوقت الفعلي
+              <T>تتبع نشاط المستخدمين في الوقت الفعلي</T>
             </p>
           </div>
         </div>
         <div className="flex items-center gap-2">
           <Badge variant="outline" className="text-slate-400 border-slate-600 text-xs">
-            {filteredLogs.length} سجل
+            {formatInteger(filteredLogs.length, locale)} <T>سجل</T>
           </Badge>
           <Button
             onClick={async () => { await Promise.all([fetchLogs(), fetchOnlineUsers()]); }}
@@ -415,7 +440,7 @@ export default function ActivityMonitor() {
             className="border-slate-600 text-slate-300 hover:bg-slate-700 h-8 px-3"
           >
             <RefreshCw className="size-3.5 ml-1" />
-            تحديث
+            <T>تحديث</T>
           </Button>
         </div>
       </div>
@@ -424,20 +449,20 @@ export default function ActivityMonitor() {
         <TabsList className="bg-slate-800/80 border border-slate-700/50">
           <TabsTrigger value="feed" className="data-[state=active]:bg-linear-to-r data-[state=active]:from-brand-600 data-[state=active]:to-brand-700 data-[state=active]:text-white text-xs px-3">
             <Activity className="size-3.5 ml-1" />
-            سجل النشاط
+            <T>سجل النشاط</T>
           </TabsTrigger>
           <TabsTrigger value="online" className="data-[state=active]:bg-linear-to-r data-[state=active]:from-brand-600 data-[state=active]:to-brand-700 data-[state=active]:text-white text-xs px-3">
             <Users className="size-3.5 ml-1" />
-            المتصلون الآن
+            <T>المتصلون الآن</T>
             {onlineUsers.length > 0 && (
               <span className="mr-1 bg-emerald-500 text-white text-[10px] rounded-full px-1.5 py-0.5 min-w-[18px] text-center">
-                {onlineUsers.length}
+                {formatInteger(onlineUsers.length, locale)}
               </span>
             )}
           </TabsTrigger>
           <TabsTrigger value="stats" className="data-[state=active]:bg-linear-to-r data-[state=active]:from-brand-600 data-[state=active]:to-brand-700 data-[state=active]:text-white text-xs px-3">
             <BarChart3 className="size-3.5 ml-1" />
-            إحصائيات
+            <T>إحصائيات</T>
           </TabsTrigger>
         </TabsList>
 
@@ -448,7 +473,7 @@ export default function ActivityMonitor() {
             <div className="relative flex-1 max-w-xs">
               <Search className="absolute right-3 top-1/2 -translate-y-1/2 size-3.5 text-slate-500" />
               <Input
-                placeholder="بحث في السجلات..."
+                placeholder={translateUIText('بحث في السجلات...', locale)}
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 className="bg-slate-800/70 border-slate-700/70 text-white pr-9 placeholder:text-slate-500 h-8 text-xs"
@@ -457,10 +482,10 @@ export default function ActivityMonitor() {
             <Select value={filterUser} onValueChange={(v) => { setFilterUser(v); setDisplayCount(50); }}>
               <SelectTrigger className="bg-slate-800/70 border-slate-700/70 text-white w-full sm:w-40 h-8 text-xs">
                 <Users className="size-3 ml-1 text-slate-500" />
-                <SelectValue placeholder="المستخدم" />
+                <SelectValue placeholder={translateUIText('المستخدم', locale)} />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all" className="text-white text-xs">جميع المستخدمين</SelectItem>
+                <SelectItem value="all" className="text-white text-xs"><T>جميع المستخدمين</T></SelectItem>
                 {uniqueUsers.map((u) => (
                   <SelectItem key={u.userId} value={u.userId} className="text-white text-xs">{u.userName}</SelectItem>
                 ))}
@@ -469,17 +494,17 @@ export default function ActivityMonitor() {
             <Select value={filterAction} onValueChange={(v) => { setFilterAction(v); setDisplayCount(50); }}>
               <SelectTrigger className="bg-slate-800/70 border-slate-700/70 text-white w-full sm:w-36 h-8 text-xs">
                 <Filter className="size-3 ml-1 text-slate-500" />
-                <SelectValue placeholder="العملية" />
+                <SelectValue placeholder={translateUIText('العملية', locale)} />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all" className="text-white text-xs">جميع العمليات</SelectItem>
-                <SelectItem value="login" className="text-white text-xs">دخول</SelectItem>
-                <SelectItem value="logout" className="text-white text-xs">خروج</SelectItem>
-                <SelectItem value="create" className="text-white text-xs">إنشاء</SelectItem>
-                <SelectItem value="update" className="text-white text-xs">تعديل</SelectItem>
-                <SelectItem value="delete" className="text-white text-xs">حذف</SelectItem>
-                <SelectItem value="approve" className="text-white text-xs">موافقة</SelectItem>
-                <SelectItem value="page_visit" className="text-white text-xs">زيارة</SelectItem>
+                <SelectItem value="all" className="text-white text-xs"><T>جميع العمليات</T></SelectItem>
+                <SelectItem value="login" className="text-white text-xs"><T>دخول</T></SelectItem>
+                <SelectItem value="logout" className="text-white text-xs"><T>خروج</T></SelectItem>
+                <SelectItem value="create" className="text-white text-xs"><T>إنشاء</T></SelectItem>
+                <SelectItem value="update" className="text-white text-xs"><T>تعديل</T></SelectItem>
+                <SelectItem value="delete" className="text-white text-xs"><T>حذف</T></SelectItem>
+                <SelectItem value="approve" className="text-white text-xs"><T>موافقة</T></SelectItem>
+                <SelectItem value="page_visit" className="text-white text-xs"><T>زيارة</T></SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -498,11 +523,11 @@ export default function ActivityMonitor() {
                   <div className="size-12 rounded-full bg-slate-800 flex items-center justify-center mb-3">
                     <Activity className="size-6 text-slate-600" />
                   </div>
-                  <p className="text-slate-400 text-sm font-medium">لا توجد أنشطة</p>
+                  <p className="text-slate-400 text-sm font-medium"><T>لا توجد أنشطة</T></p>
                   <p className="text-slate-600 text-xs mt-1">
-                    {search || filterUser !== 'all' || filterAction !== 'all'
+                    <T>{search || filterUser !== 'all' || filterAction !== 'all'
                       ? 'لم يتم العثور على نتائج'
-                      : 'لم يتم تسجيل أي أنشطة بعد'}
+                      : 'لم يتم تسجيل أي أنشطة بعد'}</T>
                   </p>
                 </div>
               ) : (
@@ -512,12 +537,12 @@ export default function ActivityMonitor() {
                       <TableHeader>
                         <TableRow className="border-slate-700/40 hover:bg-transparent">
                           <TableHead className="text-slate-400 text-[11px] font-semibold py-2.5 px-3 w-10">#</TableHead>
-                          <TableHead className="text-slate-400 text-[11px] font-semibold py-2.5 px-3">المستخدم</TableHead>
-                          <TableHead className="text-slate-400 text-[11px] font-semibold py-2.5 px-3">العملية</TableHead>
-                          <TableHead className="text-slate-400 text-[11px] font-semibold py-2.5 px-3">القسم</TableHead>
-                          <TableHead className="text-slate-400 text-[11px] font-semibold py-2.5 px-3">التفاصيل</TableHead>
-                          <TableHead className="text-slate-400 text-[11px] font-semibold py-2.5 px-3 text-center">التاريخ</TableHead>
-                          <TableHead className="text-slate-400 text-[11px] font-semibold py-2.5 px-3 text-center">الوقت</TableHead>
+                          <TableHead className="text-slate-400 text-[11px] font-semibold py-2.5 px-3"><T>المستخدم</T></TableHead>
+                          <TableHead className="text-slate-400 text-[11px] font-semibold py-2.5 px-3"><T>العملية</T></TableHead>
+                          <TableHead className="text-slate-400 text-[11px] font-semibold py-2.5 px-3"><T>القسم</T></TableHead>
+                          <TableHead className="text-slate-400 text-[11px] font-semibold py-2.5 px-3"><T>التفاصيل</T></TableHead>
+                          <TableHead className="text-slate-400 text-[11px] font-semibold py-2.5 px-3 text-center"><T>التاريخ</T></TableHead>
+                          <TableHead className="text-slate-400 text-[11px] font-semibold py-2.5 px-3 text-center"><T>الوقت</T></TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
@@ -558,7 +583,7 @@ export default function ActivityMonitor() {
                             </TableCell>
                             {/* Page */}
                             <TableCell className="py-2.5 px-3">
-                              {getPageBadge(log.page)}
+                              {getPageBadge(log.page, locale)}
                             </TableCell>
                             {/* Details */}
                             <TableCell className="py-2.5 px-3">
@@ -571,7 +596,7 @@ export default function ActivityMonitor() {
                               <div className="flex items-center justify-center gap-1">
                                 <Calendar className="size-3 text-slate-600" />
                                 <span className="text-slate-400 text-[11px]" dir="ltr">
-                                  {formatDateOnly(getLogTimestamp(log))}
+                                  {formatDateOnly(getLogTimestamp(log), locale)}
                                 </span>
                               </div>
                             </TableCell>
@@ -579,7 +604,7 @@ export default function ActivityMonitor() {
                             <TableCell className="py-2.5 px-3 text-center">
                               <div className="flex flex-col items-center">
                                 <span className="text-slate-300 text-[11px] font-medium" dir="ltr">
-                                  {formatTimeOnly(getLogTimestamp(log))}
+                                  {formatTimeOnly(getLogTimestamp(log), locale)}
                                 </span>
                                 <span className="text-slate-600 text-[9px]" dir="ltr">
                                   {getRelativeTime(getLogTimestamp(log))}
@@ -601,7 +626,7 @@ export default function ActivityMonitor() {
                         className="text-brand-400 hover:text-brand-300 hover:bg-brand-500/10 text-xs h-7"
                       >
                         <ChevronDown className="size-3 ml-1" />
-                        عرض المزيد ({filteredLogs.length - displayCount} سجل متبقي)
+                        <T>عرض المزيد (</T>{filteredLogs.length - displayCount} <T>سجل متبقي)</T>
                       </Button>
                     </div>
                   )}
@@ -620,18 +645,18 @@ export default function ActivityMonitor() {
                   <div className="size-12 rounded-full bg-slate-800 flex items-center justify-center mb-3">
                     <Users className="size-6 text-slate-600" />
                   </div>
-                  <p className="text-slate-400 text-sm font-medium">لا يوجد مستخدمون متصلون</p>
-                  <p className="text-slate-600 text-xs mt-1">يعتبر المستخدم متصلاً إذا كان نشطاً خلال آخر 60 ثانية</p>
+                  <p className="text-slate-400 text-sm font-medium"><T>لا يوجد مستخدمون متصلون</T></p>
+                  <p className="text-slate-600 text-xs mt-1"><T>يعتبر المستخدم متصلاً إذا كان نشطاً خلال آخر 60 ثانية</T></p>
                 </div>
               ) : (
                 <Table>
                   <TableHeader>
                     <TableRow className="border-slate-700/40 hover:bg-transparent">
-                      <TableHead className="text-slate-400 text-[11px] font-semibold py-2.5 px-4">الحالة</TableHead>
-                      <TableHead className="text-slate-400 text-[11px] font-semibold py-2.5 px-3">المستخدم</TableHead>
-                      <TableHead className="text-slate-400 text-[11px] font-semibold py-2.5 px-3">البريد</TableHead>
-                      <TableHead className="text-slate-400 text-[11px] font-semibold py-2.5 px-3 text-center">آخر نشاط</TableHead>
-                      <TableHead className="text-slate-400 text-[11px] font-semibold py-2.5 px-3 text-center">منذ</TableHead>
+                      <TableHead className="text-slate-400 text-[11px] font-semibold py-2.5 px-4"><T>الحالة</T></TableHead>
+                      <TableHead className="text-slate-400 text-[11px] font-semibold py-2.5 px-3"><T>المستخدم</T></TableHead>
+                      <TableHead className="text-slate-400 text-[11px] font-semibold py-2.5 px-3"><T>البريد</T></TableHead>
+                      <TableHead className="text-slate-400 text-[11px] font-semibold py-2.5 px-3 text-center"><T>آخر نشاط</T></TableHead>
+                      <TableHead className="text-slate-400 text-[11px] font-semibold py-2.5 px-3 text-center"><T>منذ</T></TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -658,7 +683,7 @@ export default function ActivityMonitor() {
                         </TableCell>
                         <TableCell className="py-3 px-3 text-center">
                           <span className="text-slate-400 text-[11px]" dir="ltr">
-                            {formatTimeOnly(user.lastActivity)}
+                            {formatTimeOnly(user.lastActivity, locale)}
                           </span>
                         </TableCell>
                         <TableCell className="py-3 px-3 text-center">
@@ -680,19 +705,19 @@ export default function ActivityMonitor() {
           {/* Stats Cards */}
           <div className="grid grid-cols-3 gap-2.5">
             <div className="rounded-lg border border-brand-500/30 bg-emerald-500/8 px-3.5 py-2.5">
-              <p className="text-slate-500 text-[11px] mb-0.5">أنشطة اليوم</p>
+              <p className="text-slate-500 text-[11px] mb-0.5"><T>أنشطة اليوم</T></p>
               <p className="text-brand-400 font-bold text-lg leading-tight">{stats.totalToday}</p>
-              <p className="text-slate-500 text-[10px]">نشاط</p>
+              <p className="text-slate-500 text-[10px]"><T>نشاط</T></p>
             </div>
             <div className="rounded-lg border border-cyan-500/25 bg-cyan-500/8 px-3.5 py-2.5">
-              <p className="text-slate-500 text-[11px] mb-0.5">متصلون الآن</p>
+              <p className="text-slate-500 text-[11px] mb-0.5"><T>متصلون الآن</T></p>
               <p className="text-cyan-400 font-bold text-lg leading-tight">{onlineUsers.length}</p>
-              <p className="text-slate-500 text-[10px]">مستخدم</p>
+              <p className="text-slate-500 text-[10px]"><T>مستخدم</T></p>
             </div>
             <div className="rounded-lg border border-brand-500/25 bg-brand-500/8 px-3.5 py-2.5">
-              <p className="text-slate-500 text-[11px] mb-0.5">إجمالي السجلات</p>
+              <p className="text-slate-500 text-[11px] mb-0.5"><T>إجمالي السجلات</T></p>
               <p className="text-brand-400 font-bold text-lg leading-tight">{logs.length}</p>
-              <p className="text-slate-500 text-[10px]">سجل</p>
+              <p className="text-slate-500 text-[10px]"><T>سجل</T></p>
             </div>
           </div>
 
@@ -702,21 +727,20 @@ export default function ActivityMonitor() {
               <div className="px-4 py-3 border-b border-slate-700/30">
                 <h3 className="text-white font-semibold text-sm flex items-center gap-2">
                   <Users className="size-4 text-brand-400" />
-                  أكثر المستخدمين نشاطاً اليوم
-                </h3>
+                  <T>أكثر المستخدمين نشاطاً اليوم</T></h3>
               </div>
               <CardContent className="p-0">
                 {stats.mostActiveUsers.length === 0 ? (
                   <div className="flex items-center justify-center py-8">
-                    <p className="text-slate-500 text-sm">لا توجد بيانات</p>
+                    <p className="text-slate-500 text-sm"><T>لا توجد بيانات</T></p>
                   </div>
                 ) : (
                   <Table>
                     <TableHeader>
                       <TableRow className="border-slate-700/30 hover:bg-transparent">
                         <TableHead className="text-slate-400 text-[10px] font-semibold py-2 px-3 w-8">#</TableHead>
-                        <TableHead className="text-slate-400 text-[10px] font-semibold py-2 px-3">المستخدم</TableHead>
-                        <TableHead className="text-slate-400 text-[10px] font-semibold py-2 px-3 text-center">الأنشطة</TableHead>
+                        <TableHead className="text-slate-400 text-[10px] font-semibold py-2 px-3"><T>المستخدم</T></TableHead>
+                        <TableHead className="text-slate-400 text-[10px] font-semibold py-2 px-3 text-center"><T>الأنشطة</T></TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -749,21 +773,20 @@ export default function ActivityMonitor() {
               <div className="px-4 py-3 border-b border-slate-700/30">
                 <h3 className="text-white font-semibold text-sm flex items-center gap-2">
                   <BarChart3 className="size-4 text-brand-400" />
-                  توزيع الأنشطة حسب النوع
-                </h3>
+                  <T>توزيع الأنشطة حسب النوع</T></h3>
               </div>
               <CardContent className="p-0">
                 {stats.actionBreakdown.length === 0 ? (
                   <div className="flex items-center justify-center py-8">
-                    <p className="text-slate-500 text-sm">لا توجد بيانات</p>
+                    <p className="text-slate-500 text-sm"><T>لا توجد بيانات</T></p>
                   </div>
                 ) : (
                   <Table>
                     <TableHeader>
                       <TableRow className="border-slate-700/30 hover:bg-transparent">
-                        <TableHead className="text-slate-400 text-[10px] font-semibold py-2 px-3">العملية</TableHead>
-                        <TableHead className="text-slate-400 text-[10px] font-semibold py-2 px-3 text-center">العدد</TableHead>
-                        <TableHead className="text-slate-400 text-[10px] font-semibold py-2 px-3">النسبة</TableHead>
+                        <TableHead className="text-slate-400 text-[10px] font-semibold py-2 px-3"><T>العملية</T></TableHead>
+                        <TableHead className="text-slate-400 text-[10px] font-semibold py-2 px-3 text-center"><T>العدد</T></TableHead>
+                        <TableHead className="text-slate-400 text-[10px] font-semibold py-2 px-3"><T>النسبة</T></TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>

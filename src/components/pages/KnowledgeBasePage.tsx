@@ -3,6 +3,9 @@
 import { useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { usePermissions } from '@/hooks/usePermissions';
+import { useLanguage } from '@/lib/i18n/language-context';
+import { formatDate as localeDate, displayLocale } from '@/lib/i18n/format';
+import type { Locale } from '@/lib/i18n/dictionary';
 import {
   useKnowledgeBase,
   useEmployees,
@@ -153,11 +156,10 @@ function getStatusColor(status: string) {
   }
 }
 
-function formatDate(dateStr: string): string {
+function formatDate(dateStr: string, locale: Locale = displayLocale()): string {
   if (!dateStr) return '—';
   try {
-    const d = new Date(dateStr);
-    return d.toLocaleDateString('ar-EG', {
+    return localeDate(dateStr, locale, {
       year: 'numeric',
       month: 'short',
       day: 'numeric',
@@ -178,6 +180,7 @@ function parseTags(tagsStr: string | undefined | null): string[] {
 
 export default function KnowledgeBasePage() {
   const { canView, canCreate, canUpdate, canDelete } = usePermissions('knowledgeBase');
+  const { locale } = useLanguage();
 
   const [search, setSearch] = useState('');
   const [departmentFilter, setDepartmentFilter] = useState('all');
@@ -544,11 +547,11 @@ export default function KnowledgeBasePage() {
                         )}
                         <span className="flex items-center gap-1">
                           <CalendarDays className="size-3" />
-                          تاريخ الإنشاء: {formatDate(article.createdAt)}
+                          تاريخ الإنشاء: {formatDate(article.createdAt, locale)}
                         </span>
                         {article.updatedAt && article.updatedAt !== article.createdAt && (
                           <span className="flex items-center gap-1 text-slate-600">
-                            تعديل: {formatDate(article.updatedAt)}
+                            تعديل: {formatDate(article.updatedAt, locale)}
                           </span>
                         )}
                       </div>

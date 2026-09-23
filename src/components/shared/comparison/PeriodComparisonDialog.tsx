@@ -27,7 +27,10 @@ import {
 } from '@/components/ui/select';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { apiFetch } from '@/lib/query-provider';
-import { buildMonthOptions, formatMonth, formatScore } from '@/components/pages/quality-kpi/kpi-reports-shared';
+import { buildMonthOptions, formatScore, formatSignedPoints } from '@/components/pages/quality-kpi/kpi-reports-shared';
+import { formatMonthKey, formatNumber } from '@/lib/i18n/format';
+import { useLanguage } from '@/lib/i18n/language-context';
+import { T } from '@/lib/i18n/T';
 import { useMonthSnapshots } from '@/hooks/use-kpi-queries';
 import { cn } from '@/lib/utils';
 
@@ -126,6 +129,7 @@ function previousMonthKey(monthKey: string): string {
 }
 
 function DeltaMark({ delta, direction }: { delta: number | null; direction: 'up' | 'down' | 'flat' }) {
+  const { locale } = useLanguage();
   if (delta === null) return <span className="text-slate-600 text-[11px]">—</span>;
   return (
     <span
@@ -139,7 +143,7 @@ function DeltaMark({ delta, direction }: { delta: number | null; direction: 'up'
       {direction === 'up' && <ArrowUpRight className="size-3" />}
       {direction === 'down' && <ArrowDownRight className="size-3" />}
       {direction === 'flat' && <ArrowRight className="size-3" />}
-      {delta > 0 ? `+${delta}` : `${delta}`}
+      {formatSignedPoints(delta, locale)}
     </span>
   );
 }
@@ -156,6 +160,7 @@ export interface PeriodComparisonDialogProps {
 export function PeriodComparisonDialog({
   open, onOpenChange, employeeId, employeeName, defaultMonth,
 }: PeriodComparisonDialogProps) {
+  const { locale } = useLanguage();
   const [monthA, setMonthA] = useState<string>(defaultMonth);
   const [monthB, setMonthB] = useState<string>(previousMonthKey(defaultMonth));
 
@@ -170,8 +175,8 @@ export function PeriodComparisonDialog({
 
   const snapshotsQuery = useMonthSnapshots();
   const monthOptions = useMemo(
-    () => buildMonthOptions(snapshotsQuery.data as Array<{ monthKey: string; status: 'open' | 'closed' }> | undefined),
-    [snapshotsQuery.data],
+    () => buildMonthOptions(snapshotsQuery.data as Array<{ monthKey: string; status: 'open' | 'closed' }> | undefined, locale),
+    [snapshotsQuery.data, locale],
   );
 
   const enabled = open && !!employeeId && !!monthA && !!monthB;
@@ -203,17 +208,17 @@ export function PeriodComparisonDialog({
         <DialogHeader className="text-right shrink-0">
           <DialogTitle className="text-white text-base flex items-center gap-2">
             <ArrowLeftRight className="size-4 text-brand-400" />
-            مقارنة الأداء{employeeName ? ` — ${employeeName}` : ''}
+            <T>مقارنة الأداء</T>{employeeName ? ` — ${employeeName}` : ''}
           </DialogTitle>
           <DialogDescription className="text-slate-500 text-xs">
-            اختر فترتين لمقارنة درجات مكونات الأداء — تُقرأ كلتا الفترتين من خدمة تقارير KPI الحالية.
+            <T>اختر فترتين لمقارنة درجات مكونات الأداء — تُقرأ كلتا الفترتين من خدمة تقارير KPI الحالية.</T>
           </DialogDescription>
         </DialogHeader>
 
         {/* Period pickers */}
         <div className="grid grid-cols-2 gap-3 shrink-0">
           <div className="space-y-1.5">
-            <p className="text-[11px] text-slate-400 font-semibold">الفترة A</p>
+            <p className="text-[11px] text-slate-400 font-semibold"><T>الفترة A</T></p>
             <Select value={monthA} onValueChange={setMonthA}>
               <SelectTrigger className="h-9 bg-slate-950/40 border-slate-700/60 text-slate-200 text-xs">
                 <SelectValue />
@@ -226,7 +231,7 @@ export function PeriodComparisonDialog({
             </Select>
           </div>
           <div className="space-y-1.5">
-            <p className="text-[11px] text-slate-400 font-semibold">الفترة B</p>
+            <p className="text-[11px] text-slate-400 font-semibold"><T>الفترة B</T></p>
             <Select value={monthB} onValueChange={setMonthB}>
               <SelectTrigger className="h-9 bg-slate-950/40 border-slate-700/60 text-slate-200 text-xs">
                 <SelectValue />
@@ -245,7 +250,7 @@ export function PeriodComparisonDialog({
           {!enabled || loading ? (
             <div className="flex items-center justify-center py-14 text-slate-400 text-sm gap-2">
               <Loader2 className="size-4 animate-spin" />
-              جاري تحميل الفترتين...
+              <T>جاري تحميل الفترتين...</T>
             </div>
           ) : notAvailable(queryA.data) || notAvailable(queryB.data) ? (
             <div className="flex flex-col items-center justify-center py-12 px-4 text-center">
@@ -253,24 +258,24 @@ export function PeriodComparisonDialog({
                 {notAvailable(queryA.data) ? queryA.data?.message : queryB.data?.message}
               </p>
               <p className="text-slate-600 text-xs mt-1">
-                لا توجد نتيجة قابلة للمقارنة لإحدى الفترتين.
+                <T>لا توجد نتيجة قابلة للمقارنة لإحدى الفترتين.</T>
               </p>
             </div>
           ) : (
             <table className="w-full text-xs">
               <thead>
                 <tr className="text-slate-500 border-b border-slate-700/60">
-                  <th className="text-right font-medium py-2">المكوّن</th>
-                  <th className="text-center font-medium py-2">{formatMonth(monthA)}</th>
-                  <th className="text-center font-medium py-2">{formatMonth(monthB)}</th>
-                  <th className="text-center font-medium py-2">الفرق</th>
+                  <th className="text-right font-medium py-2"><T>المكوّن</T></th>
+                  <th className="text-center font-medium py-2">{formatMonthKey(monthA, locale)}</th>
+                  <th className="text-center font-medium py-2">{formatMonthKey(monthB, locale)}</th>
+                  <th className="text-center font-medium py-2"><T>الفرق</T></th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/60">
                 {rows.map((row) => (
                   <tr key={row.key} className={cn(row.key === '__weightedTotal__' && 'bg-slate-800/40')}>
                     <td className="py-2 text-slate-200 font-medium text-right">
-                      {row.label}
+                      {row.key === '__weightedTotal__' ? <T>الإجمالي الموزون</T> : row.label}
                       {row.key === '__weightedTotal__' && (
                         <span className="block text-[10px] text-slate-500 font-normal">
                           {queryA.data?.overallStatus ?? '—'} ← {queryB.data?.overallStatus ?? '—'}
@@ -278,10 +283,10 @@ export function PeriodComparisonDialog({
                       )}
                     </td>
                     <td className="py-2 text-center font-mono text-slate-100">
-                      {row.kind === 'points' ? (row.a ?? '—') : formatScore(row.a as number | null)}
+                      {row.kind === 'points' ? (row.a != null ? formatNumber(row.a as number, { locale }) : '—') : formatScore(row.a as number | null, locale)}
                     </td>
                     <td className="py-2 text-center font-mono text-slate-100">
-                      {row.kind === 'points' ? (row.b ?? '—') : formatScore(row.b as number | null)}
+                      {row.kind === 'points' ? (row.b != null ? formatNumber(row.b as number, { locale }) : '—') : formatScore(row.b as number | null, locale)}
                     </td>
                     <td className="py-2 text-center"><DeltaMark delta={row.delta} direction={row.direction} /></td>
                   </tr>

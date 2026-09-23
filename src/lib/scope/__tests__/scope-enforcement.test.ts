@@ -8,7 +8,9 @@
 //
 //  Matrix:
 //    A) manager + TEAM → team subtree incl. own + subteams
-//    B) quality + TEAM → canonical team via own node (NOT own-only)
+//    B) quality + TEAM → the EXACT canonical team/subteam via own
+//       node (NOT own-only, and — §TEAM-EXACT — a subteam placement
+//       never rolls up to the parent team or sibling subteams)
 //    C) user + DEPARTMENT → own department subtree
 //    D) user + OWN → own only
 //    E) user + ASSIGNED → explicit assignments (not creation-own)
@@ -43,7 +45,7 @@ function node(id: string, type: OrgNode['type'], parentId: string | null, extra:
  *   company
  *   ├── sales (department)
  *   │   └── teamA (team, mgr=uTeamLead)
- *   │       ├── subA1 (subteam, mgr=uSubLead) — empSub1
+ *   │       ├── subA1 (subteam, mgr=uSubLead) — empSub1, empSub2
  *   │       ├── empA1, empA2
  *   ├── hr (department) — empHr1 (linked to uHr)
  *   └── ops (department, mgr=uOpsDeptMgr) — empOps1 (linked to uOps)
@@ -61,6 +63,7 @@ function fixture() {
     { id: 'empA1', orgNodeId: 'teamA' },
     { id: 'empA2', orgNodeId: 'teamA' },
     { id: 'empSub1', orgNodeId: 'subA1' },
+    { id: 'empSub2', orgNodeId: 'subA1' },
     { id: 'empHr1', orgNodeId: 'hr' },
     { id: 'empOps1', orgNodeId: 'ops' },
     { id: 'empFree', orgNodeId: null },
@@ -92,10 +95,13 @@ function ids(ctx: { employeeIds: ReadonlySet<string> }): string[] {
 }
 
 describe('matrix A/B — TEAM scope is the canonical team, never OWN', () => {
-  it('A: manager of a team sees the whole team subtree (incl. subteams) + own', () => {
+  it('A: manager of a team with TEAM sees the team\'s DIRECT members (exact node)', () => {
     // uTeamLead manages teamA and is linked to empA2 (inside it).
+    // §ORG-BOUNDARY: TEAM = the EXACT node — direct members only.
+    // empSub1/empSub2 sit in subA1 (a descendant), so they are
+    // SUBTREE territory, never TEAM.
     const ctx = resolve({ userId: 'uTeamLead', linkedEmployeeId: 'empA2' }, 'team', 'manager');
-    assert.deepEqual(ids(ctx), ['empA1', 'empA2', 'empSub1']);
+    assert.deepEqual(ids(ctx), ['empA1', 'empA2']);
     assert.equal(ctx.includes('empHr1'), false);
     assert.equal(ctx.includes('empOps1'), false);
   });
@@ -103,22 +109,27 @@ describe('matrix A/B — TEAM scope is the canonical team, never OWN', () => {
   it('A2: manager of a team with NO linked employee still resolves the managed team', () => {
     // Production regression: manager not stored as an employee in the node.
     const ctx = resolve({ userId: 'uTeamLead' }, 'team', 'manager');
-    assert.deepEqual(ids(ctx), ['empA1', 'empA2', 'empSub1']);
+    assert.deepEqual(ids(ctx), ['empA1', 'empA2']);
   });
 
   it('A3: managing a SUBTEAM alone satisfies the team anchor (team-level branch)', () => {
     const ctx = resolve({ userId: 'uSubLead' }, 'team', 'manager');
-    assert.deepEqual(ids(ctx), ['empSub1']);
+    assert.deepEqual(ids(ctx), ['empSub1', 'empSub2']);
   });
 
-  it('B: quality user + TEAM sees the canonical team via their own node — NOT own-only', () => {
-    // empSub1 sits in a subteam → nearest team ancestor is teamA → its subtree.
+  it('B: quality user + TEAM sees their EXACT subteam — never the parent team (§TEAM-EXACT)', () => {
+    // empSub1 sits in subA1 → the TEAM anchor is subA1 itself. The
+    // §17 semantics fix: a subteam placement NEVER rolls up to the
+    // parent team, so empA1/empA2 (teamA direct members) stay OUT —
+    // while the scope still resolves the full subteam (NOT own-only).
     const ctx = resolve({ userId: 'uSub1', linkedEmployeeId: 'empSub1' }, 'team', 'quality');
-    assert.deepEqual(ids(ctx), ['empA1', 'empA2', 'empSub1']);
+    assert.deepEqual(ids(ctx), ['empSub1', 'empSub2']);
     assert.ok(ctx.employeeIds.size > 1, 'TEAM must not degrade to OWN');
   });
 
-  it('B2: employee directly in a department node falls back to that node (never narrower than own)', () => {
+  it('B2: employee directly in a department node has no team-level placement → fail-closed to own', () => {
+    // §TEAM-EXACT: a department-typed node contributes NO team anchor
+    // (fail-closed) — only the viewer's own record remains.
     const ctx = resolve({ userId: 'uOps', linkedEmployeeId: 'empOps1' }, 'team', 'quality');
     assert.deepEqual(ids(ctx), ['empOps1']);
   });
@@ -171,7 +182,7 @@ describe('matrix F/G — SUBTREE: managed branches ∪ own node + descendants', 
   it('F2: multiple managed nodes union', () => {
     // uTeamLead manages teamA → teamA subtree; uSubLead's subteam is inside it.
     const ctx = resolve({ userId: 'uTeamLead', linkedEmployeeId: 'empA2' }, 'subtree', 'manager');
-    assert.deepEqual(ids(ctx), ['empA1', 'empA2', 'empSub1']);
+    assert.deepEqual(ids(ctx), ['empA1', 'empA2', 'empSub1', 'empSub2']);
   });
 
   it('G: non-manager SUBTREE = own organization node + descendants — NOT own-only', () => {
@@ -188,9 +199,19 @@ describe('matrix F/G — SUBTREE: managed branches ∪ own node + descendants', 
   });
 });
 
-describe('matrix H — ALL', () => {
-  it('unrestricted: unassigned employees included, membership empty', () => {
+describe('matrix H — ALL within the organizational boundary', () => {
+  it('non-admin ALL spans the boundary subtrees — never a global escape', () => {
+    // uOps linked empOps1 → assignment boundary [ops]; ALL = ops
+    // subtree union (plus own). Not unrestricted, no global escape.
     const ctx = resolve({ userId: 'uOps', linkedEmployeeId: 'empOps1' }, 'all', 'quality');
+    assert.equal(ctx.isUnrestricted, false);
+    assert.equal(ctx.includes('empOps1'), true);
+    assert.equal(ctx.includes('empHr1'), false);
+    assert.equal(ctx.includes('empFree'), false, 'unplaced employees are outside every node subtree');
+  });
+
+  it('admin remains the ONLY truly unrestricted viewer', () => {
+    const ctx = resolve({ userId: 'admin1' }, 'own', 'admin');
     assert.equal(ctx.isUnrestricted, true);
     assert.equal(ctx.includes('empFree'), true);
   });

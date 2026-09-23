@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAll } from '@/lib/db';
 import { requireAuth } from '@/lib/verify-permission';
+import { authScopeViewer, filterRowsByEmployeeScope, resolveEmployeeScopeFromDb } from '@/lib/scope/server';
 import { isCronRequest } from '@/lib/cron-auth';
 import { createSmartNotification } from '@/lib/rules-engine';
 import { isOverdueCAPA, capaDueDateMs, isTerminalCAPA, CAPA_SLA_DAYS } from '@/lib/metrics';
@@ -29,9 +30,10 @@ export async function GET(request: NextRequest) {
     // client-settable and provided no authentication). Access requires
     // either the server-side CRON_SECRET (scheduler) or an
     // authenticated user token.
+    let caller: Awaited<ReturnType<typeof requireAuth>> = null;
     if (!isCronRequest(request)) {
-      const auth = await requireAuth(request);
-      if (!auth) {
+      caller = await requireAuth(request);
+      if (!caller) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
       }
     }
@@ -158,6 +160,20 @@ export async function GET(request: NextRequest) {
       }
     }
 
+    // §M0.5-READ-SCOPE — the details echo exposes CAPA case metadata
+    // (optionally employee-linked), so an interactive viewer receives
+    // only cases inside their canonical employee scope. The scheduler
+    // path (cron secret) has no viewer and keeps the full echo, and
+    // the notification generation loop above stays global either way —
+    // SLA monitoring is a system automation, not a user-facing list.
+    let details = results.details;
+    if (caller) {
+      const scopeCtx = await resolveEmployeeScopeFromDb(authScopeViewer(caller), undefined, caller.permissions);
+      if (!scopeCtx.isUnrestricted) {
+        details = filterRowsByEmployeeScope(details, scopeCtx, { optionalLink: true });
+      }
+    }
+
     return NextResponse.json({
       success: true,
       timestamp: new Date().toISOString(),
@@ -169,7 +185,7 @@ export async function GET(request: NextRequest) {
         skipped: results.skipped,
         totalAlerts: results.warningGenerated + results.criticalGenerated + results.escalationGenerated,
       },
-      details: results.details,
+      details,
     });
   } catch (error) {
     console.error('[GET /api/capa-sla] Error:', error);

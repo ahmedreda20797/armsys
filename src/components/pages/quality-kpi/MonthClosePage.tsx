@@ -4,6 +4,11 @@ import { useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
 import { usePermissions } from '@/hooks/usePermissions';
+import { useLanguage } from '@/lib/i18n/language-context';
+import { formatDateTime as localeDateTime, displayLocale, formatMonthKey, formatInteger } from '@/lib/i18n/format';
+import { T } from '@/lib/i18n/T';
+import { translateUIText } from '@/lib/i18n/ui-text';
+import type { Locale } from '@/lib/i18n/dictionary';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -27,19 +32,10 @@ import type { MonthSnapshot, EmployeeScoreEntry } from '@/types/quality-kpi';
 import type { EmployeeKpiResult, KpiScheme } from '@/lib/kpi-framework';
 
 // ─── Helpers ──────────────────────────────────────────────────
-const MONTH_LABELS_AR = ['يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو', 'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر'];
-
-function formatMonth(monthKey: string): string {
-  const [y, m] = monthKey.split('-');
-  const idx = parseInt(m, 10) - 1;
-  if (idx < 0 || idx > 11) return monthKey;
-  return `${MONTH_LABELS_AR[idx]} ${y}`;
-}
-
-function formatDateTime(iso: string | null): string {
+function formatDateTime(iso: string | null, locale: Locale = displayLocale()): string {
   if (!iso) return '—';
   try {
-    return new Date(iso).toLocaleString('ar-EG', {
+    return localeDateTime(iso, locale, {
       year: 'numeric', month: 'short', day: 'numeric',
       hour: '2-digit', minute: '2-digit',
     });
@@ -71,6 +67,7 @@ function MonthCard({
   onReopen: () => void;
   canApprove: boolean;
 }) {
+  const { locale } = useLanguage();
   const isClosed = snap.status === 'closed';
   const pendingCount = snap.approvalStats?.pending ?? 0;
   const closeBlocked = pendingCount > 0;
@@ -86,9 +83,9 @@ function MonthCard({
               {isClosed ? <Lock className="size-5" /> : <Unlock className="size-5" />}
             </div>
             <div>
-              <p className="text-sm font-bold text-slate-100">{formatMonth(snap.monthKey)}</p>
+              <p className="text-sm font-bold text-slate-100">{formatMonthKey(snap.monthKey, locale)}</p>
               <p className="text-xs text-slate-400">
-                {snap.employeeCount} موظف · {snap.departmentCount} قسم
+                {formatInteger(snap.employeeCount, locale)} <T>موظف</T> · {formatInteger(snap.departmentCount, locale)} <T>قسم</T>
               </p>
             </div>
           </div>
@@ -98,43 +95,43 @@ function MonthCard({
               ? 'text-emerald-400 border-emerald-500/30 bg-emerald-500/10'
               : 'text-amber-400 border-amber-500/30 bg-amber-500/10'}
           >
-            {isClosed ? 'مغلق' : 'مفتوح'}
+            <T>{isClosed ? 'مغلق' : 'مفتوح'}</T>
           </Badge>
         </div>
 
         {/* Approval summary */}
         <div className="grid grid-cols-3 gap-2 text-center text-xs">
           <div className="rounded-md bg-slate-800/50 py-1.5">
-            <p className="text-emerald-400 font-bold tabular-nums">{snap.approvalStats?.approved ?? 0}</p>
-            <p className="text-slate-500">معتمد</p>
+            <p className="text-emerald-400 font-bold tabular-nums">{formatInteger(snap.approvalStats?.approved ?? 0, locale)}</p>
+            <p className="text-slate-500"><T>معتمد</T></p>
           </div>
           <div className="rounded-md bg-slate-800/50 py-1.5">
-            <p className="text-amber-400 font-bold tabular-nums">{pendingCount}</p>
-            <p className="text-slate-500">معلق</p>
+            <p className="text-amber-400 font-bold tabular-nums">{formatInteger(pendingCount, locale)}</p>
+            <p className="text-slate-500"><T>معلق</T></p>
           </div>
           <div className="rounded-md bg-slate-800/50 py-1.5">
-            <p className="text-rose-400 font-bold tabular-nums">{snap.approvalStats?.rejected ?? 0}</p>
-            <p className="text-slate-500">مرفوض</p>
+            <p className="text-rose-400 font-bold tabular-nums">{formatInteger(snap.approvalStats?.rejected ?? 0, locale)}</p>
+            <p className="text-slate-500"><T>مرفوض</T></p>
           </div>
         </div>
 
         {isClosed && (
           <p className="text-[11px] text-slate-500 flex items-center gap-1">
             <Clock className="size-3" />
-            أُغلق بواسطة {snap.closedByName ?? '—'} · {formatDateTime(snap.closedAt)}
+            <T>أُغلق بواسطة </T>{snap.closedByName ?? '—'} · {formatDateTime(snap.closedAt, locale)}
           </p>
         )}
         {snap.reopenCount > 0 && (
           <p className="text-[11px] text-slate-500 flex items-center gap-1">
             <History className="size-3" />
-            أُعيد فتحه {snap.reopenCount} مرة
+            <T>أُعيد فتحه </T>{formatInteger(snap.reopenCount, locale)} <T>مرة</T>
           </p>
         )}
 
         <div className="flex gap-2 pt-1">
           <Button variant="outline" size="sm" className="flex-1 gap-1.5" onClick={onPreview}>
             <Eye className="size-3.5" />
-            معاينة
+            <T>معاينة</T>
           </Button>
           {isClosed ? (
             <Button
@@ -145,7 +142,7 @@ function MonthCard({
               disabled={!canApprove}
             >
               <Unlock className="size-3.5" />
-              إعادة فتح
+              <T>إعادة فتح</T>
             </Button>
           ) : (
             <Button
@@ -153,17 +150,17 @@ function MonthCard({
               className="flex-1 gap-1.5"
               onClick={onClose}
               disabled={closeBlocked || !canApprove}
-              title={closeBlocked ? 'يوجد ملاحظات معلقة — راجعها قبل الإغلاق' : undefined}
+              title={closeBlocked ? translateUIText('يوجد ملاحظات معلقة — راجعها قبل الإغلاق', locale) : undefined}
             >
               <Lock className="size-3.5" />
-              إغلاق الشهر
+              <T>إغلاق الشهر</T>
             </Button>
           )}
         </div>
         {!isClosed && pendingCount > 0 && (
           <p className="text-[11px] text-amber-400 flex items-center gap-1">
             <AlertTriangle className="size-3" />
-            {pendingCount} ملاحظة معلقة — الإغلاق غير مفعّل حتى المراجعة
+            {formatInteger(pendingCount, locale)} <T>ملاحظة معلقة — الإغلاق غير مفعّل حتى المراجعة</T>
           </p>
         )}
       </CardContent>
@@ -179,6 +176,7 @@ function SnapshotPreviewDialog({
   open: boolean;
   onOpenChange: (v: boolean) => void;
 }) {
+  const { locale } = useLanguage();
   const { data, isLoading } = useMonthSnapshot(open ? monthKey : null);
   const snapshot = (data ?? null) as MonthSnapshot | null;
 
@@ -231,10 +229,11 @@ function SnapshotPreviewDialog({
         <DialogHeader>
           <DialogTitle className="text-slate-100 flex items-center gap-2">
             <FileSpreadsheet className="size-5 text-blue-400" />
-            {monthKey ? `معاينة لقطة ${formatMonth(monthKey)}` : 'معاينة اللقطة'}
+            {monthKey ? (<><T>معاينة لقطة </T>{formatMonthKey(monthKey, locale)}</>) : <T>معاينة اللقطة</T>}
           </DialogTitle>
           <DialogDescription className="text-slate-400">
-            البيانات المعروضة {snapshot?.status === 'closed' ? 'ثابتة (مجمدة)' : 'مباشرة من الملاحظات الحالية'}
+            <T>البيانات المعروضة </T>
+            {snapshot?.status === 'closed' ? <T>ثابتة (مجمدة)</T> : <T>مباشرة من الملاحظات الحالية</T>}
           </DialogDescription>
         </DialogHeader>
 
@@ -247,20 +246,20 @@ function SnapshotPreviewDialog({
             {/* Summary stats */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center text-xs">
               <div className="rounded-md bg-slate-800/50 py-2">
-                <p className="text-slate-300 font-bold tabular-nums">{rankedEmployees.length}</p>
-                <p className="text-slate-500">موظف</p>
+                <p className="text-slate-300 font-bold tabular-nums">{formatInteger(rankedEmployees.length, locale)}</p>
+                <p className="text-slate-500"><T>موظف</T></p>
               </div>
               <div className="rounded-md bg-slate-800/50 py-2">
-                <p className="text-slate-300 font-bold tabular-nums">{Object.keys(snapshot.departmentScores || {}).length}</p>
-                <p className="text-slate-500">قسم</p>
+                <p className="text-slate-300 font-bold tabular-nums">{formatInteger(Object.keys(snapshot.departmentScores || {}).length, locale)}</p>
+                <p className="text-slate-500"><T>قسم</T></p>
               </div>
               <div className="rounded-md bg-slate-800/50 py-2">
-                <p className="text-emerald-400 font-bold tabular-nums">{snapshot.approvalStats?.approved ?? 0}</p>
-                <p className="text-slate-500">معتمد</p>
+                <p className="text-emerald-400 font-bold tabular-nums">{formatInteger(snapshot.approvalStats?.approved ?? 0, locale)}</p>
+                <p className="text-slate-500"><T>معتمد</T></p>
               </div>
               <div className="rounded-md bg-slate-800/50 py-2">
-                <p className="text-amber-400 font-bold tabular-nums">{snapshot.approvalStats?.pending ?? 0}</p>
-                <p className="text-slate-500">معلق</p>
+                <p className="text-amber-400 font-bold tabular-nums">{formatInteger(snapshot.approvalStats?.pending ?? 0, locale)}</p>
+                <p className="text-slate-500"><T>معلق</T></p>
               </div>
             </div>
 
@@ -278,7 +277,7 @@ function SnapshotPreviewDialog({
                 {rankedEmployees.map((entry: EmployeeScoreEntry) => (
                   <div key={entry.employeeSnapshot.employeeId} className="flex items-center gap-3 px-3 py-2">
                     <span className="w-6 text-center text-xs font-bold text-slate-500 tabular-nums shrink-0">
-                      {entry.rank}
+                      {formatInteger(entry.rank, locale)}
                     </span>
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-medium text-slate-100 truncate">
@@ -290,8 +289,8 @@ function SnapshotPreviewDialog({
                       </p>
                     </div>
                     <div className="text-left text-xs text-slate-400 shrink-0">
-                      <span className="text-rose-400">−{entry.deductionPoints}</span>
-                      {entry.bonusPoints > 0 && <span className="text-emerald-400 mr-2">+{entry.bonusPoints}</span>}
+                      <span className="text-rose-400">−{formatInteger(entry.deductionPoints, locale)}</span>
+                      {entry.bonusPoints > 0 && <span className="text-emerald-400 mr-2">+{formatInteger(entry.bonusPoints, locale)}</span>}
                     </div>
                     <ScoreBadge score={entry.score} />
                   </div>
@@ -299,7 +298,7 @@ function SnapshotPreviewDialog({
                 {rankedEmployees.length === 0 && (
                   <div className="flex flex-col items-center justify-center py-12 text-slate-500">
                     <Users className="size-8 mb-2 opacity-50" />
-                    <p className="text-sm">لا يوجد موظفون في هذا الشهر</p>
+                    <p className="text-sm"><T>لا يوجد موظفون في هذا الشهر</T></p>
                   </div>
                 )}
               </div>
@@ -309,13 +308,13 @@ function SnapshotPreviewDialog({
               <div className="flex items-center gap-2 text-xs text-slate-400 bg-slate-800/30 rounded-md p-2">
                 <CheckCircle2 className="size-4 text-emerald-400 shrink-0" />
                 <span>
-                  لقطة مجمدة بتاريخ {formatDateTime(snapshot.closedAt)} — الإعدادات المستخدمة: حد أقصى للمكافأة {snapshot.settingsSnapshot?.maximumBonus ?? 0}
+                  <T>لقطة مجمدة بتاريخ </T>{formatDateTime(snapshot.closedAt, locale)}<T> — الإعدادات المستخدمة: حد أقصى للمكافأة </T>{formatInteger(snapshot.settingsSnapshot?.maximumBonus ?? 0, locale)}
                 </span>
               </div>
             )}
           </div>
         ) : (
-          <p className="text-center text-slate-400 py-8">لا توجد بيانات</p>
+          <p className="text-center text-slate-400 py-8"><T>لا توجد بيانات</T></p>
         )}
       </DialogContent>
     </Dialog>
@@ -333,10 +332,11 @@ function ReopenDialog({
 }) {
   const [reason, setReason] = useState('');
   const [busy, setBusy] = useState(false);
+  const { locale } = useLanguage();
 
   async function handleConfirm() {
     if (!reason.trim()) {
-      toast.error('يرجى ذكر سبب إعادة الفتح');
+      toast.error(translateUIText('يرجى ذكر سبب إعادة الفتح', locale));
       return;
     }
     setBusy(true);
@@ -345,7 +345,7 @@ function ReopenDialog({
       onOpenChange(false);
       setReason('');
     } catch (e) {
-      toast.error('فشل إعادة الفتح', { description: e instanceof Error ? e.message : undefined });
+      toast.error(translateUIText('فشل إعادة الفتح', locale), { description: e instanceof Error ? e.message : undefined });
     } finally {
       setBusy(false);
     }
@@ -357,26 +357,26 @@ function ReopenDialog({
         <DialogHeader>
           <DialogTitle className="text-slate-100 flex items-center gap-2">
             <Unlock className="size-5 text-amber-400" />
-            إعادة فتح شهر {monthKey ? formatMonth(monthKey) : ''}
+            <T>إعادة فتح شهر </T>{monthKey ? formatMonthKey(monthKey, locale) : ''}
           </DialogTitle>
           <DialogDescription className="text-slate-400">
-            إعادة الفتح تجعل بيانات الشهر قابلة للتعديل مرة أخرى. تظل اللقطة المجمدة محفوظة ولا تُحذف.
+            <T>إعادة الفتح تجعل بيانات الشهر قابلة للتعديل مرة أخرى. تظل اللقطة المجمدة محفوظة ولا تُحذف.</T>
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-2">
-          <Label>سبب إعادة الفتح <span className="text-rose-400">*</span></Label>
+          <Label><T>سبب إعادة الفتح</T> <span className="text-rose-400">*</span></Label>
           <Textarea
             value={reason}
             onChange={(e) => setReason(e.target.value)}
-            placeholder="مثال: تصحيح ملاحظة مفقودة..."
+            placeholder={translateUIText('مثال: تصحيح ملاحظة مفقودة...', locale)}
             rows={3}
             className="bg-slate-800/50 border-slate-700"
           />
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={busy}>إلغاء</Button>
+          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={busy}><T>إلغاء</T></Button>
           <Button onClick={handleConfirm} disabled={busy || !reason.trim()} className="gap-2">
-            {busy ? 'جارٍ...' : 'تأكيد إعادة الفتح'}
+            <T>{busy ? 'جارٍ...' : 'تأكيد إعادة الفتح'}</T>
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -387,6 +387,7 @@ function ReopenDialog({
 // ─── Page ─────────────────────────────────────────────────────
 export default function MonthClosePage() {
   const { canView, canApprove } = usePermissions('monthClose');
+  const { locale } = useLanguage();
   const { data, isLoading, refetch, isFetching } = useMonthSnapshots();
   const closeMut = useCloseMonth();
   const reopenMut = useReopenMonth();
@@ -400,7 +401,7 @@ export default function MonthClosePage() {
   if (!canView) {
     return (
       <div className="flex flex-col items-center justify-center py-24 text-slate-400">
-        <p>ليس لديك صلاحية للوصول إلى هذه الصفحة</p>
+        <p><T>ليس لديك صلاحية للوصول إلى هذه الصفحة</T></p>
       </div>
     );
   }
@@ -408,16 +409,16 @@ export default function MonthClosePage() {
   async function handleClose(monthKey: string) {
     try {
       await closeMut.mutateAsync(monthKey);
-      toast.success(`تم إغلاق ${formatMonth(monthKey)}`);
+      toast.success(`${translateUIText('تم إغلاق', locale)} ${formatMonthKey(monthKey, locale)}`);
       setCloseMonth(null);
     } catch (e) {
-      toast.error('فشل إغلاق الشهر', { description: e instanceof Error ? e.message : undefined });
+      toast.error(translateUIText('فشل إغلاق الشهر', locale), { description: e instanceof Error ? e.message : undefined });
     }
   }
 
   async function handleReopen(monthKey: string, reason: string) {
     await reopenMut.mutateAsync({ monthKey, reason });
-    toast.success(`تمت إعادة فتح ${formatMonth(monthKey)}`);
+    toast.success(`${translateUIText('تمت إعادة فتح', locale)} ${formatMonthKey(monthKey, locale)}`);
   }
 
   return (
@@ -427,12 +428,12 @@ export default function MonthClosePage() {
         pageId="monthClose"
         icon={<CalendarClock className="size-5" />}
         iconClassName="bg-blue-500/15 border-blue-500/30 text-blue-400"
-        title="إغلاق وإعادة فتح الأشهر"
-        description="إغلاق الشهر ينتج لقطة نهائية مجمدة — المصدر الرسمي للتقارير الشهرية"
+        title={translateUIText('إغلاق وإعادة فتح الأشهر', locale)}
+        description={translateUIText('إغلاق الشهر ينتج لقطة نهائية مجمدة — المصدر الرسمي للتقارير الشهرية', locale)}
         actions={
           <Button variant="outline" size="sm" onClick={() => refetch()} disabled={isFetching} className="gap-2">
             <Clock className={`size-4 ${isFetching ? 'animate-spin' : ''}`} />
-            تحديث
+            <T>تحديث</T>
           </Button>
         }
       />
@@ -441,8 +442,7 @@ export default function MonthClosePage() {
       <div className="flex items-start gap-2 text-xs text-slate-400 bg-blue-500/5 border border-blue-500/20 rounded-lg p-3">
         <AlertTriangle className="size-4 text-blue-400 shrink-0 mt-0.5" />
         <p>
-          إغلاق الشهر يجمد بيانات الموظفين (الاسم، القسم، المنصب، المدير) كما هي وقت الإغلاق.
-          أي تغيير لاحق على ملف الموظف لا يؤثر على الأشهر المغلقة. إعادة الفتح يحافظ على اللقطة المجمدة.
+          <T>إغلاق الشهر يجمد بيانات الموظفين (الاسم، القسم، المنصب، المدير) كما هي وقت الإغلاق. أي تغيير لاحق على ملف الموظف لا يؤثر على الأشهر المغلقة. إعادة الفتح يحافظ على اللقطة المجمدة.</T>
         </p>
       </div>
 
@@ -475,7 +475,7 @@ export default function MonthClosePage() {
       ) : (
         <div className="flex flex-col items-center justify-center py-24 text-slate-400">
           <CalendarClock className="size-12 mb-3 opacity-50" />
-          <p className="text-sm">لا توجد أشهر بعد. تظهر الأشهر تلقائياً عند إنشاء أول ملاحظة جودة.</p>
+          <p className="text-sm"><T>لا توجد أشهر بعد. تظهر الأشهر تلقائياً عند إنشاء أول ملاحظة جودة.</T></p>
         </div>
       )}
 
@@ -485,21 +485,21 @@ export default function MonthClosePage() {
           <DialogHeader>
             <DialogTitle className="text-slate-100 flex items-center gap-2">
               <Lock className="size-5 text-blue-400" />
-              تأكيد إغلاق {closeMonth ? formatMonth(closeMonth) : ''}
+              <T>تأكيد إغلاق </T>{closeMonth ? formatMonthKey(closeMonth, locale) : ''}
             </DialogTitle>
             <DialogDescription className="text-slate-400">
-              سيتم احتساب درجات جميع الموظفين وتجميد بياناتهم. يمكن إعادة الفتح لاحقاً مع ذكر السبب.
+              <T>سيتم احتساب درجات جميع الموظفين وتجميد بياناتهم. يمكن إعادة الفتح لاحقاً مع ذكر السبب.</T>
             </DialogDescription>
           </DialogHeader>
           <div className="flex items-center justify-end gap-2 pt-2">
-            <Button variant="outline" onClick={() => setCloseMonth(null)}>إلغاء</Button>
+            <Button variant="outline" onClick={() => setCloseMonth(null)}><T>إلغاء</T></Button>
             <Button
               onClick={() => closeMonth && handleClose(closeMonth)}
               disabled={closeMut.isPending}
               className="gap-2"
             >
               <Lock className="size-4" />
-              {closeMut.isPending ? 'جارٍ الإغلاق...' : 'تأكيد الإغلاق'}
+              <T>{closeMut.isPending ? 'جارٍ الإغلاق...' : 'تأكيد الإغلاق'}</T>
             </Button>
           </div>
         </DialogContent>

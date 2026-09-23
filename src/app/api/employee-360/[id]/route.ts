@@ -10,6 +10,8 @@ import { resolveManagerChain } from '@/lib/organization/graph';
 import { resolveEmployeeScope } from '@/lib/scope';
 import { ORG_NODES_TABLE, type OrgNode } from '@/lib/organization';
 import type { Employee } from '@/types';
+// §DEAL-DATES — canonical deal date dimensions (CREATED/CLOSED/TRAVEL).
+import { countClosedDealsForMonth } from '@/lib/deal-dates';
 // Canonical metric layer — single source of truth for risk + CAPA overdue.
 import {
   computeRisk,
@@ -213,9 +215,14 @@ export async function GET(
     const approvedRequests = empRequests.filter((r) => r.status === 'approved');
     const rejectedRequests = empRequests.filter((r) => r.status === 'rejected');
 
-    // ═══ Travel stats ═══
+    // ═══ Travel stats (§DEAL-DATES classification) ═══
+    // Travel/operations dimension: status-based, no period attribution.
     const activeTrips = empTravel.filter((t) => ['upcoming', 'in_progress'].includes(t.status));
     const completedTrips = empTravel.filter((t) => t.status === 'completed');
+    // CLOSED dimension: successful completions attributed by closedAt
+    // (never by departureDate). Legacy completed deals without a
+    // closure timestamp stay UNKNOWN — surfaced, not attributed.
+    const closedCounts = countClosedDealsForMonth(empTravel, currentMonth);
 
     // ═══ Complaints stats ═══
     const openComplaints = empComplaints.filter((c: any) =>
@@ -522,6 +529,8 @@ export async function GET(
               total: empTravel.length,
               active: activeTrips.length,
               completed: completedTrips.length,
+              closedCurrentMonth: closedCounts.closed,
+              closedUnknownMonth: closedCounts.unknown,
             }
           : null,
         complaints: sectionGate.complaints

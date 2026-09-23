@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, type ReactNode } from 'react';
 import { motion } from 'framer-motion';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -15,6 +15,11 @@ import {
 } from 'lucide-react';
 import { ScoreRing, ScoreBadge, TrendArrow, ApprovalStatusBadge } from '@/components/shared/kpi';
 import { TimelineView } from '@/components/shared/audit';
+import { useLanguage } from '@/lib/i18n/language-context';
+import { formatDate as localeDate, displayLocale, formatMonthKey, formatInteger } from '@/lib/i18n/format';
+import { T } from '@/lib/i18n/T';
+import { translateUIText } from '@/lib/i18n/ui-text';
+import type { Locale } from '@/lib/i18n/dictionary';
 import { buildTimeline } from '@/lib/audit/timeline-builder';
 import { useAppStore } from '@/lib/store';
 import {
@@ -28,27 +33,15 @@ import { usePermissions } from '@/hooks/usePermissions';
 import type { QualityObservation, EmployeeScoreEntry } from '@/types/quality-kpi';
 
 // ─── Constants & Helpers ─────────────────────────────────────
-const MONTH_LABELS_AR = [
-  'يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو',
-  'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر',
-];
-
 const CURRENT_MONTH = new Date().toISOString().slice(0, 7);
 
-function formatMonth(monthKey: string): string {
-  const [y, m] = monthKey.split('-');
-  const idx = parseInt(m, 10) - 1;
-  if (idx < 0 || idx > 11) return monthKey;
-  return `${MONTH_LABELS_AR[idx]} ${y}`;
-}
-
-function formatDate(dateStr: string): string {
+function formatDate(dateStr: string, locale: Locale = displayLocale()): string {
   if (!dateStr) return '';
   // DD/MM/YYYY stored format
   if (/^\d{2}\/\d{2}\/\d{4}$/.test(dateStr)) return dateStr;
   const d = new Date(dateStr);
   if (Number.isNaN(d.getTime())) return dateStr;
-  return d.toLocaleDateString('ar-EG');
+  return localeDate(d, locale);
 }
 
 const SEVERITY_COLORS: Record<string, string> = {
@@ -74,6 +67,7 @@ const SEVERITY_COLORS: Record<string, string> = {
  *   • /api/observation-categories (category names)
  */
 export function EmployeeQualityKpiPanel({ employeeId }: { employeeId: string }) {
+  const { locale } = useLanguage();
   // ── Month selection ──
   const [selectedMonth, setSelectedMonth] = useState(CURRENT_MONTH);
   const [expandedObsId, setExpandedObsId] = useState<string | null>(null);
@@ -162,16 +156,16 @@ export function EmployeeQualityKpiPanel({ employeeId }: { employeeId: string }) 
   // Month options for the selector
   const monthOptions = useMemo(() => {
     const opts: Array<{ value: string; label: string; frozen: boolean }> = [
-      { value: CURRENT_MONTH, label: `${formatMonth(CURRENT_MONTH)} (الشهر الحالي)`, frozen: false },
+      { value: CURRENT_MONTH, label: `${formatMonthKey(CURRENT_MONTH, locale)} ${translateUIText('(الشهر الحالي)', locale)}`, frozen: false },
     ];
     const snapshots = Array.isArray(snapshotList) ? snapshotList : [];
     for (const s of snapshots) {
       const mk = (s as Record<string, string>).monthKey;
       if (!mk || mk === CURRENT_MONTH) continue;
-      opts.push({ value: mk, label: formatMonth(mk), frozen: (s as Record<string, string>).status === 'closed' });
+      opts.push({ value: mk, label: formatMonthKey(mk, locale), frozen: (s as Record<string, string>).status === 'closed' });
     }
     return opts;
-  }, [snapshotList]);
+  }, [snapshotList, locale]);
 
   // Snapshot list for the monthly history table
   const historyMonths = useMemo(() => {
@@ -223,7 +217,7 @@ export function EmployeeQualityKpiPanel({ employeeId }: { employeeId: string }) 
           <CalendarDays className="size-4 text-slate-400 shrink-0" />
           <Select value={selectedMonth} onValueChange={(v) => { setSelectedMonth(v); setExpandedObsId(null); }}>
             <SelectTrigger className="flex-1 bg-slate-900/40 border-slate-600/40">
-              <SelectValue placeholder="اختر شهراً" />
+              <SelectValue placeholder={translateUIText('اختر شهراً', locale)} />
             </SelectTrigger>
             <SelectContent>
               {monthOptions.map((opt) => (
@@ -236,17 +230,17 @@ export function EmployeeQualityKpiPanel({ employeeId }: { employeeId: string }) 
           {isFrozen && (
             <Badge variant="outline" className="shrink-0 text-blue-400 border-blue-500/30 text-[10px]">
               <Lock className="size-3 ms-1" />
-              مجمّد
+              <T>مجمّد</T>
             </Badge>
           )}
           {!isCurrentMonth && !isFrozen && monthDetail != null && (
             <Badge variant="outline" className="shrink-0 text-amber-400 border-amber-500/30 text-[10px]">
-              مباشر
+              <T>مباشر</T>
             </Badge>
           )}
           {isCurrentMonth && (
             <Badge variant="outline" className="shrink-0 text-emerald-400 border-emerald-500/30 text-[10px]">
-              مباشر
+              <T>مباشر</T>
             </Badge>
           )}
         </CardContent>
@@ -258,7 +252,7 @@ export function EmployeeQualityKpiPanel({ employeeId }: { employeeId: string }) 
         <Card className="bg-slate-800/40 border border-slate-700/30">
           <CardContent className="p-4 flex flex-col items-center justify-center">
             <p className="text-xs text-slate-400 mb-2">
-              درجة الجودة — {formatMonth(selectedMonth)}
+              <T>درجة الجودة — </T>{formatMonthKey(selectedMonth, locale)}
             </p>
             {!isCurrentMonth && monthLoading ? (
               <Skeleton className="size-24 rounded-full" />
@@ -278,23 +272,23 @@ export function EmployeeQualityKpiPanel({ employeeId }: { employeeId: string }) 
         {/* Deductions / Bonuses / Pending */}
         <Card className="bg-slate-800/40 border border-slate-700/30">
           <CardContent className="p-4 space-y-3">
-            <StatRow icon={ArrowDownCircle} color="text-rose-400" label="نقاط الخصم" value={deductions} />
-            <StatRow icon={ArrowUpCircle} color="text-emerald-400" label="نقاط المكافأة" value={bonuses} />
-            <StatRow icon={Clock} color="text-amber-400" label="بانتظار الاعتماد" value={pendingApprovals} />
+            <StatRow icon={ArrowDownCircle} color="text-rose-400" label={<T>نقاط الخصم</T>} value={formatInteger(deductions, locale)} />
+            <StatRow icon={ArrowUpCircle} color="text-emerald-400" label={<T>نقاط المكافأة</T>} value={formatInteger(bonuses, locale)} />
+            <StatRow icon={Clock} color="text-amber-400" label={<T>بانتظار الاعتماد</T>} value={formatInteger(pendingApprovals, locale)} />
           </CardContent>
         </Card>
 
         {/* Counts + Rank */}
         <Card className="bg-slate-800/40 border border-slate-700/30">
           <CardContent className="p-4 space-y-3">
-            <StatRow icon={Award} color="text-blue-400" label="ملاحظات معتمدة" value={approved.length + approvedBonuses.length} />
-            <StatRow icon={ArrowUpCircle} color="text-emerald-400" label="منها مكافآت" value={approvedBonuses.length} />
-            <StatRow icon={Clock} color="text-amber-400" label="ملاحظات معلقة" value={pending.length} />
+            <StatRow icon={Award} color="text-blue-400" label={<T>ملاحظات معتمدة</T>} value={formatInteger(approved.length + approvedBonuses.length, locale)} />
+            <StatRow icon={ArrowUpCircle} color="text-emerald-400" label={<T>منها مكافآت</T>} value={formatInteger(approvedBonuses.length, locale)} />
+            <StatRow icon={Clock} color="text-amber-400" label={<T>ملاحظات معلقة</T>} value={formatInteger(pending.length, locale)} />
             {employeeEntry && employeeEntry.rank > 0 && (
-              <StatRow icon={Award} color="text-brand-400" label="الترتيب" value={`#${employeeEntry.rank}`} />
+              <StatRow icon={Award} color="text-brand-400" label={<T>الترتيب</T>} value={`#${formatInteger(employeeEntry.rank, locale)}`} />
             )}
             {employeeEntry && (
-              <StatRow icon={Award} color="text-slate-400" label="القسم" value={employeeEntry.dept || employeeEntry.employeeSnapshot.departmentName} />
+              <StatRow icon={Award} color="text-slate-400" label={<T>القسم</T>} value={employeeEntry.dept || employeeEntry.employeeSnapshot.departmentName} />
             )}
           </CardContent>
         </Card>
@@ -307,32 +301,32 @@ export function EmployeeQualityKpiPanel({ employeeId }: { employeeId: string }) 
             <div className="flex items-center justify-between pb-2 border-b border-slate-700/30">
               <div className="flex items-center gap-2">
                 <History className="size-4 text-slate-400" />
-                <h4 className="text-sm font-semibold text-slate-200">السجل الشهري</h4>
+                <h4 className="text-sm font-semibold text-slate-200"><T>السجل الشهري</T></h4>
               </div>
               <Badge variant="outline" className="text-slate-400 border-slate-600/40 text-[10px]">
-                {historyMonths.length} شهر
+                {formatInteger(historyMonths.length, locale)} <T>شهر</T>
               </Badge>
             </div>
             <div className="overflow-x-auto">
               <table className="w-full text-xs">
                 <thead>
                   <tr className="text-slate-500 border-b border-slate-700/20">
-                    <th className="text-start py-1.5 px-2 font-normal">الشهر</th>
-                    <th className="text-center py-1.5 px-1 font-normal">الدرجة</th>
-                    <th className="text-center py-1.5 px-1 font-normal">الخصم</th>
-                    <th className="text-center py-1.5 px-1 font-normal">المكافأة</th>
-                    <th className="text-center py-1.5 px-1 font-normal">الملاحظات</th>
-                    <th className="text-center py-1.5 px-1 font-normal hidden sm:table-cell">المعتمدة</th>
-                    <th className="text-center py-1.5 px-1 font-normal hidden sm:table-cell">المعلقة</th>
-                    <th className="text-center py-1.5 px-1 font-normal hidden md:table-cell">الترتيب</th>
-                    <th className="text-center py-1.5 px-1 font-normal hidden md:table-cell">الحالة</th>
+                    <th className="text-start py-1.5 px-2 font-normal"><T>الشهر</T></th>
+                    <th className="text-center py-1.5 px-1 font-normal"><T>الدرجة</T></th>
+                    <th className="text-center py-1.5 px-1 font-normal"><T>الخصم</T></th>
+                    <th className="text-center py-1.5 px-1 font-normal"><T>المكافأة</T></th>
+                    <th className="text-center py-1.5 px-1 font-normal"><T>الملاحظات</T></th>
+                    <th className="text-center py-1.5 px-1 font-normal hidden sm:table-cell"><T>المعتمدة</T></th>
+                    <th className="text-center py-1.5 px-1 font-normal hidden sm:table-cell"><T>المعلقة</T></th>
+                    <th className="text-center py-1.5 px-1 font-normal hidden md:table-cell"><T>الترتيب</T></th>
+                    <th className="text-center py-1.5 px-1 font-normal hidden md:table-cell"><T>الحالة</T></th>
                   </tr>
                 </thead>
                 <tbody>
                   {/* Current month row */}
                   <HistoryTableRow
                     monthKey={CURRENT_MONTH}
-                    label={`${formatMonth(CURRENT_MONTH)} (الحالي)`}
+                    label={`${formatMonthKey(CURRENT_MONTH, locale)} ${translateUIText('(الحالي)', locale)}`}
                     isLive
                     isSelected={selectedMonth === CURRENT_MONTH}
                     onClick={() => setSelectedMonth(CURRENT_MONTH)}
@@ -343,7 +337,7 @@ export function EmployeeQualityKpiPanel({ employeeId }: { employeeId: string }) 
                     <HistoryTableRow
                       key={m.monthKey}
                       monthKey={m.monthKey}
-                      label={formatMonth(m.monthKey)}
+                      label={formatMonthKey(m.monthKey, locale)}
                       isLive={m.status === 'open'}
                       isSelected={selectedMonth === m.monthKey}
                       onClick={() => setSelectedMonth(m.monthKey)}
@@ -362,7 +356,7 @@ export function EmployeeQualityKpiPanel({ employeeId }: { employeeId: string }) 
                   onClick={() => setHistoryCount((c) => c + 6)}
                 >
                   <ChevronDown className="size-3 ms-1" />
-                  عرض المزيد
+                  <T>عرض المزيد</T>
                 </Button>
               </div>
             )}
@@ -375,8 +369,8 @@ export function EmployeeQualityKpiPanel({ employeeId }: { employeeId: string }) 
         <CardContent className="p-4 space-y-2">
           <div className="flex items-center gap-2 pb-2 border-b border-slate-700/30">
             <TrendingDown className="size-4 text-rose-400" />
-            <h4 className="text-sm font-semibold text-slate-200">الخصومات المعتمدة</h4>
-            <Badge variant="outline" className="text-slate-500 text-[10px]">{approved.length}</Badge>
+            <h4 className="text-sm font-semibold text-slate-200"><T>الخصومات المعتمدة</T></h4>
+            <Badge variant="outline" className="text-slate-500 text-[10px]">{formatInteger(approved.length, locale)}</Badge>
           </div>
           {approved.length > 0 ? (
             <EnhancedObservationList
@@ -388,7 +382,7 @@ export function EmployeeQualityKpiPanel({ employeeId }: { employeeId: string }) 
               onToggle={handleToggleObsTimeline}
             />
           ) : (
-            <EmptyHint label="لا توجد خصومات معتمدة لهذا الشهر" />
+            <EmptyHint label={<T>لا توجد خصومات معتمدة لهذا الشهر</T>} />
           )}
         </CardContent>
       </Card>
@@ -399,8 +393,8 @@ export function EmployeeQualityKpiPanel({ employeeId }: { employeeId: string }) 
           <div className="flex items-center justify-between pb-2 border-b border-slate-700/30">
             <div className="flex items-center gap-2">
               <Clock className="size-4 text-amber-400" />
-              <h4 className="text-sm font-semibold text-slate-200">ملاحظات بانتظار الاعتماد</h4>
-              <Badge variant="outline" className="text-slate-500 text-[10px]">{pending.length}</Badge>
+              <h4 className="text-sm font-semibold text-slate-200"><T>ملاحظات بانتظار الاعتماد</T></h4>
+              <Badge variant="outline" className="text-slate-500 text-[10px]">{formatInteger(pending.length, locale)}</Badge>
             </div>
             {canApprove && pending.length > 0 && (
               <Button
@@ -410,7 +404,7 @@ export function EmployeeQualityKpiPanel({ employeeId }: { employeeId: string }) 
                 onClick={handleNavigateToObservations}
               >
                 <ExternalLink className="size-3 ms-1" />
-                إدارة الاعتمادات
+                <T>إدارة الاعتمادات</T>
               </Button>
             )}
           </div>
@@ -424,7 +418,7 @@ export function EmployeeQualityKpiPanel({ employeeId }: { employeeId: string }) 
               onToggle={handleToggleObsTimeline}
             />
           ) : (
-            <EmptyHint label="لا توجد ملاحظات معلقة" />
+            <EmptyHint label={<T>لا توجد ملاحظات معلقة</T>} />
           )}
         </CardContent>
       </Card>
@@ -434,9 +428,9 @@ export function EmployeeQualityKpiPanel({ employeeId }: { employeeId: string }) 
         <Card className="bg-slate-800/40 border border-slate-700/30">
           <CardContent className="p-4 space-y-2">
             <div className="flex items-center gap-2 pb-2 border-b border-slate-700/30">
-              <ArrowUpCircle className="size-4 text-emerald-400" />
-              <h4 className="text-sm font-semibold text-slate-200">المكافآت المعتمدة</h4>
-              <Badge variant="outline" className="text-slate-500 text-[10px]">{approvedBonuses.length}</Badge>
+            <ArrowUpCircle className="size-4 text-emerald-400" />
+            <h4 className="text-sm font-semibold text-slate-200"><T>المكافآت المعتمدة</T></h4>
+            <Badge variant="outline" className="text-slate-500 text-[10px]">{formatInteger(approvedBonuses.length, locale)}</Badge>
             </div>
             <EnhancedObservationList
               items={approvedBonuses}
@@ -463,7 +457,7 @@ export function EmployeeQualityKpiPanel({ employeeId }: { employeeId: string }) 
       {observations.length === 0 && !employeeEntry && (
         <div className="flex flex-col items-center justify-center py-10 text-slate-500">
           <BarChart3 className="size-10 mb-2 opacity-50" />
-          <p className="text-sm">لا توجد بيانات جودة لهذا الموظف في {formatMonth(selectedMonth)}</p>
+          <p className="text-sm"><T>لا توجد بيانات جودة لهذا الموظف في </T>{formatMonthKey(selectedMonth, locale)}</p>
         </div>
       )}
     </motion.div>
@@ -480,7 +474,7 @@ function StatRow({
 }: {
   icon: typeof Award;
   color: string;
-  label: string;
+  label: ReactNode;
   value: number | string;
 }) {
   return (
@@ -512,6 +506,7 @@ function HistoryTableRow({
 }) {
   // Fetch full snapshot detail for this row (React Query cached, bounded by parent's historyCount).
   // Closed months return frozen snapshot; open months return live preview — both canonical.
+  const { locale } = useLanguage();
   const { data: detail } = useMonthSnapshot(monthKey);
   const entry = (detail?.employeeScores as Record<string, EmployeeScoreEntry> | undefined)?.[employeeId];
   const max = detail?.settingsSnapshot?.defaultScore ?? 100;
@@ -531,24 +526,24 @@ function HistoryTableRow({
         )}
       </td>
       <td className="text-center py-1.5 px-1 tabular-nums text-rose-400">
-        {entry?.deductionPoints ?? 0}
+        {formatInteger(entry?.deductionPoints ?? 0, locale)}
       </td>
       <td className="text-center py-1.5 px-1 tabular-nums text-emerald-400">
-        {entry?.bonusPoints ?? 0}
+        {formatInteger(entry?.bonusPoints ?? 0, locale)}
       </td>
       <td className="text-center py-1.5 px-1 tabular-nums">
-        {entry?.observationCount ?? 0}
+        {formatInteger(entry?.observationCount ?? 0, locale)}
       </td>
       <td className="text-center py-1.5 px-1 tabular-nums hidden sm:table-cell">
-        {entry?.approvedCount ?? 0}
+        {formatInteger(entry?.approvedCount ?? 0, locale)}
       </td>
       <td className="text-center py-1.5 px-1 tabular-nums text-amber-400 hidden sm:table-cell">
-        {entry?.pendingCount ?? 0}
+        {formatInteger(entry?.pendingCount ?? 0, locale)}
       </td>
       <td className="text-center py-1.5 px-1 hidden md:table-cell">
         {entry?.rank ? (
           <Badge variant="outline" className="text-brand-400 border-brand-500/20 text-[10px]">
-            #{entry.rank}
+            #{formatInteger(entry.rank, locale)}
           </Badge>
         ) : (
           <span className="text-slate-600">—</span>
@@ -556,11 +551,11 @@ function HistoryTableRow({
       </td>
       <td className="text-center py-1.5 px-1 hidden md:table-cell">
         {isLive ? (
-          <Badge variant="outline" className="text-emerald-400 border-emerald-500/20 text-[10px]">مباشر</Badge>
+          <Badge variant="outline" className="text-emerald-400 border-emerald-500/20 text-[10px]"><T>مباشر</T></Badge>
         ) : (
           <Badge variant="outline" className="text-blue-400 border-blue-500/20 text-[10px]">
             <Lock className="size-2.5 ms-0.5" />
-            مجمّد
+            <T>مجمّد</T>
           </Badge>
         )}
       </td>
@@ -584,6 +579,7 @@ function EnhancedObservationList({
   expandedId: string | null;
   onToggle: (id: string) => void;
 }) {
+  const { locale } = useLanguage();
   return (
     <div className="space-y-1.5">
       {items.map((o) => {
@@ -604,11 +600,11 @@ function EnhancedObservationList({
               </div>
               <div className="flex-1 min-w-0 space-y-0.5">
                 <p className="text-sm text-slate-200 truncate">
-                  {o.type || categoryName.get(o.categoryId || '') || o.categoryName || 'ملاحظة جودة'}
+                  {o.type || categoryName.get(o.categoryId || '') || o.categoryName || translateUIText('ملاحظة جودة', locale)}
                 </p>
                 <div className="flex flex-wrap gap-x-2 gap-y-0.5 text-[11px] text-slate-500">
                   <span>{o.observerName || ''}</span>
-                  {o.observationDate && <span>{formatDate(o.observationDate)}</span>}
+                  {o.observationDate && <span>{formatDate(o.observationDate, locale)}</span>}
                   {showDetails && o.categoryName && (
                     <span>{categoryName.get(o.categoryId || '') || o.categoryName}</span>
                   )}
@@ -648,6 +644,7 @@ function ObservationTimelineCard({
   onClose: () => void;
   categoryName: Map<string, string>;
 }) {
+  const { locale } = useLanguage();
   const timeline = useMemo(() => {
     if (!observation) return [];
     return buildTimeline(
@@ -666,11 +663,11 @@ function ObservationTimelineCard({
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <History className="size-4 text-slate-400" />
-            <h4 className="text-sm font-semibold text-slate-200">سجل الأحداث</h4>
+            <h4 className="text-sm font-semibold text-slate-200"><T>سجل الأحداث</T></h4>
           </div>
           <Button variant="ghost" size="sm" className="text-xs text-slate-400" onClick={onClose}>
             <ChevronUp className="size-3 ms-1" />
-            إغلاق
+            <T>إغلاق</T>
           </Button>
         </div>
         {/* Observation summary */}
@@ -689,7 +686,7 @@ function ObservationTimelineCard({
             </Badge>
           )}
           <span className="text-slate-500">
-            {observation.observerName} — {formatDate(observation.observationDate)}
+            {observation.observerName} — {formatDate(observation.observationDate, locale)}
           </span>
         </div>
         {observation.notes && (
@@ -700,7 +697,7 @@ function ObservationTimelineCard({
         {/* Timeline — canonical buildTimeline output rendered by shared TimelineView */}
         <TimelineView
           points={timeline}
-          emptyLabel="لا يوجد سجل أحداث لهذه الملاحظة"
+          emptyLabel={translateUIText('لا يوجد سجل أحداث لهذه الملاحظة', locale)}
           className="max-h-64 overflow-y-auto"
         />
       </CardContent>
@@ -709,6 +706,6 @@ function ObservationTimelineCard({
 }
 
 /** Centered empty hint. */
-function EmptyHint({ label }: { label: string }) {
+function EmptyHint({ label }: { label: ReactNode }) {
   return <p className="text-center text-xs text-slate-500 py-4">{label}</p>;
 }

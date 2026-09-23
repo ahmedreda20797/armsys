@@ -51,8 +51,11 @@ function orgNode(
 }
 
 function orgFixture(): OrgNode[] {
+  // §ORG-LEVELS — GA root mirrors the registerFixtures HR boundary
+  // ('ga'); the company hangs beneath it per the canonical structure.
   return [
-    orgNode('company', 'ARM', 'company', null),
+    orgNode('ga', 'GA', 'general_administration', null),
+    orgNode('company', 'ARM', 'company', 'ga'),
     orgNode('quality', 'قسم مراقبة الجودة', 'department', 'company'),
     orgNode('qaTeam', 'فريق ضمان الجودة', 'team', 'quality'),
     orgNode('archivedDept', 'قسم مؤرشف', 'department', 'company', { status: 'archived' }),
@@ -270,7 +273,9 @@ describe('GET /api/organization — current workforce strength from canonical as
     );
     assert.equal(res.status, 200);
     const data = await res.json();
-    const company = data.tree.find((n: { id: string }) => n.id === 'company');
+    // §ORG-LEVELS — tree root is GA; company is its child
+    const ga = data.tree.find((n: { id: string }) => n.id === 'ga');
+    const company = ga.children.find((n: { id: string }) => n.id === 'company');
     const quality = company.children.find((n: { id: string }) => n.id === 'quality');
     const qaTeam = quality.children.find((n: { id: string }) => n.id === 'qaTeam');
     // archived e2 does not inflate the team or subtree counts

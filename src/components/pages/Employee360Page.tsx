@@ -55,6 +55,9 @@ import {
 } from 'lucide-react';
 import { EmployeeQualityKpiPanel } from '@/components/pages/quality-kpi/EmployeeQualityKpiPanel';
 import { EmployeePerformanceSection } from '@/components/pages/employee360/EmployeePerformanceSection';
+import { T } from '@/lib/i18n/T';
+import { translateUIText } from '@/lib/i18n/ui-text';
+import { useLanguage } from '@/lib/i18n/language-context';
 import {
   DOCUMENT_TYPES,
   DOCUMENT_STATUS_LABELS,
@@ -225,14 +228,14 @@ function getRiskGlow(level: string) {
   }
 }
 
-function getRiskLabel(level: string) {
-  switch (level) {
-    case 'low': return 'منخفض';
-    case 'medium': return 'متوسط';
-    case 'high': return 'مرتفع';
-    case 'critical': return 'حرج';
-    default: return 'غير محدد';
-  }
+function getRiskLabel(level: string, locale: 'ar' | 'en' = 'ar') {
+  // system risk vocabulary — application-owned status labels
+  const table: Record<string, [string, string]> = {
+    low: ['منخفض', 'Low'], medium: ['متوسط', 'Medium'], high: ['مرتفع', 'High'], critical: ['حرج', 'Critical'],
+  };
+  const pair = table[level];
+  if (pair) return locale === 'en' ? pair[1] : pair[0];
+  return 'غير محدد';
 }
 
 function getHealthColor(score: number) {
@@ -344,7 +347,7 @@ function HealthCircle({ score, size = 100, animated = true }: { score: number; s
         >
           {score}
         </motion.span>
-        <span className="text-[9px] text-slate-500 mt-0.5">درجة الصحة</span>
+        <span className="text-[9px] text-slate-500 mt-0.5"><T>درجة الصحة</T></span>
       </div>
     </div>
   );
@@ -399,14 +402,14 @@ function EmployeeNotFound({ onBack }: { onBack: () => void }) {
       >
         <UserCircle className="size-10 text-slate-600" />
       </motion.div>
-      <h2 className="text-xl font-bold text-white mb-2">الموظف غير موجود</h2>
-      <p className="text-slate-400 mb-6">لم يتم العثور على بيانات الموظف المطلوب</p>
+      <h2 className="text-xl font-bold text-white mb-2"><T>الموظف غير موجود</T></h2>
+      <p className="text-slate-400 mb-6"><T>لم يتم العثور على بيانات الموظف المطلوب</T></p>
       <Button
         onClick={onBack}
         className="bg-gradient-to-l from-emerald-600 to-cyan-600 hover:from-emerald-700 hover:to-cyan-700 text-white shadow-lg shadow-emerald-500/20"
       >
         <ArrowRight className="size-4 ml-2" />
-        رجوع
+        <T>رجوع</T>
       </Button>
     </motion.div>
   );
@@ -458,6 +461,7 @@ function documentStatusOf(expiryDate: string | null): { label: string; cls: stri
 }
 
 function EmployeeDocumentsSection({ employeeId }: { employeeId: string }) {
+  const { locale } = useLanguage();
   const { canUpdate } = usePermissions('employees');
   const [docs, setDocs] = useState<DocRow[] | null>(null);
   const [error, setError] = useState(false);
@@ -533,13 +537,13 @@ function EmployeeDocumentsSection({ employeeId }: { employeeId: string }) {
           <div className="w-7 h-7 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center">
             <ShieldCheck className="size-4 text-emerald-400" />
           </div>
-          مستندات الموظف
+          <T>مستندات الموظف</T>
         </h3>
         {canUpdate && (
           <Button size="sm" variant="outline" className="border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10 h-8 text-xs"
             onClick={() => setAdding((v) => !v)}>
             <Plus className="size-3.5 ml-1" />
-            إضافة مستند
+            <T>إضافة مستند</T>
           </Button>
         )}
       </div>
@@ -547,12 +551,12 @@ function EmployeeDocumentsSection({ employeeId }: { employeeId: string }) {
       {adding && canUpdate && (
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 rounded-xl border border-slate-700/30 bg-slate-900/40 p-4">
           <div className="space-y-1">
-            <Label className="text-xs text-slate-400">العنوان *</Label>
+            <Label className="text-xs text-slate-400"><T>العنوان *</T></Label>
             <Input value={form.title} onChange={(e) => setForm((p) => ({ ...p, title: e.target.value }))}
-              className="bg-slate-800 border-slate-600 text-white h-9 text-sm" placeholder="مثال: صورة البطاقة" />
+              className="bg-slate-800 border-slate-600 text-white h-9 text-sm" placeholder={translateUIText('مثال: صورة البطاقة', locale)} />
           </div>
           <div className="space-y-1">
-            <Label className="text-xs text-slate-400">النوع</Label>
+            <Label className="text-xs text-slate-400"><T>النوع</T></Label>
             <Select value={form.docType} onValueChange={(v) => setForm((p) => ({ ...p, docType: v }))}>
               <SelectTrigger className="bg-slate-800 border-slate-600 text-white h-9 text-sm"><SelectValue /></SelectTrigger>
               <SelectContent>
@@ -563,12 +567,12 @@ function EmployeeDocumentsSection({ employeeId }: { employeeId: string }) {
             </Select>
           </div>
           <div className="space-y-1">
-            <Label className="text-xs text-slate-400">تاريخ الانتهاء (اختياري)</Label>
+            <Label className="text-xs text-slate-400"><T>تاريخ الانتهاء (اختياري)</T></Label>
             <Input type="date" value={form.expiryDate} onChange={(e) => setForm((p) => ({ ...p, expiryDate: e.target.value }))}
               className="bg-slate-800 border-slate-600 text-white h-9 text-sm" dir="ltr" />
           </div>
           <div className="space-y-1">
-            <Label className="text-xs text-slate-400">رابط المستند (اختياري)</Label>
+            <Label className="text-xs text-slate-400"><T>رابط المستند (اختياري)</T></Label>
             <Input value={form.url} onChange={(e) => setForm((p) => ({ ...p, url: e.target.value }))}
               className="bg-slate-800 border-slate-600 text-white h-9 text-sm" placeholder="https://..." dir="ltr" />
           </div>
@@ -583,12 +587,12 @@ function EmployeeDocumentsSection({ employeeId }: { employeeId: string }) {
 
       {docs === null ? (
         error ? (
-          <p className="text-slate-500 text-sm text-center py-6">تعذر تحميل المستندات</p>
+          <p className="text-slate-500 text-sm text-center py-6"><T>تعذر تحميل المستندات</T></p>
         ) : (
           <div className="space-y-2">{[1, 2].map((i) => <Skeleton key={i} className="h-12 rounded-lg bg-slate-800/50" />)}</div>
         )
       ) : docs.length === 0 ? (
-        <p className="text-slate-500 text-sm text-center py-6">لا توجد مستندات مسجلة لهذا الموظف</p>
+        <p className="text-slate-500 text-sm text-center py-6"><T>لا توجد مستندات مسجلة لهذا الموظف</T></p>
       ) : (
         <div className="space-y-2">
           {docs.map((doc) => {
@@ -614,7 +618,7 @@ function EmployeeDocumentsSection({ employeeId }: { employeeId: string }) {
                   {canUpdate && (
                     <button onClick={() => void handleDelete(doc.id)}
                       className="p-1.5 rounded-md text-slate-600 hover:text-red-400 hover:bg-red-500/10 transition-colors"
-                      title="حذف المستند" aria-label={`حذف ${doc.title}`}>
+                      title={translateUIText('حذف المستند', locale)} aria-label={`حذف ${doc.title}`}>
                       <XCircle className="size-3.5" />
                     </button>
                   )}
@@ -632,6 +636,7 @@ function EmployeeDocumentsSection({ employeeId }: { employeeId: string }) {
 //  Main Employee360Page
 // ══════════════════════════════════════════════════════════════
 export default function Employee360Page({ employeeId: propEmployeeId, onClose }: { employeeId?: string; onClose?: () => void } = {}) {
+  const { locale } = useLanguage();
   const { canView } = usePermissions('employees');
   const storeNavParams = useAppStore((s) => s.navParams);
   const storeGoBack = useAppStore((s) => s.goBack);
@@ -716,15 +721,15 @@ export default function Employee360Page({ employeeId: propEmployeeId, onClose }:
         <motion.div variants={scaleIn} className="w-16 h-16 rounded-full bg-red-500/10 border border-red-500/20 flex items-center justify-center mb-6">
           <XCircle className="size-8 text-red-400" />
         </motion.div>
-        <motion.h2 variants={slideUpFade} className="text-xl font-bold text-white mb-2">ليس لديك صلاحية</motion.h2>
-        <motion.p variants={slideUpFade} className="text-slate-400 mb-6">لا تملك صلاحية عرض ملف الموظف</motion.p>
+        <motion.h2 variants={slideUpFade} className="text-xl font-bold text-white mb-2"><T>ليس لديك صلاحية</T></motion.h2>
+        <motion.p variants={slideUpFade} className="text-slate-400 mb-6"><T>لا تملك صلاحية عرض ملف الموظف</T></motion.p>
         <motion.div variants={slideUpFade}>
           <Button
             onClick={handleClose}
             className="bg-gradient-to-l from-emerald-600 to-cyan-600 hover:from-emerald-700 hover:to-cyan-700 text-white shadow-lg shadow-emerald-500/20"
           >
             <ArrowRight className="size-4 ml-2" />
-            رجوع
+            <T>رجوع</T>
           </Button>
         </motion.div>
       </motion.div>
@@ -753,7 +758,7 @@ export default function Employee360Page({ employeeId: propEmployeeId, onClose }:
         <motion.div variants={scaleIn} className="w-16 h-16 rounded-full bg-orange-500/10 border border-orange-500/20 flex items-center justify-center mb-6">
           <AlertCircle className="size-8 text-orange-400" />
         </motion.div>
-        <motion.h2 variants={slideUpFade} className="text-xl font-bold text-white mb-2">خطأ</motion.h2>
+        <motion.h2 variants={slideUpFade} className="text-xl font-bold text-white mb-2"><T>خطأ</T></motion.h2>
         <motion.p variants={slideUpFade} className="text-slate-400 mb-6">{error || 'لا توجد بيانات'}</motion.p>
         <motion.div variants={slideUpFade} className="flex gap-3">
           <Button
@@ -761,11 +766,11 @@ export default function Employee360Page({ employeeId: propEmployeeId, onClose }:
             className="bg-gradient-to-l from-emerald-600 to-cyan-600 hover:from-emerald-700 hover:to-cyan-700 text-white shadow-lg shadow-emerald-500/20"
           >
             <Loader2 className="size-4 ml-1" />
-            إعادة المحاولة
+            <T>إعادة المحاولة</T>
           </Button>
           <Button onClick={handleClose} variant="outline" className="border-slate-700/50 text-slate-300 hover:bg-slate-800">
             <ArrowRight className="size-4 ml-2" />
-            رجوع
+            <T>رجوع</T>
           </Button>
         </motion.div>
       </motion.div>
@@ -828,7 +833,7 @@ export default function Employee360Page({ employeeId: propEmployeeId, onClose }:
                 <div className="w-7 h-7 rounded-lg bg-yellow-500/10 border border-yellow-500/20 flex items-center justify-center">
                   <Lightbulb className="size-4 text-yellow-400" />
                 </div>
-                توصيات ذكية
+                <T>توصيات ذكية</T>
               </h3>
               <ul className="space-y-2.5">
                 {recommendations.map((rec, i) => (
@@ -856,7 +861,7 @@ export default function Employee360Page({ employeeId: propEmployeeId, onClose }:
             <div className="w-7 h-7 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center">
               <Activity className="size-4 text-emerald-400" />
             </div>
-            آخر الأنشطة
+            <T>آخر الأنشطة</T>
           </h3>
           <div className="space-y-3">
             {timeline.slice(0, 10).map((item, i) => (
@@ -884,7 +889,7 @@ export default function Employee360Page({ employeeId: propEmployeeId, onClose }:
               </motion.div>
             ))}
             {timeline.length === 0 && (
-              <p className="text-slate-500 text-sm text-center py-6">لا توجد أنشطة مسجلة هذا الشهر</p>
+              <p className="text-slate-500 text-sm text-center py-6"><T>لا توجد أنشطة مسجلة هذا الشهر</T></p>
             )}
           </div>
         </GlassCard>
@@ -901,7 +906,7 @@ export default function Employee360Page({ employeeId: propEmployeeId, onClose }:
             <div className="flex flex-col sm:flex-row items-center gap-6">
               <HealthCircle score={healthScore} size={130} animated={true} />
               <div className="flex-1 text-center sm:text-right">
-                <h3 className="text-white text-lg font-bold">تقييم المخاطر</h3>
+                <h3 className="text-white text-lg font-bold"><T>تقييم المخاطر</T></h3>
                 <div className="flex items-center justify-center sm:justify-start gap-2 mt-2">
                   <motion.span
                     className={`text-3xl font-bold ${getRiskColor(risk.level)}`}
@@ -911,7 +916,7 @@ export default function Employee360Page({ employeeId: propEmployeeId, onClose }:
                   >
                     {risk.score}
                   </motion.span>
-                  <span className={`text-sm ${getRiskColor(risk.level)}`}>({getRiskLabel(risk.level)})</span>
+                  <span className={`text-sm ${getRiskColor(risk.level)}`}>({getRiskLabel(risk.level, locale)})</span>
                 </div>
                 <div className="mt-3 space-y-1.5 text-sm text-slate-400">
                   {/* Render directly from the canonical risk.breakdown returned by the API.
@@ -990,10 +995,10 @@ export default function Employee360Page({ employeeId: propEmployeeId, onClose }:
                 <div className="w-7 h-7 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center">
                   <TrendingUp className="size-4 text-emerald-400" />
                 </div>
-                مؤشرات إضافية
+                <T>مؤشرات إضافية</T>
               </h3>
               <Badge variant="outline" className="border-emerald-500/30 text-emerald-400 bg-emerald-500/5 text-xs rounded-lg">
-                الشهر الحالي
+                <T>الشهر الحالي</T>
               </Badge>
             </div>
             <div className="space-y-5">
@@ -1022,7 +1027,7 @@ export default function Employee360Page({ employeeId: propEmployeeId, onClose }:
                 </motion.div>
               ))}
               <div className="bg-slate-700/20 border border-slate-700/20 rounded-xl p-3.5 text-center">
-                <p className="text-slate-400 text-xs mb-1">الرحلات النشطة — الشهر الحالي</p>
+                <p className="text-slate-400 text-xs mb-1"><T>الرحلات النشطة — الشهر الحالي</T></p>
                 <p className="text-white font-bold text-lg">{stats.travel.active}</p>
               </div>
             </div>
@@ -1141,7 +1146,7 @@ export default function Employee360Page({ employeeId: propEmployeeId, onClose }:
               <div className="w-7 h-7 rounded-lg bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center">
                 <TrendingUp className="size-4 text-cyan-400" />
               </div>
-              فعالية CAPA
+              <T>فعالية CAPA</T>
             </h3>
             <div className="h-3 rounded-full bg-slate-700/50 overflow-hidden">
               <motion.div
@@ -1166,7 +1171,7 @@ export default function Employee360Page({ employeeId: propEmployeeId, onClose }:
               <div className="w-7 h-7 rounded-lg bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center">
                 <Activity className="size-4 text-cyan-400" />
               </div>
-              سجل CAPA
+              <T>سجل CAPA</T>
             </h3>
             <Button
               size="sm"
@@ -1174,14 +1179,14 @@ export default function Employee360Page({ employeeId: propEmployeeId, onClose }:
               onClick={() => useAppStore.getState().navigateTo('capa', undefined, { employeeId: employee.id })}
             >
               <ExternalLink className="size-3.5 ml-1" />
-              فتح صفحة CAPA
+              <T>فتح صفحة CAPA</T>
             </Button>
           </div>
           <div className="space-y-3">
             {getFilteredTimeline('capa').length === 0 ? (
               <div className="flex flex-col items-center justify-center py-10">
                 <ShieldAlert className="size-8 text-slate-600 mb-2" />
-                <p className="text-slate-400 text-sm">لا توجد حالات CAPA مسجلة</p>
+                <p className="text-slate-400 text-sm"><T>لا توجد حالات CAPA مسجلة</T></p>
               </div>
             ) : (
               getFilteredTimeline('capa').slice(0, 20).map((item, i) => (
@@ -1277,8 +1282,8 @@ export default function Employee360Page({ employeeId: propEmployeeId, onClose }:
               <UserCircle className="size-5 text-white" />
             </div>
             <div>
-              <h1 className="text-lg font-bold text-white">ملف الموظف 360°</h1>
-              <p className="text-slate-500 text-xs">عرض شامل لجميع بيانات الموظف</p>
+              <h1 className="text-lg font-bold text-white"><T>ملف الموظف 360°</T></h1>
+              <p className="text-slate-500 text-xs"><T>عرض شامل لجميع بيانات الموظف</T></p>
             </div>
           </div>
           <motion.button
@@ -1326,7 +1331,7 @@ export default function Employee360Page({ employeeId: propEmployeeId, onClose }:
                   <h2 className="text-xl font-bold text-white">{employee.name}</h2>
                   <Badge className={`border ${getRiskBg(risk.level)} ${getRiskColor(risk.level)} text-xs rounded-lg`}>
                     <AlertTriangle className="size-3 ml-1" />
-                    مخاطر: {risk.score} ({getRiskLabel(risk.level)})
+                    <T>مخاطر: </T>{risk.score} ({getRiskLabel(risk.level, locale)})
                   </Badge>
                 </motion.div>
                 <motion.div
@@ -1393,7 +1398,7 @@ export default function Employee360Page({ employeeId: propEmployeeId, onClose }:
                   )}
                   {employee.status === 'inactive' && (
                     <span className="flex items-center gap-1.5 text-sm text-slate-400">
-                      <span className="text-amber-300">غير نشط</span>
+                      <span className="text-amber-300"><T>غير نشط</T></span>
                     </span>
                   )}
                 </motion.div>

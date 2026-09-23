@@ -296,9 +296,10 @@ describe('Phase 5.2 — evidence navigation (§33-§36)', () => {
     assert.match(hook, /data-record-id/);
     // scroll into view
     assert.match(hook, /scrollIntoView/);
-    // temporary highlight: class added then removed + state cleared
-    assert.match(hook, /evidence-highlight/);
-    assert.match(hook, /classList\.remove\('evidence-highlight'\)/);
+    // temporary highlight: the shared Qnalys highlight attribute is
+    // applied then removed + state cleared (§QNALYS-HIGHLIGHT tokens)
+    assert.match(hook, /data-qn-highlight/);
+    assert.match(hook, /removeAttribute\('data-qn-highlight'\)/);
     assert.match(hook, /setHighlightId\(null\)/);
 
     // Observations/Complaints/FollowUps mark their rows with the attribute.

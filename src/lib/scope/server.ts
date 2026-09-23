@@ -44,7 +44,11 @@
 // ══════════════════════════════════════════════════════════════
 
 import { getAll, TTL } from '@/lib/db';
-import { resolvePageScope, type PermissionsMap } from '@/config/permissions';
+import {
+  DATA_SCOPE_PAGE_KEY,
+  resolvePageScope,
+  type PermissionsMap,
+} from '@/config/permissions';
 import {
   resolveEmployeeScope,
   filterEmployeesByScope,
@@ -53,6 +57,13 @@ import {
   type ScopeViewer,
 } from '@/lib/scope';
 import { ORG_NODES_TABLE, type OrgNode } from '@/lib/organization';
+import {
+  explainOrgBoundary,
+  resolveOrgBoundary,
+  type BoundaryViewer,
+  type OrgBoundary,
+  type OrgBoundaryExplanation,
+} from '@/lib/scope/boundary';
 
 /**
  * The permission entry whose configured data scope defines a
@@ -61,9 +72,11 @@ import { ORG_NODES_TABLE, type OrgNode } from '@/lib/organization';
  * travel, follow-ups, deductions, observations…) all describe an
  * employee, so the employees-page scope is the single authorization
  * scope for them; the resource's OWN page permission stays the
- * action gate.
+ * action gate. Canonical value lives in @/config/permissions
+ * (DATA_SCOPE_PAGE_KEY) — shared with the Permission Manager so the
+ * displayed scope is always the enforced scope.
  */
-export const EMPLOYEE_SCOPE_PAGE_KEY = 'employees';
+export const EMPLOYEE_SCOPE_PAGE_KEY = DATA_SCOPE_PAGE_KEY;
 
 /** Viewer slice carried by VerifyResult.user — adapt it to ScopeViewer. */
 export interface PermCheckUser {
@@ -71,6 +84,8 @@ export interface PermCheckUser {
   role: string;
   permissions: PermissionsMap;
   linkedEmployeeId?: string | null;
+  /** §ORG-BOUNDARY explicit per-user override (users.orgBoundaryNodeIds). */
+  orgBoundaryNodeIds?: string[] | null;
 }
 
 export function asScopeViewer(user: PermCheckUser): ScopeViewer {
@@ -78,16 +93,23 @@ export function asScopeViewer(user: PermCheckUser): ScopeViewer {
     userId: user.id,
     role: user.role,
     linkedEmployeeId: user.linkedEmployeeId ?? null,
+    orgBoundaryNodeIds: user.orgBoundaryNodeIds ?? null,
   };
 }
 
 /**
  * Resolve the viewer's employee scope context against the LIVE
  * database. Pure resolution stays in the canonical engine; this
- * wrapper only loads its inputs. The 'all' fast path (admin bypass
- * + configured 'all' entries — the majority of write-path viewers)
- * never touches the database: the engine is invoked with empty
- * inputs and short-circuits unrestricted.
+ * wrapper only loads its inputs. The ADMIN fast path (the one viewer
+ * whose ALL is truly unrestricted) never touches the database: the
+ * engine is invoked with empty inputs and short-circuits
+ * unrestricted.
+ *
+ * §ORG-BOUNDARY: a NON-ADMIN 'all' scope is no longer a fast path —
+ * ALL means "no narrowing WITHIN the organizational boundary", so the
+ * org graph + employee refs must be loaded to resolve the boundary
+ * (override > assignment > fail-closed). A viewer with an
+ * unresolvable boundary resolves the fail-closed own-record minimum.
  *
  * §ASSIGNED: the engine consumes caller-supplied assignment pairs;
  * this loader is the ONE place that materializes them from the
@@ -102,7 +124,8 @@ export async function resolveEmployeeScopeFromDb(
 ): Promise<EmployeeScopeContext> {
   const effectivePermissions = permissions ?? null;
   const scope = resolvePageScope(effectivePermissions, pageKey, viewer.role);
-  if (scope === 'all') {
+  const needsGraph = !(scope === 'all' && viewer.role === 'admin');
+  if (!needsGraph) {
     return resolveEmployeeScope(viewer, pageKey, effectivePermissions, {
       orgNodes: [],
       employees: [],
@@ -118,6 +141,40 @@ export async function resolveEmployeeScopeFromDb(
     employees,
     assignments,
   });
+}
+
+// ══════════════════════════════════════════════════════════════
+//  §ORG-BOUNDARY — DB loader for the boundary resolvers
+//
+//  The boundary logic itself is pure (./boundary); this wrapper only
+//  loads its two inputs (orgNodes + employee refs) from the same
+//  canonical tables the scope engine reads. Used by the Permission
+//  Manager profile API so the DISPLAYED boundary is exactly the
+//  enforced one.
+// ══════════════════════════════════════════════════════════════
+
+/** Load the canonical org nodes + employee refs the boundary consumes. */
+export async function loadBoundaryInputs(): Promise<{
+  orgNodes: OrgNode[];
+  employees: Array<{ id: string; orgNodeId?: string | null }>;
+}> {
+  const [orgNodes, employees] = await Promise.all([
+    getAll<OrgNode>(ORG_NODES_TABLE, TTL.MEDIUM),
+    getAll<{ id: string; orgNodeId?: string | null }>('employees', TTL.MEDIUM),
+  ]);
+  return { orgNodes, employees };
+}
+
+/** Resolve a viewer's organizational boundary against the LIVE tree. */
+export async function resolveOrgBoundaryFromDb(viewer: BoundaryViewer): Promise<OrgBoundary> {
+  const { orgNodes, employees } = await loadBoundaryInputs();
+  return resolveOrgBoundary(viewer, { orgNodes, employees });
+}
+
+/** Explain a viewer's boundary (display facts + source) against the LIVE tree. */
+export async function explainOrgBoundaryFromDb(viewer: BoundaryViewer): Promise<OrgBoundaryExplanation> {
+  const { orgNodes, employees } = await loadBoundaryInputs();
+  return explainOrgBoundary(viewer, { orgNodes, employees });
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -221,6 +278,13 @@ export async function employeeInScope(
  * require an unrestricted scope: their output records cannot be
  * confined to a restricted employee set, so a scoped viewer is
  * denied fail-closed.
+ *
+ * §ORG-BOUNDARY: unrestricted means the authorized set covers the
+ * ENTIRE current workforce — the admin bypass, or a non-admin 'all'
+ * whose boundary subtrees already contain every employee (e.g. a
+ * General Administration boundary). A Company-A viewer with ALL is
+ * NOT unrestricted: whole-workforce bulk writes are denied
+ * fail-closed (their output could not be confined to Company A).
  */
 export async function hasUnrestrictedEmployeeScope(
   viewer: ScopeViewer,
@@ -228,7 +292,12 @@ export async function hasUnrestrictedEmployeeScope(
   pageKey: string = EMPLOYEE_SCOPE_PAGE_KEY,
 ): Promise<boolean> {
   const ctx = await resolveEmployeeScopeFromDb(viewer, pageKey, permissions);
-  return ctx.isUnrestricted;
+  if (ctx.isUnrestricted) return true;
+  if (ctx.scope !== 'all') return false;
+  const employees = await getAll<{ id: string }>('employees', TTL.MEDIUM);
+  // Vacuous truth on an empty workforce: with no employees, no create
+  // can escape the boundary.
+  return employees.every((e) => ctx.includes(e.id));
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -247,6 +316,8 @@ export interface AuthCallerLike {
   role: string;
   permissions: PermissionsMap;
   linkedEmployeeId?: string | null;
+  /** §ORG-BOUNDARY explicit per-user override (users.orgBoundaryNodeIds). */
+  orgBoundaryNodeIds?: string[] | null;
 }
 
 /** Adapt an authenticateFromRequest()/requireAuth() caller to ScopeViewer. */
@@ -255,6 +326,7 @@ export function authScopeViewer(auth: AuthCallerLike): ScopeViewer {
     userId: auth.userId,
     role: auth.role,
     linkedEmployeeId: auth.linkedEmployeeId ?? null,
+    orgBoundaryNodeIds: auth.orgBoundaryNodeIds ?? null,
   };
 }
 

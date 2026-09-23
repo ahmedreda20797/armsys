@@ -126,22 +126,31 @@ describe('Phase 5.3 §37 (6-10) — locate, open, scroll, highlight, clear', () 
     assert.match(capa, /navParams/);
   });
 
-  it('8. the located record scrolls into view', () => {
+  it('8. the located record scrolls into view (motion-aware, centered)', () => {
     const hook = srcOf('hooks/use-record-highlight.ts');
-    assert.match(hook, /scrollIntoView\(\{ behavior: 'smooth', block: 'center' \}\)/);
+    // Reduced motion scrolls instantly; otherwise smooth. Centered
+    // placement keeps the sticky header clear (§8 scroll behavior).
+    assert.match(hook, /scrollIntoView\(/);
+    assert.match(hook, /block: 'center'/);
+    assert.match(hook, /prefers-reduced-motion: reduce/);
   });
 
-  it('9. the located record gets the temporary highlight class', () => {
+  it('9. the located record gets the shared Qnalys highlight', () => {
     const hook = srcOf('hooks/use-record-highlight.ts');
-    assert.match(hook, /classList\.add\('evidence-highlight'\)/);
+    // §QNALYS-HIGHLIGHT — one canonical visual language applied via the
+    // data attribute (React never manages it; re-renders cannot wipe it).
+    assert.match(hook, /data-qn-highlight/);
     const css = srcOf('app/globals.css');
-    assert.match(css, /\.evidence-highlight/);
+    assert.match(css, /\[data-qn-highlight\]/);
+    assert.match(css, /--qnalys-highlight-primary/);
+    // The old emerald navigation highlight is gone from the system.
+    assert.doesNotMatch(css, /evidence-highlight/);
   });
 
   it('10. the highlight CLEARS: class removed and intent cleared after a few seconds', () => {
     const hook = srcOf('hooks/use-record-highlight.ts');
     assert.match(hook, /HIGHLIGHT_VISIBLE_MS/);
-    assert.match(hook, /classList\.remove\('evidence-highlight'\)/);
+    assert.match(hook, /removeAttribute\('data-qn-highlight'\)/);
     assert.match(hook, /setHighlightId\(null\)/);
     // and the cleanup runs on unmount/id change too
     assert.match(hook, /cancelled = true/);

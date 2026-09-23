@@ -37,27 +37,28 @@ export interface PageActions {
 }
 
 /**
- * DATA SCOPE (Part K — Milestone 10 foundation, ACTIVATED by M0.3).
+ * DATA SCOPE (Part K — Milestone 10, §ORG-BOUNDARY semantics).
  *
- * A scope answers "on WHOSE data may the user act?" while the level
- * answers "what may the user do?". Scopes are resolved against the
- * organization tree by src/lib/scope — this type only lives here
- * because it is carried ON the permission entry (one map, one
- * resolver, no second permission system).
+ * A scope answers "HOW MUCH inside the user's ORGANIZATIONAL ACCESS
+ * BOUNDARY may the user act?" while the level answers "what may the
+ * user do?" and the boundary (lib/scope/boundary — explicit override
+ * or organization assignment) answers WHERE. Scopes are resolved
+ * against the boundary + the organization tree by src/lib/scope —
+ * this type only lives here because it is carried ON the permission
+ * entry (one map, one resolver, no second permission system).
  *
- *   all         — every record in the system
- *   department  — the viewer's department subtree (org tree)
- *   team        — the viewer's team subtree (org tree)
- *   subtree     — subtrees of nodes the viewer MANAGES (managerUserId)
+ *   all         — no additional narrowing WITHIN the boundary (ALL
+ *                 never ignores the boundary; unresolved boundary →
+ *                 fail-closed own minimum)
+ *   department  — the boundary's DEPARTMENT node(s): full membership
+ *                 per the tree (department + its teams/subteams)
+ *   team        — DIRECT members of the boundary's EXACT team/subteam
+ *                 node(s) — never descendant subteams, parent or
+ *                 siblings (node + descendants = subtree)
+ *   subtree     — the boundary node(s) + ALL descendants
  *   assigned    — records/employees explicitly assigned to the viewer
  *   own         — only the viewer's own employee record (requires the
  *                 optional user ↔ employee linkage)
- *
- * Vocabulary mapping to the M0.3 canonical model: all = ALL,
- * department/team = DEPARTMENT/TEAM (nearest typed ancestor in the
- * generic-depth tree — a "branch" is any intermediate node, its
- * subtree resolves identically), own = SELF, subtree/assigned are
- * assignment-driven variants the existing architecture already had.
  *
  * DEFAULT (M0.3 — fail-closed): a NON-ADMIN entry without a scope
  * resolves to FAIL_CLOSED_SCOPE ('own'), never silently to 'all'.
@@ -76,6 +77,16 @@ const DATA_SCOPES: ReadonlySet<string> = new Set(['all', 'department', 'team', '
  * linkage the scope engine resolves it to an EMPTY set.
  */
 export const FAIL_CLOSED_SCOPE: DataScope = 'own';
+
+/**
+ * The permission entry whose configured DATA SCOPE governs
+ * employee-linked records on EVERY page (M0.4 doctrine — see
+ * lib/scope/server EMPLOYEE_SCOPE_PAGE_KEY). Client-safe constant so
+ * the Permission Manager displays exactly what the server enforces:
+ * one canonical data-scope entry, one vocabulary, no per-page
+ * reinterpretation.
+ */
+export const DATA_SCOPE_PAGE_KEY = 'employees';
 
 export interface PagePermission {
   level: PermissionLevel;
@@ -759,6 +770,13 @@ export function stripRestrictedFields<T extends Record<string, any>>(
  */
 export type ScopeResolutionSource = 'admin' | 'configured' | 'fail-closed';
 
+/**
+ * The TIER a page's effective DATA SCOPE came from (§"Scope must show
+ * its source"). Same vocabulary as AccessSource plus the fail-closed
+ * default — the scope counterpart of the level's `winner`.
+ */
+export type ScopeSource = 'admin' | 'stored' | 'position' | 'role' | 'fail-closed';
+
 /** Structured result of the scope decision for one page/viewer. */
 export interface ScopeResolution {
   scope: DataScope;
@@ -806,6 +824,103 @@ export function resolvePageScope(
   role?: string | null,
 ): DataScope {
   return explainScopeResolution(permissions, pageKey, role).scope;
+}
+
+// ══════════════════════════════════════════════════════════════
+//  SCOPE SOURCE — §"Scope must also show its source"
+//
+//  The tier that owns a page's effective DATA SCOPE, resolved from
+//  the SAME three tiers with the SAME precedence as
+//  resolveEffectivePermissions / mergePermissionTier:
+//
+//    stored (user override) → position template → role preset →
+//    fail-closed
+//
+//  The walk mirrors mergePermissionTier byte-for-byte:
+//    • the HIGHEST tier whose entry for the page carries a VALID
+//      scope wins (an entry without a scope key inherits the tier
+//      below it — that is what the merge does);
+//    • an entry carrying an INVALID scope value is kept by the merge
+//      and dropped at read time by migratePermission — so it resolves
+//      fail-closed, never to the tier below (the walk reproduces
+//      exactly that);
+//    • the admin bypass resolves 'all' from 'admin'.
+//  The Permission Manager (and any future audit surface) consumes
+//  THIS function — there is no second, UI-only scope-source trace.
+// ══════════════════════════════════════════════════════════════
+
+export interface ScopeSourceResolution {
+  scope: DataScope;
+  source: ScopeSource;
+  /** Ordered tiers that carry a VALID scope for the page (role first). */
+  chain: Array<{ source: 'role' | 'position' | 'stored'; scope: DataScope }>;
+}
+
+/**
+ * The VALID scope one tier's entry carries for a page, or undefined
+ * when the entry is absent / scope-less / holds an invalid value.
+ * Mirrors what mergePermissionTier inherits and migratePermission
+ * preserves — see the module comment above for the invalid-value
+ * subtlety (invalid resolves fail-closed, NOT inherit).
+ */
+function tierScopeValue(
+  map: Record<string, unknown> | null | undefined,
+  pageKey: string,
+): { scope: DataScope | undefined; hasInvalidScope: boolean } {
+  if (!map || typeof map !== 'object' || !(pageKey in map)) {
+    return { scope: undefined, hasInvalidScope: false };
+  }
+  const raw = (map as Record<string, unknown>)[pageKey];
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    return { scope: undefined, hasInvalidScope: false }; // string entry — no scope of its own
+  }
+  const value = (raw as { scope?: unknown }).scope;
+  if (value === undefined || value === null) {
+    return { scope: undefined, hasInvalidScope: false }; // no scope key — inherits the tier below
+  }
+  if (typeof value === 'string' && DATA_SCOPES.has(value)) {
+    return { scope: value as DataScope, hasInvalidScope: false };
+  }
+  return { scope: undefined, hasInvalidScope: true }; // present but invalid — fail-closed
+}
+
+/**
+ * Explain WHERE a page's effective DATA SCOPE comes from. Pure — pass
+ * hypothetical inputs to simulate; the answer always agrees with the
+ * enforcement path (resolveEffectivePermissions → explainScopeResolution).
+ */
+export function explainScopeSource(
+  role: string | null | undefined,
+  stored: Record<string, unknown> | null | undefined,
+  pageKey: string,
+  positionTemplate?: Record<string, unknown> | null,
+): ScopeSourceResolution {
+  if (role === 'admin') {
+    return { scope: 'all', source: 'admin', chain: [] };
+  }
+
+  const chain: ScopeSourceResolution['chain'] = [];
+  const rolePreset = getPermissionsForRole(role || 'user');
+  const tiers: Array<{ source: 'role' | 'position' | 'stored'; map: Record<string, unknown> | null | undefined }> = [
+    { source: 'role', map: rolePreset as Record<string, unknown> },
+    { source: 'position', map: positionTemplate as Record<string, unknown> | null | undefined },
+    { source: 'stored', map: stored },
+  ];
+
+  for (const tier of tiers) {
+    const { scope, hasInvalidScope } = tierScopeValue(tier.map, pageKey);
+    if (scope !== undefined) {
+      chain.push({ source: tier.source, scope });
+    } else if (hasInvalidScope) {
+      // The merge keeps an invalid scope; migratePermission drops it at
+      // read time — the enforced result is the fail-closed default.
+      return { scope: FAIL_CLOSED_SCOPE, source: 'fail-closed', chain };
+    }
+  }
+
+  const winner = chain.length > 0 ? chain[chain.length - 1] : null;
+  if (winner) return { scope: winner.scope, source: winner.source, chain };
+  return { scope: FAIL_CLOSED_SCOPE, source: 'fail-closed', chain };
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -882,6 +997,8 @@ export interface AccessExplanation {
   pageKey: string;
   level: PermissionLevel;
   scope: DataScope;
+  /** The tier that produced the effective SCOPE (§scope-source trace). */
+  scopeSource: ScopeSource;
   /** True when the decision came from the admin bypass, not the map. */
   isAdminBypass: boolean;
   /** Ordered tiers that carried an explicit entry for this page. */
@@ -919,6 +1036,7 @@ export function explainPageAccess(
       pageKey,
       level: 'edit',
       scope: 'all',
+      scopeSource: 'admin',
       isAdminBypass: true,
       sources: [{ source: 'admin', level: 'edit' }],
       winner: 'admin',
@@ -943,7 +1061,8 @@ export function explainPageAccess(
 
   const effective = resolveEffectivePermissions(role, stored, positionTemplate);
   const level = migratePermission(effective[pageKey]).level;
-  const scope = resolvePageScope(effective, pageKey, role);
+  const scopeResolution = explainScopeSource(role, stored, pageKey, positionTemplate);
+  const scope = scopeResolution.scope;
 
   let winner: AccessSource = 'default-deny';
   if (hasEntry(stored)) winner = 'stored';
@@ -954,7 +1073,7 @@ export function explainPageAccess(
     ? `مرفوض — لا يوجد أي مصدر صلاحية يمنح "${pageKey}" (الافتراضي: رفض)`
     : `مسموح (${level}) — المصدر الفاصل: ${SOURCE_LABELS_AR[winner]}${sources.length > 1 ? ` (طبقات: ${sources.map(s => `${SOURCE_LABELS_AR[s.source]}=${s.level}`).join('، ')})` : ''}`;
 
-  return { pageKey, level, scope, isAdminBypass: false, sources, winner, reason };
+  return { pageKey, level, scope, scopeSource: scopeResolution.source, isAdminBypass: false, sources, winner, reason };
 }
 
 export interface PermissionDiffEntry {

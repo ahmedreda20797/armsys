@@ -27,7 +27,11 @@ import { PageIdentity } from '@/components/shared/PageIdentity';
 import { toast } from 'sonner';
 import { authFetch } from '@/lib/api-fetch';
 import { useAppStore } from '@/lib/store';
-import { formatMonthLabelAr } from '@/lib/month-label';
+import { T } from '@/lib/i18n/T';
+import { translateUIText } from '@/lib/i18n/ui-text';
+import { useLanguage } from '@/lib/i18n/language-context';
+import type { Locale } from '@/lib/i18n/dictionary';
+import { formatInteger, formatMonthKey } from '@/lib/i18n/format';
 
 /** Last 12 month keys, newest first (§14 month selector options). */
 function buildMonthOptions(): string[] {
@@ -88,18 +92,29 @@ const itemVariants = {
 //  HELPERS
 // ═══════════════════════════════════════════════════
 
-function getRiskLevelConfig(level: string) {
+// §I18N-BOUNDARY — risk levels are SYSTEM ENUM CODES; their labels are
+// claimed UI as [ar, en] pairs picked by the active locale at render.
+function getRiskLevelConfig(level: string, locale?: Locale) {
+  const labels: Record<string, [string, string]> = {
+    low: ['منخفض', 'Low'],
+    medium: ['متوسط', 'Medium'],
+    high: ['مرتفع', 'High'],
+    critical: ['حرج', 'Critical'],
+  };
+  const pair = labels[level] ?? labels.low;
+  const label = locale === 'en' ? pair[1] : pair[0];
   const map: Record<string, { label: string; color: string; bg: string; border: string; dot: string }> = {
-    low: { label: 'منخفض', color: 'text-green-400', bg: 'bg-green-500/10', border: 'border-green-500/25', dot: 'bg-green-400' },
-    medium: { label: 'متوسط', color: 'text-yellow-400', bg: 'bg-yellow-500/10', border: 'border-yellow-500/25', dot: 'bg-yellow-400' },
-    high: { label: 'مرتفع', color: 'text-orange-400', bg: 'bg-orange-500/10', border: 'border-orange-500/25', dot: 'bg-orange-400' },
-    critical: { label: 'حرج', color: 'text-red-400', bg: 'bg-red-500/10', border: 'border-red-500/25', dot: 'bg-red-500' },
+    low: { label, color: 'text-green-400', bg: 'bg-green-500/10', border: 'border-green-500/25', dot: 'bg-green-400' },
+    medium: { label, color: 'text-yellow-400', bg: 'bg-yellow-500/10', border: 'border-yellow-500/25', dot: 'bg-yellow-400' },
+    high: { label, color: 'text-orange-400', bg: 'bg-orange-500/10', border: 'border-orange-500/25', dot: 'bg-orange-400' },
+    critical: { label, color: 'text-red-400', bg: 'bg-red-500/10', border: 'border-red-500/25', dot: 'bg-red-500' },
   };
   return map[level] || map.low;
 }
 
 // ── §6 Risk Summary Panel helpers ──
-// Arabic labels for the canonical breakdown factor keys (riskMetrics).
+// Arabic labels for the canonical breakdown factor keys (riskMetrics) —
+// app-owned system vocabulary, claimed via the renderer (not user data).
 const RISK_FACTOR_LABELS: Record<string, string> = {
   delay: 'تأخيرات',
   absence: 'غيابات',
@@ -139,11 +154,12 @@ function getTrendIcon(trend: string) {
   }
 }
 
-function getTrendLabel(trend: string) {
+// §I18N-BOUNDARY — trend captions are system status words: [ar, en] pairs.
+function getTrendLabel(trend: string, locale?: Locale) {
   switch (trend) {
-    case 'increasing': return 'تصاعدي';
-    case 'improving': return 'تحسن';
-    default: return 'مستقر';
+    case 'increasing': return locale === 'en' ? 'Rising' : 'تصاعدي';
+    case 'improving': return locale === 'en' ? 'Improving' : 'تحسن';
+    default: return locale === 'en' ? 'Stable' : 'مستقر';
   }
 }
 
@@ -153,6 +169,7 @@ function getTrendLabel(trend: string) {
 
 export default function RiskCenterPage() {
   const { canView } = usePermissions('riskCenter');
+  const { locale } = useLanguage();
 
   const [employees, setEmployees] = useState<EmployeeRisk[]>([]);
   const [summary, setSummary] = useState<SummaryStats | null>(null);
@@ -199,7 +216,7 @@ export default function RiskCenterPage() {
   // pick another month or 'كل الفترات' (all-time rolling view);
   // historical analysis remains available either way.
   const [basis, setBasis] = useState<'rolling' | 'month'>('month');
-  const [basisLabel, setBasisLabel] = useState<string>('الشهر الحالي');
+  const [basisLabel, setBasisLabel] = useState<string>(() => translateUIText('الشهر الحالي', locale));
   const [month, setMonth] = useState<string>(() => {
     const now = new Date();
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
@@ -228,15 +245,15 @@ export default function RiskCenterPage() {
         setSummary(data.summary || null);
         setDeptAnalysis(data.departmentAnalysis || {});
         setBasis(data.basis === 'month' ? 'month' : 'rolling');
-        setBasisLabel(data.basisLabel || 'الفترة المحددة');
+        setBasisLabel(data.basisLabel || translateUIText('الفترة المحددة', locale));
       } else {
-        setError('تعذر تحميل بيانات المخاطر');
+        setError(translateUIText('تعذر تحميل بيانات المخاطر', locale));
         setEmployees([]);
         setSummary(null);
         setDeptAnalysis({});
       }
     } catch {
-      setError('تعذر تحميل بيانات المخاطر');
+      setError(translateUIText('تعذر تحميل بيانات المخاطر', locale));
       setEmployees([]);
       setSummary(null);
       setDeptAnalysis({});
@@ -348,8 +365,8 @@ export default function RiskCenterPage() {
         <div className="size-16 rounded-full bg-slate-800 flex items-center justify-center mb-4">
           <ShieldAlert className="size-8 text-slate-500" />
         </div>
-        <p className="text-slate-400 text-sm font-medium">غير مصرح بالوصول</p>
-        <p className="text-slate-600 text-xs mt-1">ليس لديك صلاحية لعرض مركز المخاطر</p>
+        <p className="text-slate-400 text-sm font-medium"><T>غير مصرح بالوصول</T></p>
+        <p className="text-slate-600 text-xs mt-1"><T>ليس لديك صلاحية لعرض مركز المخاطر</T></p>
       </div>
     );
   }
@@ -363,7 +380,7 @@ export default function RiskCenterPage() {
         iconClassName="bg-red-500/15 border border-red-500/30 text-red-400"
         description={
           <>
-            نظام الإنذار المبكر — مَن يحتاج تدخل اليوم؟
+            <T>نظام الإنذار المبكر — مَن يحتاج تدخل اليوم؟</T>
             {/* §14: which attribution produced these numbers — visible. */}
             <span className="block text-slate-600 text-[10px] mt-0.5">{basisLabel}</span>
           </>
@@ -377,25 +394,25 @@ export default function RiskCenterPage() {
               onValueChange={(v) => { setMonth(v === 'rolling' ? '' : v); }}
             >
               <SelectTrigger className="bg-slate-800/70 border-slate-700/70 text-white w-44 h-9 text-sm">
-                <SelectValue placeholder="الشهر الحالي" />
+                <SelectValue placeholder={translateUIText('الشهر الحالي', locale)} />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="rolling" className="text-white">كل الفترات (إجمالي السجل)</SelectItem>
+                <SelectItem value="rolling" className="text-white"><T>كل الفترات (إجمالي السجل)</T></SelectItem>
                 {buildMonthOptions().map((m) => (
-                  <SelectItem key={m} value={m} className="text-white">{formatMonthLabelAr(m)}</SelectItem>
+                  <SelectItem key={m} value={m} className="text-white">{formatMonthKey(m, locale)}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
             {month && compareState !== 'loading' && (
               <Button variant="outline" size="sm" onClick={() => void loadComparison()} className="border-slate-700/70 text-slate-300 hover:bg-slate-800 h-9">
                 <BarChart3 className="size-3.5 ml-1" />
-                مقارنة بالشهر السابق
+                <T>مقارنة بالشهر السابق</T>
               </Button>
             )}
             {compareState === 'loading' && <Loader2 className="size-4 animate-spin text-slate-400" />}
             <Button variant="ghost" size="sm" onClick={fetchRiskData} className="text-slate-400 hover:text-white">
               <Activity className="size-4 ml-1" />
-              تحديث
+              <T>تحديث</T>
             </Button>
           </>
         }
@@ -405,39 +422,39 @@ export default function RiskCenterPage() {
       {month && compareState === 'insufficient' && (
         <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3.5 py-2.5 text-xs text-amber-200 flex items-center gap-2">
           <AlertCircle className="size-3.5 shrink-0" />
-          لا يمكن حساب المقارنة مع الشهر السابق — لا توجد بيانات مخاطر مسجلة فيه ضمن صلاحياتك.
+          <T>لا يمكن حساب المقارنة مع الشهر السابق — لا توجد بيانات مخاطر مسجلة فيه ضمن صلاحياتك.</T>
         </div>
       )}
 
       {/* ═══ Summary Stats ═══ */}
       <motion.div initial={{ opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }} className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2.5">
         <div className="rounded-lg border border-slate-700/25 bg-slate-800/40 px-3.5 py-2.5">
-          <p className="text-slate-500 text-[11px] mb-0.5">إجمالي الموظفين</p>
-          <p className="text-white font-bold text-lg leading-tight">{summary?.totalEmployees || 0}</p>
+          <p className="text-slate-500 text-[11px] mb-0.5"><T>إجمالي الموظفين</T></p>
+          <p className="text-white font-bold text-lg leading-tight">{formatInteger(summary?.totalEmployees || 0, locale)}</p>
         </div>
         <div className="rounded-lg border border-green-500/25 bg-green-500/8 px-3.5 py-2.5">
-          <p className="text-slate-500 text-[11px] mb-0.5">مخاطر منخفضة</p>
-          <p className="text-green-400 font-bold text-lg leading-tight">{summary?.lowRiskCount || 0}</p>
+          <p className="text-slate-500 text-[11px] mb-0.5"><T>مخاطر منخفضة</T></p>
+          <p className="text-green-400 font-bold text-lg leading-tight">{formatInteger(summary?.lowRiskCount || 0, locale)}</p>
         </div>
         <div className="rounded-lg border border-yellow-500/25 bg-yellow-500/8 px-3.5 py-2.5">
-          <p className="text-slate-500 text-[11px] mb-0.5">مخاطر متوسطة</p>
-          <p className="text-yellow-400 font-bold text-lg leading-tight">{summary?.mediumRiskCount || 0}</p>
+          <p className="text-slate-500 text-[11px] mb-0.5"><T>مخاطر متوسطة</T></p>
+          <p className="text-yellow-400 font-bold text-lg leading-tight">{formatInteger(summary?.mediumRiskCount || 0, locale)}</p>
         </div>
         <div className="rounded-lg border border-orange-500/25 bg-orange-500/8 px-3.5 py-2.5">
-          <p className="text-slate-500 text-[11px] mb-0.5">مخاطر مرتفعة</p>
-          <p className="text-orange-400 font-bold text-lg leading-tight">{summary?.highRiskCount || 0}</p>
+          <p className="text-slate-500 text-[11px] mb-0.5"><T>مخاطر مرتفعة</T></p>
+          <p className="text-orange-400 font-bold text-lg leading-tight">{formatInteger(summary?.highRiskCount || 0, locale)}</p>
         </div>
         <div className="rounded-lg border border-red-500/25 bg-red-500/8 px-3.5 py-2.5">
-          <p className="text-slate-500 text-[11px] mb-0.5">حرج</p>
-          <p className="text-red-400 font-bold text-lg leading-tight">{summary?.criticalRiskCount || 0}</p>
+          <p className="text-slate-500 text-[11px] mb-0.5"><T>حرج</T></p>
+          <p className="text-red-400 font-bold text-lg leading-tight">{formatInteger(summary?.criticalRiskCount || 0, locale)}</p>
         </div>
         <div className="rounded-lg border border-blue-500/25 bg-blue-500/8 px-3.5 py-2.5">
-          <p className="text-slate-500 text-[11px] mb-0.5">حالات مفتوحة</p>
-          <p className="text-blue-400 font-bold text-lg leading-tight">{summary?.openCasesTotal || 0}</p>
+          <p className="text-slate-500 text-[11px] mb-0.5"><T>حالات مفتوحة</T></p>
+          <p className="text-blue-400 font-bold text-lg leading-tight">{formatInteger(summary?.openCasesTotal || 0, locale)}</p>
         </div>
         <div className="rounded-lg border border-rose-500/25 bg-rose-500/8 px-3.5 py-2.5">
-          <p className="text-slate-500 text-[11px] mb-0.5">يحتاج تدخل فوري</p>
-          <p className="text-rose-400 font-bold text-lg leading-tight">{summary?.immediateActionCount || 0}</p>
+          <p className="text-slate-500 text-[11px] mb-0.5"><T>يحتاج تدخل فوري</T></p>
+          <p className="text-rose-400 font-bold text-lg leading-tight">{formatInteger(summary?.immediateActionCount || 0, locale)}</p>
         </div>
       </motion.div>
 
@@ -448,12 +465,12 @@ export default function RiskCenterPage() {
         {topRisky.length > 0 && (
           <motion.div initial={{ opacity: 0, y: -5 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>
             <AttentionPanel
-              title="موظفون يحتاجون تدخل"
+              title={translateUIText('موظفون يحتاجون تدخل', locale)}
               icon={<Zap className="size-3.5 text-red-400" />}
-              subtitle={`${topRisky.length} موظف فوق عتبة المخاطر العالية`}
+              subtitle={`${formatInteger(topRisky.length, locale)} ${translateUIText('موظف فوق عتبة المخاطر العالية', locale)}`}
               persistKey="riskAttention"
               items={topRisky.map((emp) => {
-                const rl = getRiskLevelConfig(emp.riskLevel);
+                const rl = getRiskLevelConfig(emp.riskLevel, locale);
                 const severity: AttentionSeverity =
                   emp.riskLevel === 'critical' ? 'critical' :
                   emp.riskLevel === 'high' ? 'urgent' :
@@ -466,20 +483,20 @@ export default function RiskCenterPage() {
                   trailing: (
                     <span className="flex items-center gap-1.5">
                       {getTrendIcon(emp.trend)}
-                      <span className="font-bold tabular-nums">{riskCountOf(emp)} مخاطر</span>
+                      <span className="font-bold tabular-nums">{formatInteger(riskCountOf(emp), locale)} <T>مخاطر</T></span>
                     </span>
                   ),
                   onClick: () => setSelectedEmployee(emp),
                   overflowItems: [
-                    { key: 'view', label: 'عرض التفاصيل', icon: <Eye className="size-3.5" />, onSelect: () => setSelectedEmployee(emp) },
-                    { key: 'employee360', label: 'فتح ملف الموظف', icon: <UserCheck className="size-3.5" />, separatorBefore: true, onSelect: () => useAppStore.getState().openEmployee360(emp.employeeId) },
+                    { key: 'view', label: translateUIText('عرض التفاصيل', locale), icon: <Eye className="size-3.5" />, onSelect: () => setSelectedEmployee(emp) },
+                    { key: 'employee360', label: translateUIText('فتح ملف الموظف', locale), icon: <UserCheck className="size-3.5" />, separatorBefore: true, onSelect: () => useAppStore.getState().openEmployee360(emp.employeeId) },
                   ],
                 };
               })}
               emptyState={{
                 icon: <ShieldCheck className="size-7 text-emerald-500/50 mb-2" />,
-                title: 'لا يوجد موظفون فوق عتبة المخاطر العالية',
-                description: 'كل الموظفين تحت عتبة التنبيه.',
+                title: translateUIText('لا يوجد موظفون فوق عتبة المخاطر العالية', locale),
+                description: translateUIText('كل الموظفين تحت عتبة التنبيه.', locale),
               }}
             />
           </motion.div>
@@ -496,7 +513,7 @@ export default function RiskCenterPage() {
           <div className="flex flex-wrap gap-2">
             <div className="relative flex-1 min-w-[180px] max-w-xs">
               <Search className="absolute right-3 top-1/2 -translate-y-1/2 size-4 text-slate-500" />
-              <Input placeholder="بحث بالاسم أو القسم..." value={search} onChange={e => setSearch(e.target.value)} className="bg-slate-800/70 border-slate-700/70 text-white pr-9 placeholder:text-slate-500 h-9 text-sm" />
+              <Input placeholder={translateUIText('بحث بالاسم أو القسم...', locale)} value={search} onChange={e => setSearch(e.target.value)} className="bg-slate-800/70 border-slate-700/70 text-white pr-9 placeholder:text-slate-500 h-9 text-sm" />
               {search && (
                 <button onClick={() => setSearch('')} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300"><X className="size-3.5" /></button>
               )}
@@ -504,23 +521,23 @@ export default function RiskCenterPage() {
             <Select value={levelFilter} onValueChange={setLevelFilter}>
               <SelectTrigger className="bg-slate-800/70 border-slate-700/70 text-white w-36 h-9 text-sm">
                 <ShieldAlert className="size-3.5 ml-1.5 text-slate-500" />
-                <SelectValue placeholder="مستوى المخاطر" />
+                <SelectValue placeholder={translateUIText('مستوى المخاطر', locale)} />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all" className="text-white">الكل</SelectItem>
-                <SelectItem value="low" className="text-white">منخفض</SelectItem>
-                <SelectItem value="medium" className="text-white">متوسط</SelectItem>
-                <SelectItem value="high" className="text-white">مرتفع</SelectItem>
-                <SelectItem value="critical" className="text-white">حرج</SelectItem>
+                <SelectItem value="all" className="text-white"><T>الكل</T></SelectItem>
+                <SelectItem value="low" className="text-white"><T>منخفض</T></SelectItem>
+                <SelectItem value="medium" className="text-white"><T>متوسط</T></SelectItem>
+                <SelectItem value="high" className="text-white"><T>مرتفع</T></SelectItem>
+                <SelectItem value="critical" className="text-white"><T>حرج</T></SelectItem>
               </SelectContent>
             </Select>
             <Select value={deptFilter} onValueChange={setDeptFilter}>
               <SelectTrigger className="bg-slate-800/70 border-slate-700/70 text-white w-36 h-9 text-sm">
                 <Users className="size-3.5 ml-1.5 text-slate-500" />
-                <SelectValue placeholder="القسم" />
+                <SelectValue placeholder={translateUIText('القسم', locale)} />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all" className="text-white">كل الأقسام</SelectItem>
+                <SelectItem value="all" className="text-white"><T>كل الأقسام</T></SelectItem>
                 {departmentList.map(d => (
                   <SelectItem key={d} value={d} className="text-white">{d}</SelectItem>
                 ))}
@@ -528,7 +545,7 @@ export default function RiskCenterPage() {
             </Select>
             {hasFilters && (
               <Button variant="ghost" size="sm" onClick={() => { setSearch(''); setLevelFilter('all'); setDeptFilter('all'); }} className="text-slate-400 hover:text-white h-9 px-3">
-                <X className="size-3.5 ml-1" /> مسح
+                <X className="size-3.5 ml-1" /> <T>مسح</T>
               </Button>
             )}
           </div>
@@ -547,9 +564,9 @@ export default function RiskCenterPage() {
               <AlertCircle className="size-6 text-rose-400" />
             </div>
             <p className="text-rose-300 text-sm font-medium">{error}</p>
-            <p className="text-slate-600 text-xs mt-1">تعذّر الاتصال بقاعدة البيانات</p>
+            <p className="text-slate-600 text-xs mt-1"><T>تعذّر الاتصال بقاعدة البيانات</T></p>
             <Button variant="outline" size="sm" className="mt-4" onClick={fetchRiskData}>
-              إعادة المحاولة
+              <T>إعادة المحاولة</T>
             </Button>
           </CardContent>
         </Card>
@@ -559,8 +576,8 @@ export default function RiskCenterPage() {
             <div className="size-12 rounded-full bg-slate-800 flex items-center justify-center mb-3">
               <ShieldCheck className="size-6 text-emerald-500/60" />
             </div>
-            <p className="text-slate-400 text-sm font-medium">لا توجد مخاطر حالياً</p>
-            <p className="text-slate-600 text-xs mt-1">جميع الموظفين في المستوى الطبيعي — الفترة: {basisLabel}</p>
+            <p className="text-slate-400 text-sm font-medium"><T>لا توجد مخاطر حالياً</T></p>
+            <p className="text-slate-600 text-xs mt-1"><T>جميع الموظفين في المستوى الطبيعي — الفترة: </T>{basisLabel}</p>
           </CardContent>
         </Card>
       ) : (
@@ -572,28 +589,28 @@ export default function RiskCenterPage() {
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-slate-700/40 bg-slate-800/50">
-                      <th className="text-right text-slate-400 text-[11px] font-medium px-3 py-2.5 whitespace-nowrap">الموظف</th>
-                      <th className="text-right text-slate-400 text-[11px] font-medium px-3 py-2.5 whitespace-nowrap">القسم</th>
-                      <th className="text-right text-slate-400 text-[11px] font-medium px-3 py-2.5 whitespace-nowrap">المركز</th>
-                      <th className="text-right text-slate-400 text-[11px] font-medium px-3 py-2.5 whitespace-nowrap text-center">نقاط المخاطر</th>
+                      <th className="text-right text-slate-400 text-[11px] font-medium px-3 py-2.5 whitespace-nowrap"><T>الموظف</T></th>
+                      <th className="text-right text-slate-400 text-[11px] font-medium px-3 py-2.5 whitespace-nowrap"><T>القسم</T></th>
+                      <th className="text-right text-slate-400 text-[11px] font-medium px-3 py-2.5 whitespace-nowrap"><T>المركز</T></th>
+                      <th className="text-right text-slate-400 text-[11px] font-medium px-3 py-2.5 whitespace-nowrap text-center"><T>نقاط المخاطر</T></th>
                       {compareState === 'ready' && compareLabel && (
                         <th className="text-right text-slate-400 text-[11px] font-medium px-3 py-2.5 whitespace-nowrap text-center">
-                          تغيّر ({formatMonthLabelAr(compareLabel)})
+                          <T>تغيّر (</T>{formatMonthKey(compareLabel, locale)}<T>)</T>
                         </th>
                       )}
-                      <th className="text-right text-slate-400 text-[11px] font-medium px-3 py-2.5 whitespace-nowrap">مستوى المخاطر</th>
-                      <th className="text-right text-slate-400 text-[11px] font-medium px-3 py-2.5 whitespace-nowrap text-center">حالات مفتوحة</th>
-                      <th className="text-right text-slate-400 text-[11px] font-medium px-3 py-2.5 whitespace-nowrap text-center">جودة</th>
-                      <th className="text-right text-slate-400 text-[11px] font-medium px-3 py-2.5 whitespace-nowrap text-center">موارد بشرية</th>
-                      <th className="text-right text-slate-400 text-[11px] font-medium px-3 py-2.5 whitespace-nowrap text-center">غياب</th>
-                      <th className="text-right text-slate-400 text-[11px] font-medium px-3 py-2.5 whitespace-nowrap text-center">تأخير</th>
-                      <th className="text-right text-slate-400 text-[11px] font-medium px-3 py-2.5 whitespace-nowrap">الاتجاه</th>
-                      <th className="text-right text-slate-400 text-[11px] font-medium px-3 py-2.5 whitespace-nowrap text-center">تفاصيل</th>
+                      <th className="text-right text-slate-400 text-[11px] font-medium px-3 py-2.5 whitespace-nowrap"><T>مستوى المخاطر</T></th>
+                      <th className="text-right text-slate-400 text-[11px] font-medium px-3 py-2.5 whitespace-nowrap text-center"><T>حالات مفتوحة</T></th>
+                      <th className="text-right text-slate-400 text-[11px] font-medium px-3 py-2.5 whitespace-nowrap text-center"><T>جودة</T></th>
+                      <th className="text-right text-slate-400 text-[11px] font-medium px-3 py-2.5 whitespace-nowrap text-center"><T>موارد بشرية</T></th>
+                      <th className="text-right text-slate-400 text-[11px] font-medium px-3 py-2.5 whitespace-nowrap text-center"><T>غياب</T></th>
+                      <th className="text-right text-slate-400 text-[11px] font-medium px-3 py-2.5 whitespace-nowrap text-center"><T>تأخير</T></th>
+                      <th className="text-right text-slate-400 text-[11px] font-medium px-3 py-2.5 whitespace-nowrap"><T>الاتجاه</T></th>
+                      <th className="text-right text-slate-400 text-[11px] font-medium px-3 py-2.5 whitespace-nowrap text-center"><T>تفاصيل</T></th>
                     </tr>
                   </thead>
                   <tbody>
                     {filtered.map((emp) => {
-                      const rl = getRiskLevelConfig(emp.riskLevel);
+                      const rl = getRiskLevelConfig(emp.riskLevel, locale);
                       const cmp = compareState === 'ready' ? deltaFor(emp.employeeId, emp.riskScore) : { delta: 0, comparable: false };
                       return (
                         <motion.tr
@@ -613,17 +630,17 @@ export default function RiskCenterPage() {
                           <td className="px-3 py-2.5 whitespace-nowrap text-slate-500 text-xs">{emp.department || '—'}</td>
                           <td className="px-3 py-2.5 whitespace-nowrap text-slate-500 text-xs">{emp.position || '—'}</td>
                           <td className="px-3 py-2.5 whitespace-nowrap text-center">
-                            <span className={`font-bold text-sm ${rl.color}`}>{emp.riskScore}</span>
+                            <span className={`font-bold text-sm ${rl.color}`}>{formatInteger(emp.riskScore, locale)}</span>
                           </td>
                           {compareState === 'ready' && compareLabel && (
                             <td className="px-3 py-2.5 whitespace-nowrap text-center">
                               {cmp.comparable ? (
                                 <span className={`text-xs font-bold flex items-center justify-center gap-1 ${cmp.delta > 0 ? 'text-red-400' : cmp.delta < 0 ? 'text-emerald-400' : 'text-slate-500'}`}>
                                   {cmp.delta > 0 ? <TrendingUp className="size-3" /> : cmp.delta < 0 ? <TrendingDown className="size-3" /> : <Minus className="size-3" />}
-                                  {cmp.delta > 0 ? `+${cmp.delta}` : cmp.delta}
+                                  {cmp.delta > 0 ? `+${formatInteger(cmp.delta, locale)}` : formatInteger(cmp.delta, locale)}
                                 </span>
                               ) : (
-                                <span className="text-[10px] text-slate-600">— لا بيانات كافية</span>
+                                <span className="text-[10px] text-slate-600"><T>— لا بيانات كافية</T></span>
                               )}
                             </td>
                           )}
@@ -635,17 +652,17 @@ export default function RiskCenterPage() {
                           </td>
                           <td className="px-3 py-2.5 whitespace-nowrap text-center">
                             <Badge variant="outline" className={`text-[10px] ${emp.openCases > 0 ? 'bg-blue-500/15 text-blue-400 border-blue-500/25' : 'bg-slate-700/50 text-slate-500 border-slate-600/50'}`}>
-                              {emp.openCases}
+                              {formatInteger(emp.openCases, locale)}
                             </Badge>
                           </td>
-                          <td className="px-3 py-2.5 whitespace-nowrap text-center text-xs">{emp.breakdown.quality?.count || '—'}</td>
-                          <td className="px-3 py-2.5 whitespace-nowrap text-center text-xs">{emp.breakdown.hr?.count || '—'}</td>
-                          <td className="px-3 py-2.5 whitespace-nowrap text-center text-xs">{emp.breakdown.absence?.count || '—'}</td>
-                          <td className="px-3 py-2.5 whitespace-nowrap text-center text-xs">{emp.breakdown.delay?.count || '—'}</td>
+                          <td className="px-3 py-2.5 whitespace-nowrap text-center text-xs">{emp.breakdown.quality?.count ? formatInteger(emp.breakdown.quality.count, locale) : '—'}</td>
+                          <td className="px-3 py-2.5 whitespace-nowrap text-center text-xs">{emp.breakdown.hr?.count ? formatInteger(emp.breakdown.hr.count, locale) : '—'}</td>
+                          <td className="px-3 py-2.5 whitespace-nowrap text-center text-xs">{emp.breakdown.absence?.count ? formatInteger(emp.breakdown.absence.count, locale) : '—'}</td>
+                          <td className="px-3 py-2.5 whitespace-nowrap text-center text-xs">{emp.breakdown.delay?.count ? formatInteger(emp.breakdown.delay.count, locale) : '—'}</td>
                           <td className="px-3 py-2.5 whitespace-nowrap">
                             <div className="flex items-center gap-1">
                               {getTrendIcon(emp.trend)}
-                              <span className="text-[10px] text-slate-500">{getTrendLabel(emp.trend)}</span>
+                              <span className="text-[10px] text-slate-500">{getTrendLabel(emp.trend, locale)}</span>
                             </div>
                           </td>
                           <td className="px-3 py-2.5 whitespace-nowrap text-center">
@@ -686,7 +703,7 @@ export default function RiskCenterPage() {
           className="backdrop-blur-xl bg-slate-900 border-slate-700/60 shadow-2xl shadow-black/60 w-[min(28rem,calc(100vw-1.5rem))] max-h-[85vh] p-0 gap-0 flex flex-col overflow-hidden"
         >
           <DialogHeader className="px-5 py-3.5 border-b border-slate-700/50 bg-slate-900 shrink-0 space-y-0">
-            <DialogTitle className="text-white text-lg font-bold">تفاصيل المخاطر</DialogTitle>
+            <DialogTitle className="text-white text-lg font-bold"><T>تفاصيل المخاطر</T></DialogTitle>
           </DialogHeader>
           {/* Card body — INTERNAL scrollbar: data longer than the card
               scrolls here without ever leaving the viewport. Keyed by
@@ -707,13 +724,13 @@ export default function RiskCenterPage() {
                     <p className="text-white text-base font-semibold">{selectedEmployee.employeeName}</p>
                     <p className="text-slate-500 text-xs">{selectedEmployee.department} · {selectedEmployee.position}</p>
                     <div className="flex items-center gap-2 mt-1.5">
-                      <div className={`flex items-center gap-1.5 px-2 py-0.5 rounded-full border text-[10px] font-medium ${getRiskLevelConfig(selectedEmployee.riskLevel).bg} ${getRiskLevelConfig(selectedEmployee.riskLevel).color} ${getRiskLevelConfig(selectedEmployee.riskLevel).border}`}>
-                        <div className={`w-1.5 h-1.5 rounded-full ${getRiskLevelConfig(selectedEmployee.riskLevel).dot}`} />
-                        {getRiskLevelConfig(selectedEmployee.riskLevel).label}
+                      <div className={`flex items-center gap-1.5 px-2 py-0.5 rounded-full border text-[10px] font-medium ${getRiskLevelConfig(selectedEmployee.riskLevel, locale).bg} ${getRiskLevelConfig(selectedEmployee.riskLevel, locale).color} ${getRiskLevelConfig(selectedEmployee.riskLevel, locale).border}`}>
+                        <div className={`w-1.5 h-1.5 rounded-full ${getRiskLevelConfig(selectedEmployee.riskLevel, locale).dot}`} />
+                        {getRiskLevelConfig(selectedEmployee.riskLevel, locale).label}
                       </div>
                       <div className="flex items-center gap-1">
                         {getTrendIcon(selectedEmployee.trend)}
-                        <span className="text-[10px] text-slate-500">{getTrendLabel(selectedEmployee.trend)}</span>
+                        <span className="text-[10px] text-slate-500">{getTrendLabel(selectedEmployee.trend, locale)}</span>
                       </div>
                     </div>
                   </div>
@@ -722,10 +739,10 @@ export default function RiskCenterPage() {
                 {/* Risk Score */}
                 <Card className={`border ${getRiskLevelConfig(selectedEmployee.riskLevel).border} ${getRiskLevelConfig(selectedEmployee.riskLevel).bg}`}>
                   <CardContent className="p-4 text-center">
-                    <p className="text-slate-500 text-xs mb-1">نقاط المخاطر</p>
-                    <p className={`text-4xl font-bold ${getRiskLevelConfig(selectedEmployee.riskLevel).color}`}>{selectedEmployee.riskScore}</p>
+                    <p className="text-slate-500 text-xs mb-1"><T>نقاط المخاطر</T></p>
+                    <p className={`text-4xl font-bold ${getRiskLevelConfig(selectedEmployee.riskLevel).color}`}>{formatInteger(selectedEmployee.riskScore, locale)}</p>
                     <p className={`text-xs mt-1 ${getRiskLevelConfig(selectedEmployee.riskLevel).color}`}>
-                      {selectedEmployee.riskScore >= 51 ? 'خطر حرج — تصعيد فوري' : selectedEmployee.riskScore >= 26 ? 'مرتفع — يتطلب تدخل عاجل' : selectedEmployee.riskScore >= 11 ? 'متوسط — يحتاج متابعة' : 'منخفض — مراقبة عادية'}
+                      <T>{selectedEmployee.riskScore >= 51 ? 'خطر حرج — تصعيد فوري' : selectedEmployee.riskScore >= 26 ? 'مرتفع — يتطلب تدخل عاجل' : selectedEmployee.riskScore >= 11 ? 'متوسط — يحتاج متابعة' : 'منخفض — مراقبة عادية'}</T>
                     </p>
                   </CardContent>
                 </Card>
@@ -735,7 +752,7 @@ export default function RiskCenterPage() {
                   <CardHeader className="pb-2 pt-3 px-4">
                     <CardTitle className="text-white text-sm flex items-center gap-2">
                       <Target className="size-4 text-cyan-400" />
-                      تحليل أسباب المخاطر
+                      <T>تحليل أسباب المخاطر</T>
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="px-4 pb-3">
@@ -761,12 +778,12 @@ export default function RiskCenterPage() {
                           <div key={item.key} className="flex items-center justify-between py-1.5 px-2 rounded-lg bg-slate-800/50">
                             <div className="flex items-center gap-2">
                               <item.icon className={`size-3.5 ${item.color}`} />
-                              <span className="text-slate-300 text-xs">{item.label}</span>
+                              <span className="text-slate-300 text-xs"><T>{item.label}</T></span>
                             </div>
                             <div className="flex items-center gap-2">
-                              <span className="text-slate-500 text-[10px]">×{factor.count}</span>
+                              <span className="text-slate-500 text-[10px]">×{formatInteger(factor.count, locale)}</span>
                               <Badge variant="outline" className={`text-[10px] bg-slate-700/50 ${item.color} border-slate-600/50`}>
-                                +{factor.points}
+                                +{formatInteger(factor.points, locale)}
                               </Badge>
                             </div>
                           </div>
@@ -774,8 +791,8 @@ export default function RiskCenterPage() {
                       })}
                     </div>
                     <div className="mt-3 pt-2 border-t border-slate-700/30 flex items-center justify-between">
-                      <span className="text-slate-400 text-xs font-medium">الإجمالي</span>
-                      <span className={`font-bold text-sm ${getRiskLevelConfig(selectedEmployee.riskLevel).color}`}>{selectedEmployee.riskScore} نقطة</span>
+                      <span className="text-slate-400 text-xs font-medium"><T>الإجمالي</T></span>
+                      <span className={`font-bold text-sm ${getRiskLevelConfig(selectedEmployee.riskLevel).color}`}>{formatInteger(selectedEmployee.riskScore, locale)} <T>نقطة</T></span>
                     </div>
                   </CardContent>
                 </Card>
@@ -786,7 +803,7 @@ export default function RiskCenterPage() {
                     <CardHeader className="pb-2 pt-3 px-4">
                       <CardTitle className="text-white text-sm flex items-center gap-2">
                         <Zap className="size-4 text-amber-400" />
-                        التوصيات
+                        <T>التوصيات</T>
                       </CardTitle>
                     </CardHeader>
                     <CardContent className="px-4 pb-3">
@@ -811,7 +828,7 @@ export default function RiskCenterPage() {
                   <CardHeader className="pb-2 pt-3 px-4">
                     <CardTitle className="text-white text-sm flex items-center gap-2">
                       <FileText className="size-4 text-teal-400" />
-                      إجراءات كابا
+                      <T>إجراءات كابا</T>
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="px-4 pb-3 flex gap-2 flex-wrap">
@@ -822,7 +839,7 @@ export default function RiskCenterPage() {
                       onClick={() => setCapaCreateOpen(true)}
                     >
                       <FilePlus className="size-3.5 ml-1" />
-                      إنشاء كابا جديد
+                      <T>إنشاء كابا جديد</T>
                     </Button>
                     {selectedEmployee.capaIds && selectedEmployee.capaIds.length > 0 && (
                       <Button
@@ -832,7 +849,7 @@ export default function RiskCenterPage() {
                         onClick={() => useAppStore.getState().navigateTo('capa', undefined, { employeeId: selectedEmployee.employeeId })}
                       >
                         <Eye className="size-3.5 ml-1" />
-                        عرض الحالات ({selectedEmployee.capaIds.length})
+                        <T>عرض الحالات (</T>{formatInteger(selectedEmployee.capaIds.length, locale)}<T>)</T>
                       </Button>
                     )}
                   </CardContent>
@@ -841,7 +858,7 @@ export default function RiskCenterPage() {
                 {/* Last Activity */}
                 {selectedEmployee.lastActivity && (
                   <div className="text-center text-slate-500 text-[10px]">
-                    آخر نشاط: {selectedEmployee.lastActivity}
+                    <T>آخر نشاط: </T>{selectedEmployee.lastActivity}
                   </div>
                 )}
 
@@ -860,7 +877,7 @@ export default function RiskCenterPage() {
                       <div className="flex items-center justify-between gap-2 px-4 py-2.5 border-b border-slate-700/50">
                         <p className="text-xs font-bold text-slate-200 flex items-center gap-2">
                           <FilePlus className="size-3.5 text-brand-400" />
-                          إنشاء CAPA — {selectedEmployee.employeeName}
+                          <T>إنشاء CAPA — </T>{selectedEmployee.employeeName}
                         </p>
                         <button onClick={() => setCapaCreateOpen(false)} className="p-1.5 rounded-md text-slate-500 hover:text-white hover:bg-slate-800 transition-colors">
                           <X className="size-3.5" />
@@ -895,37 +912,37 @@ export default function RiskCenterPage() {
         <motion.div initial={{ opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }}>
           <div className="flex items-center gap-2 mb-3">
             <BarChart3 className="size-5 text-slate-400" />
-            <h2 className="text-white text-sm font-semibold">تحليل مخاطر الأقسام</h2>
+            <h2 className="text-white text-sm font-semibold"><T>تحليل مخاطر الأقسام</T></h2>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
             {deptTable.map(dept => {
               const avgLevel = dept.avgScore >= 51 ? 'critical' : dept.avgScore >= 26 ? 'high' : dept.avgScore >= 11 ? 'medium' : 'low';
-              const dl = getRiskLevelConfig(avgLevel);
+              const dl = getRiskLevelConfig(avgLevel, locale);
               return (
                 <Card key={dept.name} className={`border ${dl.border} ${dl.bg}`}>
                   <CardContent className="p-3.5">
                     <div className="flex items-center justify-between mb-2">
                       <h3 className="text-white text-sm font-medium">{dept.name}</h3>
                       <Badge variant="outline" className={`text-[10px] ${dl.color} ${dl.border}`}>
-                        متوسط: {dept.avgScore}
+                        <T>متوسط: </T>{formatInteger(dept.avgScore, locale)}
                       </Badge>
                     </div>
                     <div className="grid grid-cols-2 gap-1.5 text-[10px]">
                       <div className="flex justify-between text-slate-400">
-                        <span>موظفين:</span>
-                        <span className="text-white">{dept.count}</span>
+                        <span><T>موظفين:</T></span>
+                        <span className="text-white">{formatInteger(dept.count, locale)}</span>
                       </div>
                       <div className="flex justify-between text-slate-400">
-                        <span>حالات مفتوحة:</span>
-                        <span className="text-blue-400">{dept.openCases}</span>
+                        <span><T>حالات مفتوحة:</T></span>
+                        <span className="text-blue-400">{formatInteger(dept.openCases, locale)}</span>
                       </div>
                       <div className="flex justify-between text-slate-400">
-                        <span>مخالفات جودة:</span>
-                        <span className="text-amber-400">{dept.qualityViolations}</span>
+                        <span><T>مخالفات جودة:</T></span>
+                        <span className="text-amber-400">{formatInteger(dept.qualityViolations, locale)}</span>
                       </div>
                       <div className="flex justify-between text-slate-400">
-                        <span>مشاكل حضور:</span>
-                        <span className="text-red-400">{dept.attendanceIssues}</span>
+                        <span><T>مشاكل حضور:</T></span>
+                        <span className="text-red-400">{formatInteger(dept.attendanceIssues, locale)}</span>
                       </div>
                     </div>
                   </CardContent>

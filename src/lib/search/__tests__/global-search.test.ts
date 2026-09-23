@@ -743,15 +743,20 @@ describe('Phase 6.1 — exact navigation contract (§8/§9, §30-21/22/23)', () 
       assert.match(source, /useRecordHighlight\(/, page);
       assert.match(source, /data-record-id=/, page);
     }
-    // Employees page keeps its own (pre-existing) highlightId row mechanic.
+    // §QNALYS-HIGHLIGHT — Employees and Requests now consume the SAME
+    // shared hook as every other page (their former local blue/amber
+    // ring + timer mechanics were migrated to the canonical system).
+    for (const page of [
+      'src/components/pages/EmployeesPage.tsx',
+      'src/components/pages/RequestsPage.tsx',
+    ]) {
+      const source = srcOf(page);
+      assert.match(source, /useRecordHighlight\(/, page);
+      assert.match(source, /data-record-id=/, page);
+    }
+    // Phase 6.1 status seeding still reaches the archived-employee row.
     const employees = srcOf('src/components/pages/EmployeesPage.tsx');
-    assert.match(employees, /highlightId/);
-    assert.match(employees, /scrollIntoView/);
-    assert.match(employees, /navParams\.status/); // Phase 6.1 status seeding
-    // Requests page keeps its own highlightId row mechanic.
-    const requests = srcOf('src/components/pages/RequestsPage.tsx');
-    assert.match(requests, /highlightId/);
-    assert.match(requests, /scrollIntoView/);
+    assert.match(employees, /navParams\.status/);
   });
 
   it('service-level deps: only VISIBLE domains are read from the database (IO-level §12)', async () => {

@@ -35,6 +35,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
+import { T } from '@/lib/i18n/T';
 import {
   EVIDENCE_COLLECTIONS,
   type EvidenceCollection,
@@ -79,10 +80,10 @@ export function EvidencePreviewModal({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-right text-slate-100">
             <FileText className="h-4 w-4 text-emerald-400" />
-            {descriptor?.title ?? 'دليل'}
+            {descriptor?.title ?? <T>دليل</T>}
           </DialogTitle>
           <DialogDescription className="text-right text-[11px] text-slate-500">
-            معاينة السجل المصدر — البيانات من المصدر الكنسي نفسه دون أي نسخ
+            <T>معاينة السجل المصدر — البيانات من المصدر الكنسي نفسه دون أي نسخ</T>
           </DialogDescription>
         </DialogHeader>
 
@@ -98,21 +99,21 @@ export function EvidencePreviewModal({
           {!loading && access === 'forbidden' && (
             <div className="flex items-start gap-2.5 rounded-xl border border-red-500/20 bg-red-500/5 p-4">
               <Lock className="mt-0.5 h-4 w-4 shrink-0 text-red-400" />
-              <p className="text-sm text-red-200">{EVIDENCE_FORBIDDEN_MESSAGE}</p>
+              <p className="text-sm text-red-200"><T>{EVIDENCE_FORBIDDEN_MESSAGE}</T></p>
             </div>
           )}
 
           {!loading && access === 'not_found' && (
             <div className="flex items-start gap-2.5 rounded-xl border border-slate-500/20 bg-slate-500/5 p-4">
               <ShieldQuestion className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
-              <p className="text-sm text-slate-300">{EVIDENCE_NOT_FOUND_MESSAGE}</p>
+              <p className="text-sm text-slate-300"><T>{EVIDENCE_NOT_FOUND_MESSAGE}</T></p>
             </div>
           )}
 
           {!loading && granted && record && (
             <dl className="space-y-2.5">
               {record.fields.length === 0 && (
-                <p className="text-xs text-slate-500">لا توجد حقول عرض لهذا السجل.</p>
+                <p className="text-xs text-slate-500"><T>لا توجد حقول عرض لهذا السجل.</T></p>
               )}
               {record.fields.map((field) => (
                 <div
@@ -153,7 +154,7 @@ export function EvidencePreviewModal({
               >
                 <ExternalLink className="h-3.5 w-3.5 ml-1" />
                 {/* §30: honest label — this page supports page navigation only */}
-                الانتقال إلى الصفحة
+                <T>الانتقال إلى الصفحة</T>
               </Button>
             ) : (
               <Button
@@ -164,7 +165,7 @@ export function EvidencePreviewModal({
               >
                 <ExternalLink className="h-3.5 w-3.5 ml-1" />
                 {/* §30: exact record navigation — locate/scroll/highlight */}
-                فتح السجل في المصدر
+                <T>فتح السجل في المصدر</T>
               </Button>
             )
           )}

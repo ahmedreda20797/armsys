@@ -42,6 +42,9 @@ import {
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
 import { useLanguage } from '@/lib/i18n/language-context';
+import { T } from '@/lib/i18n/T';
+import { translateUIText } from '@/lib/i18n/ui-text';
+import { formatInteger, formatNumber, unitWord } from '@/lib/i18n/format';
 import {
   EVIDENCE_COLLECTIONS,
   isEvidenceCollection,
@@ -90,9 +93,10 @@ const TONE_CLASSES: Record<Tone, string> = {
 
 /** Compact count chip — a fact with its stored count (no re-aggregation). */
 export function CountChip({ label, count, tone = 'neutral' }: { label: string; count: number; tone?: Tone }) {
+  const { locale } = useLanguage();
   return (
     <Badge variant="outline" className={cn('font-normal whitespace-nowrap text-[11px]', TONE_CLASSES[tone])}>
-      {label}: <span className="font-mono mx-1 tabular-nums">{count}</span>
+      {label}: <span className="font-mono mx-1 tabular-nums">{formatInteger(count, locale)}</span>
     </Badge>
   );
 }
@@ -137,7 +141,7 @@ export function SectionCard({
 }: {
   icon: LucideIcon;
   title: string;
-  subtitle?: string;
+  subtitle?: ReactNode;
   actions?: ReactNode;
   children: ReactNode;
   className?: string;
@@ -203,7 +207,7 @@ export function ReportHeaderSection({ view }: { view: ReportHeaderView }) {
           </div>
           {/* §19 — the report shows VERIFIED FACTS only (no AI layer). */}
           <Badge variant="outline" className="bg-emerald-500/15 text-emerald-300 border-emerald-500/30 text-[10px] no-print">
-            حقائق موثقة — VERIFIED FACTS
+            <T>حقائق موثقة — VERIFIED FACTS</T>
           </Badge>
         </div>
 
@@ -215,7 +219,8 @@ export function ReportHeaderSection({ view }: { view: ReportHeaderView }) {
 
         <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs pt-1 border-t border-slate-700/40">
           <span className="text-slate-500">
-            مخطط KPI: {view.schemeLabel ?? <span className="italic">{UNAVAILABLE}</span>}
+            <T>مخطط KPI: </T>
+            {view.schemeLabel ?? <span className="italic"><T>{UNAVAILABLE}</T></span>}
           </span>
           <span className="text-slate-500 font-mono">
             {view.datasetKind}
@@ -231,24 +236,25 @@ export function ReportHeaderSection({ view }: { view: ReportHeaderView }) {
 // ─────────────────────────────────────────────────────────────
 
 export function KpiHeroSection({ view }: { view: KpiHeroView }) {
-  const { t } = useLanguage();
+  const { t, locale } = useLanguage();
   return (
     <SectionCard icon={Gauge} title={t('smart.section.kpi')} subtitle={t('smart.section.kpiSub')}>
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div className="rounded-xl bg-slate-900/40 border border-slate-700/40 p-4 space-y-1">
-          <div className="text-[11px] text-slate-500">درجة الجودة (خام)</div>
+          <div className="text-[11px] text-slate-500"><T>درجة الجودة (خام)</T></div>
           <div className="text-3xl font-bold text-slate-100 tabular-nums">{view.rawScoreDisplay}</div>
-          <div className="text-[11px] text-slate-500">Raw Quality Score — مخرج المحرك كما هو</div>
+          <div className="text-[11px] text-slate-500"><T>Raw Quality Score — مخرج المحرك كما هو</T></div>
         </div>
         <div className="rounded-xl bg-slate-900/40 border border-slate-700/40 p-4 space-y-1">
           <div className="text-[11px] text-slate-500">
-            المساهمة الموزونة{view.weightPercent !== null ? ` (وزن ${view.weightPercent}%)` : ''}
+            <T>المساهمة الموزونة</T>
+            {view.weightPercent !== null ? <> (<T>وزن </T>{formatNumber(view.weightPercent, { locale })}%)</> : ''}
           </div>
           <div className="text-3xl font-bold text-emerald-300 tabular-nums">{view.contributionDisplay}</div>
-          <div className="text-[11px] text-slate-500">Quality Contribution — وليست KPI الشركة</div>
+          <div className="text-[11px] text-slate-500"><T>Quality Contribution — وليست KPI الشركة</T></div>
         </div>
         <div className="rounded-xl bg-slate-900/40 border border-slate-700/40 p-4 space-y-2">
-          <div className="text-[11px] text-slate-500">حالة KPI</div>
+          <div className="text-[11px] text-slate-500"><T>حالة KPI</T></div>
           <div className="flex flex-wrap gap-1.5">
             <StatusBadge status={view.rowStatusLabel} />
             {view.overallStatusLabel && view.overallStatusLabel !== view.rowStatusLabel && (
@@ -256,8 +262,8 @@ export function KpiHeroSection({ view }: { view: KpiHeroView }) {
             )}
           </div>
           <div className="text-[11px] text-slate-500">
-            المجموع الموزون المتاح: {view.weightedTotalDisplay ?? UNAVAILABLE}
-            {view.availableWeightDisplay !== null ? ` / وزن متاح ${view.availableWeightDisplay}` : ''}
+            <T>المجموع الموزون المتاح: </T>{view.weightedTotalDisplay ?? translateUIText(UNAVAILABLE, locale)}
+            {view.availableWeightDisplay !== null ? <> / <T>وزن متاح </T>{view.availableWeightDisplay}</> : ''}
           </div>
         </div>
       </div>
@@ -265,12 +271,12 @@ export function KpiHeroSection({ view }: { view: KpiHeroView }) {
       <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-xs pt-1 border-t border-slate-700/40">
         {view.previousScoreDisplay && (
           <span className="text-slate-400">
-            الشهر السابق: <span className="font-mono tabular-nums text-slate-200">{view.previousScoreDisplay}</span>
+            <T>الشهر السابق: </T><span className="font-mono tabular-nums text-slate-200">{view.previousScoreDisplay}</span>
           </span>
         )}
         {view.deltaDisplay && (
           <span className="text-slate-400">
-            التغير:{' '}
+            <T>التغير: </T>
             <span
               className={cn(
                 'font-mono tabular-nums',
@@ -278,13 +284,13 @@ export function KpiHeroSection({ view }: { view: KpiHeroView }) {
                 view.deltaToneValue === 'bad' && 'text-red-300',
               )}
             >
-              {view.deltaDisplay} نقطة مئوية
+              {view.deltaDisplay} <T>نقطة مئوية</T>
             </span>
           </span>
         )}
         {view.directionLabel && <span className="text-slate-400">{view.directionLabel}</span>}
         {!view.previousScoreDisplay && !view.deltaDisplay && (
-          <span className="text-slate-500 italic">لا توجد مقارنة شهر سابق متاحة</span>
+          <span className="text-slate-500 italic"><T>لا توجد مقارنة شهر سابق متاحة</T></span>
         )}
       </div>
 
@@ -315,9 +321,9 @@ export function KpiComponentsSection({ view }: { view: KpiComponentsView }) {
       <Table>
         <TableHeader>
           <TableRow className="border-slate-700/50">
-            <TableHead className="text-right h-9">المكون</TableHead>
-            <TableHead className="text-right h-9">المساهمة / الحد الأقصى</TableHead>
-            <TableHead className="text-right h-9">الحالة</TableHead>
+            <TableHead className="text-right h-9"><T>المكون</T></TableHead>
+            <TableHead className="text-right h-9"><T>المساهمة / الحد الأقصى</T></TableHead>
+            <TableHead className="text-right h-9"><T>الحالة</T></TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -343,7 +349,7 @@ export function KpiComponentsSection({ view }: { view: KpiComponentsView }) {
 
       {view.hasUnavailableComponents && (
         <p className="text-[11px] text-slate-500">
-          مكونات المخطط الإضافية غير متاحة في بيانات هذه الفترة — تُعرض كما يوفرها المحرك دون أي حساب بديل.
+          <T>مكونات المخطط الإضافية غير متاحة في بيانات هذه الفترة — تُعرض كما يوفرها المحرك دون أي حساب بديل.</T>
         </p>
       )}
     </SectionCard>
@@ -355,11 +361,11 @@ export function KpiComponentsSection({ view }: { view: KpiComponentsView }) {
 // ─────────────────────────────────────────────────────────────
 
 export function TrendSection({ view }: { view: TrendView }) {
-  const { t } = useLanguage();
+  const { t, locale } = useLanguage();
   return (
     <SectionCard icon={Activity} title={t('smart.section.trend')} subtitle={t('smart.section.trendSub')}>
       {view.insufficient ? (
-        <p className="text-sm text-slate-400 py-3 text-center">لا توجد بيانات تاريخية كافية لعرض الاتجاه</p>
+        <p className="text-sm text-slate-400 py-3 text-center"><T>لا توجد بيانات تاريخية كافية لعرض الاتجاه</T></p>
       ) : (
         <>
           <div className="flex flex-wrap gap-2">
@@ -373,7 +379,7 @@ export function TrendSection({ view }: { view: TrendView }) {
                     ? 'bg-slate-800/50 text-slate-200 border-slate-700/60'
                     : 'bg-slate-900/40 text-slate-600 border-slate-800',
                 )}
-                title={p.available ? undefined : 'شهر بدون نتيجة — لا يُعرض كصفر'}
+                title={p.available ? undefined : translateUIText('شهر بدون نتيجة — لا يُعرض كصفر', locale)}
               >
                 {p.monthLabel}: {p.scoreDisplay}
                 {p.available && p.finalized ? ' 🔒' : ''}
@@ -388,7 +394,7 @@ export function TrendSection({ view }: { view: TrendView }) {
             )}
             {view.deltaDisplay && (
               <span className="text-slate-400">
-                التغير عن الشهر السابق:{' '}
+                <T>التغير عن الشهر السابق: </T>
                 <span
                   className={cn(
                     'font-mono tabular-nums',
@@ -396,7 +402,7 @@ export function TrendSection({ view }: { view: TrendView }) {
                     view.deltaToneValue === 'bad' && 'text-red-300',
                   )}
                 >
-                  {view.deltaDisplay} نقطة مئوية
+                  {view.deltaDisplay} <T>نقطة مئوية</T>
                 </span>
               </span>
             )}
@@ -413,7 +419,7 @@ export function TrendSection({ view }: { view: TrendView }) {
 // ─────────────────────────────────────────────────────────────
 
 export function ObservationsSection({ view }: { view: ObservationsView }) {
-  const { t } = useLanguage();
+  const { t, locale } = useLanguage();
   return (
     <SectionCard icon={Eye} title={t('smart.section.observations')} subtitle={t('smart.section.observationsSub')}>
       <div className="flex flex-wrap gap-1.5">
@@ -430,15 +436,15 @@ export function ObservationsSection({ view }: { view: ObservationsView }) {
           <Table>
             <TableHeader>
               <TableRow className="border-slate-700/50">
-                <TableHead className="text-right h-9">الفئة</TableHead>
-                <TableHead className="text-right h-9 w-20">العدد</TableHead>
+                <TableHead className="text-right h-9"><T>الفئة</T></TableHead>
+                <TableHead className="text-right h-9 w-20"><T>العدد</T></TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {view.categoryRows.map((c) => (
                 <TableRow key={c.categoryId ?? '_'} className="border-slate-800/60">
                   <TableCell className="text-slate-200">{c.categoryName}</TableCell>
-                  <TableCell className="font-mono tabular-nums">{c.count}</TableCell>
+                  <TableCell className="font-mono tabular-nums">{formatInteger(c.count, locale)}</TableCell>
                 </TableRow>
               ))}
             </TableBody>
@@ -450,8 +456,8 @@ export function ObservationsSection({ view }: { view: ObservationsView }) {
 
       {view.typeRows.length > 0 && (
         <div className="text-[11px] text-slate-500">
-          توزيع الأنواع (فوق حد التكرار {view.minOccurrences}):{' '}
-          {view.typeRows.map((t) => `${t.label} (${t.count})`).join('، ')}
+          <T>توزيع الأنواع (فوق حد التكرار </T>{formatInteger(view.minOccurrences, locale)}<T>): </T>
+          {view.typeRows.map((t) => `${t.label} (${formatInteger(t.count, locale)})`).join('، ')}
         </div>
       )}
     </SectionCard>
@@ -463,15 +469,15 @@ export function ObservationsSection({ view }: { view: ObservationsView }) {
 // ─────────────────────────────────────────────────────────────
 
 export function RepeatedIssuesSection({ view }: { view: RepeatedIssuesView }) {
-  const { t } = useLanguage();
+  const { t, locale } = useLanguage();
   return (
     <SectionCard
       icon={Repeat}
       title={t('smart.section.repeated')}
-      subtitle={`تجميع حتمي حسب الفئة/النوع — حد أدنى ${view.minOccurrences} تكرارات`}
+      subtitle={<><T>تجميع حتمي حسب الفئة/النوع — حد أدنى </T>{formatInteger(view.minOccurrences, locale)} <T>تكرارات</T></>}
     >
       {view.empty ? (
-        <SectionEmpty message="لا توجد مشكلات متكررة ضمن حد التكرار" />
+        <SectionEmpty message={translateUIText('لا توجد مشكلات متكررة ضمن حد التكرار', locale)} />
       ) : (
         <>
           {view.categoryRows.length > 0 && (
@@ -479,17 +485,17 @@ export function RepeatedIssuesSection({ view }: { view: RepeatedIssuesView }) {
               <Table>
                 <TableHeader>
                   <TableRow className="border-slate-700/50">
-                    <TableHead className="text-right h-9">المشكلة (فئة)</TableHead>
-                    <TableHead className="text-right h-9 w-16">التكرار</TableHead>
-                    <TableHead className="text-right h-9 w-40">أول / آخر ظهور</TableHead>
-                    <TableHead className="text-right h-9 w-36">عبر نافذة التحليل</TableHead>
+                    <TableHead className="text-right h-9"><T>المشكلة (فئة)</T></TableHead>
+                    <TableHead className="text-right h-9 w-16"><T>التكرار</T></TableHead>
+                    <TableHead className="text-right h-9 w-40"><T>أول / آخر ظهور</T></TableHead>
+                    <TableHead className="text-right h-9 w-36"><T>عبر نافذة التحليل</T></TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {view.categoryRows.map((row) => (
                     <TableRow key={row.label} className="border-slate-800/60">
                       <TableCell className="text-slate-200">{row.label}</TableCell>
-                      <TableCell className="font-mono tabular-nums">{row.occurrenceCount}</TableCell>
+                      <TableCell className="font-mono tabular-nums">{formatInteger(row.occurrenceCount, locale)}</TableCell>
                       <TableCell className="font-mono text-xs text-slate-400" dir="ltr">
                         {row.firstOccurrence ?? '—'} → {row.lastOccurrence ?? '—'}
                       </TableCell>
@@ -502,11 +508,11 @@ export function RepeatedIssuesSection({ view }: { view: RepeatedIssuesView }) {
           )}
           {view.typeRows.length > 0 && (
             <div className="text-[11px] text-slate-500">
-              حسب النوع: {view.typeRows.map((t) => `${t.label} (${t.occurrenceCount})`).join('، ')}
+              <T>حسب النوع: </T>{view.typeRows.map((t) => `${t.label} (${formatInteger(t.occurrenceCount, locale)})`).join('، ')}
             </div>
           )}
           <p className="text-[10px] text-slate-600">
-            حقائق قابلة للقياس فقط — لا يتضمن هذا التقرير أي استنتاج عن الأداء أو الانضباط.
+            <T>حقائق قابلة للقياس فقط — لا يتضمن هذا التقرير أي استنتاج عن الأداء أو الانضباط.</T>
           </p>
         </>
       )}
@@ -519,7 +525,7 @@ export function RepeatedIssuesSection({ view }: { view: RepeatedIssuesView }) {
 // ─────────────────────────────────────────────────────────────
 
 export function DeductionsSection({ view }: { view: DeductionsView }) {
-  const { t } = useLanguage();
+  const { t, locale } = useLanguage();
   return (
     <SectionCard icon={Scale} title={t('smart.section.deductions')} subtitle={t('smart.section.deductionsSub')}>
       {view.empty ? (
@@ -527,9 +533,9 @@ export function DeductionsSection({ view }: { view: DeductionsView }) {
       ) : (
         <>
           <div className="flex flex-wrap gap-1.5">
-            <CountChip label="العدد" count={view.count} tone="warn" />
-            <CountChip label="إجمالي الأيام" count={view.totalDays} tone="bad" />
-            <CountChip label="إجمالي المبلغ" count={view.totalAmount} tone="bad" />
+            <CountChip label={translateUIText('العدد', locale)} count={view.count} tone="warn" />
+            <CountChip label={translateUIText('إجمالي الأيام', locale)} count={view.totalDays} tone="bad" />
+            <CountChip label={translateUIText('إجمالي المبلغ', locale)} count={view.totalAmount} tone="bad" />
           </div>
           <ChipRow chips={view.typeChips} />
           {view.records.length > 0 && (
@@ -537,12 +543,12 @@ export function DeductionsSection({ view }: { view: DeductionsView }) {
               <Table>
                 <TableHeader>
                   <TableRow className="border-slate-700/50">
-                    <TableHead className="text-right h-9">التاريخ</TableHead>
-                    <TableHead className="text-right h-9">النوع</TableHead>
-                    <TableHead className="text-right h-9">السبب</TableHead>
-                    <TableHead className="text-right h-9 w-20">أيام</TableHead>
-                    <TableHead className="text-right h-9 w-24">مبلغ</TableHead>
-                    <TableHead className="text-right h-9 w-28">مرجع CAPA</TableHead>
+                    <TableHead className="text-right h-9"><T>التاريخ</T></TableHead>
+                    <TableHead className="text-right h-9"><T>النوع</T></TableHead>
+                    <TableHead className="text-right h-9"><T>السبب</T></TableHead>
+                    <TableHead className="text-right h-9 w-20"><T>أيام</T></TableHead>
+                    <TableHead className="text-right h-9 w-24"><T>مبلغ</T></TableHead>
+                    <TableHead className="text-right h-9 w-28"><T>مرجع CAPA</T></TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -565,7 +571,7 @@ export function DeductionsSection({ view }: { view: DeductionsView }) {
             </div>
           )}
           <p className="text-[10px] text-slate-600">
-            الخصومات مجال رواتب مستقل — لا يفترض هذا التقرير أي أثر تلقائي لها على KPI؛ قيم KPI تُستهلك من المحرك كما هي.
+            <T>الخصومات مجال رواتب مستقل — لا يفترض هذا التقرير أي أثر تلقائي لها على KPI؛ قيم KPI تُستهلك من المحرك كما هي.</T>
           </p>
         </>
       )}
@@ -578,17 +584,17 @@ export function DeductionsSection({ view }: { view: DeductionsView }) {
 // ─────────────────────────────────────────────────────────────
 
 export function ComplaintsSection({ view }: { view: ComplaintsView }) {
-  const { t } = useLanguage();
+  const { t, locale } = useLanguage();
   const indirect = view.relationship === 'INDIRECT';
   return (
     <SectionCard
       icon={MessageSquareWarning}
       title={t('smart.section.complaints')}
-      subtitle={`إسناد ${view.relationshipLabel}`}
+      subtitle={<><T>إسناد </T>{view.relationshipLabel}</>}
     >
       {indirect ? (
         <p className="text-xs text-amber-300/90 border-r-2 border-amber-500/40 pr-2">
-          ارتباط غير مباشر فقط — لا يُسند هذه الشكاوى إلى الموظف مباشرة، وتُعرض كسياق منفصل دون نسبة تأكيدية.
+          <T>ارتباط غير مباشر فقط — لا يُسند هذه الشكاوى إلى الموظف مباشرة، وتُعرض كسياق منفصل دون نسبة تأكيدية.</T>
         </p>
       ) : null}
       {view.total === 0 ? (
@@ -597,20 +603,20 @@ export function ComplaintsSection({ view }: { view: ComplaintsView }) {
         <>
           <div className="flex flex-wrap gap-1.5">
             <CountChip label={t('smart.col.total')} count={view.total} tone="info" />
-            <CountChip label="محلولة/مغلقة" count={view.resolvedOrClosed} tone="good" />
-            <CountChip label="مفتوحة" count={view.stillOpen} tone="warn" />
-            {view.viaDealCount > 0 && <CountChip label="عبر صفقة" count={view.viaDealCount} tone="neutral" />}
+            <CountChip label={translateUIText('محلولة/مغلقة', locale)} count={view.resolvedOrClosed} tone="good" />
+            <CountChip label={translateUIText('مفتوحة', locale)} count={view.stillOpen} tone="warn" />
+            {view.viaDealCount > 0 && <CountChip label={translateUIText('عبر صفقة', locale)} count={view.viaDealCount} tone="neutral" />}
           </div>
           <ChipRow chips={view.statusChips} />
           <ChipRow chips={view.typeChips} />
           <ChipRow chips={view.severityChips} />
           {view.repeatedTypes.length > 0 && (
             <div className="text-[11px] text-slate-500">
-              أنواع متكررة: {view.repeatedTypes.map((t) => `${t.label} (${t.count})`).join('، ')}
+              <T>أنواع متكررة: </T>{view.repeatedTypes.map((t) => `${t.label} (${formatInteger(t.count, locale)})`).join('، ')}
             </div>
           )}
           <div className="text-xs text-slate-400 border-t border-slate-700/40 pt-2">
-            متوسط زمن الحل: <span className="font-mono tabular-nums text-slate-200">{view.avgResolutionDisplay}</span>
+            <T>متوسط زمن الحل: </T><span className="font-mono tabular-nums text-slate-200">{view.avgResolutionDisplay}</span>
           </div>
         </>
       )}
@@ -623,42 +629,42 @@ export function ComplaintsSection({ view }: { view: ComplaintsView }) {
 // ─────────────────────────────────────────────────────────────
 
 export function CapaSection({ view }: { view: CapaView }) {
-  const { t } = useLanguage();
+  const { t, locale } = useLanguage();
   return (
-    <SectionCard icon={ShieldCheck} title={t('smart.section.capa')} subtitle={`${t('smart.section.capaSub')}: ${view.relationshipLabel}`}>
+    <SectionCard icon={ShieldCheck} title={t('smart.section.capa')} subtitle={<>{t('smart.section.capaSub')}: {view.relationshipLabel}</>}>
       {view.total === 0 ? (
         <SectionEmpty />
       ) : (
         <>
           <div className="flex flex-wrap gap-1.5">
             <CountChip label={t('smart.col.total')} count={view.total} tone="info" />
-            <CountChip label="نشطة" count={view.active} tone="warn" />
-            <CountChip label="مغلقة/نهائية" count={view.terminal} tone="good" />
-            <CountChip label="متأخرة (SLA النظام)" count={view.overdue} tone="bad" />
-            {view.indirectCount > 0 && <CountChip label="ارتباط غير مباشر" count={view.indirectCount} tone="neutral" />}
+            <CountChip label={translateUIText('نشطة', locale)} count={view.active} tone="warn" />
+            <CountChip label={translateUIText('مغلقة/نهائية', locale)} count={view.terminal} tone="good" />
+            <CountChip label={translateUIText('متأخرة (SLA النظام)', locale)} count={view.overdue} tone="bad" />
+            {view.indirectCount > 0 && <CountChip label={translateUIText('ارتباط غير مباشر', locale)} count={view.indirectCount} tone="neutral" />}
           </div>
           <ChipRow chips={view.statusChips} />
           <ChipRow chips={view.priorityChips} />
           <ChipRow chips={view.sourceChips} />
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 border-t border-slate-700/40 pt-2">
             <div className="space-y-1.5">
-              <div className="text-[11px] text-slate-500">حالة الإجراء التصحيحي</div>
+              <div className="text-[11px] text-slate-500"><T>حالة الإجراء التصحيحي</T></div>
               <ChipRow chips={view.correctiveChips} />
             </div>
             <div className="space-y-1.5">
-              <div className="text-[11px] text-slate-500">حالة الإجراء الوقائي</div>
+              <div className="text-[11px] text-slate-500"><T>حالة الإجراء الوقائي</T></div>
               <ChipRow chips={view.preventiveChips} />
             </div>
           </div>
           <div className="flex flex-wrap gap-x-6 gap-y-1 text-xs text-slate-400 border-t border-slate-700/40 pt-2">
             <span>
-              مغلقة: <span className="font-mono tabular-nums text-slate-200">{view.closedCount}</span>
+              <T>مغلقة: </T><span className="font-mono tabular-nums text-slate-200">{formatInteger(view.closedCount, locale)}</span>
             </span>
             <span>
-              متوسط زمن الإغلاق: <span className="font-mono tabular-nums text-slate-200">{view.avgClosureDisplay}</span>
+              <T>متوسط زمن الإغلاق: </T><span className="font-mono tabular-nums text-slate-200">{view.avgClosureDisplay}</span>
             </span>
             <span>
-              متوسط أيام التأخر: <span className="font-mono tabular-nums text-slate-200">{view.avgOverdueDisplay}</span>
+              <T>متوسط أيام التأخر: </T><span className="font-mono tabular-nums text-slate-200">{view.avgOverdueDisplay}</span>
             </span>
           </div>
         </>
@@ -672,7 +678,7 @@ export function CapaSection({ view }: { view: CapaView }) {
 // ─────────────────────────────────────────────────────────────
 
 export function FollowUpsSection({ view }: { view: FollowUpsView }) {
-  const { t } = useLanguage();
+  const { t, locale } = useLanguage();
   return (
     <SectionCard icon={ClipboardCheck} title={t('smart.section.followUps')} subtitle={t('smart.section.followUpsSub')}>
       {view.total === 0 ? (
@@ -681,20 +687,20 @@ export function FollowUpsSection({ view }: { view: FollowUpsView }) {
         <>
           <div className="flex flex-wrap gap-1.5">
             <CountChip label={t('smart.col.total')} count={view.total} tone="info" />
-            <CountChip label="مكتملة" count={view.completed} tone="good" />
-            <CountChip label="معلّقة (نشطة)" count={view.active} tone="warn" />
-            <CountChip label="متأخرة (قاعدة النظام)" count={view.overdue} tone="bad" />
-            <CountChip label="مستحقة اليوم" count={view.dueToday} tone="warn" />
+            <CountChip label={translateUIText('مكتملة', locale)} count={view.completed} tone="good" />
+            <CountChip label={translateUIText('معلّقة (نشطة)', locale)} count={view.active} tone="warn" />
+            <CountChip label={translateUIText('متأخرة (قاعدة النظام)', locale)} count={view.overdue} tone="bad" />
+            <CountChip label={translateUIText('مستحقة اليوم', locale)} count={view.dueToday} tone="warn" />
           </div>
           <ChipRow chips={view.statusChips} />
           <ChipRow chips={view.typeChips} />
           <ChipRow chips={view.priorityChips} />
           <div className="flex flex-wrap gap-x-6 gap-y-1 text-xs text-slate-400 border-t border-slate-700/40 pt-2">
             <span>
-              نسبة الإكمال: <span className="font-mono tabular-nums text-slate-200">{view.completionRateDisplay}</span>
+              <T>نسبة الإكمال: </T><span className="font-mono tabular-nums text-slate-200">{view.completionRateDisplay}</span>
             </span>
             <span>
-              تأخر الإكمال: <span className="font-mono tabular-nums text-slate-200">{view.avgOverdueDisplay}</span>
+              <T>تأخر الإكمال: </T><span className="font-mono tabular-nums text-slate-200">{view.avgOverdueDisplay}</span>
             </span>
           </div>
         </>
@@ -708,21 +714,30 @@ export function FollowUpsSection({ view }: { view: FollowUpsView }) {
 // ─────────────────────────────────────────────────────────────
 
 export function DealsSection({ view }: { view: DealsView }) {
-  const { t } = useLanguage();
+  const { t, locale } = useLanguage();
+  // §DEAL-DATES — the two canonical deal dimensions are shown
+  // separately and labeled by their date source; an unknown closure
+  // month is surfaced as unknown, never folded into a month count.
   return (
     <SectionCard icon={Plane} title={t('smart.section.deals')} subtitle={t('smart.section.dealsSub')}>
-      {view.total === 0 ? (
+      {view.travelTotal === 0 && view.closedTotal === 0 && view.closedUnknownMonth === 0 ? (
         <SectionEmpty />
       ) : (
         <>
           <div className="flex flex-wrap gap-1.5">
-            <CountChip label={t('smart.col.total')} count={view.total} tone="info" />
+            <CountChip label={translateUIText('صفقات مكتملة (تاريخ الإغلاق)', locale)} count={view.closedTotal} tone="good" />
+            <CountChip label={translateUIText('حجم السفر (تاريخ المغادرة)', locale)} count={view.travelTotal} tone="info" />
           </div>
           <ChipRow chips={view.statusChips} />
           <div className="flex flex-wrap gap-x-6 gap-y-1 text-xs text-slate-400 border-t border-slate-700/40 pt-2">
             <span>
-              نسبة الإكمال: <span className="font-mono tabular-nums text-slate-200">{view.completionRateDisplay}</span>
+              <T>نسبة الإكمال: </T><span className="font-mono tabular-nums text-slate-200">{view.completionRateDisplay}</span>
             </span>
+            {view.closedUnknownMonth > 0 && (
+              <span title={translateUIText('لا يوجد طابع زمني موثوق لإغلاق هذه الصفقات — لا تُنسب لأي شهر', locale)}>
+                <T>مكتملة بتاريخ إغلاق غير محدد: </T><span className="font-mono tabular-nums text-slate-200">{formatInteger(view.closedUnknownMonth, locale)}</span>
+              </span>
+            )}
           </div>
         </>
       )}
@@ -740,7 +755,7 @@ export function AttendanceSection({ view }: { view: AttendanceView }) {
     <SectionCard icon={Clock} title={t('smart.section.attendance')} subtitle={t('smart.section.attendanceSub')}>
       {!view.available ? (
         <p className="text-xs text-slate-500 py-2">
-          لا توجد نتيجة شهرية مخزّنة لهذه الفترة (غير متاح — لا يُعرض كصفر)
+          <T>لا توجد نتيجة شهرية مخزّنة لهذه الفترة (غير متاح — لا يُعرض كصفر)</T>
         </p>
       ) : (
         <FactGrid facts={view.facts} cols={3} />
@@ -797,7 +812,7 @@ function EvidenceRecordRows({
     // Degrade to the functional raw-id list — never fabricated data.
     return (
       <div className="rounded-b-lg border border-t-0 border-slate-700/40 bg-slate-900/20 px-4 py-2 max-h-48 overflow-y-auto arm-scroll">
-        <p className="text-[10px] text-amber-300/70">تعذر تحميل ملخصات الأدلة — تُعرض المعرفات فقط.</p>
+        <p className="text-[10px] text-amber-300/70"><T>تعذر تحميل ملخصات الأدلة — تُعرض المعرفات فقط.</T></p>
         <ul className="space-y-1">
           {recordIds.map((id) => (
             <li key={id} className="font-mono text-[10px] text-slate-500 truncate" dir="ltr" title={id}>
@@ -851,7 +866,7 @@ function EvidenceRecordRows({
                   access,
                 })}
               >
-                عرض الدليل
+                <T>عرض الدليل</T>
               </Button>
             </li>
           );
@@ -872,13 +887,13 @@ export function EvidenceSection({
   onOpenPage: (page: string) => void;
   onViewEvidence: (selection: EvidenceDetailSelection) => void;
 }) {
-  const { t } = useLanguage();
+  const { t, locale } = useLanguage();
   const totalEvidence = groups.reduce((sum, g) => sum + g.count, 0);
   return (
     <SectionCard
       icon={Link2}
       title={t('smart.section.evidence')}
-      subtitle={`إجمالي السجلات المرجعية: ${totalEvidence}`}
+      subtitle={<><T>إجمالي السجلات المرجعية: </T>{formatInteger(totalEvidence, locale)}</>}
     >
       <div className="flex flex-wrap gap-1.5">
         {groups.map((g) => (
@@ -892,7 +907,7 @@ export function EvidenceSection({
       </div>
 
       <div className="space-y-1.5">
-        {groups.filter((g) => g.count > 0).length === 0 && <SectionEmpty message="لا توجد سجلات مرجعية لهذه الفترة" />}
+        {groups.filter((g) => g.count > 0).length === 0 && <SectionEmpty message={translateUIText('لا توجد سجلات مرجعية لهذه الفترة', locale)} />}
         {groups
           .filter((g) => g.count > 0)
           .map((g) => (
@@ -905,7 +920,7 @@ export function EvidenceSection({
                     {g.collection}
                   </span>
                   <span className="mr-auto text-[11px] font-mono text-slate-400 tabular-nums shrink-0">
-                    {g.count} سجل
+                    {formatInteger(g.count, locale)} {unitWord(g.count === 1 ? 'record' : 'records', locale)}
                   </span>
                 </CollapsibleTrigger>
                 {g.targetPage && canOpenPage(g.targetPage) && (
@@ -915,7 +930,7 @@ export function EvidenceSection({
                     className="no-print h-7 px-2 text-[11px] text-emerald-300 hover:text-emerald-200 hover:bg-emerald-500/10"
                     onClick={() => onOpenPage(g.targetPage as string)}
                   >
-                    فتح صفحة المصدر
+                    <T>فتح صفحة المصدر</T>
                   </Button>
                 )}
               </div>
@@ -942,7 +957,7 @@ export function EvidenceSection({
           ))}
       </div>
       <p className="text-[10px] text-slate-600">
-        تُفتح سجلات المصدر فقط ضمن الصفحات المخوّلة لمستخدمك — الربط يحترم صلاحيات كل صفحة.
+        <T>تُفتح سجلات المصدر فقط ضمن الصفحات المخوّلة لمستخدمك — الربط يحترم صلاحيات كل صفحة.</T>
       </p>
     </SectionCard>
   );
@@ -960,7 +975,7 @@ export function DataQualitySection({ view }: { view: DataQualityView }) {
       <CardHeader className="pb-2 pt-4 px-4">
         <CardTitle className="text-sm text-amber-200 flex items-center gap-2">
           <AlertTriangle className="h-4 w-4 text-amber-400" />
-          جودة البيانات
+          <T>جودة البيانات</T>
         </CardTitle>
       </CardHeader>
       <CardContent className="px-4 pb-4 pt-0 space-y-2">
@@ -973,7 +988,7 @@ export function DataQualitySection({ view }: { view: DataQualityView }) {
         )}
         {view.unattributedChips.length > 0 && (
           <p className="text-xs text-amber-200/90">
-            سجلات تعذر إسنادها لفترة بشكل حتمي (استُثنت دون تخمين — ولا تُخفى).
+            <T>سجلات تعذر إسنادها لفترة بشكل حتمي (استُثنت دون تخمين — ولا تُخفى).</T>
           </p>
         )}
         {view.notes.length > 0 && (
@@ -1000,13 +1015,13 @@ export function SmartAnalysisPlaceholder() {
           <Sparkles className="h-4 w-4 text-slate-500" />
         </div>
         <div className="space-y-0.5 min-w-0">
-          <div className="text-sm font-semibold text-slate-400">التحليل الذكي</div>
+          <div className="text-sm font-semibold text-slate-400"><T>التحليل الذكي</T></div>
           <p className="text-[11px] text-slate-600">
-            مساحة محفوظة لطبقة تحليل لاحقة — غير مفعّلة في هذه المرحلة (حقائق موثقة فقط).
+            <T>مساحة محفوظة لطبقة تحليل لاحقة — غير مفعّلة في هذه المرحلة (حقائق موثقة فقط).</T>
           </p>
         </div>
         <Badge variant="outline" className="mr-auto bg-slate-800/50 text-slate-500 border-slate-700/50 text-[10px] shrink-0">
-          قادم في مرحلة لاحقة
+          <T>قادم في مرحلة لاحقة</T>
         </Badge>
       </CardContent>
     </Card>

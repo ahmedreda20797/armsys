@@ -97,7 +97,7 @@ export function buildQualityAIAnalysisInput(
     dataset.complaints.total > 0 ||
     dataset.capa.total > 0 ||
     dataset.followUps.total > 0 ||
-    dataset.deals.total > 0;
+    dataset.deals.travelTotal > 0 || dataset.deals.closedTotal > 0;
   if (!hasAnyData) {
     return {
       kind: 'NO_DATA',
@@ -243,12 +243,14 @@ export function buildQualityAIAnalysisInput(
   }
 
   const deals = dataset.deals;
-  if (deals.total > 0) {
+  if (deals.travelTotal > 0 || deals.closedTotal > 0) {
     push(
       'fact_deals',
-      `صفقات السفر: ${deals.total} (${deals.completed} مكتملة، ${deals.canceled} ملغاة، نسبة الإنجاز ${deals.completionRate ?? 'غير متاح'}٪).`,
+      `صفقات السفر: حجم السفر (تاريخ المغادرة) ${deals.travelTotal} — صفقات مكتملة (تاريخ الإغلاق) ${deals.closedTotal}، ملغاة ${deals.canceled}` +
+        (deals.closedUnknownMonth > 0 ? ` — بتاريخ إغلاق غير محدد: ${deals.closedUnknownMonth}` : '') +
+        `.`,
       'deals',
-      deals.total,
+      deals.travelTotal,
     );
   }
 
@@ -313,7 +315,8 @@ export function buildQualityAIAnalysisInput(
       completionRatePctEcho: analytics.distributionAnalysis.followUps.completionRatePctEcho,
     },
     deals: {
-      total: analytics.distributionAnalysis.deals.total,
+      travelTotal: analytics.distributionAnalysis.deals.travelTotal,
+      closedTotal: analytics.distributionAnalysis.deals.closedTotal,
       cancellationRatePct: analytics.distributionAnalysis.deals.cancellationRatePct,
     },
     anomalies: analytics.anomalies.slice(0, 5).map((a) => ({

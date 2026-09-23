@@ -645,8 +645,11 @@ def analyze_follow_ups(dataset, window, outside_months):
 
 
 def analyze_deals(dataset, window, outside_months):
+    # §DEAL-DATES — the analysis reads the TRAVEL dimension
+    # (travelTotal, departure-month attribution); closedTotal is a
+    # CLOSED-dimension (closedAt) echo, numeric or None.
     deals = dataset.get("deals") or {}
-    total = int(_num(deals.get("total")) or 0)
+    total = int(_num(deals.get("travelTotal")) or 0)
     canceled = int(_num(deals.get("canceled")) or 0)
     series, outside = _monthly_series(window, deals.get("monthly"))
     outside_months.update(outside)
@@ -658,7 +661,8 @@ def analyze_deals(dataset, window, outside_months):
     return {
         "relationship": _relationship_of(deals),
         "status": "OK" if total > 0 else "EMPTY",
-        "total": total,
+        "travelTotal": total,
+        "closedTotal": _num(deals.get("closedTotal")),
         "byStatus": _record_dist(deals.get("byStatus")),
         "cancellationRatePct": _pct(canceled, total),
         "completionRatePctEcho": _r(_num(deals.get("completionRate")), 1),

@@ -361,23 +361,41 @@ export interface FollowUpFacts {
 }
 
 // ─────────────────────────────────────────────────────────────
-//  §12  Travel deals  (operational facts only — no invented sales KPIs)
+//  §12  Travel deals — §DEAL-DATES: every count declares its
+//       canonical date dimension (TRAVEL = departureDate,
+//       CLOSED = closedAt). No dimension ever substitutes for
+//       another; an unknown closure month stays unknown.
 // ─────────────────────────────────────────────────────────────
 
 export interface TravelDealFacts {
   /** travelDeals.employeeId is mandatory — CONFIRMED model. */
   relationship: RelationshipConfidence;
-  total: number;
-  /** The exact stored status vocabulary (note: 'canceled' spelling). */
+  /** TRAVEL dimension — deals whose departure month IS the period
+   *  (travel volume for the period). */
+  travelTotal: number;
+  /** Status snapshot of the TRAVEL-period deals
+   *  (exact stored vocabulary, note: 'canceled' spelling). */
   byStatus: Record<'upcoming' | 'in_progress' | 'completed' | 'canceled', number>;
-  completed: number;
+  /** canceled among the TRAVEL-period deals. */
   canceled: number;
-  /** upcoming + in_progress. */
+  /** upcoming + in_progress among the TRAVEL-period deals (operational). */
   active: number;
-  /** completed / total × 100 (null when total is 0). */
+  /** completed-status share of the TRAVEL-period deals × 100
+   *  (null when travelTotal is 0) — operational snapshot. */
   completionRate: number | null;
-  /** Months WITH departures inside the analysis window (no fabricated months). */
+  /** TRAVEL dimension — months WITH departures inside the analysis
+   *  window (no fabricated months). */
   monthly: MonthlyCount[];
+  /** CLOSED dimension — deals whose OBSERVED closure month (closedAt)
+   *  IS the period (completed sales for productivity). */
+  closedTotal: number;
+  /** CLOSED dimension — months with observed closures inside the
+   *  analysis window (no fabricated months). */
+  closedMonthly: MonthlyCount[];
+  /** Completed-status deals whose closure month is UNKNOWN (no
+   *  trustworthy closedAt). Surfaced as unknown — never attributed
+   *  to a month, never derived from departureDate. */
+  closedUnknownMonth: number;
 }
 
 // ─────────────────────────────────────────────────────────────

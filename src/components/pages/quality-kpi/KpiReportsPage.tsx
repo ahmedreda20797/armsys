@@ -35,7 +35,11 @@ import KpiSummaryTab from './KpiSummaryTab';
 import ManagementReportTab from './ManagementReportTab';
 import PerformanceAnalysisTab from './PerformanceAnalysisTab';
 import HrPerformanceReportTab from './HrPerformanceReportTab';
-import { buildMonthOptions, currentMonthKey, formatMonth } from './kpi-reports-shared';
+import { buildMonthOptions, currentMonthKey } from './kpi-reports-shared';
+import { T } from '@/lib/i18n/T';
+import { useLanguage } from '@/lib/i18n/language-context';
+import { translateUIText } from '@/lib/i18n/ui-text';
+import { formatMonthKey } from '@/lib/i18n/format';
 
 type TabKey = 'table' | 'employee' | 'summary' | 'management' | 'performance' | 'hr';
 /** Legacy tab values (pre-§10) map onto the merged table tab. */
@@ -109,10 +113,11 @@ export default function KpiReportsPage() {
   const basis = kpiReportsView.basis;
   const setBasis = (v: BasisKind) => setKpiReportsView((s) => ({ ...s, basis: v }));
   const snapshotsQuery = useMonthSnapshots();
+  const { locale } = useLanguage();
 
   const monthOptions = useMemo(
-    () => buildMonthOptions(snapshotsQuery.data as Array<{ monthKey: string; status: 'open' | 'closed' }> | undefined),
-    [snapshotsQuery.data],
+    () => buildMonthOptions(snapshotsQuery.data as Array<{ monthKey: string; status: 'open' | 'closed' }> | undefined, locale),
+    [snapshotsQuery.data, locale],
   );
 
   // Keep the selector valid when options load/refresh.
@@ -129,10 +134,12 @@ export default function KpiReportsPage() {
         iconClassName="bg-emerald-500/15 border-emerald-500/30 text-emerald-400"
         description={
           <>
-            تقارير جودة KPI فوق إطار مؤشرات الأداء القابل للتهيئة — مع تمييز واضح بين MTD والقيم المجمّدة.
+            <T>تقارير جودة KPI فوق إطار مؤشرات الأداء القابل للتهيئة — مع تمييز واضح بين MTD والقيم المجمّدة.</T>
             <span className="block text-[11px] text-slate-500 mt-0.5 no-print">
-              الفترة الحالية: {formatMonth(effectiveMonth)}
-              {monthOptions.find((o) => o.value === effectiveMonth)?.closed ? ' — شهر مغلق (FINALIZED)' : ' — شهر مفتوح'}
+              <T>الفترة الحالية: </T>{formatMonthKey(effectiveMonth, locale)}
+              {monthOptions.find((o) => o.value === effectiveMonth)?.closed
+                ? <T>{' — شهر مغلق (FINALIZED)'}</T>
+                : <T>{' — شهر مفتوح'}</T>}
             </span>
           </>
         }
@@ -156,16 +163,16 @@ export default function KpiReportsPage() {
         className="space-y-4"
       >
         <TabsList className="no-print bg-slate-800/50 flex-wrap h-auto">
-          <TabsTrigger value="table">جدول الأداء</TabsTrigger>
-          <TabsTrigger value="employee">أداء الموظف</TabsTrigger>
-          <TabsTrigger value="summary">ملخص الجودة</TabsTrigger>
-          <TabsTrigger value="management">التقرير الإداري الشامل</TabsTrigger>
-          <TabsTrigger value="performance">تحليل الأداء</TabsTrigger>
-          {canViewHrReport && <TabsTrigger value="hr">تقرير الموارد البشرية</TabsTrigger>}
+          <TabsTrigger value="table"><T>جدول الأداء</T></TabsTrigger>
+          <TabsTrigger value="employee"><T>أداء الموظف</T></TabsTrigger>
+          <TabsTrigger value="summary"><T>ملخص الجودة</T></TabsTrigger>
+          <TabsTrigger value="management"><T>التقرير الإداري الشامل</T></TabsTrigger>
+          <TabsTrigger value="performance"><T>تحليل الأداء</T></TabsTrigger>
+          {canViewHrReport && <TabsTrigger value="hr"><T>تقرير الموارد البشرية</T></TabsTrigger>}
         </TabsList>
 
         {/* §10 — every tab states its purpose up-front */}
-        <p className="no-print text-[11px] text-slate-500 -mt-2 px-1">{TAB_PURPOSE[activeTab]}</p>
+        <p className="no-print text-[11px] text-slate-500 -mt-2 px-1"><T>{TAB_PURPOSE[activeTab]}</T></p>
 
         <TabsContent value="table" className="space-y-3">
           {/* §16 — Period + Month TOGETHER: the basis switcher (the former
@@ -177,7 +184,7 @@ export default function KpiReportsPage() {
                 <button
                   key={opt.value}
                   type="button"
-                  title={opt.hint}
+                  title={translateUIText(opt.hint, locale)}
                   onClick={() => setBasis(opt.value)}
                   className={`px-4 py-1.5 text-xs rounded-lg font-medium transition-colors ${
                     basis === opt.value
@@ -185,7 +192,7 @@ export default function KpiReportsPage() {
                       : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
                   }`}
                 >
-                  {opt.label}
+                  <T>{opt.label}</T>
                 </button>
               ))}
             </div>
@@ -200,7 +207,7 @@ export default function KpiReportsPage() {
               </SelectContent>
             </Select>
             <span className="text-[10px] text-slate-500">
-              {monthOptions.find((o) => o.value === effectiveMonth)?.closed ? 'شهر مغلق (FINALIZED)' : 'شهر مفتوح'}
+              <T>{monthOptions.find((o) => o.value === effectiveMonth)?.closed ? 'شهر مغلق (FINALIZED)' : 'شهر مفتوح'}</T>
             </span>
           </div>
           <KpiMonthlyTableTab kind={basis} month={effectiveMonth} />
@@ -227,7 +234,7 @@ export default function KpiReportsPage() {
       {!snapshotsQuery.isLoading && monthOptions.length === 0 && (
         <Card className="bg-slate-800/30 border-slate-700/40">
           <CardContent className="p-6 text-sm text-slate-400">
-            لا توجد فترات متاحة بعد — تُضاف الأشهر تلقائيًا بعد أول إغلاق شهر.
+            <T>لا توجد فترات متاحة بعد — تُضاف الأشهر تلقائيًا بعد أول إغلاق شهر.</T>
           </CardContent>
         </Card>
       )}

@@ -44,6 +44,11 @@ import { BarChart3,
   ExternalLink,
 } from 'lucide-react';
 import type { FollowUp, Employee } from '@/types';
+import { useLanguage } from '@/lib/i18n/language-context';
+import { T } from '@/lib/i18n/T';
+import { translateUIText } from '@/lib/i18n/ui-text';
+import { formatInteger } from '@/lib/i18n/format';
+import type { Locale } from '@/lib/i18n/dictionary';
 
 interface SystemUser { id: string; name: string; email?: string; role?: string; }
 import { logCreate, logUpdate, logDelete } from '@/lib/activity-logger';
@@ -110,30 +115,43 @@ const ACTION_OPTIONS = [
 
 const SCORE_MAP: Record<string, number> = { low: 1, medium: 3, high: 5, critical: 10 };
 
-function getTypeBadge(type: string) {
-  const map: Record<string, { label: string; color: string }> = {
-    quality: { label: 'جودة', color: 'bg-amber-500/15 text-amber-400 border-amber-500/30' },
-    behavior: { label: 'سلوك', color: 'bg-brand-500/15 text-brand-400 border-brand-500/30' },
-    attendance: { label: 'حضور', color: 'bg-cyan-500/15 text-cyan-400 border-cyan-500/30' },
-    productivity: { label: 'أداء', color: 'bg-brand-500/15 text-brand-400 border-brand-500/30' },
-    training: { label: 'تدريب', color: 'bg-blue-500/15 text-blue-400 border-blue-500/30' },
-    coaching: { label: 'توجيه', color: 'bg-teal-500/15 text-teal-400 border-teal-500/30' },
-    complaint: { label: 'شكوى عميل', color: 'bg-rose-500/15 text-rose-400 border-rose-500/30' },
-    positive: { label: 'إيجابية', color: 'bg-green-500/15 text-green-400 border-green-500/30' },
-    improvement: { label: 'تحسين', color: 'bg-brand-500/15 text-brand-400 border-brand-500/30' },
-    other: { label: 'أخرى', color: 'bg-slate-500/15 text-slate-400 border-slate-500/30' },
-  };
-  return map[type] || { label: type, color: 'bg-slate-500/15 text-slate-400 border-slate-500/30' };
+/** §I18N-BOUNDARY — enum-label maps are locale-aware [ar, en] tuples;
+ *  the value picked by `locale` at the render site. Unknown codes
+ *  (the map fallbacks) always render RAW — never fed through T. */
+function pickLabel(labels: [string, string], locale: Locale): string {
+  return locale === 'en' ? labels[1] : labels[0];
 }
 
-function getPriorityBadge(priority: string) {
-  const map: Record<string, { label: string; color: string }> = {
-    low: { label: 'منخفض', color: 'bg-green-500/15 text-green-400 border-green-500/30' },
-    medium: { label: 'متوسط', color: 'bg-yellow-500/15 text-yellow-400 border-yellow-500/30' },
-    high: { label: 'عالي', color: 'bg-orange-500/15 text-orange-400 border-orange-500/30' },
-    critical: { label: 'حرج', color: 'bg-red-500/15 text-red-400 border-red-500/30' },
+function getTypeBadge(type: string, locale: Locale) {
+  const map: Record<string, { label: [string, string]; color: string }> = {
+    quality: { label: ['جودة', 'Quality'], color: 'bg-amber-500/15 text-amber-400 border-amber-500/30' },
+    behavior: { label: ['سلوك', 'Behavior'], color: 'bg-brand-500/15 text-brand-400 border-brand-500/30' },
+    attendance: { label: ['حضور', 'Present'], color: 'bg-cyan-500/15 text-cyan-400 border-cyan-500/30' },
+    productivity: { label: ['أداء', 'Performance'], color: 'bg-brand-500/15 text-brand-400 border-brand-500/30' },
+    training: { label: ['تدريب', 'Training'], color: 'bg-blue-500/15 text-blue-400 border-blue-500/30' },
+    coaching: { label: ['توجيه', 'Coaching'], color: 'bg-teal-500/15 text-teal-400 border-teal-500/30' },
+    complaint: { label: ['شكوى عميل', 'Customer complaint'], color: 'bg-rose-500/15 text-rose-400 border-rose-500/30' },
+    positive: { label: ['إيجابية', 'Positive'], color: 'bg-green-500/15 text-green-400 border-green-500/30' },
+    improvement: { label: ['تحسين', 'Improvement'], color: 'bg-brand-500/15 text-brand-400 border-brand-500/30' },
+    other: { label: ['أخرى', 'Other'], color: 'bg-slate-500/15 text-slate-400 border-slate-500/30' },
   };
-  return map[priority] || { label: priority, color: 'bg-slate-500/15 text-slate-400 border-slate-500/30' };
+  const hit = map[type];
+  return hit
+    ? { label: pickLabel(hit.label, locale), color: hit.color }
+    : { label: type, color: 'bg-slate-500/15 text-slate-400 border-slate-500/30' };
+}
+
+function getPriorityBadge(priority: string, locale: Locale) {
+  const map: Record<string, { label: [string, string]; color: string }> = {
+    low: { label: ['منخفض', 'Low'], color: 'bg-green-500/15 text-green-400 border-green-500/30' },
+    medium: { label: ['متوسط', 'Medium'], color: 'bg-yellow-500/15 text-yellow-400 border-yellow-500/30' },
+    high: { label: ['عالي', 'High'], color: 'bg-orange-500/15 text-orange-400 border-orange-500/30' },
+    critical: { label: ['حرج', 'Critical'], color: 'bg-red-500/15 text-red-400 border-red-500/30' },
+  };
+  const hit = map[priority];
+  return hit
+    ? { label: pickLabel(hit.label, locale), color: hit.color }
+    : { label: priority, color: 'bg-slate-500/15 text-slate-400 border-slate-500/30' };
 }
 
 function getPriorityDot(priority: string) {
@@ -146,16 +164,19 @@ function getPriorityDot(priority: string) {
   return map[priority] || 'bg-slate-400';
 }
 
-function getStatusBadge(status: string) {
-  const map: Record<string, { label: string; color: string }> = {
-    open: { label: 'مفتوح', color: 'bg-blue-500/15 text-blue-400 border-blue-500/30' },
-    under_review: { label: 'قيد المراجعة', color: 'bg-brand-500/15 text-brand-400 border-brand-500/30' },
-    under_follow_up: { label: 'قيد المتابعة', color: 'bg-yellow-500/15 text-yellow-400 border-yellow-500/30' },
-    resolved: { label: 'تم الحل', color: 'bg-brand-500/15 text-brand-400 border-brand-500/30' },
-    closed: { label: 'مغلق', color: 'bg-slate-500/15 text-slate-400 border-slate-500/30' },
-    cancelled: { label: 'ملغي', color: 'bg-slate-600/15 text-slate-500 border-slate-600/30' },
+function getStatusBadge(status: string, locale: Locale) {
+  const map: Record<string, { label: [string, string]; color: string }> = {
+    open: { label: ['مفتوح', 'Open'], color: 'bg-blue-500/15 text-blue-400 border-blue-500/30' },
+    under_review: { label: ['قيد المراجعة', 'Under review'], color: 'bg-brand-500/15 text-brand-400 border-brand-500/30' },
+    under_follow_up: { label: ['قيد المتابعة', 'In follow-up'], color: 'bg-yellow-500/15 text-yellow-400 border-yellow-500/30' },
+    resolved: { label: ['تم الحل', 'Resolved'], color: 'bg-brand-500/15 text-brand-400 border-brand-500/30' },
+    closed: { label: ['مغلق', 'Closed'], color: 'bg-slate-500/15 text-slate-400 border-slate-500/30' },
+    cancelled: { label: ['ملغي', 'Cancelled'], color: 'bg-slate-600/15 text-slate-500 border-slate-600/30' },
   };
-  return map[status] || { label: status, color: 'bg-slate-500/15 text-slate-400 border-slate-500/30' };
+  const hit = map[status];
+  return hit
+    ? { label: pickLabel(hit.label, locale), color: hit.color }
+    : { label: status, color: 'bg-slate-500/15 text-slate-400 border-slate-500/30' };
 }
 
 function getStatusIcon(status: string) {
@@ -190,10 +211,10 @@ function getStatusColor(status: string) {
 
 const getTodayStr = todayDayKey;
 
-function getRiskLevel(score: number): { label: string; color: string } {
-  if (score >= 26) return { label: 'مرتفع', color: 'text-red-400 bg-red-500/15 border-red-500/30' };
-  if (score >= 11) return { label: 'متوسط', color: 'text-yellow-400 bg-yellow-500/15 border-yellow-500/30' };
-  return { label: 'منخفض', color: 'text-green-400 bg-green-500/15 border-green-500/30' };
+function getRiskLevel(score: number, locale: Locale): { label: string; color: string } {
+  if (score >= 26) return { label: pickLabel(['مرتفع', 'High'], locale), color: 'text-red-400 bg-red-500/15 border-red-500/30' };
+  if (score >= 11) return { label: pickLabel(['متوسط', 'Medium'], locale), color: 'text-yellow-400 bg-yellow-500/15 border-yellow-500/30' };
+  return { label: pickLabel(['منخفض', 'Low'], locale), color: 'text-green-400 bg-green-500/15 border-green-500/30' };
 }
 
 // ═══════════════════════════════════════════════════
@@ -227,6 +248,7 @@ const emptyForm = {
 
 export default function FollowUpsPage() {
   const { user } = useAuth();
+  const { locale } = useLanguage();
   const { isAdmin, canView, canCreate, canUpdate, canDelete } = usePermissions('followUps');
   // §12 GLOBAL INLINE FORM STANDARD — creating a CAPA from a follow-up
   // opens the shared inline CAPA form HERE (no navigation). Gated by
@@ -509,14 +531,14 @@ export default function FollowUpsPage() {
   const rowActionsFor = (item: FollowUp): OverflowMenuItem[] => [
     {
       key: 'view',
-      label: 'عرض التفاصيل',
+      label: translateUIText('عرض التفاصيل', locale),
       icon: <Eye className="size-3.5" />,
       onSelect: () => setViewingItem(item),
     },
     ...(canUpdate
       ? [{
           key: 'edit',
-          label: 'تعديل',
+          label: translateUIText('تعديل', locale),
           icon: <Pencil className="size-3.5" />,
           separatorBefore: true,
           onSelect: () => openEdit(item),
@@ -525,7 +547,7 @@ export default function FollowUpsPage() {
     ...(canDelete
       ? [{
           key: 'delete',
-          label: 'حذف',
+          label: translateUIText('حذف', locale),
           icon: <Trash2 className="size-3.5" />,
           destructive: true,
           separatorBefore: true,
@@ -605,7 +627,7 @@ export default function FollowUpsPage() {
 
   const handleSave = async () => {
     if (!form.employeeId || !form.date || !form.followUpType || !form.subject) {
-      toast.error('الرجاء ملء الحقول المطلوبة (الموظف، التاريخ، النوع، الموضوع)');
+      toast.error(translateUIText('الرجاء ملء الحقول المطلوبة (الموظف، التاريخ، النوع، الموضوع)', locale));
       return;
     }
     setSaving(true);
@@ -640,7 +662,7 @@ export default function FollowUpsPage() {
         if (res.ok) {
           const empName = employees.find((e: any) => e.id === form.employeeId)?.name || editingItem.employeeName || '';
           logUpdate('followUps', 'متابعة يومية', `${empName} - ${form.subject}`);
-          toast.success('تم تحديث المتابعة بنجاح');
+          toast.success(translateUIText('تم تحديث المتابعة بنجاح', locale));
           await fetchData();
           setIsDialogOpen(false);
           setEditingItem(null);
@@ -654,14 +676,14 @@ export default function FollowUpsPage() {
         if (res.ok) {
           const empName = employees.find((e: any) => e.id === form.employeeId)?.name || '';
           logCreate('followUps', 'متابعة يومية', `${empName} - ${form.subject}`);
-          toast.success('تم إضافة المتابعة بنجاح');
+          toast.success(translateUIText('تم إضافة المتابعة بنجاح', locale));
           await fetchData();
           setIsDialogOpen(false);
           setEditingItem(null);
         }
       }
     } catch {
-      toast.error('حدث خطأ أثناء الحفظ');
+      toast.error(translateUIText('حدث خطأ أثناء الحفظ', locale));
     } finally {
       setSaving(false);
     }
@@ -676,12 +698,12 @@ export default function FollowUpsPage() {
       if (res.ok) {
         const empName = item?.employeeName || employees.find((e: any) => e.id === item?.employeeId)?.name || '';
         logDelete('followUps', 'متابعة يومية', `${empName} - ${item?.subject || ''}`);
-        toast.success('تم حذف المتابعة');
+        toast.success(translateUIText('تم حذف المتابعة', locale));
         setFollowUps(prev => prev.filter(f => f.id !== id));
         setDeletingId(null);
       }
     } catch {
-      toast.error('حدث خطأ أثناء الحذف');
+      toast.error(translateUIText('حدث خطأ أثناء الحذف', locale));
     } finally {
       setDeleteLoading(false);
     }
@@ -707,8 +729,8 @@ export default function FollowUpsPage() {
         <div className="size-16 rounded-full bg-slate-800 flex items-center justify-center mb-4">
           <ShieldAlert className="size-8 text-slate-500" />
         </div>
-        <p className="text-slate-400 text-sm font-medium">غير مصرح بالوصول</p>
-        <p className="text-slate-600 text-xs mt-1">ليس لديك صلاحية لعرض هذه الصفحة</p>
+        <p className="text-slate-400 text-sm font-medium"><T>غير مصرح بالوصول</T></p>
+        <p className="text-slate-600 text-xs mt-1"><T>ليس لديك صلاحية لعرض هذه الصفحة</T></p>
       </div>
     );
   }
@@ -719,22 +741,22 @@ export default function FollowUpsPage() {
       <PageHeaderBar
         icon={<ClipboardList className="size-5" />}
         iconClassName="bg-cyan-500/15 border-cyan-500/30 text-cyan-400"
-        title="مركز المتابعة والملاحظات"
-        description="إدارة وتتبع جميع ملاحظات الأداء والسلوك"
-        primaryAction={canCreate ? { label: 'إضافة متابعة', onClick: openCreate } : undefined}
+        title={translateUIText('مركز المتابعة والملاحظات', locale)}
+        description={<T>إدارة وتتبع جميع ملاحظات الأداء والسلوك</T>}
+        primaryAction={canCreate ? { label: translateUIText('إضافة متابعة', locale), onClick: openCreate } : undefined}
         actions={
           <div className="flex rounded-lg border border-slate-700/50 overflow-hidden shrink-0">
             <button
               onClick={() => setViewMode('table')}
               className={`p-2 transition-colors ${viewMode === 'table' ? 'bg-cyan-500/15 text-cyan-400' : 'text-slate-500 hover:text-slate-300'}`}
-              aria-label="عرض جدول"
+              aria-label={translateUIText('عرض جدول', locale)}
             >
               <Table2 className="size-4" />
             </button>
             <button
               onClick={() => setViewMode('cards')}
               className={`p-2 transition-colors ${viewMode === 'cards' ? 'bg-cyan-500/15 text-cyan-400' : 'text-slate-500 hover:text-slate-300'}`}
-              aria-label="عرض بطاقات"
+              aria-label={translateUIText('عرض بطاقات', locale)}
             >
               <LayoutList className="size-4" />
             </button>
@@ -748,28 +770,28 @@ export default function FollowUpsPage() {
       <AnimatePresence>
         {(todaysFollowUps.length > 0 || overdueFollowUps.length > 0) && (
           <AttentionPanel
-            title="متابعات تحتاج انتباه"
+            title={translateUIText('متابعات تحتاج انتباه', locale)}
             icon={<Bell className="size-3.5 text-amber-300" />}
-            subtitle={`${todaysFollowUps.length} اليوم · ${overdueFollowUps.length} متأخرة`}
+            subtitle={`${formatInteger(todaysFollowUps.length, locale)} ${translateUIText('اليوم', locale)} · ${formatInteger(overdueFollowUps.length, locale)} ${translateUIText('متأخرة', locale)}`}
             persistKey="followUpsAttention"
             groups={[
-              { key: 'overdue', label: 'متأخرة', count: overdueFollowUps.length },
-              { key: 'due', label: 'مستحقة اليوم', count: todaysFollowUps.length },
+              { key: 'overdue', label: translateUIText('متأخرة', locale), count: overdueFollowUps.length },
+              { key: 'due', label: translateUIText('مستحقة اليوم', locale), count: todaysFollowUps.length },
             ]}
             emptyState={{
               icon: <CheckCircle2 className="size-7 text-emerald-500/50 mb-2" />,
-              title: 'لا توجد متابعات متأخرة أو مستحقة اليوم',
-              description: 'كل المتابعات في الموعد.',
+              title: translateUIText('لا توجد متابعات متأخرة أو مستحقة اليوم', locale),
+              description: translateUIText('كل المتابعات في الموعد.', locale),
             }}
             items={[
               ...overdueFollowUps.map((f) => {
-                const empName = f.employeeName || employees.find((e: any) => e.id === f.employeeId)?.name || 'غير معروف';
+                const empName = f.employeeName || employees.find((e: any) => e.id === f.employeeId)?.name || translateUIText('غير معروف', locale);
                 return {
                   id: f.id,
                   severity: f.priorityLevel === 'critical' ? 'critical' : 'urgent',
                   groupKey: 'overdue',
                   primary: empName,
-                  secondary: f.subject || TYPE_OPTIONS.find((t) => t.value === f.followUpType)?.label || f.followUpType,
+                  secondary: f.subject || translateUIText(TYPE_OPTIONS.find((t) => t.value === f.followUpType)?.label ?? '', locale) || f.followUpType,
                   trailing: f.nextFollowUpDate && (
                     <span className="flex items-center gap-1">
                       <Clock className="size-2.5" /> {f.nextFollowUpDate}
@@ -777,32 +799,32 @@ export default function FollowUpsPage() {
                   ),
                   onClick: () => setViewingItem(f),
                   overflowItems: [
-                    { key: 'view', label: 'عرض التفاصيل', icon: <Eye className="size-3.5" />, onSelect: () => setViewingItem(f) },
-                    { key: 'edit', label: 'تعديل', icon: <Pencil className="size-3.5" />, separatorBefore: true, onSelect: () => openEdit(f) },
-                    { key: 'capa', label: 'إنشاء CAPA', icon: <ShieldCheck className="size-3.5" />, separatorBefore: true, onSelect: () => openCapaFromFollowUp(f) },
+                    { key: 'view', label: translateUIText('عرض التفاصيل', locale), icon: <Eye className="size-3.5" />, onSelect: () => setViewingItem(f) },
+                    { key: 'edit', label: translateUIText('تعديل', locale), icon: <Pencil className="size-3.5" />, separatorBefore: true, onSelect: () => openEdit(f) },
+                    { key: 'capa', label: translateUIText('إنشاء CAPA', locale), icon: <ShieldCheck className="size-3.5" />, separatorBefore: true, onSelect: () => openCapaFromFollowUp(f) },
                   ],
                 } satisfies AttentionItem;
               }),
               ...todaysFollowUps
                 .filter((f) => !overdueFollowUps.some((o) => o.id === f.id))
                 .map((f) => {
-                  const empName = f.employeeName || employees.find((e: any) => e.id === f.employeeId)?.name || 'غير معروف';
+                  const empName = f.employeeName || employees.find((e: any) => e.id === f.employeeId)?.name || translateUIText('غير معروف', locale);
                   return {
                     id: f.id,
                     severity: 'warning',
                     groupKey: 'due',
                     primary: empName,
-                    secondary: f.subject || TYPE_OPTIONS.find((t) => t.value === f.followUpType)?.label || f.followUpType,
+                    secondary: f.subject || translateUIText(TYPE_OPTIONS.find((t) => t.value === f.followUpType)?.label ?? '', locale) || f.followUpType,
                     trailing: f.nextFollowUpDate && (
                       <span className="flex items-center gap-1">
-                        <Clock className="size-2.5" /> اليوم
+                        <Clock className="size-2.5" /> <T>اليوم</T>
                       </span>
                     ),
                     onClick: () => setViewingItem(f),
                     overflowItems: [
-                      { key: 'view', label: 'عرض التفاصيل', icon: <Eye className="size-3.5" />, onSelect: () => setViewingItem(f) },
-                      { key: 'edit', label: 'تعديل', icon: <Pencil className="size-3.5" />, separatorBefore: true, onSelect: () => openEdit(f) },
-                      { key: 'capa', label: 'إنشاء CAPA', icon: <ShieldCheck className="size-3.5" />, separatorBefore: true, onSelect: () => openCapaFromFollowUp(f) },
+                      { key: 'view', label: translateUIText('عرض التفاصيل', locale), icon: <Eye className="size-3.5" />, onSelect: () => setViewingItem(f) },
+                      { key: 'edit', label: translateUIText('تعديل', locale), icon: <Pencil className="size-3.5" />, separatorBefore: true, onSelect: () => openEdit(f) },
+                      { key: 'capa', label: translateUIText('إنشاء CAPA', locale), icon: <ShieldCheck className="size-3.5" />, separatorBefore: true, onSelect: () => openCapaFromFollowUp(f) },
                     ],
                   } satisfies AttentionItem;
                 }),
@@ -820,7 +842,7 @@ export default function FollowUpsPage() {
             id="followups-inline-capa"
             tone="violet"
             icon={<ShieldAlert className="size-3.5 text-brand-400" />}
-            title="إنشاء CAPA من متابعة"
+            title={translateUIText('إنشاء CAPA من متابعة', locale)}
             onClose={() => setCapaPrefill(null)}
           >
             <CAPAInlineForm
@@ -845,28 +867,28 @@ export default function FollowUpsPage() {
         className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5"
       >
         <div className="rounded-lg border border-cyan-500/25 bg-cyan-500/8 px-3.5 py-2.5">
-          <p className="text-slate-500 text-[11px] mb-0.5">إجمالي المتابعات</p>
-          <p className="text-cyan-400 font-bold text-lg leading-tight">{totalCount}</p>
+          <p className="text-slate-500 text-[11px] mb-0.5"><T>إجمالي المتابعات</T></p>
+          <p className="text-cyan-400 font-bold text-lg leading-tight">{formatInteger(totalCount, locale)}</p>
         </div>
         <div className="rounded-lg border border-blue-500/25 bg-blue-500/8 px-3.5 py-2.5">
-          <p className="text-slate-500 text-[11px] mb-0.5">حالات مفتوحة</p>
-          <p className="text-blue-400 font-bold text-lg leading-tight">{openCount}</p>
+          <p className="text-slate-500 text-[11px] mb-0.5"><T>حالات مفتوحة</T></p>
+          <p className="text-blue-400 font-bold text-lg leading-tight">{formatInteger(openCount, locale)}</p>
         </div>
         <div className="rounded-lg border border-brand-500/25 bg-brand-500/8 px-3.5 py-2.5">
-          <p className="text-slate-500 text-[11px] mb-0.5">قيد المتابعة</p>
-          <p className="text-brand-400 font-bold text-lg leading-tight">{underFollowCount}</p>
+          <p className="text-slate-500 text-[11px] mb-0.5"><T>قيد المتابعة</T></p>
+          <p className="text-brand-400 font-bold text-lg leading-tight">{formatInteger(underFollowCount, locale)}</p>
         </div>
         <div className="rounded-lg border border-brand-500/30 bg-emerald-500/8 px-3.5 py-2.5">
-          <p className="text-slate-500 text-[11px] mb-0.5">حالات محلولة</p>
-          <p className="text-brand-400 font-bold text-lg leading-tight">{resolvedCount}</p>
+          <p className="text-slate-500 text-[11px] mb-0.5"><T>حالات محلولة</T></p>
+          <p className="text-brand-400 font-bold text-lg leading-tight">{formatInteger(resolvedCount, locale)}</p>
         </div>
         <div className="rounded-lg border border-orange-500/25 bg-orange-500/8 px-3.5 py-2.5">
-          <p className="text-slate-500 text-[11px] mb-0.5">أولوية عالية / حرجة</p>
-          <p className="text-orange-400 font-bold text-lg leading-tight">{highPriorityCount}</p>
+          <p className="text-slate-500 text-[11px] mb-0.5"><T>أولوية عالية / حرجة</T></p>
+          <p className="text-orange-400 font-bold text-lg leading-tight">{formatInteger(highPriorityCount, locale)}</p>
         </div>
         <div className="rounded-lg border border-rose-500/25 bg-rose-500/8 px-3.5 py-2.5">
-          <p className="text-slate-500 text-[11px] mb-0.5">موظفين تحت المراقبة</p>
-          <p className="text-rose-400 font-bold text-lg leading-tight">{monitoredEmployees}</p>
+          <p className="text-slate-500 text-[11px] mb-0.5"><T>موظفين تحت المراقبة</T></p>
+          <p className="text-rose-400 font-bold text-lg leading-tight">{formatInteger(monitoredEmployees, locale)}</p>
         </div>
       </motion.div>
 
@@ -878,7 +900,7 @@ export default function FollowUpsPage() {
             <div className="relative flex-1 min-w-[180px] max-w-xs">
               <Search className="absolute right-3 top-1/2 -translate-y-1/2 size-4 text-slate-500" />
               <Input
-                placeholder="بحث بالاسم أو الموضوع..."
+                placeholder={translateUIText('بحث بالاسم أو الموضوع...', locale)}
                 value={search}
                 onChange={e => setSearch(e.target.value)}
                 className="bg-slate-800/70 border-slate-700/70 text-white pr-9 placeholder:text-slate-500 h-9 text-sm"
@@ -894,10 +916,10 @@ export default function FollowUpsPage() {
             <Select value={deptFilter} onValueChange={setDeptFilter}>
               <SelectTrigger className="bg-slate-800/70 border-slate-700/70 text-white w-32 h-9 text-sm">
                 <Users className="size-3.5 ml-1.5 text-slate-500" />
-                <SelectValue placeholder="القسم" />
+                <SelectValue placeholder={translateUIText('القسم', locale)} />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all" className="text-white">كل الأقسام</SelectItem>
+                <SelectItem value="all" className="text-white"><T>كل الأقسام</T></SelectItem>
                 {departmentList.map(d => (
                   <SelectItem key={d} value={d} className="text-white">{d}</SelectItem>
                 ))}
@@ -908,12 +930,12 @@ export default function FollowUpsPage() {
             <Select value={typeFilter} onValueChange={setTypeFilter}>
               <SelectTrigger className="bg-slate-800/70 border-slate-700/70 text-white w-32 h-9 text-sm">
                 <Filter className="size-3.5 ml-1.5 text-slate-500" />
-                <SelectValue placeholder="النوع" />
+                <SelectValue placeholder={translateUIText('النوع', locale)} />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all" className="text-white">الكل</SelectItem>
+                <SelectItem value="all" className="text-white"><T>الكل</T></SelectItem>
                 {TYPE_OPTIONS.map(t => (
-                  <SelectItem key={t.value} value={t.value} className="text-white">{t.label}</SelectItem>
+                  <SelectItem key={t.value} value={t.value} className="text-white"><T>{t.label}</T></SelectItem>
                 ))}
               </SelectContent>
             </Select>
@@ -922,12 +944,12 @@ export default function FollowUpsPage() {
             <Select value={priorityFilter} onValueChange={setPriorityFilter}>
               <SelectTrigger className="bg-slate-800/70 border-slate-700/70 text-white w-32 h-9 text-sm">
                 <AlertTriangle className="size-3.5 ml-1.5 text-slate-500" />
-                <SelectValue placeholder="الأولوية" />
+                <SelectValue placeholder={translateUIText('الأولوية', locale)} />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all" className="text-white">الكل</SelectItem>
+                <SelectItem value="all" className="text-white"><T>الكل</T></SelectItem>
                 {PRIORITY_OPTIONS.map(p => (
-                  <SelectItem key={p.value} value={p.value} className="text-white">{p.label}</SelectItem>
+                  <SelectItem key={p.value} value={p.value} className="text-white"><T>{p.label}</T></SelectItem>
                 ))}
               </SelectContent>
             </Select>
@@ -945,7 +967,7 @@ export default function FollowUpsPage() {
               }`}
             >
               <AlertTriangle className="size-3.5" />
-              متأخرة عن موعدها
+              <T>متأخرة عن موعدها</T>
             </button>
             {/* §24 — open the deterministic follow-ups report */}
             <Button
@@ -955,17 +977,17 @@ export default function FollowUpsPage() {
               className="border-brand-500/30 text-brand-300 hover:bg-brand-500/10 h-9"
             >
               <BarChart3 className="size-3.5 ml-1" />
-              تقرير المتابعات
+              <T>تقرير المتابعات</T>
             </Button>
             <Select value={statusFilter} onValueChange={setStatusFilter}>
               <SelectTrigger className="bg-slate-800/70 border-slate-700/70 text-white w-36 h-9 text-sm">
                 <Clock className="size-3.5 ml-1.5 text-slate-500" />
-                <SelectValue placeholder="الحالة" />
+                <SelectValue placeholder={translateUIText('الحالة', locale)} />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all" className="text-white">الكل</SelectItem>
+                <SelectItem value="all" className="text-white"><T>الكل</T></SelectItem>
                 {STATUS_OPTIONS.map(s => (
-                  <SelectItem key={s.value} value={s.value} className="text-white">{s.label}</SelectItem>
+                  <SelectItem key={s.value} value={s.value} className="text-white"><T>{s.label}</T></SelectItem>
                 ))}
               </SelectContent>
             </Select>
@@ -977,7 +999,7 @@ export default function FollowUpsPage() {
               onChange={e => setStartDate(e.target.value)}
               className="bg-slate-800/70 border-slate-700/70 text-white w-36 h-9 text-sm"
               dir="ltr"
-              placeholder="من تاريخ"
+              placeholder={translateUIText('من تاريخ', locale)}
             />
             <Input
               type="date"
@@ -985,13 +1007,13 @@ export default function FollowUpsPage() {
               onChange={e => setEndDate(e.target.value)}
               className="bg-slate-800/70 border-slate-700/70 text-white w-36 h-9 text-sm"
               dir="ltr"
-              placeholder="إلى تاريخ"
+              placeholder={translateUIText('إلى تاريخ', locale)}
             />
 
             {hasActiveFilters && (
               <Button variant="ghost" size="sm" onClick={clearFilters} className="text-slate-400 hover:text-white h-9 px-3">
                 <X className="size-3.5 ml-1" />
-                مسح
+                <T>مسح</T>
               </Button>
             )}
           </div>
@@ -1009,8 +1031,8 @@ export default function FollowUpsPage() {
             <div className="size-12 rounded-full bg-rose-500/10 flex items-center justify-center mb-3">
               <AlertTriangle className="size-6 text-rose-400" />
             </div>
-            <p className="text-rose-300 text-sm font-medium">{error}</p>
-            <Button variant="outline" size="sm" className="mt-4" onClick={() => fetchData()}>إعادة المحاولة</Button>
+            <p className="text-rose-300 text-sm font-medium">{error && <T>{error}</T>}</p>
+            <Button variant="outline" size="sm" className="mt-4" onClick={() => fetchData()}><T>إعادة المحاولة</T></Button>
           </CardContent>
         </Card>
       ) : filtered.length === 0 ? (
@@ -1019,9 +1041,9 @@ export default function FollowUpsPage() {
             <div className="size-12 rounded-full bg-slate-800 flex items-center justify-center mb-3">
               <ClipboardList className="size-6 text-slate-600" />
             </div>
-            <p className="text-slate-400 text-sm font-medium">لا توجد بيانات</p>
+            <p className="text-slate-400 text-sm font-medium"><T>لا توجد بيانات</T></p>
             <p className="text-slate-600 text-xs mt-1">
-              {hasActiveFilters ? 'لم يتم العثور على نتائج مع الفلاتر المحددة' : 'لم يتم تسجيل أي متابعات بعد'}
+              <T>{hasActiveFilters ? 'لم يتم العثور على نتائج مع الفلاتر المحددة' : 'لم يتم تسجيل أي متابعات بعد'}</T>
             </p>
           </CardContent>
         </Card>
@@ -1034,24 +1056,24 @@ export default function FollowUpsPage() {
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-slate-700/40 bg-slate-800/50">
-                      <th className="text-right text-slate-400 text-[11px] font-medium px-3 py-2.5 whitespace-nowrap">التاريخ</th>
-                      <th className="text-right text-slate-400 text-[11px] font-medium px-3 py-2.5 whitespace-nowrap">الموظف</th>
-                      <th className="text-right text-slate-400 text-[11px] font-medium px-3 py-2.5 whitespace-nowrap">القسم</th>
-                      <th className="text-right text-slate-400 text-[11px] font-medium px-3 py-2.5 whitespace-nowrap">النوع</th>
-                      <th className="text-right text-slate-400 text-[11px] font-medium px-3 py-2.5 whitespace-nowrap">الأولوية</th>
-                      <th className="text-right text-slate-400 text-[11px] font-medium px-3 py-2.5 whitespace-nowrap">الموضوع</th>
-                      <th className="text-right text-slate-400 text-[11px] font-medium px-3 py-2.5 whitespace-nowrap">الحالة</th>
-                      <th className="text-right text-slate-400 text-[11px] font-medium px-3 py-2.5 whitespace-nowrap">بواسطة</th>
-                      <th className="text-right text-slate-400 text-[11px] font-medium px-3 py-2.5 whitespace-nowrap">المتابعة القادمة</th>
-                      <th className="text-right text-slate-400 text-[11px] font-medium px-3 py-2.5 whitespace-nowrap">النقاط</th>
-                      <th className="text-right text-slate-400 text-[11px] font-medium px-3 py-2.5 whitespace-nowrap text-center">إجراءات</th>
+                      <th className="text-right text-slate-400 text-[11px] font-medium px-3 py-2.5 whitespace-nowrap"><T>التاريخ</T></th>
+                      <th className="text-right text-slate-400 text-[11px] font-medium px-3 py-2.5 whitespace-nowrap"><T>الموظف</T></th>
+                      <th className="text-right text-slate-400 text-[11px] font-medium px-3 py-2.5 whitespace-nowrap"><T>القسم</T></th>
+                      <th className="text-right text-slate-400 text-[11px] font-medium px-3 py-2.5 whitespace-nowrap"><T>النوع</T></th>
+                      <th className="text-right text-slate-400 text-[11px] font-medium px-3 py-2.5 whitespace-nowrap"><T>الأولوية</T></th>
+                      <th className="text-right text-slate-400 text-[11px] font-medium px-3 py-2.5 whitespace-nowrap"><T>الموضوع</T></th>
+                      <th className="text-right text-slate-400 text-[11px] font-medium px-3 py-2.5 whitespace-nowrap"><T>الحالة</T></th>
+                      <th className="text-right text-slate-400 text-[11px] font-medium px-3 py-2.5 whitespace-nowrap"><T>بواسطة</T></th>
+                      <th className="text-right text-slate-400 text-[11px] font-medium px-3 py-2.5 whitespace-nowrap"><T>المتابعة القادمة</T></th>
+                      <th className="text-right text-slate-400 text-[11px] font-medium px-3 py-2.5 whitespace-nowrap"><T>النقاط</T></th>
+                      <th className="text-right text-slate-400 text-[11px] font-medium px-3 py-2.5 whitespace-nowrap text-center"><T>إجراءات</T></th>
                     </tr>
                   </thead>
                   <tbody>
                     {filtered.map((item) => {
-                      const typeBadge = getTypeBadge(item.followUpType);
-                      const priorityBadge = getPriorityBadge(item.priorityLevel);
-                      const statusBadge = getStatusBadge(item.status);
+                      const typeBadge = getTypeBadge(item.followUpType, locale);
+                      const priorityBadge = getPriorityBadge(item.priorityLevel, locale);
+                      const statusBadge = getStatusBadge(item.status, locale);
                       const StatusIcon = getStatusIcon(item.status);
                       const empName = item.employeeName || employees.find((e: any) => e.id === item.employeeId)?.name || '—';
                       const isDueToday = item.nextFollowUpDate === todayStr && (item.status === 'open' || item.status === 'under_follow_up');
@@ -1097,7 +1119,7 @@ export default function FollowUpsPage() {
                           </td>
                           <td className="px-3 py-2.5 whitespace-nowrap text-center">
                             <Badge variant="outline" className={`text-[10px] ${item.priorityLevel === 'critical' ? 'bg-red-500/15 text-red-400 border-red-500/30' : 'bg-slate-700/50 text-slate-400 border-slate-600/50'}`}>
-                              {item.score ?? SCORE_MAP[item.priorityLevel] ?? 3}
+                              {formatInteger(item.score ?? SCORE_MAP[item.priorityLevel] ?? 3, locale)}
                             </Badge>
                           </td>
                           <td className="px-3 py-2.5 whitespace-nowrap">
@@ -1106,7 +1128,7 @@ export default function FollowUpsPage() {
                             <div className="flex items-center justify-center">
                               <SmartActionMenu
                                 actions={rowActionsFor(item)}
-                                label={`إجراءات المتابعة — ${empName}`}
+                                label={`${translateUIText('إجراءات المتابعة —', locale)} ${empName}`}
                               />
                             </div>
                           </td>
@@ -1123,14 +1145,14 @@ export default function FollowUpsPage() {
         /* ═══ CARD VIEW ═══ */
         <motion.div variants={containerVariants} initial="hidden" animate="visible" className="space-y-4">
           {groupedByEmployee.map(({ employee, followUps: empFollowUps, riskScore }) => {
-            const empName = employee?.name || empFollowUps[0]?.employeeName || 'غير معروف';
+            const empName = employee?.name || empFollowUps[0]?.employeeName || translateUIText('غير معروف', locale);
             const empDept = employee?.department || '';
             const empId = employee?.id || empFollowUps[0]?.employeeId;
             const initials = empName.charAt(0);
             const empOpen = empFollowUps.filter(f => f.status === 'open' || f.status === 'under_follow_up').length;
             const empResolved = empFollowUps.filter(f => f.status === 'resolved' || f.status === 'closed').length;
             const empHigh = empFollowUps.filter(f => f.priorityLevel === 'high' || f.priorityLevel === 'critical').length;
-            const risk = getRiskLevel(riskScore);
+            const risk = getRiskLevel(riskScore, locale);
             const isCollapsed = collapsedEmployees.has(empId);
 
             return (
@@ -1165,23 +1187,23 @@ export default function FollowUpsPage() {
                         </motion.div>
                         {empOpen > 0 && (
                           <Badge variant="outline" className="text-[10px] bg-blue-500/10 text-blue-400 border-blue-500/25 px-1.5 py-0">
-                            {empOpen} مفتوح
+                            {formatInteger(empOpen, locale)} <T>مفتوح</T>
                           </Badge>
                         )}
                         {empHigh > 0 && (
                           <Badge variant="outline" className="text-[10px] bg-orange-500/10 text-orange-400 border-orange-500/25 px-1.5 py-0">
-                            {empHigh} عالي
+                            {formatInteger(empHigh, locale)} <T>عالي</T>
                           </Badge>
                         )}
                         <Badge variant="outline" className="text-[10px] bg-brand-500/10 text-brand-400 border-brand-500/30 px-1.5 py-0">
-                          {empResolved} محلول
+                          {formatInteger(empResolved, locale)} <T>محلول</T>
                         </Badge>
                         {riskScore > 0 && (
                           <Badge variant="outline" className={`text-[10px] px-1.5 py-0 ${risk.color}`}>
-                            مخاطر: {risk.label} ({riskScore})
+                            <T>مخاطر: </T>{risk.label} ({formatInteger(riskScore, locale)})
                           </Badge>
                         )}
-                        <span className="text-slate-600 text-[10px]">{empFollowUps.length} متابعة</span>
+                        <span className="text-slate-600 text-[10px]">{formatInteger(empFollowUps.length, locale)} <T>متابعة</T></span>
                       </div>
                     </div>
                   </CardHeader>
@@ -1199,9 +1221,9 @@ export default function FollowUpsPage() {
                         <CardContent className="p-3">
                           <div className="space-y-2">
                             {empFollowUps.map((item) => {
-                              const typeBadge = getTypeBadge(item.followUpType);
-                              const priorityBadge = getPriorityBadge(item.priorityLevel);
-                              const statusBadge = getStatusBadge(item.status);
+                              const typeBadge = getTypeBadge(item.followUpType, locale);
+                              const priorityBadge = getPriorityBadge(item.priorityLevel, locale);
+                              const statusBadge = getStatusBadge(item.status, locale);
                               const StatusIcon = getStatusIcon(item.status);
                               const responsibleName = systemUsers.find((u: any) => u.id === item.responsiblePerson)?.name || item.responsiblePerson || '—';
                               const isDueToday = item.nextFollowUpDate === todayStr && (item.status === 'open' || item.status === 'under_follow_up');
@@ -1235,13 +1257,13 @@ export default function FollowUpsPage() {
                                     {isDueToday && (
                                       <div className="flex items-center gap-1 px-1.5 py-0.5 rounded border text-[10px] font-medium bg-amber-500/15 text-amber-400 border-amber-500/30">
                                         <Bell className="size-2.5" />
-                                        متابعة اليوم
+                                        <T>متابعة اليوم</T>
                                       </div>
                                     )}
                                     {isOverdue && (
                                       <div className="flex items-center gap-1 px-1.5 py-0.5 rounded border text-[10px] font-medium bg-red-500/15 text-red-400 border-red-500/30">
                                         <AlertTriangle className="size-2.5" />
-                                        تأخر
+                                        <T>تأخر</T>
                                       </div>
                                     )}
                                     <div className="flex-1" />
@@ -1249,7 +1271,7 @@ export default function FollowUpsPage() {
                                     <div className="flex items-center flex-shrink-0">
                                       <SmartActionMenu
                                         actions={rowActionsFor(item)}
-                                        label={`إجراءات المتابعة — ${empName}`}
+                                        label={`${translateUIText('إجراءات المتابعة —', locale)} ${empName}`}
                                       />
                                     </div>
                                   </div>
@@ -1271,7 +1293,7 @@ export default function FollowUpsPage() {
                                         <div className="rounded-lg bg-emerald-500/5 border border-brand-500/30 px-3 py-2">
                                           <div className="flex items-center gap-1.5 mb-1">
                                             <ArrowUpCircle className="size-3 text-emerald-500" />
-                                            <p className="text-brand-400 text-[10px] font-medium">ملاحظات إيجابية</p>
+                                            <p className="text-brand-400 text-[10px] font-medium"><T>ملاحظات إيجابية</T></p>
                                           </div>
                                           <p className="text-slate-300 text-xs leading-relaxed whitespace-pre-wrap break-words">{item.positiveNotes}</p>
                                         </div>
@@ -1280,7 +1302,7 @@ export default function FollowUpsPage() {
                                         <div className="rounded-lg bg-red-500/5 border border-red-500/15 px-3 py-2">
                                           <div className="flex items-center gap-1.5 mb-1">
                                             <ArrowDownCircle className="size-3 text-red-500" />
-                                            <p className="text-red-400 text-[10px] font-medium">ملاحظات سلبية</p>
+                                            <p className="text-red-400 text-[10px] font-medium"><T>ملاحظات سلبية</T></p>
                                           </div>
                                           <p className="text-slate-300 text-xs leading-relaxed whitespace-pre-wrap break-words">{item.negativeNotes}</p>
                                         </div>
@@ -1291,13 +1313,13 @@ export default function FollowUpsPage() {
                                   {/* Root Cause & Action Taken */}
                                   {item.rootCause && (
                                     <div className="rounded-lg bg-amber-500/5 border border-amber-500/15 px-3 py-2">
-                                      <p className="text-amber-400 text-[10px] font-medium mb-0.5">السبب الجذري</p>
+                                      <p className="text-amber-400 text-[10px] font-medium mb-0.5"><T>السبب الجذري</T></p>
                                       <p className="text-slate-300 text-xs">{item.rootCause}</p>
                                     </div>
                                   )}
                                   {item.actionTaken && (
                                     <div className="rounded-lg bg-blue-500/5 border border-blue-500/15 px-3 py-2">
-                                      <p className="text-blue-400 text-[10px] font-medium mb-0.5">الإجراء المتخذ</p>
+                                      <p className="text-blue-400 text-[10px] font-medium mb-0.5"><T>الإجراء المتخذ</T></p>
                                       <p className="text-slate-300 text-xs">{item.actionTaken}</p>
                                     </div>
                                   )}
@@ -1306,21 +1328,21 @@ export default function FollowUpsPage() {
                                   <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[10px] pt-1 border-t border-slate-700/20">
                                     <span className="text-slate-500 flex items-center gap-1">
                                       <UserCheck className="size-2.5" />
-                                      المسؤول: <span className="text-slate-300">{responsibleName}</span>
+                                      <T>المسؤول: </T><span className="text-slate-300">{responsibleName}</span>
                                     </span>
                                     <span className="text-slate-500 flex items-center gap-1">
                                       <FileText className="size-2.5" />
-                                      النقاط: <span className="text-slate-300">{item.score ?? SCORE_MAP[item.priorityLevel] ?? 3}</span>
+                                      <T>النقاط: </T><span className="text-slate-300">{formatInteger(item.score ?? SCORE_MAP[item.priorityLevel] ?? 3, locale)}</span>
                                     </span>
                                     {item.nextFollowUpDate && (
                                       <span className={`flex items-center gap-1 ${isOverdue ? 'text-red-400' : 'text-slate-500'}`}>
                                         <CalendarDays className="size-2.5" />
-                                        المتابعة القادمة: <span dir="ltr">{item.nextFollowUpDate}</span>
+                                        <T>المتابعة القادمة: </T><span dir="ltr">{item.nextFollowUpDate}</span>
                                       </span>
                                     )}
                                     {item.createdByName && (
                                       <span className="text-slate-500">
-                                        بواسطة: <span className="text-slate-300">{item.createdByName}</span>
+                                        <T>بواسطة: </T><span className="text-slate-300">{item.createdByName}</span>
                                       </span>
                                     )}
                                   </div>
@@ -1345,7 +1367,7 @@ export default function FollowUpsPage() {
           {viewingItem && (
             <>
               <DialogHeader>
-                <DialogTitle className="text-white">تفاصيل المتابعة</DialogTitle>
+                <DialogTitle className="text-white"><T>تفاصيل المتابعة</T></DialogTitle>
               </DialogHeader>
               <div className="space-y-3">
                 {/* Employee Info */}
@@ -1356,7 +1378,7 @@ export default function FollowUpsPage() {
                     </span>
                   </div>
                   <div>
-                    <p className="text-white text-sm font-semibold">{viewingItem.employeeName || 'غير معروف'}</p>
+                    <p className="text-white text-sm font-semibold">{viewingItem.employeeName || translateUIText('غير معروف', locale)}</p>
                     <p className="text-slate-500 text-xs">{viewingItem.department || '—'} · {viewingItem.position || '—'}</p>
                   </div>
                 </div>
@@ -1364,7 +1386,7 @@ export default function FollowUpsPage() {
                 {/* Subject */}
                 {viewingItem.subject && (
                   <div>
-                    <p className="text-slate-500 text-[11px] mb-1">الموضوع</p>
+                    <p className="text-slate-500 text-[11px] mb-1"><T>الموضوع</T></p>
                     <p className="text-white text-sm font-medium">{viewingItem.subject}</p>
                   </div>
                 )}
@@ -1372,32 +1394,32 @@ export default function FollowUpsPage() {
                 {/* Description */}
                 {viewingItem.detailedDescription && (
                   <div>
-                    <p className="text-slate-500 text-[11px] mb-1">التفاصيل</p>
+                    <p className="text-slate-500 text-[11px] mb-1"><T>التفاصيل</T></p>
                     <p className="text-slate-300 text-xs leading-relaxed whitespace-pre-wrap">{viewingItem.detailedDescription}</p>
                   </div>
                 )}
 
                 {/* Badges Row */}
                 <div className="flex flex-wrap gap-2">
-                  <div className={`flex items-center gap-1 px-2 py-1 rounded border text-[11px] font-medium ${getTypeBadge(viewingItem.followUpType).color}`}>
-                    {getTypeBadge(viewingItem.followUpType).label}
+                  <div className={`flex items-center gap-1 px-2 py-1 rounded border text-[11px] font-medium ${getTypeBadge(viewingItem.followUpType, locale).color}`}>
+                    {getTypeBadge(viewingItem.followUpType, locale).label}
                   </div>
-                  <div className={`flex items-center gap-1.5 px-2 py-1 rounded border text-[11px] font-medium ${getPriorityBadge(viewingItem.priorityLevel).color}`}>
+                  <div className={`flex items-center gap-1.5 px-2 py-1 rounded border text-[11px] font-medium ${getPriorityBadge(viewingItem.priorityLevel, locale).color}`}>
                     <div className={`w-2 h-2 rounded-full ${getPriorityDot(viewingItem.priorityLevel)}`} />
-                    {getPriorityBadge(viewingItem.priorityLevel).label}
+                    {getPriorityBadge(viewingItem.priorityLevel, locale).label}
                   </div>
-                  <div className={`flex items-center gap-1 px-2 py-1 rounded border text-[11px] font-medium ${getStatusBadge(viewingItem.status).color}`}>
-                    {getStatusBadge(viewingItem.status).label}
+                  <div className={`flex items-center gap-1 px-2 py-1 rounded border text-[11px] font-medium ${getStatusBadge(viewingItem.status, locale).color}`}>
+                    {getStatusBadge(viewingItem.status, locale).label}
                   </div>
                   <Badge variant="outline" className="text-[11px] bg-slate-700/50 text-slate-300 border-slate-600/50 px-2 py-0.5">
-                    النقاط: {viewingItem.score ?? SCORE_MAP[viewingItem.priorityLevel] ?? 3}
+                    <T>النقاط: </T>{formatInteger(viewingItem.score ?? SCORE_MAP[viewingItem.priorityLevel] ?? 3, locale)}
                   </Badge>
                 </div>
 
                 {/* Root Cause */}
                 {viewingItem.rootCause && (
                   <div className="rounded-lg bg-amber-500/5 border border-amber-500/15 px-3 py-2">
-                    <p className="text-amber-400 text-[11px] font-medium mb-0.5">السبب الجذري</p>
+                    <p className="text-amber-400 text-[11px] font-medium mb-0.5"><T>السبب الجذري</T></p>
                     <p className="text-slate-300 text-xs">{viewingItem.rootCause}</p>
                   </div>
                 )}
@@ -1405,7 +1427,7 @@ export default function FollowUpsPage() {
                 {/* Action Taken */}
                 {viewingItem.actionTaken && (
                   <div className="rounded-lg bg-blue-500/5 border border-blue-500/15 px-3 py-2">
-                    <p className="text-blue-400 text-[11px] font-medium mb-0.5">الإجراء المتخذ</p>
+                    <p className="text-blue-400 text-[11px] font-medium mb-0.5"><T>الإجراء المتخذ</T></p>
                     <p className="text-slate-300 text-xs">{viewingItem.actionTaken}</p>
                   </div>
                 )}
@@ -1415,13 +1437,13 @@ export default function FollowUpsPage() {
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                     {viewingItem.positiveNotes && (
                       <div className="rounded-lg bg-emerald-500/5 border border-brand-500/30 px-3 py-2">
-                        <p className="text-brand-400 text-[10px] font-medium mb-1">إيجابي</p>
+                        <p className="text-brand-400 text-[10px] font-medium mb-1"><T>إيجابي</T></p>
                         <p className="text-slate-300 text-xs leading-relaxed whitespace-pre-wrap">{viewingItem.positiveNotes}</p>
                       </div>
                     )}
                     {viewingItem.negativeNotes && (
                       <div className="rounded-lg bg-red-500/5 border border-red-500/15 px-3 py-2">
-                        <p className="text-red-400 text-[10px] font-medium mb-1">سلبي</p>
+                        <p className="text-red-400 text-[10px] font-medium mb-1"><T>سلبي</T></p>
                         <p className="text-slate-300 text-xs leading-relaxed whitespace-pre-wrap">{viewingItem.negativeNotes}</p>
                       </div>
                     )}
@@ -1431,20 +1453,20 @@ export default function FollowUpsPage() {
                 {/* Info Grid */}
                 <div className="grid grid-cols-2 gap-2 text-xs">
                   <div className="p-2 rounded-lg bg-slate-800/40">
-                    <p className="text-slate-500 text-[10px]">التاريخ</p>
+                    <p className="text-slate-500 text-[10px]"><T>التاريخ</T></p>
                     <p className="text-white" dir="ltr">{viewingItem.date}</p>
                   </div>
                   <div className="p-2 rounded-lg bg-slate-800/40">
-                    <p className="text-slate-500 text-[10px]">المتابعة القادمة</p>
-                    <p className="text-white" dir="ltr">{viewingItem.nextFollowUpDate || 'غير محدد'}</p>
+                    <p className="text-slate-500 text-[10px]"><T>المتابعة القادمة</T></p>
+                    <p className="text-white" dir="ltr">{viewingItem.nextFollowUpDate || translateUIText('غير محدد', locale)}</p>
                   </div>
                   <div className="p-2 rounded-lg bg-slate-800/40">
-                    <p className="text-slate-500 text-[10px]">المسؤول</p>
+                    <p className="text-slate-500 text-[10px]"><T>المسؤول</T></p>
                     <p className="text-white">{systemUsers.find((u: any) => u.id === viewingItem.responsiblePerson)?.name || viewingItem.responsiblePerson || '—'}</p>
                   </div>
                   <div className="p-2 rounded-lg bg-slate-800/40">
-                    <p className="text-slate-500 text-[10px]">بواسطة</p>
-                    <p className="text-white">{viewingItem.createdByName || 'النظام'}</p>
+                    <p className="text-slate-500 text-[10px]"><T>بواسطة</T></p>
+                    <p className="text-white">{viewingItem.createdByName || translateUIText('النظام', locale)}</p>
                   </div>
                 </div>
 
@@ -1453,7 +1475,7 @@ export default function FollowUpsPage() {
                     tab, http(s) only). */}
                 {viewingItem.evidence && (
                   <div>
-                    <p className="text-slate-500 text-[11px] mb-1.5">الدليل / الرابط</p>
+                    <p className="text-slate-500 text-[11px] mb-1.5"><T>الدليل / الرابط</T></p>
                     <EvidenceLinkButton evidence={viewingItem.evidence} />
                   </div>
                 )}
@@ -1461,12 +1483,12 @@ export default function FollowUpsPage() {
                 {/* Attachments */}
                 {viewingItem.attachments && viewingItem.attachments.length > 0 && (
                   <div>
-                    <p className="text-slate-500 text-[11px] mb-1.5">المرفقات</p>
+                    <p className="text-slate-500 text-[11px] mb-1.5"><T>المرفقات</T></p>
                     <div className="flex flex-wrap gap-2">
                       {viewingItem.attachments.map((url: any, i: any) => (
                         <a key={i} href={url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-slate-800/60 border border-slate-700/30 text-cyan-400 text-[11px] hover:bg-cyan-500/10 transition-colors">
                           <Paperclip className="size-3" />
-                          مرفق {i + 1}
+                          <T>مرفق</T> {formatInteger(i + 1, locale)}
                         </a>
                       ))}
                     </div>
@@ -1501,7 +1523,7 @@ export default function FollowUpsPage() {
                       }}
                     >
                       <Plus className="size-3.5 ml-1" />
-                      إنشاء CAPA من المتابعة
+                      <T>إنشاء CAPA من المتابعة</T>
                     </Button>
                   )}
                 </div>
@@ -1515,9 +1537,9 @@ export default function FollowUpsPage() {
       <Dialog open={isDialogOpen} onOpenChange={open => { if (!open) { setIsDialogOpen(false); setEditingItem(null); } }}>
         <DialogContent className="backdrop-blur-xl bg-slate-900 border-slate-700 max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle className="text-white">{editingItem ? 'تعديل متابعة' : 'إضافة متابعة جديدة'}</DialogTitle>
+            <DialogTitle className="text-white"><T>{editingItem ? 'تعديل متابعة' : 'إضافة متابعة جديدة'}</T></DialogTitle>
             <DialogDescription className="text-slate-400">
-              {editingItem ? 'عدّل تفاصيل المتابعة' : 'أدخل تفاصيل المتابعة'}
+              <T>{editingItem ? 'عدّل تفاصيل المتابعة' : 'أدخل تفاصيل المتابعة'}</T>
             </DialogDescription>
           </DialogHeader>
 
@@ -1531,15 +1553,15 @@ export default function FollowUpsPage() {
                   onChange={(id, name) => {
                     setForm(p => ({ ...p, employeeId: id }));
                   }}
-                  label="الموظف"
-                  placeholder="ابحث عن اسم الموظف..."
+                  label={translateUIText('الموظف', locale)}
+                  placeholder={translateUIText('ابحث عن اسم الموظف...', locale)}
                 />
               </div>
             )}
 
             {editingItem && (
               <div className="space-y-2 sm:col-span-2">
-                <Label className="text-slate-300 text-sm">الموظف</Label>
+                <Label className="text-slate-300 text-sm"><T>الموظف</T></Label>
                 <div className="flex items-center gap-2 px-3 py-2 rounded-md bg-slate-800 border border-slate-600">
                   <div className="size-7 rounded-full bg-slate-700 flex items-center justify-center">
                     <span className="text-[10px] font-bold text-white">{(employees.find((e: any) => e.id === form.employeeId)?.name || editingItem.employeeName || '?').charAt(0)}</span>
@@ -1551,32 +1573,32 @@ export default function FollowUpsPage() {
 
             {/* Department (auto-filled) */}
             <div className="space-y-2">
-              <Label className="text-slate-300 text-sm">القسم</Label>
-              <Input value={form.department} readOnly className="bg-slate-800 border-slate-600 text-slate-400" placeholder="يتم ملؤه تلقائياً" />
+              <Label className="text-slate-300 text-sm"><T>القسم</T></Label>
+              <Input value={form.department} readOnly className="bg-slate-800 border-slate-600 text-slate-400" placeholder={translateUIText('يتم ملؤه تلقائياً', locale)} />
             </div>
 
             {/* Position (auto-filled) */}
             <div className="space-y-2">
-              <Label className="text-slate-300 text-sm">المنصب</Label>
-              <Input value={form.position} readOnly className="bg-slate-800 border-slate-600 text-slate-400" placeholder="يتم ملؤه تلقائياً" />
+              <Label className="text-slate-300 text-sm"><T>المنصب</T></Label>
+              <Input value={form.position} readOnly className="bg-slate-800 border-slate-600 text-slate-400" placeholder={translateUIText('يتم ملؤه تلقائياً', locale)} />
             </div>
 
             {/* Date */}
             <div className="space-y-2">
-              <Label className="text-slate-300 text-sm">التاريخ <span className="text-red-400">*</span></Label>
+              <Label className="text-slate-300 text-sm"><T>التاريخ</T> <span className="text-red-400">*</span></Label>
               <Input type="date" value={form.date} onChange={e => handleDateChange(e.target.value)} className="bg-slate-800 border-slate-600 text-white" dir="ltr" />
             </div>
 
             {/* Type */}
             <div className="space-y-2">
-              <Label className="text-slate-300 text-sm">نوع المتابعة <span className="text-red-400">*</span></Label>
+              <Label className="text-slate-300 text-sm"><T>نوع المتابعة</T> <span className="text-red-400">*</span></Label>
               <Select value={form.followUpType} onValueChange={v => setForm(p => ({ ...p, followUpType: v }))}>
                 <SelectTrigger className="bg-slate-800 border-slate-600 text-white">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
                   {TYPE_OPTIONS.map(t => (
-                    <SelectItem key={t.value} value={t.value} className="text-white">{t.label}</SelectItem>
+                    <SelectItem key={t.value} value={t.value} className="text-white"><T>{t.label}</T></SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -1584,18 +1606,18 @@ export default function FollowUpsPage() {
 
             {/* Subject */}
             <div className="space-y-2 sm:col-span-2">
-              <Label className="text-slate-300 text-sm">الموضوع <span className="text-red-400">*</span></Label>
-              <Input value={form.subject} onChange={e => setForm(p => ({ ...p, subject: e.target.value }))} className="bg-slate-800 border-slate-600 text-white" placeholder="مثال: تأخر متكرر في الرد على العملاء" />
+              <Label className="text-slate-300 text-sm"><T>الموضوع</T> <span className="text-red-400">*</span></Label>
+              <Input value={form.subject} onChange={e => setForm(p => ({ ...p, subject: e.target.value }))} className="bg-slate-800 border-slate-600 text-white" placeholder={translateUIText('مثال: تأخر متكرر في الرد على العملاء', locale)} />
             </div>
 
             {/* Detailed Description */}
             <div className="space-y-2 sm:col-span-2">
-              <Label className="text-slate-300 text-sm">التفاصيل <span className="text-red-400">*</span></Label>
+              <Label className="text-slate-300 text-sm"><T>التفاصيل</T> <span className="text-red-400">*</span></Label>
               <Textarea
                 value={form.detailedDescription}
                 onChange={e => setForm(p => ({ ...p, detailedDescription: e.target.value }))}
                 className="bg-slate-800 border-slate-600 text-white min-h-[80px]"
-                placeholder="وصف تفصيلي للملاحظة أو المشكلة..."
+                placeholder={translateUIText('وصف تفصيلي للملاحظة أو المشكلة...', locale)}
               />
             </div>
 
@@ -1603,27 +1625,27 @@ export default function FollowUpsPage() {
                 the description: a real field (URL, Drive link, screenshot
                 or document link) rendered as a button in the details card. */}
             <div className="space-y-2 sm:col-span-2">
-              <Label className="text-slate-300 text-sm">دليل / رابط</Label>
+              <Label className="text-slate-300 text-sm"><T>دليل / رابط</T></Label>
               <Input
                 value={form.evidence}
                 onChange={e => setForm(p => ({ ...p, evidence: e.target.value }))}
                 className="bg-slate-800 border-slate-600 text-white"
-                placeholder="https://… رابط Google Drive أو مستند أو لقطة شاشة"
+                placeholder={translateUIText('https://… رابط Google Drive أو مستند أو لقطة شاشة', locale)}
                 dir="ltr"
               />
-              <p className="text-[10px] text-slate-500">رابط خارجي يظهر كزر «عرض الدليل» في بطاقة التفاصيل.</p>
+              <p className="text-[10px] text-slate-500"><T>رابط خارجي يظهر كزر «عرض الدليل» في بطاقة التفاصيل.</T></p>
             </div>
 
             {/* Priority */}
             <div className="space-y-2">
-              <Label className="text-slate-300 text-sm">الأولوية <span className="text-red-400">*</span></Label>
+              <Label className="text-slate-300 text-sm"><T>الأولوية</T> <span className="text-red-400">*</span></Label>
               <Select value={form.priorityLevel} onValueChange={v => setForm(p => ({ ...p, priorityLevel: v }))}>
                 <SelectTrigger className="bg-slate-800 border-slate-600 text-white">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
                   {PRIORITY_OPTIONS.map(p => (
-                    <SelectItem key={p.value} value={p.value} className="text-white">{p.label}</SelectItem>
+                    <SelectItem key={p.value} value={p.value} className="text-white"><T>{p.label}</T></SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -1632,14 +1654,14 @@ export default function FollowUpsPage() {
             {/* Status */}
             {(isManagerOrAdmin || editingItem) && (
               <div className="space-y-2">
-                <Label className="text-slate-300 text-sm">الحالة</Label>
+                <Label className="text-slate-300 text-sm"><T>الحالة</T></Label>
                 <Select value={form.status} onValueChange={v => setForm(p => ({ ...p, status: v }))}>
                   <SelectTrigger className="bg-slate-800 border-slate-600 text-white">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
                     {STATUS_OPTIONS.map(s => (
-                      <SelectItem key={s.value} value={s.value} className="text-white">{s.label}</SelectItem>
+                      <SelectItem key={s.value} value={s.value} className="text-white"><T>{s.label}</T></SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
@@ -1648,14 +1670,14 @@ export default function FollowUpsPage() {
 
             {/* Root Cause */}
             <div className="space-y-2">
-              <Label className="text-slate-300 text-sm">السبب الجذري</Label>
+              <Label className="text-slate-300 text-sm"><T>السبب الجذري</T></Label>
               <Select value={form.rootCause} onValueChange={v => setForm(p => ({ ...p, rootCause: v }))}>
                 <SelectTrigger className="bg-slate-800 border-slate-600 text-white">
-                  <SelectValue placeholder="اختر السبب الجذري..." />
+                  <SelectValue placeholder={translateUIText('اختر السبب الجذري...', locale)} />
                 </SelectTrigger>
                 <SelectContent>
                   {ROOT_CAUSE_OPTIONS.map(r => (
-                    <SelectItem key={r} value={r} className="text-white">{r}</SelectItem>
+                    <SelectItem key={r} value={r} className="text-white"><T>{r}</T></SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -1663,14 +1685,14 @@ export default function FollowUpsPage() {
 
             {/* Action Taken */}
             <div className="space-y-2">
-              <Label className="text-slate-300 text-sm">الإجراء المتخذ</Label>
+              <Label className="text-slate-300 text-sm"><T>الإجراء المتخذ</T></Label>
               <Select value={form.actionTaken} onValueChange={v => setForm(p => ({ ...p, actionTaken: v }))}>
                 <SelectTrigger className="bg-slate-800 border-slate-600 text-white">
-                  <SelectValue placeholder="اختر الإجراء..." />
+                  <SelectValue placeholder={translateUIText('اختر الإجراء...', locale)} />
                 </SelectTrigger>
                 <SelectContent>
                   {ACTION_OPTIONS.map(a => (
-                    <SelectItem key={a} value={a} className="text-white">{a}</SelectItem>
+                    <SelectItem key={a} value={a} className="text-white"><T>{a}</T></SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -1678,27 +1700,27 @@ export default function FollowUpsPage() {
 
             {/* Positive Notes */}
             <div className="space-y-2">
-              <Label className="text-slate-300 text-sm">ملاحظات إيجابية</Label>
-              <Textarea value={form.positiveNotes} onChange={e => setForm(p => ({ ...p, positiveNotes: e.target.value }))} className="bg-slate-800 border-slate-600 text-white min-h-[60px]" placeholder="أي إنجازات أو سلوك إيجابي..." />
+              <Label className="text-slate-300 text-sm"><T>ملاحظات إيجابية</T></Label>
+              <Textarea value={form.positiveNotes} onChange={e => setForm(p => ({ ...p, positiveNotes: e.target.value }))} className="bg-slate-800 border-slate-600 text-white min-h-[60px]" placeholder={translateUIText('أي إنجازات أو سلوك إيجابي...', locale)} />
             </div>
 
             {/* Negative Notes */}
             <div className="space-y-2">
-              <Label className="text-slate-300 text-sm">ملاحظات سلبية</Label>
-              <Textarea value={form.negativeNotes} onChange={e => setForm(p => ({ ...p, negativeNotes: e.target.value }))} className="bg-slate-800 border-slate-600 text-white min-h-[60px]" placeholder="المشاكل أو المخالفات المرصودة..." />
+              <Label className="text-slate-300 text-sm"><T>ملاحظات سلبية</T></Label>
+              <Textarea value={form.negativeNotes} onChange={e => setForm(p => ({ ...p, negativeNotes: e.target.value }))} className="bg-slate-800 border-slate-600 text-white min-h-[60px]" placeholder={translateUIText('المشاكل أو المخالفات المرصودة...', locale)} />
             </div>
 
             {/* Follow-Up Required */}
             <div className="space-y-2 sm:col-span-2">
-              <Label className="text-slate-300 text-sm">هل يتطلب متابعة؟</Label>
+              <Label className="text-slate-300 text-sm"><T>هل يتطلب متابعة؟</T></Label>
               <div className="flex gap-4">
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input type="radio" name="followUpRequired" checked={form.followUpRequired === true} onChange={() => setForm(p => ({ ...p, followUpRequired: true }))} className="accent-cyan-500" />
-                  <span className="text-white text-sm">نعم</span>
+                  <span className="text-white text-sm"><T>نعم</T></span>
                 </label>
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input type="radio" name="followUpRequired" checked={form.followUpRequired === false} onChange={() => setForm(p => ({ ...p, followUpRequired: false }))} className="accent-cyan-500" />
-                  <span className="text-white text-sm">لا</span>
+                  <span className="text-white text-sm"><T>لا</T></span>
                 </label>
               </div>
             </div>
@@ -1706,7 +1728,7 @@ export default function FollowUpsPage() {
             {/* Next Follow-Up Date */}
             {form.followUpRequired && (
               <div className="space-y-2">
-                <Label className="text-slate-300 text-sm">تاريخ المتابعة القادمة</Label>
+                <Label className="text-slate-300 text-sm"><T>تاريخ المتابعة القادمة</T></Label>
                 <Input
                   type="date"
                   value={form.nextFollowUpDate || (form.date ? addDays(form.date, 7) : '')}
@@ -1723,20 +1745,20 @@ export default function FollowUpsPage() {
                 users={systemUsers}
                 value={form.responsiblePerson}
                 onChange={(id, name) => setForm(p => ({ ...p, responsiblePerson: id }))}
-                label="المسؤول عن المتابعة"
-                placeholder="ابحث عن مستخدم مسؤول..."
+                label={translateUIText('المسؤول عن المتابعة', locale)}
+                placeholder={translateUIText('ابحث عن مستخدم مسؤول...', locale)}
                 allowClear
-                clearLabel="— بدون —"
+                clearLabel={translateUIText('— بدون —', locale)}
               />
             </div>
           </div>
 
           <DialogFooter className="mt-4">
             <Button variant="ghost" onClick={() => { setIsDialogOpen(false); setEditingItem(null); }} className="text-slate-400 hover:text-white">
-              إلغاء
+              <T>إلغاء</T>
             </Button>
             <Button onClick={handleSave} disabled={saving || !form.employeeId || !form.date || !form.subject} className="bg-cyan-600 hover:bg-cyan-700 text-white">
-              {saving ? 'جاري الحفظ...' : editingItem ? 'تحديث' : 'إضافة'}
+              <T>{saving ? 'جاري الحفظ...' : editingItem ? 'تحديث' : 'إضافة'}</T>
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1746,7 +1768,7 @@ export default function FollowUpsPage() {
       <ConfirmDialog
         open={!!deletingId}
         onOpenChange={(open) => { if (!open) setDeletingId(null); }}
-        description="هل أنت متأكد من حذف هذه المتابعة؟ لا يمكن التراجع عن هذا الإجراء."
+        description={translateUIText('هل أنت متأكد من حذف هذه المتابعة؟ لا يمكن التراجع عن هذا الإجراء.', locale)}
         itemName={deletingId ? followUps.find((f) => f.id === deletingId)?.subject : undefined}
         loading={deleteLoading}
         onConfirm={async () => { if (deletingId) await handleDelete(deletingId); }}
@@ -1760,10 +1782,10 @@ export default function FollowUpsPage() {
           <DialogHeader>
             <DialogTitle className="text-white flex items-center gap-2">
               <BarChart3 className="size-5 text-brand-400" />
-              تقرير المتابعات
+              <T>تقرير المتابعات</T>
             </DialogTitle>
             <DialogDescription className="text-slate-400">
-              تحليل حتمي من البيانات الفعلية — بدون أي استنتاجات افتراضية
+              <T>تحليل حتمي من البيانات الفعلية — بدون أي استنتاجات افتراضية</T>
             </DialogDescription>
           </DialogHeader>
           <div className="flex items-center gap-1 rounded-lg border border-slate-700/60 bg-slate-950/40 p-1 w-fit">
@@ -1772,14 +1794,14 @@ export default function FollowUpsPage() {
               onClick={() => setReportMode('employee')}
               className={`px-3 py-1.5 text-xs rounded-md transition-colors ${reportMode === 'employee' ? 'bg-brand-500/20 text-brand-300' : 'text-slate-400 hover:text-slate-200'}`}
             >
-              مجمّع حسب الموظف
+              <T>مجمّع حسب الموظف</T>
             </button>
             <button
               type="button"
               onClick={() => setReportMode('flat')}
               className={`px-3 py-1.5 text-xs rounded-md transition-colors ${reportMode === 'flat' ? 'bg-brand-500/20 text-brand-300' : 'text-slate-400 hover:text-slate-200'}`}
             >
-              تفصيلي
+              <T>تفصيلي</T>
             </button>
           </div>
           {reportMode === 'employee' ? (

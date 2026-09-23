@@ -9,7 +9,7 @@
 // ══════════════════════════════════════════════════════════════
 
 import { NextRequest } from 'next/server';
-import { getAll, createRecord, countWhere } from '@/lib/db';
+import { getAll, createRecord } from '@/lib/db';
 import { requireAuth, verifyPermission } from '@/lib/verify-permission';
 import {
   validationError, unauthorizedError, forbiddenError,
@@ -26,13 +26,19 @@ import {
   groupEmployeesByNode,
   filterCurrentEmployees,
   isCurrentEmployee,
+  resolveOrgNodeLevel,
   type OrgNode,
   type OrgNodeType,
   type OrgNodeStatus,
   type Position,
 } from '@/lib/organization';
 
-const NODE_TYPES: ReadonlySet<string> = new Set(['company', 'department', 'team', 'subteam']);
+// §ORG-LEVELS — the canonical structure is
+//   General Administration → Company → Department → Team → Subteam.
+// 'general_administration' is the explicit stored type for new trees;
+// legacy trees keep their company-typed GA root (the level layer
+// resolves it). Placement rules below enforce the canonical shape.
+const NODE_TYPES: ReadonlySet<string> = new Set(['general_administration', 'company', 'department', 'team', 'subteam']);
 const NODE_STATUSES: ReadonlySet<string> = new Set(['active', 'archived']);
 
 export async function GET(request: NextRequest) {
@@ -107,17 +113,41 @@ export async function POST(request: NextRequest) {
       return validationError('اسم العقدة مطلوب');
     }
     if (!NODE_TYPES.has(type)) {
-      return validationError('نوع العقدة يجب أن يكون: شركة / قسم / فريق / فريق فرعي');
+      return validationError('نوع العقدة يجب أن يكون: إدارة عامة / شركة / قسم / فريق / فريق فرعي');
     }
 
     const nodes = await getAll<OrgNode>(ORG_NODES_TABLE);
     const index = buildOrgIndex(nodes);
 
-    // Exactly one company node may exist — it is the tree root.
+    // §ORG-BOUNDARY placement rules (canonical shape):
+    //   • exactly ONE General Administration node, and only as the
+    //     tree root;
+    //   • a Company node hangs under the General Administration (or
+    //     is the single ROOT company of a legacy single-company tree
+    //     — kept so pre-GA installs can still bootstrap);
+    //   • departments/teams/subteams follow their existing rules.
+    if (type === 'general_administration') {
+      if (parentId) {
+        return validationError('الإدارة العامة هي جذر الهيكل ولا تتبع عقدة أخرى');
+      }
+      if (nodes.some((n) => n.type === 'general_administration')) {
+        return conflictError('توجد إدارة عامة بالفعل — لا يمكن إنشاء أكثر من واحدة');
+      }
+    }
     if (type === 'company') {
-      const companyCount = await countWhere(ORG_NODES_TABLE, { type: 'company' });
-      if (companyCount > 0) {
-        return conflictError('توجد عقدة شركة بالفعل — الهيكل له جذر واحد');
+      const companyCount = nodes.filter((n) => n.type === 'company' || n.type === 'general_administration').length;
+      if (!parentId) {
+        // Legacy bootstrap: a root company is only the FIRST node of
+        // an empty (or company-less) tree; with a GA or another
+        // company present the canonical parent is required.
+        if (companyCount > 0) {
+          return conflictError('الشركات تُنشأ تحت الإدارة العامة — الهيكل له جذر واحد');
+        }
+      } else {
+        const parentLevel = resolveOrgNodeLevel(index, parentId);
+        if (parentLevel !== 'general_administration') {
+          return validationError('الشركة يجب أن تتبع الإدارة العامة');
+        }
       }
     }
 

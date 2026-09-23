@@ -187,7 +187,11 @@ export interface AnalyticsFollowUpAnalysis {
 export interface AnalyticsDealAnalysis {
   relationship: string;
   status: 'OK' | 'EMPTY';
-  total: number;
+  /** TRAVEL dimension (§DEAL-DATES) — deals departing in the window. */
+  travelTotal: number;
+  /** CLOSED dimension (§DEAL-DATES) — observed closures in the period
+   *  (null when the source dataset did not carry the field). */
+  closedTotal: number | null;
   byStatus: AnalyticsDistribution;
   cancellationRatePct: number | null;
   completionRatePctEcho: number | null;

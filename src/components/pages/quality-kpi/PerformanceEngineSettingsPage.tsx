@@ -21,6 +21,10 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { toast } from 'sonner';
 import { usePermissions } from '@/hooks/usePermissions';
+import { useLanguage } from '@/lib/i18n/language-context';
+import { formatDateTime, formatInteger, formatPercentage } from '@/lib/i18n/format';
+import { T } from '@/lib/i18n/T';
+import { translateUIText } from '@/lib/i18n/ui-text';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -135,6 +139,7 @@ interface EngineSectionProps {
 }
 
 function EngineSection({ id, title, description, badge, children }: EngineSectionProps) {
+  const { locale } = useLanguage();
   const Icon = SECTION_ICONS[id];
   return (
     <Card className="bg-slate-800/30 border-slate-700/40">
@@ -145,10 +150,10 @@ function EngineSection({ id, title, description, badge, children }: EngineSectio
           </div>
           <div className="min-w-0">
             <div className="flex items-center gap-2">
-              <h3 className="text-sm font-semibold text-slate-100">{title}</h3>
+              <h3 className="text-sm font-semibold text-slate-100">{translateUIText(title, locale)}</h3>
               {badge}
             </div>
-            <p className="text-xs text-slate-500">{description}</p>
+            <p className="text-xs text-slate-500">{translateUIText(description, locale)}</p>
           </div>
         </div>
         <Separator className="border-slate-700/40" />
@@ -169,6 +174,7 @@ interface SettingRowProps {
 }
 
 function SettingRow({ icon: Icon, title, description, children, showWarning, warningText }: SettingRowProps) {
+  const { locale } = useLanguage();
   return (
     <div className="flex items-center justify-between gap-4 py-3 border-b border-slate-800/60 last:border-0">
       <div className="flex items-start gap-3 min-w-0">
@@ -176,10 +182,10 @@ function SettingRow({ icon: Icon, title, description, children, showWarning, war
           <Icon className="size-4 text-blue-400" />
         </div>
         <div className="min-w-0">
-          <p className="text-sm font-medium text-slate-100">{title}</p>
-          <p className="text-xs text-slate-500">{description}</p>
+          <p className="text-sm font-medium text-slate-100">{translateUIText(title, locale)}</p>
+          <p className="text-xs text-slate-500">{translateUIText(description, locale)}</p>
           {showWarning && warningText && (
-            <p className="text-[10px] text-amber-400 mt-1">{warningText}</p>
+            <p className="text-[10px] text-amber-400 mt-1">{translateUIText(warningText, locale)}</p>
           )}
         </div>
       </div>
@@ -199,6 +205,7 @@ interface WeightEditorProps {
 }
 
 function WeightEditor({ form, onChange, disabled, weightTotal, isValid, schemeName }: WeightEditorProps) {
+  const { locale } = useLanguage();
   const weights = [
     { key: 'weightQuality', label: 'الجودة', color: 'text-orange-400', bg: 'bg-orange-500/10' },
     { key: 'weightDirectManager', label: 'المدير المباشر', color: 'text-brand-400', bg: 'bg-brand-500/10' },
@@ -210,13 +217,13 @@ function WeightEditor({ form, onChange, disabled, weightTotal, isValid, schemeNa
     <div className="space-y-3">
       {schemeName && (
         <p className="text-xs text-slate-500">
-          تعديل أوزان المخطط النشط: <span className="font-medium text-slate-300">{schemeName}</span>
+          <T>تعديل أوزان المخطط النشط: </T><span className="font-medium text-slate-300">{schemeName}</span>
         </p>
       )}
       <div className="grid grid-cols-2 gap-3">
         {weights.map(({ key, label, color, bg }) => (
           <div key={key} className="space-y-1">
-            <Label className="text-xs font-medium">{label}</Label>
+            <Label className="text-xs font-medium"><T>{label}</T></Label>
             <div className="relative">
               <Input
                 type="number" min={0} max={100} step={1}
@@ -233,11 +240,11 @@ function WeightEditor({ form, onChange, disabled, weightTotal, isValid, schemeNa
         ))}
       </div>
       <div className={cn('flex items-center justify-between py-2 px-3 rounded-lg text-sm font-medium', isValid ? 'bg-emerald-500/15 text-emerald-400' : 'bg-red-500/15 text-red-400')}>
-        <span>إجمالي الأوزان</span>
-        <span className="tabular-nums font-bold">{weightTotal}%</span>
+        <span><T>إجمالي الأوزان</T></span>
+        <span className="tabular-nums font-bold">{formatInteger(weightTotal, locale)}%</span>
       </div>
       {!isValid && (
-        <p className="text-[11px] text-red-400">يجب أن يساوي المجموع 100% بالضبط</p>
+        <p className="text-[11px] text-red-400"><T>يجب أن يساوي المجموع 100% بالضبط</T></p>
       )}
     </div>
   );
@@ -246,6 +253,7 @@ function WeightEditor({ form, onChange, disabled, weightTotal, isValid, schemeNa
 // ─── Page ─────────────────────────────────────────────────────
 export default function PerformanceEngineSettingsPage() {
   const { canView, canUpdate } = usePermissions('kpiSettings');
+  const { locale } = useLanguage();
   const { data: settingsData, isLoading: settingsLoading } = useKpiSettings();
   const { data: schemesData, isLoading: schemesLoading } = useKpiSchemes('ACTIVE');
   const updateSettings = useUpdateKpiSettings();
@@ -289,7 +297,7 @@ export default function PerformanceEngineSettingsPage() {
   if (!canView) {
     return (
       <div className="flex flex-col items-center justify-center py-24 text-slate-400">
-        <p>ليس لديك صلاحية للوصول إلى هذه الصفحة</p>
+        <p><T>ليس لديك صلاحية للوصول إلى هذه الصفحة</T></p>
       </div>
     );
   }
@@ -300,14 +308,14 @@ export default function PerformanceEngineSettingsPage() {
 
   async function handleSave() {
     // Validate settings
-    if (form.defaultScore < 0) { toast.error('الدرجة الافتراضية غير صحيحة'); return; }
-    if (form.minimumScore < 0) { toast.error('الحد الأدنى غير صحيح'); return; }
-    if (form.maximumBonus < 0) { toast.error('حد المكافأة غير صحيح'); return; }
+    if (form.defaultScore < 0) { toast.error(translateUIText('الدرجة الافتراضية غير صحيحة', locale)); return; }
+    if (form.minimumScore < 0) { toast.error(translateUIText('الحد الأدنى غير صحيح', locale)); return; }
+    if (form.maximumBonus < 0) { toast.error(translateUIText('حد المكافأة غير صحيح', locale)); return; }
     if (form.allowBonus && form.maximumBonus === 0) {
-      toast.warning('المكافآت مفعّلة لكن حدّها الأقصى صفر');
+      toast.warning(translateUIText('المكافآت مفعّلة لكن حدّها الأقصى صفر', locale));
     }
     if (!weightsValid) {
-      toast.error('يجب أن يساوي مجموع الأوزان 100%');
+      toast.error(translateUIText('يجب أن يساوي مجموع الأوزان 100%', locale));
       return;
     }
 
@@ -349,13 +357,13 @@ export default function PerformanceEngineSettingsPage() {
         });
         if (!res.ok) {
           const data = await res.json().catch(() => null);
-          throw new Error(data?.error || 'تعذّر حفظ حالة الأتمتة');
+          throw new Error(data?.error || translateUIText('تعذّر حفظ حالة الأتمتة', locale));
         }
       }
 
-      toast.success('تم حفظ إعدادات محرك الأداء');
+      toast.success(translateUIText('تم حفظ إعدادات محرك الأداء', locale));
     } catch (e) {
-      toast.error('فشل الحفظ', { description: e instanceof Error ? e.message : undefined });
+      toast.error(translateUIText('فشل الحفظ', locale), { description: e instanceof Error ? e.message : undefined });
     }
   }
 
@@ -369,12 +377,12 @@ export default function PerformanceEngineSettingsPage() {
         pageId="kpiSettings"
         icon={<Settings2 className="size-5" />}
         iconClassName="bg-blue-500/15 border-blue-500/30 text-blue-400"
-        title="إعدادات محرك الأداء"
-        description="تكوين مركزي لمحرك المؤشرات بالكامل — الجودة، الأوزان، الموارد البشرية، الحساب، الأتمتة"
+        title={translateUIText('إعدادات محرك الأداء', locale)}
+        description={translateUIText('تكوين مركزي لمحرك المؤشرات بالكامل — الجودة، الأوزان، الموارد البشرية، الحساب، الأتمتة', locale)}
         actions={canUpdate && (
           <Button onClick={handleSave} disabled={!canSave || updateSettings.isPending} className="gap-2">
             <Save className="size-4" />
-            {updateSettings.isPending ? 'جارٍ الحفظ...' : 'حفظ التغييرات'}
+            <T>{updateSettings.isPending ? 'جارٍ الحفظ...' : 'حفظ التغييرات'}</T>
           </Button>
         )}
       />
@@ -389,28 +397,28 @@ export default function PerformanceEngineSettingsPage() {
           <EngineSection id="quality" title="إعدادات الجودة" description="تكوين سلوك محرك الجودة ونقاط الخصم/المكافأة">
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div className="space-y-1">
-                <Label>الدرجة الابتدائية</Label>
+                <Label><T>الدرجة الابتدائية</T></Label>
                 <Input type="number" min={0} disabled={!canUpdate}
                   value={form.defaultScore}
                   onChange={(e) => setForm(f => ({ ...f, defaultScore: parseInt(e.target.value, 10) || 0 }))}
                   className="bg-slate-800/50 border-slate-700" />
-                <p className="text-[11px] text-slate-500">النقطة التي يبدأ منها كل موظف</p>
+                <p className="text-[11px] text-slate-500"><T>النقطة التي يبدأ منها كل موظف</T></p>
               </div>
               <div className="space-y-1">
-                <Label>الحد الأدنى للدرجة</Label>
+                <Label><T>الحد الأدنى للدرجة</T></Label>
                 <Input type="number" min={0} disabled={!canUpdate}
                   value={form.minimumScore}
                   onChange={(e) => setForm(f => ({ ...f, minimumScore: parseInt(e.target.value, 10) || 0 }))}
                   className="bg-slate-800/50 border-slate-700" />
-                <p className="text-[11px] text-slate-500">لا تنزل الدرجة beneath هذا الحد</p>
+                <p className="text-[11px] text-slate-500"><T>لا تنزل الدرجة beneath هذا الحد</T></p>
               </div>
               <div className="space-y-1">
-                <Label>حد المكافأة الأقصى</Label>
+                <Label><T>حد المكافأة الأقصى</T></Label>
                 <Input type="number" min={0} disabled={!canUpdate || !form.allowBonus}
                   value={form.maximumBonus}
                   onChange={(e) => setForm(f => ({ ...f, maximumBonus: parseInt(e.target.value, 10) || 0 }))}
                   className="bg-slate-800/50 border-slate-700" />
-                <p className="text-[11px] text-slate-500">سقف النقاط الإضافية المضافة</p>
+                <p className="text-[11px] text-slate-500"><T>سقف النقاط الإضافية المضافة</T></p>
               </div>
             </div>
             <Separator className="border-slate-700/40" />
@@ -437,7 +445,7 @@ export default function PerformanceEngineSettingsPage() {
             description="تكوين أوزان مكونات المخطط النشط — يجب أن يساوي المجموع 100%"
             badge={
               <Badge variant="outline" className="bg-brand-500/10 text-brand-400 border-brand-500/30 text-[10px]">
-                مخطط: {activeScheme?.name ?? "غير محدد"}
+                <T>مخطط: </T>{activeScheme?.name ?? translateUIText('غير محدد', locale)}
               </Badge>
             }
           >
@@ -451,8 +459,7 @@ export default function PerformanceEngineSettingsPage() {
             />
             {activeScheme && (
               <p className="text-xs text-slate-500">
-                ملاحظة: تعديل الأوزان يغيّر مخطط "{activeScheme.name}" (إصدار {activeScheme.version}).
-                الأوزان المجمّدة في الأشهر المغلقة لا تتأثر.
+                <T>ملاحظة: تعديل الأوزان يغيّر مخطط </T>"{activeScheme.name}"<T> (إصدار </T>{activeScheme.version}<T>). الأوزان المجمّدة في الأشهر المغلقة لا تتأثر.</T>
               </p>
             )}
           </EngineSection>
@@ -461,21 +468,21 @@ export default function PerformanceEngineSettingsPage() {
           <EngineSection id="hr" title="إعدادات الموارد البشرية" description="تكوين سلوك مكون HR في مخطط المؤشرات">
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div className="space-y-1">
-                <Label>حد مكافأة HR الأقصى</Label>
+                <Label><T>حد مكافأة HR الأقصى</T></Label>
                 <Input type="number" min={0} disabled={!canUpdate}
                   value={form.hrMaximumBonus}
                   onChange={(e) => setForm(f => ({ ...f, hrMaximumBonus: parseInt(e.target.value, 10) || 0 }))}
                   className="bg-slate-800/50 border-slate-700" />
-                <p className="text-[11px] text-slate-500">سقف النقاط الإضافية لمكون HR</p>
+                <p className="text-[11px] text-slate-500"><T>سقف النقاط الإضافية لمكون HR</T></p>
               </div>
               <div className="space-y-1">
-                <Label>تفعيل مكافآت HR</Label>
+                <Label><T>تفعيل مكافآت HR</T></Label>
                 <div className="mt-1">
                   <Switch checked={form.hrAllowBonus} onCheckedChange={v => setForm(f => ({ ...f, hrAllowBonus: v }))} disabled={!canUpdate} />
                 </div>
               </div>
               <div className="space-y-1">
-                <Label>اعتماد HR إلزامي</Label>
+                <Label><T>اعتماد HR إلزامي</T></Label>
                 <div className="mt-1">
                   <Switch checked={form.hrApprovalRequired} onCheckedChange={v => setForm(f => ({ ...f, hrApprovalRequired: v }))} disabled={!canUpdate} />
                 </div>
@@ -487,7 +494,7 @@ export default function PerformanceEngineSettingsPage() {
           <EngineSection id="calculation" title="طريقة حساب الأداء" description="إعدادات خوارزمية حساب الاتجاه والمتوسطات">
             <div className="space-y-3">
               <div>
-                <Label className="block text-sm font-medium mb-1">طريقة حساب الاتجاه</Label>
+                <Label className="block text-sm font-medium mb-1"><T>طريقة حساب الاتجاه</T></Label>
                 <Select
                   value={form.trendCalculation}
                   onValueChange={v => setForm(f => ({ ...f, trendCalculation: v as TrendCalculation }))}
@@ -498,12 +505,12 @@ export default function PerformanceEngineSettingsPage() {
                   </SelectTrigger>
                   <SelectContent>
                     {TREND_OPTIONS.map(opt => (
-                      <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                      <SelectItem key={opt.value} value={opt.value}><T>{opt.label}</T></SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
                 <p className="text-xs text-slate-500">
-                  {TREND_OPTIONS.find(o => o.value === form.trendCalculation)?.hint}
+                  <T>{TREND_OPTIONS.find(o => o.value === form.trendCalculation)?.hint ?? ''}</T>
                 </p>
               </div>
             </div>
@@ -519,29 +526,29 @@ export default function PerformanceEngineSettingsPage() {
               {/* §15 — REAL metrics only. — و لم يتم التنفيذ بعد عندما لا يوجد سجل تنفيذ. */}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div className="space-y-1">
-                  <Label>قواعد نشطة</Label>
+                  <Label><T>قواعد نشطة</T></Label>
                   <Badge variant="outline" className="bg-blue-500/15 text-blue-400 border-blue-500/30 text-sm">
-                    {automationStats ? `${automationStats.active} قواعد نشطة` : '—'}
+                    {automationStats ? (<>{formatInteger(automationStats.active, locale)} <T>قواعد نشطة</T></>) : '—'}
                   </Badge>
                 </div>
                 <div className="space-y-1">
-                  <Label>معدل النجاح</Label>
+                  <Label><T>معدل النجاح</T></Label>
                   <Badge variant="outline" className="bg-emerald-500/15 text-emerald-400 border-emerald-500/30 text-sm">
-                    {automationStats?.successRate != null ? `${automationStats.successRate}%` : '—'}
+                    {automationStats?.successRate != null ? formatPercentage(automationStats.successRate, { locale }) : '—'}
                   </Badge>
                 </div>
                 <div className="space-y-1">
-                  <Label>آخر تنفيذ</Label>
+                  <Label><T>آخر تنفيذ</T></Label>
                   <Badge variant="outline" className="bg-slate-500/15 text-slate-400 border-slate-500/30 text-sm">
                     {automationStats?.lastExecutedAt
-                      ? new Date(automationStats.lastExecutedAt).toLocaleString('ar-EG')
-                      : 'لم يتم التنفيذ بعد'}
+                      ? formatDateTime(automationStats.lastExecutedAt, locale)
+                      : <T>لم يتم التنفيذ بعد</T>}
                   </Badge>
                 </div>
               </div>
 
               <p className="text-xs text-slate-500">
-                إدارة القواعد التفصيلية (إنشاء/تعديل/حذف) تتم من صفحة "الأتمتة والقواعد".
+                <T>إدارة القواعد التفصيلية (إنشاء/تعديل/حذف) تتم من صفحة "الأتمتة والقواعد".</T>
               </p>
             </div>
           </EngineSection>
@@ -549,14 +556,14 @@ export default function PerformanceEngineSettingsPage() {
           {/* Status badge */}
           {dirty && canUpdate && (
             <Badge variant="outline" className="text-amber-400 border-amber-500/30 bg-amber-500/10 block text-center py-1.5">
-              لديك تغييرات غير محفوظة
+              <T>لديك تغييرات غير محفوظة</T>
             </Badge>
           )}
 
           {!canUpdate && (
             <div className="flex items-center justify-center gap-2 text-xs text-amber-400">
               <Shield className="size-3.5" />
-              <span>عرض فقط — تعديل الإعدادات يتطلب صلاحية المدير</span>
+              <span><T>عرض فقط — تعديل الإعدادات يتطلب صلاحية المدير</T></span>
             </div>
           )}
         </React.Fragment>

@@ -534,8 +534,18 @@ export function analyzeFollowUps(
   };
 }
 
-export interface AnalyticsDealResult extends DomainAnalysisBase {
+// §DEAL-DATES — the deals analysis is OPERATIONAL (travel volume,
+// status, cancellation — never a sales target). `total` is renamed
+// `travelTotal` to make the TRAVEL (departureDate) dimension
+// explicit; closedTotal is echoed from the dataset's CLOSED
+// (closedAt) dimension for transparency only.
+export interface AnalyticsDealResult extends Omit<DomainAnalysisBase, 'total'> {
   status: 'OK' | 'EMPTY';
+  /** TRAVEL dimension — deals departing in the period's monthly window. */
+  travelTotal: number;
+  /** CLOSED dimension echo — observed closures in the reported period
+   *  (null when the dataset did not carry the field). */
+  closedTotal: number | null;
   byStatus: AnalyticsDistribution;
   cancellationRatePct: number | null;
   completionRatePctEcho: number | null;
@@ -548,7 +558,8 @@ export function analyzeDeals(
   outsideMonths: Set<string>,
 ): AnalyticsDealResult {
   const deals = asRec(dataset.deals);
-  const total = intOr(deals.total);
+  const total = intOr(deals.travelTotal);
+  const closedTotal = numOf(deals.closedTotal);
   const canceled = intOr(deals.canceled);
   const { series, outside } = monthlySeries(window, deals.monthly);
   for (const m of outside) outsideMonths.add(m);
@@ -561,7 +572,8 @@ export function analyzeDeals(
   return {
     relationship: relationshipOf(deals),
     status: total > 0 ? 'OK' : 'EMPTY',
-    total,
+    travelTotal: total,
+    closedTotal,
     byStatus: recordDistribution(deals.byStatus),
     cancellationRatePct: pct(canceled, total),
     completionRatePctEcho: r(numOf(deals.completionRate), 1),

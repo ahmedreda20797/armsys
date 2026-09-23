@@ -195,9 +195,12 @@ export interface TestTokens {
 export async function registerFixtures(): Promise<TestTokens> {
   registerUser({ id: 'u-admin', email: 'admin@test.local', name: 'مسؤول النظام', role: 'admin' });
   registerUser({ id: 'u-user', email: 'user@test.local', name: 'مستخدم عادي', role: 'user' });
-  registerUser({ id: 'u-hr', email: 'hr@test.local', name: 'موارد بشرية', role: 'hr' });
+  // §ORG-BOUNDARY: HR/quality presets carry employees scope 'all' — to
+  // make them resolve the whole test company (not fail-closed), their
+  // user records need an explicit boundary override of the GA root.
+  registerUser({ id: 'u-hr', email: 'hr@test.local', name: 'موارد بشرية', role: 'hr', orgBoundaryNodeIds: ['ga'] });
   registerUser({ id: 'u-manager', email: 'manager@test.local', name: 'مدير', role: 'manager' });
-  registerUser({ id: 'u-quality', email: 'quality@test.local', name: 'جودة', role: 'quality' });
+  registerUser({ id: 'u-quality', email: 'quality@test.local', name: 'جودة', role: 'quality', orgBoundaryNodeIds: ['ga'] });
   const [adminToken, userToken, hrToken, managerToken, qualityToken] = await Promise.all([
     mintToken({ userId: 'u-admin', email: 'admin@test.local', role: 'admin' }),
     mintToken({ userId: 'u-user', email: 'user@test.local', role: 'user' }),

@@ -31,6 +31,10 @@ import {
 import { Award, Banknote, CalendarDays, Clock, History, Loader2, TrendingUp } from 'lucide-react';
 import { authFetch } from '@/lib/api-fetch';
 import { generateMonthOptions } from '@/lib/date-utils';
+import { T } from '@/lib/i18n/T';
+import { translateUIText } from '@/lib/i18n/ui-text';
+import { useLanguage } from '@/lib/i18n/language-context';
+import { formatMonthKey } from '@/lib/i18n/format';
 
 // ─── Types (response of /api/employee-performance/[employeeId]) ───
 
@@ -110,17 +114,6 @@ type ScopeKind =
 
 // ─── Helpers ───
 
-const MONTH_LABELS_AR = [
-  'يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو',
-  'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر',
-];
-
-function formatMonthAr(monthKey: string): string {
-  const [y, m] = monthKey.split('-');
-  const idx = parseInt(m, 10) - 1;
-  if (Number.isNaN(idx) || idx < 0 || idx > 11) return monthKey;
-  return `${MONTH_LABELS_AR[idx]} ${y}`;
-}
 
 function scoreColor(value: number): string {
   if (value >= 90) return 'text-emerald-400';
@@ -182,28 +175,29 @@ function CareerSummaryCard({ title, icon, career, unit, valueLabel, worstLabel }
   valueLabel: string;
   worstLabel: string;
 }) {
+  const { locale } = useLanguage();
   return (
     <Card className="bg-slate-800/40 border border-slate-700/30">
       <CardContent className="p-4 space-y-2.5">
         <h4 className="text-white text-sm font-semibold flex items-center gap-2">{icon}{title}</h4>
         {career.sampleSize === 0 ? (
-          <EmptyState text="لا توجد نتائج شهرية مخزنة بعد" />
+          <EmptyState text={translateUIText('لا توجد نتائج شهرية مخزنة بعد', locale)} />
         ) : (
           <>
             <div className="grid grid-cols-2 gap-2 text-xs">
               <div className="bg-slate-700/20 border border-slate-700/20 rounded-lg p-2">
-                <p className="text-slate-500 text-[10px] mb-0.5">عدد الشهور الموثقة</p>
+                <p className="text-slate-500 text-[10px] mb-0.5"><T>عدد الشهور الموثقة</T></p>
                 <p className="text-white font-bold">{career.sampleSize}</p>
               </div>
               <div className="bg-slate-700/20 border border-slate-700/20 rounded-lg p-2">
-                <p className="text-slate-500 text-[10px] mb-0.5">الفترة</p>
+                <p className="text-slate-500 text-[10px] mb-0.5"><T>الفترة</T></p>
                 <p className="text-white font-bold text-[11px]" dir="ltr">
                   {career.firstMonth} ← {career.lastMonth}
                 </p>
               </div>
               {career.averageValue !== null && (
                 <div className="bg-slate-700/20 border border-slate-700/20 rounded-lg p-2">
-                  <p className="text-slate-500 text-[10px] mb-0.5">المتوسط الشهري</p>
+                  <p className="text-slate-500 text-[10px] mb-0.5"><T>المتوسط الشهري</T></p>
                   <p className="text-white font-bold">{career.averageValue}{unit}</p>
                 </div>
               )}
@@ -226,9 +220,9 @@ function CareerSummaryCard({ title, icon, career, unit, valueLabel, worstLabel }
                 </div>
               )}
               <div className="bg-slate-700/20 border border-slate-700/20 rounded-lg p-2">
-                <p className="text-slate-500 text-[10px] mb-0.5">التغير الشهري الأخير</p>
+                <p className="text-slate-500 text-[10px] mb-0.5"><T>التغير الشهري الأخير</T></p>
                 {career.monthOverMonthDeltas.length === 0 ? (
-                  <p className="text-slate-500 font-bold text-[11px]">لا يوجد اتجاه بعد (يتطلب شهرين)</p>
+                  <p className="text-slate-500 font-bold text-[11px]"><T>لا يوجد اتجاه بعد (يتطلب شهرين)</T></p>
                 ) : (
                   <p className="text-white font-bold" dir="ltr">
                     {(() => {
@@ -256,6 +250,7 @@ function DevelopmentBars({ title, points, unit }: {
   points: { month: string; value: number }[];
   unit: string;
 }) {
+  const { locale } = useLanguage();
   if (points.length === 0) return null;
   return (
     <div className="space-y-2">
@@ -263,7 +258,7 @@ function DevelopmentBars({ title, points, unit }: {
       <div className="space-y-1.5">
         {points.map((point) => (
           <div key={point.month} className="flex items-center gap-2 text-xs">
-            <span className="text-slate-500 w-24 flex-shrink-0" dir="ltr">{formatMonthAr(point.month)}</span>
+            <span className="text-slate-500 w-24 flex-shrink-0" dir="ltr">{formatMonthKey(point.month, locale)}</span>
             <div className="flex-1 h-2.5 rounded-full bg-slate-700/40 overflow-hidden">
               <motion.div
                 className={`h-full rounded-full ${scoreBarColor(point.value)}`}
@@ -283,6 +278,7 @@ function DevelopmentBars({ title, points, unit }: {
 // ─── Main Section ───
 
 export function EmployeePerformanceSection({ employeeId }: { employeeId: string }) {
+  const { locale } = useLanguage();
   const [scopeKind, setScopeKind] = useState<ScopeKind>('career');
   const [selectedMonth, setSelectedMonth] = useState<string>(() => generateMonthOptions('YYYY-MM')[1] ?? '');
   const [data, setData] = useState<PerformanceResponse | null>(null);
@@ -363,7 +359,7 @@ export function EmployeePerformanceSection({ employeeId }: { employeeId: string 
   }
 
   const { current, history, career } = data;
-  const currentScopeLabel = `الشهر الحالي — ${formatMonthAr(data.currentMonthKey)}`;
+  const currentScopeLabel = translateUIText('الشهر الحالي — ', locale) + formatMonthKey(data.currentMonthKey, locale);
 
   // Chronological stored series for the development view (oldest → newest,
   // current month appended only when its own stored result exists).
@@ -386,7 +382,7 @@ export function EmployeePerformanceSection({ employeeId }: { employeeId: string 
               <div className="w-7 h-7 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center">
                 <CalendarDays className="size-4 text-emerald-400" />
               </div>
-              نظرة الشهر الحالي
+              <T>نظرة الشهر الحالي</T>
             </h3>
             <Badge variant="outline" className="border-emerald-500/30 text-emerald-400 bg-emerald-500/5 text-xs rounded-lg">
               {currentScopeLabel}
@@ -395,16 +391,16 @@ export function EmployeePerformanceSection({ employeeId }: { employeeId: string 
 
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             {/* Attendance — stored canonical result */}
-            <DomainCard title="الحضور" icon={<Clock className="size-4 text-emerald-400" />} scopeLabel="الشهر الحالي">
+            <DomainCard title={translateUIText('الحضور', locale)} icon={<Clock className="size-4 text-emerald-400" />} scopeLabel={translateUIText('الشهر الحالي', locale)}>
               {current.attendance ? (
                 <>
                   <p className={`text-2xl font-bold ${scoreColor(current.attendance.compliance)}`}>
                     {current.attendance.compliance}%
-                    <span className="text-slate-500 text-xs font-normal mr-1.5">نسبة الالتزام</span>
+                    <span className="text-slate-500 text-xs font-normal mr-1.5"><T>نسبة الالتزام</T></span>
                   </p>
                   <div className="text-xs text-slate-400 space-y-1">
-                    <p>مؤشر أداء الحضور (KPI): <span className="text-white font-semibold">{current.attendance.compliance} / 100</span></p>
-                    <p>خصم أيام الحضور: <span className="text-white font-semibold">{current.attendance.attendanceDeductionDays}</span> يوم</p>
+                    <p><T>مؤشر أداء الحضور (KPI): </T><span className="text-white font-semibold">{current.attendance.compliance} / 100</span></p>
+                    <p><T>خصم أيام الحضور: </T><span className="text-white font-semibold">{current.attendance.attendanceDeductionDays}</span><T> يوم</T></p>
                     <p>حضور {current.attendance.presentDays} · تأخير {current.attendance.lateDays} · غياب {current.attendance.absentDays}</p>
                   </div>
                 </>
@@ -414,7 +410,7 @@ export function EmployeePerformanceSection({ employeeId }: { employeeId: string 
             </DomainCard>
 
             {/* Quality — stored month snapshot entry */}
-            <DomainCard title="الجودة" icon={<Award className="size-4 text-orange-400" />} scopeLabel="الشهر الحالي">
+            <DomainCard title={translateUIText('الجودة', locale)} icon={<Award className="size-4 text-orange-400" />} scopeLabel={translateUIText('الشهر الحالي', locale)}>
               {current.quality ? (
                 <>
                   <p className={`text-2xl font-bold ${scoreColor(current.quality.score)}`}>
@@ -428,38 +424,38 @@ export function EmployeePerformanceSection({ employeeId }: { employeeId: string 
                     </Badge>
                   </p>
                   <div className="text-xs text-slate-400 space-y-1">
-                    <p>نقاط الخصم: <span className="text-white font-semibold">{current.quality.deductionPoints}</span></p>
-                    <p>عدد الملاحظات: <span className="text-white font-semibold">{current.quality.observationCount}</span></p>
+                    <p><T>نقاط الخصم: </T><span className="text-white font-semibold">{current.quality.deductionPoints}</span></p>
+                    <p><T>عدد الملاحظات: </T><span className="text-white font-semibold">{current.quality.observationCount}</span></p>
                   </div>
                 </>
               ) : (
-                <EmptyState text="لا توجد لقطة جودة مخزنة لهذا الشهر — الجودة المباشرة تُعرض في تبويب الجودة" />
+                <EmptyState text={translateUIText('لا توجد لقطة جودة مخزنة لهذا الشهر — الجودة المباشرة تُعرض في تبويب الجودة', locale)} />
               )}
             </DomainCard>
 
             {/* HR deductions — own attributable domain */}
-            <DomainCard title="خصومات HR" icon={<Banknote className="size-4 text-pink-400" />} scopeLabel="الشهر الحالي">
+            <DomainCard title={translateUIText('خصومات HR', locale)} icon={<Banknote className="size-4 text-pink-400" />} scopeLabel={translateUIText('الشهر الحالي', locale)}>
               {current.hr ? (
                 <>
                   <p className="text-2xl font-bold text-white">
                     {current.hr.deductionDays}
-                    <span className="text-slate-500 text-xs font-normal mr-1.5">يوم خصم</span>
+                    <span className="text-slate-500 text-xs font-normal mr-1.5"><T>يوم خصم</T></span>
                   </p>
                   <div className="text-xs text-slate-400 space-y-1">
-                    <p>عدد الخصومات: <span className="text-white font-semibold">{current.hr.deductionCount}</span></p>
+                    <p><T>عدد الخصومات: </T><span className="text-white font-semibold">{current.hr.deductionCount}</span></p>
                     {current.hr.deductionAmount > 0 && (
-                      <p>خصم مالي: <span className="text-white font-semibold">{current.hr.deductionAmount}</span> جنيه</p>
+                      <p><T>خصم مالي: </T><span className="text-white font-semibold">{current.hr.deductionAmount}</span><T> جنيه</T></p>
                     )}
                   </div>
                 </>
               ) : (
-                <EmptyState text="لا توجد خصومات HR لهذا الشهر" />
+                <EmptyState text={translateUIText('لا توجد خصومات HR لهذا الشهر', locale)} />
               )}
             </DomainCard>
           </div>
 
           <p className="text-slate-600 text-[10px]">
-            قيم الشهر الحالي من النتائج المخزنة فقط — لا تُنقل قيم الشهور السابقة إلى الشهر الحالي، ولا يُعرض مؤشر أداء نهائي (عمل مستقبلي).
+            <T>قيم الشهر الحالي من النتائج المخزنة فقط — لا تُنقل قيم الشهور السابقة إلى الشهر الحالي، ولا يُعرض مؤشر أداء نهائي (عمل مستقبلي).</T>
           </p>
         </CardContent>
       </Card>
@@ -472,7 +468,7 @@ export function EmployeePerformanceSection({ employeeId }: { employeeId: string 
               <div className="w-7 h-7 rounded-lg bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center">
                 <History className="size-4 text-cyan-400" />
               </div>
-              السجل الشهري
+              <T>السجل الشهري</T>
             </h3>
 
             {/* Shared TimeScope selector — no second range system */}
@@ -493,11 +489,11 @@ export function EmployeePerformanceSection({ employeeId }: { employeeId: string 
               {scopeKind === 'selected_month' && (
                 <Select value={selectedMonth} onValueChange={changeSelectedMonth}>
                   <SelectTrigger className="w-36 h-8 text-xs bg-slate-900/60 border-slate-700/50">
-                    <SelectValue placeholder="اختر شهراً" />
+                    <SelectValue placeholder={translateUIText('اختر شهراً', locale)} />
                   </SelectTrigger>
                   <SelectContent>
                     {monthOptions.map((month) => (
-                      <SelectItem key={month} value={month}>{formatMonthAr(month)}</SelectItem>
+                      <SelectItem key={month} value={month}>{formatMonthKey(month, locale)}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
@@ -516,24 +512,24 @@ export function EmployeePerformanceSection({ employeeId }: { employeeId: string 
           ) : history.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-10">
               <CalendarDays className="size-8 text-slate-600 mb-2" />
-              <p className="text-slate-400 text-sm">لا توجد نتائج شهرية مخزنة في هذا النطاق</p>
-              <p className="text-slate-600 text-xs mt-1">الشهور تظهر هنا بعد توليد نتيجة الحضور أو إغلاق لقطة الجودة الخاصة بها</p>
+              <p className="text-slate-400 text-sm"><T>لا توجد نتائج شهرية مخزنة في هذا النطاق</T></p>
+              <p className="text-slate-600 text-xs mt-1"><T>الشهور تظهر هنا بعد توليد نتيجة الحضور أو إغلاق لقطة الجودة الخاصة بها</T></p>
             </div>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm min-w-[560px]">
                 <thead>
                   <tr className="text-slate-500 text-xs border-b border-slate-700/40">
-                    <th className="text-right font-medium py-2 pl-2">الشهر</th>
-                    <th className="text-right font-medium py-2">الحضور (نتيجة مخزنة)</th>
-                    <th className="text-right font-medium py-2">الجودة (لقطة مخزنة)</th>
-                    <th className="text-right font-medium py-2">خصومات HR</th>
+                    <th className="text-right font-medium py-2 pl-2"><T>الشهر</T></th>
+                    <th className="text-right font-medium py-2"><T>الحضور (نتيجة مخزنة)</T></th>
+                    <th className="text-right font-medium py-2"><T>الجودة (لقطة مخزنة)</T></th>
+                    <th className="text-right font-medium py-2"><T>خصومات HR</T></th>
                   </tr>
                 </thead>
                 <tbody>
                   {history.map((row) => (
                     <tr key={row.month} className="border-b border-slate-700/20 hover:bg-slate-800/40 transition-colors">
-                      <td className="py-2.5 pl-2 text-white font-medium" dir="ltr">{formatMonthAr(row.month)}</td>
+                      <td className="py-2.5 pl-2 text-white font-medium" dir="ltr">{formatMonthKey(row.month, locale)}</td>
                       <td className="py-2.5">
                         {row.attendance ? (
                           <span>
@@ -571,7 +567,7 @@ export function EmployeePerformanceSection({ employeeId }: { employeeId: string 
           )}
 
           <p className="text-slate-600 text-[10px]">
-            القيم التاريخية تُقرأ من النتائج المخزنة كما وُلّدت — لا تُعاد حسابها من البيانات الخام، ولا تتأثر بتغييرات الموظف أو القواعد الحالية.
+            <T>القيم التاريخية تُقرأ من النتائج المخزنة كما وُلّدت — لا تُعاد حسابها من البيانات الخام، ولا تتأثر بتغييرات الموظف أو القواعد الحالية.</T>
           </p>
         </CardContent>
       </Card>
@@ -584,37 +580,37 @@ export function EmployeePerformanceSection({ employeeId }: { employeeId: string 
               <div className="w-7 h-7 rounded-lg bg-brand-500/10 border border-brand-500/20 flex items-center justify-center">
                 <TrendingUp className="size-4 text-brand-400" />
               </div>
-              الملخص الوظيفي
+              <T>الملخص الوظيفي</T>
             </h3>
             <Badge variant="outline" className="border-brand-500/30 text-brand-400 bg-brand-500/5 text-xs rounded-lg">
-              المسار الوظيفي (كل الفترات)
+              <T>المسار الوظيفي (كل الفترات)</T>
             </Badge>
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
             <CareerSummaryCard
-              title="الحضور"
+              title={translateUIText('الحضور', locale)}
               icon={<Clock className="size-4 text-emerald-400" />}
               career={career.attendance}
               unit="%"
-              valueLabel="أفضل شهر التزام"
-              worstLabel="أقل شهر التزام"
+              valueLabel={translateUIText('أفضل شهر التزام', locale)}
+              worstLabel={translateUIText('أقل شهر التزام', locale)}
             />
             <CareerSummaryCard
-              title="الجودة"
+              title={translateUIText('الجودة', locale)}
               icon={<Award className="size-4 text-orange-400" />}
               career={career.quality}
               unit=""
-              valueLabel="أفضل شهر"
-              worstLabel="أضعف شهر"
+              valueLabel={translateUIText('أفضل شهر', locale)}
+              worstLabel={translateUIText('أضعف شهر', locale)}
             />
             <CareerSummaryCard
-              title="خصومات HR"
+              title={translateUIText('خصومات HR', locale)}
               icon={<Banknote className="size-4 text-pink-400" />}
               career={career.hr}
-              unit=" يوم"
-              valueLabel="أعلى شهر خصومات"
-              worstLabel="أقل شهر خصومات"
+              unit={translateUIText(' يوم', locale)}
+              valueLabel={translateUIText('أعلى شهر خصومات', locale)}
+              worstLabel={translateUIText('أقل شهر خصومات', locale)}
             />
           </div>
         </CardContent>
@@ -629,18 +625,18 @@ export function EmployeePerformanceSection({ employeeId }: { employeeId: string 
                 <div className="w-7 h-7 rounded-lg bg-blue-500/10 border border-blue-500/20 flex items-center justify-center">
                   <TrendingUp className="size-4 text-blue-400" />
                 </div>
-                تطور الأداء (عرض تاريخي)
+                <T>تطور الأداء (عرض تاريخي)</T>
               </h3>
               <Badge variant="outline" className="border-slate-600/40 text-slate-400 text-[10px] rounded-md">
-                قيم شهرية مخزنة — من الأقدم إلى الأحدث
+                <T>قيم شهرية مخزنة — من الأقدم إلى الأحدث</T>
               </Badge>
             </div>
 
-            <DevelopmentBars title="نسبة الالتزام بالحضور (نتائج مخزنة)" points={attendanceSeries} unit="%" />
-            <DevelopmentBars title="درجة الجودة (لقطات مخزنة)" points={qualitySeries} unit="" />
+            <DevelopmentBars title={translateUIText('نسبة الالتزام بالحضور (نتائج مخزنة)', locale)} points={attendanceSeries} unit="%" />
+            <DevelopmentBars title={translateUIText('درجة الجودة (لقطات مخزنة)', locale)} points={qualitySeries} unit="" />
 
             <p className="text-slate-600 text-[10px]">
-              عرض تاريخي للقيم الشهرية الموثقة فقط — بدون نظام تقييم جديد وبدون مؤشر أداء نهائي (عمل مستقبلي).
+              <T>عرض تاريخي للقيم الشهرية الموثقة فقط — بدون نظام تقييم جديد وبدون مؤشر أداء نهائي (عمل مستقبلي).</T>
             </p>
           </CardContent>
         </Card>

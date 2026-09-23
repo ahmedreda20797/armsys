@@ -4,7 +4,10 @@ import { useState, useEffect, useRef, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { usePermissions } from '@/hooks/usePermissions';
 import { usePageState } from '@/hooks/use-page-state';
-import { formatMonthLabelAr } from '@/lib/month-label';
+import { T } from '@/lib/i18n/T';
+import { translateUIText } from '@/lib/i18n/ui-text';
+import { useLanguage } from '@/lib/i18n/language-context';
+import { formatInteger, formatMonthKey } from '@/lib/i18n/format';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -81,6 +84,7 @@ const MONTH_OPTIONS = generateMonthOptions();
 
 export default function BiometricPage() {
   const { canEdit, canUpload, canDelete, isAdmin } = usePermissions('biometric');
+  const { locale } = useLanguage();
   const [records, setRecords] = useState<BiometricWithEmployee[]>([]);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [loading, setLoading] = useState(true);
@@ -235,14 +239,13 @@ export default function BiometricPage() {
 
     for (const month of sortedMonths) {
       const recs = monthMap.get(month)!;
-      const [y, m] = month.split('-');
-      const monthIdx = parseInt(m, 10) - 1;
-      const label = `${ARABIC_MONTHS[monthIdx]} ${y}`;
+      // App-generated month header — canonical formatter, locale-aware.
+      const label = formatMonthKey(month, locale);
       groups.push({ month, label, count: recs.length, records: recs });
     }
 
     return groups;
-  }, [filtered]);
+  }, [filtered, locale]);
 
   // Available months in current data (for clear dialog)
   const availableMonths = useMemo(() => {
@@ -254,7 +257,9 @@ export default function BiometricPage() {
     return Array.from(monthsSet).sort().reverse();
   }, [records]);
 
-  const selectedMonthLabel = MONTH_OPTIONS.find(m => m.value === selectedMonth)?.label || 'جميع الأشهر';
+  const selectedMonthLabel = selectedMonth === 'all'
+    ? translateUIText('جميع الأشهر', locale)
+    : formatMonthKey(selectedMonth, locale);
 
   return (
     <div className="space-y-6">
@@ -265,7 +270,7 @@ export default function BiometricPage() {
         iconClassName="bg-brand-500/15 border-brand-500/30 text-brand-400"
         description={
           <>
-            {filtered.length} سجل بصري
+            {formatInteger(filtered.length, locale)} <T>سجل بصري</T>
             {selectedMonth !== 'all' && (
               <Badge variant="outline" className="border-brand-500/30 bg-brand-500/10 text-brand-400 mr-2 text-[10px]">
                 <Filter className="size-3 ml-1" />
@@ -284,7 +289,7 @@ export default function BiometricPage() {
                   disabled={uploading}
                   className="border-slate-600 text-slate-300 hover:bg-slate-700"
                 >
-                  {uploading ? 'جاري الرفع...' : <><Upload className="size-4" /> رفع Excel</>}
+                  {uploading ? <T>جاري الرفع...</T> : <><Upload className="size-4" /> <T>رفع Excel</T></>}
                 </Button>
                 <input
                   ref={fileInputRef}
@@ -302,7 +307,7 @@ export default function BiometricPage() {
                 className="border-red-500/30 text-red-400 hover:bg-red-500/10"
               >
                 <Trash2 className="size-4" />
-                مسح شهر
+                <T>مسح شهر</T>
               </Button>
             )}
           </>
@@ -314,7 +319,7 @@ export default function BiometricPage() {
         <div className="relative flex-1 max-w-md">
           <Search className="absolute right-3 top-1/2 -translate-y-1/2 size-4 text-slate-400" />
           <Input
-            placeholder="بحث باسم الموظف أو التاريخ..."
+            placeholder={translateUIText('بحث باسم الموظف أو التاريخ...', locale)}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="bg-slate-800 border-slate-600 text-white pr-10 placeholder:text-slate-500"
@@ -332,13 +337,13 @@ export default function BiometricPage() {
           <Calendar className="absolute right-3 top-1/2 -translate-y-1/2 size-4 text-slate-400 pointer-events-none" />
           <Select value={selectedMonth} onValueChange={setSelectedMonth}>
             <SelectTrigger className="bg-slate-800 border-slate-600 text-white pr-10">
-              <SelectValue placeholder="فلتر حسب الشهر" />
+              <SelectValue placeholder={translateUIText('فلتر حسب الشهر', locale)} />
             </SelectTrigger>
             <SelectContent>
               {MONTH_OPTIONS.map((m) => (
                 <SelectItem key={m.value} value={m.value} className="text-white">
                   <div className="flex items-center gap-2">
-                    <span>{m.label}</span>
+                    <span>{m.value === 'all' ? translateUIText('جميع الأشهر', locale) : formatMonthKey(m.value, locale)}</span>
                     {m.isArchived && (
                       <Archive className="size-3 text-slate-500" />
                     )}
@@ -352,10 +357,10 @@ export default function BiometricPage() {
           <Fingerprint className="absolute right-3 top-1/2 -translate-y-1/2 size-4 text-slate-400 pointer-events-none" />
           <Select value={selectedEmployee} onValueChange={setSelectedEmployee}>
             <SelectTrigger className="bg-slate-800 border-slate-600 text-white pr-10">
-              <SelectValue placeholder="فلتر حسب الموظف" />
+              <SelectValue placeholder={translateUIText('فلتر حسب الموظف', locale)} />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all" className="text-white">جميع الموظفين</SelectItem>
+              <SelectItem value="all" className="text-white"><T>جميع الموظفين</T></SelectItem>
               {employees.map((emp) => (
                 <SelectItem key={emp.id} value={emp.id} className="text-white">
                   {emp.name}
@@ -377,14 +382,14 @@ export default function BiometricPage() {
         <Card className="border-slate-700/50 bg-slate-800/50">
           <CardContent className="flex flex-col items-center justify-center py-16">
             <Fingerprint className="size-12 text-slate-600 mb-4" />
-            <p className="text-slate-400 text-lg font-medium">لا توجد سجلات</p>
+            <p className="text-slate-400 text-lg font-medium"><T>لا توجد سجلات</T></p>
             <p className="text-slate-500 text-sm mt-1">
               {/* §10/§56: the active period is NAMED in the empty state. */}
               {search
-                ? 'لم يتم العثور على نتائج'
+                ? <T>لم يتم العثور على نتائج</T>
                 : selectedMonth && selectedMonth !== 'all'
-                  ? `لا توجد سجلات بصمة في ${formatMonthLabelAr(selectedMonth)}.`
-                  : 'ارفع ملف Excel لإضافة البيانات'}
+                  ? <><T>لا توجد سجلات بصمة في </T>{formatMonthKey(selectedMonth, locale)}<T>.</T></>
+                  : <T>ارفع ملف Excel لإضافة البيانات</T>}
             </p>
           </CardContent>
         </Card>
@@ -404,7 +409,7 @@ export default function BiometricPage() {
                   <span className="text-white text-sm font-bold">{group.label}</span>
                 </div>
                 <Badge variant="outline" className="border-slate-600 text-slate-400 text-[10px]">
-                  {group.count} سجل
+                  {formatInteger(group.count, locale)} <T>سجل</T>
                 </Badge>
               </div>
 
@@ -413,10 +418,10 @@ export default function BiometricPage() {
                 <Table>
                   <TableHeader>
                     <TableRow className="border-slate-700 hover:bg-transparent">
-                      <TableHead className="text-slate-400 text-sm font-medium">الموظف</TableHead>
-                      <TableHead className="text-slate-400 text-sm font-medium">التاريخ</TableHead>
-                      <TableHead className="text-slate-400 text-sm font-medium">وقت الحضور</TableHead>
-                      <TableHead className="text-slate-400 text-sm font-medium">وقت الانصراف</TableHead>
+                      <TableHead className="text-slate-400 text-sm font-medium"><T>الموظف</T></TableHead>
+                      <TableHead className="text-slate-400 text-sm font-medium"><T>التاريخ</T></TableHead>
+                      <TableHead className="text-slate-400 text-sm font-medium"><T>وقت الحضور</T></TableHead>
+                      <TableHead className="text-slate-400 text-sm font-medium"><T>وقت الانصراف</T></TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -451,31 +456,26 @@ export default function BiometricPage() {
           <DialogHeader>
             <DialogTitle className="text-white flex items-center gap-2">
               <AlertTriangle className="size-5 text-red-400" />
-              مسح بيانات الشهر
+              <T>مسح بيانات الشهر</T>
             </DialogTitle>
             <DialogDescription className="text-slate-400">
-              سيتم حذف جميع سجلات البصمة للشهر المحدد. لا يمكن التراجع عن هذا الإجراء.
+              <T>سيتم حذف جميع سجلات البصمة للشهر المحدد. لا يمكن التراجع عن هذا الإجراء.</T>
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div className="space-y-2">
-              <Label className="text-slate-300">اختر الشهر</Label>
+              <Label className="text-slate-300"><T>اختر الشهر</T></Label>
               <Select value={clearMonth} onValueChange={setClearMonth}>
                 <SelectTrigger className="bg-slate-800 border-slate-600 text-white">
-                  <SelectValue placeholder="اختر شهراً" />
+                  <SelectValue placeholder={translateUIText('اختر شهراً', locale)} />
                 </SelectTrigger>
                 <SelectContent>
-                  {availableMonths.length > 0 ? availableMonths.map((m) => {
-                    const [y, mo] = m.split('-');
-                    const monthIdx = parseInt(mo, 10) - 1;
-                    const label = `${ARABIC_MONTHS[monthIdx]} ${y}`;
-                    return (
-                      <SelectItem key={m} value={m} className="text-white">
-                        {label}
-                      </SelectItem>
-                    );
-                  }) : (
-                    <div className="px-3 py-2 text-slate-500 text-sm">لا توجد بيانات لمسحها</div>
+                  {availableMonths.length > 0 ? availableMonths.map((m) => (
+                    <SelectItem key={m} value={m} className="text-white">
+                      {formatMonthKey(m, locale)}
+                    </SelectItem>
+                  )) : (
+                    <div className="px-3 py-2 text-slate-500 text-sm"><T>لا توجد بيانات لمسحها</T></div>
                   )}
                 </SelectContent>
               </Select>
@@ -487,14 +487,14 @@ export default function BiometricPage() {
               onClick={() => setIsClearOpen(false)}
               className="border-slate-600 text-slate-300"
             >
-              إلغاء
+              <T>إلغاء</T>
             </Button>
             <Button
               variant="destructive"
               onClick={handleClearMonth}
               disabled={clearing || !clearMonth}
             >
-              {clearing ? 'جاري المسح...' : 'مسح البيانات'}
+              {clearing ? <T>جاري المسح...</T> : <T>مسح البيانات</T>}
             </Button>
           </DialogFooter>
         </DialogContent>

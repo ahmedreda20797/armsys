@@ -75,6 +75,9 @@ import type { Employee } from '@/types';
 import { logCreate, logUpdate, logDelete } from '@/lib/activity-logger';
 import { toast } from 'sonner';
 import { authFetch } from '@/lib/api-fetch';
+import { T } from '@/lib/i18n/T';
+import { translateUIText } from '@/lib/i18n/ui-text';
+import { useLanguage } from '@/lib/i18n/language-context';
 
 // ── Employee form shape ──
 // The free-text department field is GONE: department/team are selected
@@ -199,6 +202,7 @@ const EmployeeRowActions = memo(function EmployeeRowActions({
 });
 
 export default function EmployeesPage() {
+  const { locale } = useLanguage();
   const { canEdit, canCreate, canUpdate, canDelete, canExport, canUpload, canSeeField, canDoAction } = usePermissions('employees');
   const { canViewPage } = usePermissions('employee360');
   const canOpenEmployee360 = canViewPage('employee360');
@@ -527,11 +531,11 @@ export default function EmployeesPage() {
       <DialogContent className="backdrop-blur-xl bg-slate-900 border-slate-700 max-w-lg">
         <DialogHeader>
           <DialogTitle className="text-white">{title}</DialogTitle>
-          <DialogDescription className="text-slate-400">أدخل بيانات الموظف</DialogDescription>
+          <DialogDescription className="text-slate-400"><T>أدخل بيانات الموظف</T></DialogDescription>
         </DialogHeader>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className="space-y-2">
-            <Label className="text-slate-300">كود الموظف</Label>
+            <Label className="text-slate-300"><T>كود الموظف</T></Label>
             <Input
               value={form.code}
               onChange={(e) => updateForm('code', e.target.value)}
@@ -541,7 +545,7 @@ export default function EmployeesPage() {
             />
           </div>
           <div className="space-y-2">
-            <Label className="text-slate-300">الاسم</Label>
+            <Label className="text-slate-300"><T>الاسم</T></Label>
             <Input
               value={form.name}
               onChange={(e) => updateForm('name', e.target.value)}
@@ -562,7 +566,7 @@ export default function EmployeesPage() {
           {editingEmployee && (
             <div className="sm:col-span-2 space-y-1">
               <p className="text-[10px] text-slate-500">
-                الإسناد الحالي:{' '}
+                <T>الإسناد الحالي:</T>{' '}
                 <span className="text-slate-300">
                   {editingEmployee.orgNodeId
                     ? (buildNodePathLabel(orgNodes, editingEmployee.orgNodeId) || 'عقدة تنظيمية')
@@ -577,20 +581,20 @@ export default function EmployeesPage() {
                   return (
                     <p className="text-[11px] text-amber-400 flex items-center gap-1.5">
                       <ArrowRightLeft className="size-3 shrink-0" />
-                      تغيير الإسناد = نقل تنظيمي — سيُطلب التأكيد عند الحفظ
+                      <T>تغيير الإسناد = نقل تنظيمي — سيُطلب التأكيد عند الحفظ</T>
                     </p>
                   );
                 }
                 return (
                   <p className="text-[10px] text-slate-500">
-                    للعرض فقط — نقل الموظف بين العقد يتم من صفحة الهيكل التنظيمي
+                    <T>للعرض فقط — نقل الموظف بين العقد يتم من صفحة الهيكل التنظيمي</T>
                   </p>
                 );
               })()}
             </div>
           )}
           <div className="space-y-2">
-            <Label className="text-slate-300">الوظيفة</Label>
+            <Label className="text-slate-300"><T>الوظيفة</T></Label>
             <Input
               value={form.position}
               onChange={(e) => updateForm('position', e.target.value)}
@@ -598,7 +602,7 @@ export default function EmployeesPage() {
             />
           </div>
           <div className="space-y-2">
-            <Label className="text-slate-300">بداية الدوام</Label>
+            <Label className="text-slate-300"><T>بداية الدوام</T></Label>
             <Input
               value={form.shiftStart}
               onChange={(e) => updateForm('shiftStart', e.target.value)}
@@ -608,7 +612,7 @@ export default function EmployeesPage() {
             />
           </div>
           <div className="space-y-2">
-            <Label className="text-slate-300">نهاية الدوام</Label>
+            <Label className="text-slate-300"><T>نهاية الدوام</T></Label>
             <Input
               value={form.shiftEnd}
               onChange={(e) => updateForm('shiftEnd', e.target.value)}
@@ -618,7 +622,7 @@ export default function EmployeesPage() {
             />
           </div>
           <div className="space-y-2">
-            <Label className="text-slate-300">تاريخ التعيين</Label>
+            <Label className="text-slate-300"><T>تاريخ التعيين</T></Label>
             <Input
               value={form.hireDate}
               onChange={(e) => updateForm('hireDate', e.target.value)}
@@ -628,7 +632,7 @@ export default function EmployeesPage() {
             />
           </div>
           <div className="space-y-2">
-            <Label className="text-slate-300">رقم الموبايل</Label>
+            <Label className="text-slate-300"><T>رقم الموبايل</T></Label>
             <Input
               value={form.mobile}
               onChange={(e) => updateForm('mobile', e.target.value)}
@@ -638,17 +642,17 @@ export default function EmployeesPage() {
             />
           </div>
           <div className="space-y-2 sm:col-span-2">
-            <Label className="text-slate-300">مكان الإقامة</Label>
+            <Label className="text-slate-300"><T>مكان الإقامة</T></Label>
             <Input
               value={form.residence}
               onChange={(e) => updateForm('residence', e.target.value)}
               className="bg-slate-800 border-slate-600 text-white"
-              placeholder="المدينة / المنطقة — قابلة للبحث"
+              placeholder={translateUIText('المدينة / المنطقة — قابلة للبحث', locale)}
             />
           </div>
           {editingEmployee && (
             <div className="space-y-2">
-              <Label className="text-slate-300">حالة الموظف</Label>
+              <Label className="text-slate-300"><T>حالة الموظف</T></Label>
               {/* M0.6-A lifecycle: deactivation preserves the employee and all history */}
               <Select value={form.status} onValueChange={(v) => updateForm('status', v)}>
                 <SelectTrigger className="bg-slate-800 border-slate-600 text-white">
@@ -675,7 +679,7 @@ export default function EmployeesPage() {
             }}
             className="border-slate-600 text-slate-300"
           >
-            إلغاء
+            <T>إلغاء</T>
           </Button>
           <Button
             onClick={handleSave}
@@ -683,7 +687,7 @@ export default function EmployeesPage() {
             className="bg-linear-to-r from-brand-600 to-brand-700 hover:from-brand-700 hover:to-brand-800 text-white h-9 px-5 shadow-lg shadow-brand-500/20 transition-all"
           >
             {isSaving ? (
-              <><Loader2 className="size-4 animate-spin" /> جاري الحفظ...</>
+              <><Loader2 className="size-4 animate-spin" /><T> جاري الحفظ...</T></>
             ) : 'حفظ'}
           </Button>
         </DialogFooter>
@@ -697,7 +701,7 @@ export default function EmployeesPage() {
       <PageHeaderBar
         icon={<Users className="size-5" />}
         iconClassName="bg-brand-500/15 border-brand-500/30 text-brand-400"
-        title="إدارة الموظفين"
+        title={translateUIText('إدارة الموظفين', locale)}
         description={`${filtered.length} من ${employees.length} موظف`}
         primaryAction={canCreate ? {
           label: 'إضافة موظف',
@@ -716,11 +720,11 @@ export default function EmployeesPage() {
               className="border-slate-600 text-slate-300 hover:bg-slate-700"
             >
               {uploading ? (
-                <><Loader2 className="size-4 animate-spin" /> جاري الرفع...</>
+                <><Loader2 className="size-4 animate-spin" /><T> جاري الرفع...</T></>
               ) : (
                 <>
                   <Upload className="size-4" />
-                  رفع Excel
+                  <T>رفع Excel</T>
                 </>
               )}
             </Button>
@@ -740,7 +744,7 @@ export default function EmployeesPage() {
         <div className="relative max-w-md flex-1 min-w-[240px]">
         <Search className="absolute right-3 top-1/2 -translate-y-1/2 size-4 text-slate-400" />
         <Input
-          placeholder="بحث بالاسم، الكود، القسم، الوظيفة، أو الموبايل..."
+          placeholder={translateUIText('بحث بالاسم، الكود، القسم، الوظيفة، أو الموبايل...', locale)}
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           className="bg-slate-800 border-slate-600 text-white pr-10 placeholder:text-slate-500"
@@ -756,10 +760,10 @@ export default function EmployeesPage() {
         </div>
         <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as 'all' | EmployeeStatus)}>
           <SelectTrigger className="bg-slate-800/70 border-slate-700/70 text-white w-32 h-10 text-sm">
-            <SelectValue placeholder="الحالة" />
+            <SelectValue placeholder={translateUIText('الحالة', locale)} />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all" className="text-white">كل الحالات</SelectItem>
+            <SelectItem value="all" className="text-white"><T>كل الحالات</T></SelectItem>
             {EMPLOYEE_STATUSES.map((s) => (
               <SelectItem key={s} value={s} className="text-white">
                 {EMPLOYEE_STATUS_LABELS_AR[s]}
@@ -780,7 +784,7 @@ export default function EmployeesPage() {
         <Card className="border-slate-700/50 bg-slate-800/50">
           <CardContent className="flex flex-col items-center justify-center py-16">
             <FileSpreadsheet className="size-12 text-slate-600 mb-4" />
-            <p className="text-slate-400 text-lg font-medium">لا يوجد موظفون</p>
+            <p className="text-slate-400 text-lg font-medium"><T>لا يوجد موظفون</T></p>
             <p className="text-slate-500 text-sm mt-1">
               {search ? 'لم يتم العثور على نتائج' : 'ابدأ بإضافة موظفين جدد'}
             </p>
@@ -797,17 +801,17 @@ export default function EmployeesPage() {
             <Table>
               <TableHeader>
                 <TableRow className="border-slate-700 hover:bg-transparent">
-                  <TableHead className="text-slate-400 text-sm font-medium">الكود</TableHead>
-                  <TableHead className="text-slate-400 text-sm font-medium">الاسم</TableHead>
-                  <TableHead className="text-slate-400 text-sm font-medium hidden sm:table-cell">القسم</TableHead>
-                  <TableHead className="text-slate-400 text-sm font-medium hidden md:table-cell">الوظيفة</TableHead>
-                  <TableHead className="text-slate-400 text-sm font-medium hidden lg:table-cell">الإقامة</TableHead>
-                  <TableHead className="text-slate-400 text-sm font-medium hidden xl:table-cell">الدوام</TableHead>
-                  <TableHead className="text-slate-400 text-sm font-medium hidden xl:table-cell">الموبايل</TableHead>
+                  <TableHead className="text-slate-400 text-sm font-medium"><T>الكود</T></TableHead>
+                  <TableHead className="text-slate-400 text-sm font-medium"><T>الاسم</T></TableHead>
+                  <TableHead className="text-slate-400 text-sm font-medium hidden sm:table-cell"><T>القسم</T></TableHead>
+                  <TableHead className="text-slate-400 text-sm font-medium hidden md:table-cell"><T>الوظيفة</T></TableHead>
+                  <TableHead className="text-slate-400 text-sm font-medium hidden lg:table-cell"><T>الإقامة</T></TableHead>
+                  <TableHead className="text-slate-400 text-sm font-medium hidden xl:table-cell"><T>الدوام</T></TableHead>
+                  <TableHead className="text-slate-400 text-sm font-medium hidden xl:table-cell"><T>الموبايل</T></TableHead>
                   {/* §3 — the actions column renders for every viewer: the
                       menu holds personal marks (⭐/📌) too, not just
                       update/delete actions. */}
-                  <TableHead className="text-slate-400 text-sm font-medium">إجراءات</TableHead>
+                  <TableHead className="text-slate-400 text-sm font-medium"><T>إجراءات</T></TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -907,10 +911,10 @@ export default function EmployeesPage() {
       <ConfirmDialog
         open={!!archivingEmployee}
         onOpenChange={(o) => { if (!o) setArchivingEmployee(null); }}
-        title="أرشفة الموظف"
-        description="سيصبح الموظف مؤرشفاً: لن يظهر في القوائم النشطة، ويبقى سجله التاريخي كاملاً قابلاً للاستعادة والتدقيق."
+        title={translateUIText('أرشفة الموظف', locale)}
+        description={translateUIText('سيصبح الموظف مؤرشفاً: لن يظهر في القوائم النشطة، ويبقى سجله التاريخي كاملاً قابلاً للاستعادة والتدقيق.', locale)}
         itemName={archivingEmployee?.name}
-        confirmLabel="أرشفة"
+        confirmLabel={translateUIText('أرشفة', locale)}
         destructive={false}
         loading={updateEmployee.isPending}
         onConfirm={() => {
@@ -934,7 +938,7 @@ export default function EmployeesPage() {
       <ConfirmDialog
         open={!!pendingTransfer}
         onOpenChange={(o) => { if (!o) setPendingTransfer(null); }}
-        title="تأكيد النقل التنظيمي"
+        title={translateUIText('تأكيد النقل التنظيمي', locale)}
         description={`سيُنقل الموظف من "${
           pendingTransfer?.fromNodeId
             ? (buildNodePathLabel(orgNodes, pendingTransfer.fromNodeId) || 'عقدة تنظيمية')
@@ -945,7 +949,7 @@ export default function EmployeesPage() {
             : 'بدون إسناد'
         }". نطاق بياناته يتحدث تلقائياً، ولا يمس النقل أي سجل تاريخي.`}
         itemName={pendingTransfer?.employee.name}
-        confirmLabel="تأكيد النقل"
+        confirmLabel={translateUIText('تأكيد النقل', locale)}
         loading={updateEmployee.isPending || moveEmployeeOrg.isPending}
         onConfirm={() => void executeConfirmedTransfer()}
       />
@@ -954,7 +958,7 @@ export default function EmployeesPage() {
       <ConfirmDialog
         open={!!deletingId || !!swipeId}
         onOpenChange={(open) => { if (!open) { setDeletingId(null); setSwipeId(null); } }}
-        description="هل أنت متأكد من حذف هذا الموظف؟ لا يمكن التراجع عن هذا الإجراء."
+        description={translateUIText('هل أنت متأكد من حذف هذا الموظف؟ لا يمكن التراجع عن هذا الإجراء.', locale)}
         itemName={(() => { const id = deletingId || swipeId; return id ? employees.find((e: { id: string; name?: string }) => e.id === id)?.name : undefined; })()}
         loading={deleteLoading}
         onConfirm={async () => { const id = deletingId || swipeId; if (id) await handleDelete(id); }}

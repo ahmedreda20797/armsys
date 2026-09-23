@@ -283,29 +283,45 @@ export function aggregateFollowUps(args: {
 }
 
 // ─────────────────────────────────────────────────────────────
-//  §12  Travel deals
+//  §12  Travel deals (§DEAL-DATES — dimension-explicit)
 // ─────────────────────────────────────────────────────────────
 
 /**
- * Aggregate the employee's travel deals — operational facts only.
- * The stored status vocabulary is used verbatim ('canceled' spelling
- * included); no sales KPI and no response time is invented (neither
- * exists in the data model).
+ * Aggregate the employee's travel deals with EXPLICIT date
+ * dimensions (§DEAL-DATES):
+ *
+ *   TRAVEL — departure-month attribution → travel volume, status
+ *            snapshot, active/canceled, monthly series.
+ *   CLOSED — closedAt attribution → completed sales for
+ *            productivity; completed deals without a trustworthy
+ *            closure timestamp are surfaced as UNKNOWN and never
+ *            attributed to a month (no departureDate fallback).
+ *
+ * The stored status vocabulary is used verbatim ('canceled'
+ * spelling included); no sales TARGET is invented — closure counts
+ * are observed facts only.
  */
 export function aggregateTravelDeals(args: {
-  /** Period deals — status/count aggregates (spec §12 period scope). */
+  /** TRAVEL-period deals — status/count aggregates (period scope). */
   deals: ReadonlyArray<TravelDeal>;
-  /** Window deals — §14 monthly trend series (months with data only). */
+  /** TRAVEL-window deals — monthly departure series (months with data only). */
   windowDeals: ReadonlyArray<TravelDeal>;
-  /** Attributed departure month per deal id (null = unattributed). */
+  /** Attributed TRAVEL month (departureDate) per deal id (null = unattributed). */
   monthByDealId: ReadonlyMap<string, string | null>;
+  /** All the employee's deals — the CLOSED-dimension population. */
+  allDeals: ReadonlyArray<TravelDeal>;
+  /** Attributed CLOSED month (closedAt) per deal id (null = unknown). */
+  closedMonthByDealId: ReadonlyMap<string, string | null>;
   windowMonths: ReadonlyArray<string>;
+  /** The reported period's YYYY-MM key (CLOSED attribution target). */
+  periodMonthKey: string;
 }): TravelDealFacts {
-  const { deals, windowDeals, monthByDealId, windowMonths } = args;
+  const { deals, windowDeals, monthByDealId, allDeals, closedMonthByDealId, windowMonths, periodMonthKey } = args;
   const windowSet = new Set(windowMonths);
 
   const byStatus: TravelDealFacts['byStatus'] = { upcoming: 0, in_progress: 0, completed: 0, canceled: 0 };
   const monthly = new Map<string, number>();
+  const closedMonthly = new Map<string, number>();
 
   for (const deal of deals) {
     if (byStatus[deal.status] !== undefined) byStatus[deal.status] += 1;
@@ -315,18 +331,37 @@ export function aggregateTravelDeals(args: {
     if (month && windowSet.has(month)) monthly.set(month, (monthly.get(month) ?? 0) + 1);
   }
 
+  // CLOSED dimension — observed closures only; a completed deal with
+  // no trustworthy closedAt stays UNKNOWN (never attributed).
+  let closedTotal = 0;
+  let closedUnknownMonth = 0;
+  for (const deal of allDeals) {
+    if (deal.status !== 'completed') continue;
+    const month = closedMonthByDealId.get(deal.id) ?? null;
+    if (!month) {
+      closedUnknownMonth += 1;
+      continue;
+    }
+    if (month === periodMonthKey) closedTotal += 1;
+    if (windowSet.has(month)) closedMonthly.set(month, (closedMonthly.get(month) ?? 0) + 1);
+  }
+
   const completed = byStatus.completed;
 
   return {
     relationship: 'CONFIRMED',
-    total: deals.length,
+    travelTotal: deals.length,
     byStatus,
-    completed,
     canceled: byStatus.canceled,
     active: byStatus.upcoming + byStatus.in_progress,
     completionRate: deals.length > 0 ? roundTo2((completed / deals.length) * 100) : null,
     monthly: [...monthly.entries()]
       .map(([month, count]) => ({ month, count }))
       .sort((a, b) => a.month.localeCompare(b.month)),
+    closedTotal,
+    closedMonthly: [...closedMonthly.entries()]
+      .map(([month, count]) => ({ month, count }))
+      .sort((a, b) => a.month.localeCompare(b.month)),
+    closedUnknownMonth,
   };
 }

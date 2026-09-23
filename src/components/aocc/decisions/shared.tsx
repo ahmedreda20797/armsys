@@ -16,6 +16,8 @@
 
 import { memo } from 'react';
 import { cn } from '@/lib/utils';
+import { useLanguage } from '@/lib/i18n/language-context';
+import { formatDate } from '@/lib/i18n/format';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { Separator } from '@/components/ui/separator';
@@ -1067,6 +1069,7 @@ export const DueDateLabel = memo(function DueDateLabel({
   dueDate: string | null;
   className?: string;
 }) {
+  const { locale } = useLanguage();
   if (!dueDate) return null;
 
   const now = new Date();
@@ -1084,7 +1087,7 @@ export const DueDateLabel = memo(function DueDateLabel({
     ? 'متأخر'
     : isToday
     ? 'اليوم'
-    : due.toLocaleDateString('ar-SA', { month: 'short', day: 'numeric' });
+    : formatDate(due, locale, { month: 'short', day: 'numeric' });
 
   return (
     <div className={cn('flex items-center gap-1', colorClass, className)}>

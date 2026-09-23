@@ -13,7 +13,7 @@ import type { QualityObservation } from '@/types/quality-kpi';
 import type { EmployeeKpiReport } from '@/lib/kpi-reporting';
 import { normalizeEmployeeStatus } from '@/lib/organization/employee-status';
 import type { EmployeeIdentityRecord } from './loaders';
-import { attributeRecords, monthOfCapa, monthOfComplaint, monthOfFollowUp, monthOfObservation, monthOfQualityDeduction, monthOfTravelDeal } from './loaders';
+import { attributeRecords, monthOfCapa, monthOfComplaint, monthOfDealClosed, monthOfDealTravel, monthOfFollowUp, monthOfObservation, monthOfQualityDeduction } from './loaders';
 import { buildAttendanceContext } from './attendance-context';
 import { buildKpiFacts, buildScoreTrendFacts } from './kpi-facts';
 import {
@@ -191,7 +191,12 @@ export function assembleEmployeePerformanceDataset(
   const attributedComplaints = attributeRecords(input.complaints, monthOfComplaint, monthKey, windowMonths);
   const attributedCapa = attributeRecords(input.capaSplit.primary, monthOfCapa, monthKey, windowMonths);
   const attributedFollowUps = attributeRecords(input.followUps, monthOfFollowUp, monthKey, windowMonths);
-  const attributedDeals = attributeRecords(input.deals, monthOfTravelDeal, monthKey, windowMonths);
+  // ── §DEAL-DATES — deal attribution is dimension-explicit: TRAVEL
+  //      (departureDate) for operational volume, CLOSED (closedAt)
+  //      for completed sales. A missing dimension date is unknown,
+  //      never substituted by another dimension's date. ──
+  const attributedDeals = attributeRecords(input.deals, monthOfDealTravel, monthKey, windowMonths);
+  const attributedClosedDeals = attributeRecords(input.deals, monthOfDealClosed, monthKey, windowMonths);
 
   const unattributed: Array<{ collection: string; count: number }> = [
     { collection: 'qualityObservations', count: attributedObservations.unattributed },
@@ -250,12 +255,16 @@ export function assembleEmployeePerformanceDataset(
     monthly: followUpsMonthly,
     now,
   });
-  const dealMonthById = new Map(input.deals.map((d) => [d.id, monthOfTravelDeal(d)] as const));
+  const dealMonthById = new Map(input.deals.map((d) => [d.id, monthOfDealTravel(d)] as const));
+  const closedDealMonthById = new Map(input.deals.map((d) => [d.id, monthOfDealClosed(d)] as const));
   const deals = aggregateTravelDeals({
     deals: attributedDeals.inPeriod,
     windowDeals: attributedDeals.inWindow,
     monthByDealId: dealMonthById,
+    allDeals: input.deals,
+    closedMonthByDealId: closedDealMonthById,
     windowMonths,
+    periodMonthKey: monthKey,
   });
 
   // ── Attendance context (stored result only) ──

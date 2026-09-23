@@ -36,6 +36,9 @@ import { authFetch } from '@/lib/api-fetch';
 import { EMPLOYEE_STATUS_LABELS_AR, type EmployeeStatus } from '@/lib/organization';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
+import { useLanguage } from '@/lib/i18n/language-context';
+import { formatDate as localeDate, displayLocale } from '@/lib/i18n/format';
+import type { Locale } from '@/lib/i18n/dictionary';
 
 // ── shape of /api/profile (self-scoped) ─────────────────────────
 
@@ -71,11 +74,11 @@ const ROLE_LABELS_AR: Record<string, string> = {
   admin: 'مدير النظام', hr: 'موارد بشرية', manager: 'مدير', quality: 'جودة', user: 'موظف',
 };
 
-const fmtDate = (iso: string | null | undefined): string => {
+const fmtDate = (iso: string | null | undefined, locale: Locale = displayLocale()): string => {
   if (!iso) return '—';
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return iso;
-  return d.toLocaleDateString('ar-EG', { year: 'numeric', month: 'long', day: 'numeric' });
+  return localeDate(d, locale, { year: 'numeric', month: 'long', day: 'numeric' });
 };
 
 function InfoRow({ icon, label, value, ltr }: {
@@ -280,6 +283,7 @@ function PhotoCropDialog({
 
 export default function ProfilePage() {
   const { refreshUser } = useAuth();
+  const { locale } = useLanguage();
   const qc = useQueryClient();
   const { data, isLoading } = useQuery<ProfileData>({
     queryKey: ['profile'],
@@ -496,7 +500,7 @@ export default function ProfilePage() {
             <InfoRow icon={<Mail className="size-3.5" />} label="البريد الإلكتروني" value={user.email} ltr />
             <InfoRow icon={<BadgeCheck className="size-3.5" />} label="الدور" value={ROLE_LABELS_AR[user.role] ?? user.role} />
             <InfoRow icon={<IdCard className="size-3.5" />} label="الرتبة" value={user.rank} />
-            <InfoRow icon={<CalendarDays className="size-3.5" />} label="تاريخ الانضمام" value={fmtDate(user.createdAt)} />
+            <InfoRow icon={<CalendarDays className="size-3.5" />} label="تاريخ الانضمام" value={fmtDate(user.createdAt, locale)} />
             {/* Self-editable display name */}
             <div className="pt-3 space-y-1.5">
               <Label htmlFor="profile-name" className="text-slate-300 text-xs">الاسم المعروض</Label>
@@ -548,7 +552,7 @@ export default function ProfilePage() {
               <InfoRow icon={<Users className="size-3.5" />} label="الفريق" value={employee.team ?? employee.orgNodeName} />
               <InfoRow icon={<BadgeCheck className="size-3.5" />} label="الوظيفة" value={employee.position} />
               <InfoRow icon={<Phone className="size-3.5" />} label="الجوال" value={employee.mobile} ltr />
-              <InfoRow icon={<CalendarDays className="size-3.5" />} label="تاريخ التعيين" value={fmtDate(employee.hireDate)} />
+              <InfoRow icon={<CalendarDays className="size-3.5" />} label="تاريخ التعيين" value={fmtDate(employee.hireDate, locale)} />
               <div className="flex items-start gap-2.5 py-1.5">
                 <span className="text-slate-500 shrink-0 mt-0.5"><BadgeCheck className="size-3.5" /></span>
                 <div>

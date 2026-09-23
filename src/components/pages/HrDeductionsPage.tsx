@@ -58,7 +58,10 @@ import type { HrDeduction, Employee } from '@/types';
 import { useAppStore } from '@/lib/store';
 import { useAuth } from '@/contexts/AuthContext';
 import { authFetch } from '@/lib/api-fetch';
-import { formatMonthLabelAr } from '@/lib/month-label';
+import { T } from '@/lib/i18n/T';
+import { translateUIText } from '@/lib/i18n/ui-text';
+import { useLanguage } from '@/lib/i18n/language-context';
+import { formatInteger, formatNumber, formatMonthKey } from '@/lib/i18n/format';
 import { currentMonthKey } from '@/lib/date-utils';
 import { PagePeriodIndicator } from '@/components/shared/PagePeriodIndicator';
 import { PageHeaderBar } from '@/components/shared/PageHeaderBar';
@@ -113,6 +116,7 @@ const EMPTY_FORM = {
 
 export default function HrDeductionsPage() {
   const { canEdit, canCreate, canUpdate, canDelete, canApprove } = usePermissions('hrDeductions');
+  const { locale } = useLanguage();
   // §12 GLOBAL INLINE FORM STANDARD — "إنشاء CAPA" from an approved HR
   // violation opens the shared inline CAPA form HERE (gated by CAPA's
   // own create permission); it never navigates to the CAPA page.
@@ -288,15 +292,15 @@ export default function HrDeductionsPage() {
         body: JSON.stringify({ archived }),
       });
       if (res.ok) {
-        toast.success(archived ? 'تم أرشفة الخصم — لن يأثر على الإجماليات النشطة' : 'تم استعادة الخصم من الأرشيف');
+        toast.success(archived ? translateUIText('تم أرشفة الخصم — لن يأثر على الإجماليات النشطة', locale) : translateUIText('تم استعادة الخصم من الأرشيف', locale));
         setArchivingId(null);
         await fetchData();
       } else {
         const data = await res.json().catch(() => null);
-        toast.error(data?.error || 'تعذّر تغيير حالة الأرشيف');
+        toast.error(data?.error || translateUIText('تعذّر تغيير حالة الأرشيف', locale));
       }
     } catch {
-      toast.error('تعذّر الاتصال بالخادم');
+      toast.error(translateUIText('تعذّر الاتصال بالخادم', locale));
     } finally {
       setArchiveLoading(false);
     }
@@ -352,18 +356,21 @@ export default function HrDeductionsPage() {
   const getStatusBadge = (status: string) => {
     switch (status) {
       case 'pending':
-        return <Badge className="bg-amber-500/15 text-amber-400 border-amber-500/20">معلق</Badge>;
+        return <Badge className="bg-amber-500/15 text-amber-400 border-amber-500/20"><T>معلق</T></Badge>;
       case 'approved':
-        return <Badge className="bg-green-500/15 text-green-400 border-green-500/20">مقبول</Badge>;
+        return <Badge className="bg-green-500/15 text-green-400 border-green-500/20"><T>مقبول</T></Badge>;
       case 'rejected':
-        return <Badge className="bg-red-500/15 text-red-400 border-red-500/20">مرفوض</Badge>;
+        return <Badge className="bg-red-500/15 text-red-400 border-red-500/20"><T>مرفوض</T></Badge>;
       default:
         return <Badge variant="outline">{status}</Badge>;
     }
   };
 
-  const getUnitLabel = (unit: string) => {
-    return unit === 'days' ? 'يوم' : 'جنيه';
+  // Locale-aware unit word for the stored unit code (app-owned vocabulary,
+  // never user data): [ar, en] picked at render by the active locale.
+  const getUnitLabel = (unit: string): string => {
+    const [ar, en] = unit === 'days' ? ['يوم', 'days'] : ['جنيه', 'EGP'];
+    return locale === 'en' ? en : ar;
   };
 
   // Filtering — Milestone 7 §13: the period filter (month) applies to
@@ -395,18 +402,18 @@ export default function HrDeductionsPage() {
       <PageHeaderBar
         icon={<Banknote className="size-5" />}
         iconClassName="bg-brand-500/15 border-brand-500/30 text-brand-400"
-        title="خصومات الموارد البشرية"
-        description={`${allPendingCount} خصم معلق`}
+        title={translateUIText('خصومات الموارد البشرية', locale)}
+        description={<>{formatInteger(allPendingCount, locale)} <T>خصم معلق</T></>}
         extras={
           <PagePeriodIndicator
             testId="hr-period-indicator"
-            label={monthFilter === 'all' ? 'كل الأشهر' : formatMonthLabelAr(monthFilter)}
+            label={monthFilter === 'all' ? translateUIText('كل الأشهر', locale) : formatMonthKey(monthFilter, locale)}
             filtered={monthFilter !== 'all'}
             onShowAll={() => setMonthFilter('all')}
           />
         }
         primaryAction={canCreate ? {
-          label: 'إضافة خصم',
+          label: translateUIText('إضافة خصم', locale),
           onClick: () => { setIsAddOpen(true); setAddForm({ ...EMPTY_FORM, deductionDate: getTodayDate() }); },
         } : undefined}
       />
@@ -416,7 +423,7 @@ export default function HrDeductionsPage() {
         <div className="relative max-w-md flex-1 min-w-[240px]">
           <Search className="absolute right-3 top-1/2 -translate-y-1/2 size-4 text-slate-400" />
           <Input
-            placeholder="بحث باسم الموظف أو الشهر أو النوع..."
+            placeholder={translateUIText('بحث باسم الموظف أو الشهر أو النوع...', locale)}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="bg-slate-800 border-slate-600 text-white pr-10 placeholder:text-slate-500"
@@ -425,12 +432,12 @@ export default function HrDeductionsPage() {
         <Select value={monthFilter} onValueChange={setMonthFilter}>
           <SelectTrigger className="bg-slate-800/70 border-slate-700/70 text-white w-40 h-10 text-sm">
             <CalendarDays className="size-3.5 ml-1.5 text-slate-500" />
-            <SelectValue placeholder="الشهر" />
+            <SelectValue placeholder={translateUIText('الشهر', locale)} />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all" className="text-white">كل الأشهر</SelectItem>
+            <SelectItem value="all" className="text-white"><T>كل الأشهر</T></SelectItem>
             {MONTH_OPTIONS.map((m) => (
-              <SelectItem key={m.value} value={m.value} className="text-white">{m.label}</SelectItem>
+              <SelectItem key={m.value} value={m.value} className="text-white">{formatMonthKey(m.value, locale)}</SelectItem>
             ))}
           </SelectContent>
         </Select>
@@ -446,7 +453,7 @@ export default function HrDeductionsPage() {
           }`}
         >
           <Archive className="size-3.5" />
-          المؤرشفة
+          <T>المؤرشفة</T>
         </button>
       </div>
 
@@ -464,8 +471,8 @@ export default function HrDeductionsPage() {
                 : 'bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-white border border-slate-700/50'
             }`}
           >
-            {tab.label}
-            <span className="mr-2 text-xs opacity-70">({tab.count})</span>
+            <T>{tab.label}</T>
+            <span className="mr-2 text-xs opacity-70">({formatInteger(tab.count, locale)})</span>
           </motion.button>
         ))}
       </div>
@@ -481,12 +488,12 @@ export default function HrDeductionsPage() {
         <Card className="border-slate-700/50 bg-slate-800/50">
           <CardContent className="flex flex-col items-center justify-center py-16">
             <Banknote className="size-12 text-slate-600 mb-4" />
-            <p className="text-slate-400 text-lg font-medium">لا توجد خصومات</p>
+            <p className="text-slate-400 text-lg font-medium"><T>لا توجد خصومات</T></p>
             <p className="text-slate-500 text-sm mt-1">
               {/* §10: the active period is NAMED in the empty state. */}
               {monthFilter !== 'all'
-                ? `لا توجد خصومات مسجلة في ${formatMonthLabelAr(monthFilter)}.`
-                : 'ابدأ بإضافة خصم جديد'}
+                ? <><T>لا توجد خصومات مسجلة في </T>{formatMonthKey(monthFilter, locale)}<T>.</T></>
+                : <T>ابدأ بإضافة خصم جديد</T>}
             </p>
           </CardContent>
         </Card>
@@ -500,7 +507,7 @@ export default function HrDeductionsPage() {
             >
               <h2 className="text-lg font-semibold text-amber-400 mb-3 flex items-center gap-2">
                 <Clock className="size-5" />
-                الخصومات المعلقة ({pending.length})
+                <T>الخصومات المعلقة (</T>{formatInteger(pending.length, locale)}<T>)</T>
               </h2>
               <div className="space-y-3 max-h-96 overflow-y-auto custom-scrollbar">
                 <AnimatePresence>
@@ -517,11 +524,11 @@ export default function HrDeductionsPage() {
                         <div className="flex-1">
                           <div className="flex items-center gap-3 mb-2 flex-wrap">
                             <EmployeeLink employeeId={ded.employeeId} name={ded.employeeName} compact />
-                            <Badge className="bg-slate-600/40 text-slate-300 border-slate-500/30">{ded.type}</Badge>
+                            <Badge className="bg-slate-600/40 text-slate-300 border-slate-500/30"><T>{ded.type}</T></Badge>
                             <span className="text-brand-400 font-semibold text-sm" dir="ltr">
-                              {ded.amount} {getUnitLabel(ded.unit)}
+                              {formatNumber(ded.amount, { locale })} {getUnitLabel(ded.unit)}
                             </span>
-                            <span className="text-slate-500 text-sm">{MONTH_OPTIONS.find((m) => m.value === ded.month)?.label || ded.month}</span>
+                            <span className="text-slate-500 text-sm">{formatMonthKey(ded.month, locale)}</span>
                             {ded.deductionDate && (
                               <span className="text-slate-500 text-xs" dir="ltr">({ded.deductionDate})</span>
                             )}
@@ -537,7 +544,7 @@ export default function HrDeductionsPage() {
                               className="border-slate-600 text-slate-300 hover:bg-slate-700"
                             >
                               <Pencil className="size-3.5" />
-                              تعديل
+                              <T>تعديل</T>
                             </Button>
                           )}
                           {canApprove && (
@@ -549,7 +556,7 @@ export default function HrDeductionsPage() {
                                 className="bg-green-600 hover:bg-green-700 text-white"
                               >
                                 <Check className="size-3.5" />
-                                قبول
+                                <T>قبول</T>
                               </Button>
                               <Button
                                 size="sm"
@@ -559,7 +566,7 @@ export default function HrDeductionsPage() {
                                 className="border-red-500/30 text-red-400 hover:bg-red-500/10"
                               >
                                 <X className="size-3.5" />
-                                رفض
+                                <T>رفض</T>
                               </Button>
                             </>
                           )}
@@ -568,8 +575,8 @@ export default function HrDeductionsPage() {
                           {canDelete && (
                             <SmartActionMenu
                               actions={[
-                                { key: 'archive', label: (ded as any).archived ? 'استعادة من الأرشيف' : 'أرشفة', icon: <Archive className="size-3.5" />, onSelect: () => ((ded as any).archived ? void handleArchive(ded.id, false) : setArchivingId(ded.id)), hidden: !canUpdate },
-                                { key: 'delete', label: 'حذف', icon: <Trash2 className="size-3.5" />, destructive: true, onSelect: () => setDeletingId(ded.id) },
+                                { key: 'archive', label: (ded as any).archived ? translateUIText('استعادة من الأرشيف', locale) : translateUIText('أرشفة', locale), icon: <Archive className="size-3.5" />, onSelect: () => ((ded as any).archived ? void handleArchive(ded.id, false) : setArchivingId(ded.id)), hidden: !canUpdate },
+                                { key: 'delete', label: translateUIText('حذف', locale), icon: <Trash2 className="size-3.5" />, destructive: true, onSelect: () => setDeletingId(ded.id) },
                               ]}
                             />
                           )}
@@ -594,15 +601,15 @@ export default function HrDeductionsPage() {
                 <Table>
                   <TableHeader>
                     <TableRow className="border-slate-700 hover:bg-transparent">
-                      <TableHead className="text-slate-400 text-sm font-medium">الموظف</TableHead>
-                      <TableHead className="text-slate-400 text-sm font-medium">النوع</TableHead>
-                      <TableHead className="text-slate-400 text-sm font-medium">المبلغ</TableHead>
-                      <TableHead className="text-slate-400 text-sm font-medium">الشهر</TableHead>
-                      <TableHead className="text-slate-400 text-sm font-medium">تاريخ الخصم</TableHead>
-                      <TableHead className="text-slate-400 text-sm font-medium">السبب</TableHead>
-                      <TableHead className="text-slate-400 text-sm font-medium">الحالة</TableHead>
+                      <TableHead className="text-slate-400 text-sm font-medium"><T>الموظف</T></TableHead>
+                      <TableHead className="text-slate-400 text-sm font-medium"><T>النوع</T></TableHead>
+                      <TableHead className="text-slate-400 text-sm font-medium"><T>المبلغ</T></TableHead>
+                      <TableHead className="text-slate-400 text-sm font-medium"><T>الشهر</T></TableHead>
+                      <TableHead className="text-slate-400 text-sm font-medium"><T>تاريخ الخصم</T></TableHead>
+                      <TableHead className="text-slate-400 text-sm font-medium"><T>السبب</T></TableHead>
+                      <TableHead className="text-slate-400 text-sm font-medium"><T>الحالة</T></TableHead>
                       {(canUpdate || canDelete) && (
-                        <TableHead className="text-slate-400 text-sm font-medium">إجراءات</TableHead>
+                        <TableHead className="text-slate-400 text-sm font-medium"><T>إجراءات</T></TableHead>
                       )}
                     </TableRow>
                   </TableHeader>
@@ -616,12 +623,12 @@ export default function HrDeductionsPage() {
                         <TableCell>
                           <EmployeeLink employeeId={ded.employeeId} name={ded.employeeName} compact />
                         </TableCell>
-                        <TableCell className="text-slate-300">{ded.type}</TableCell>
+                        <TableCell className="text-slate-300"><T>{ded.type}</T></TableCell>
                         <TableCell className="text-slate-300" dir="ltr">
-                          {ded.amount} {getUnitLabel(ded.unit)}
+                          {formatNumber(ded.amount, { locale })} {getUnitLabel(ded.unit)}
                         </TableCell>
                         <TableCell className="text-slate-300">
-                          {MONTH_OPTIONS.find((m) => m.value === ded.month)?.label || ded.month}
+                          {formatMonthKey(ded.month, locale)}
                         </TableCell>
                         <TableCell className="text-slate-300" dir="ltr">
                           {ded.deductionDate || '—'}
@@ -642,10 +649,10 @@ export default function HrDeductionsPage() {
                                 unified ConfirmDialog (no accidental deletes). */}
                             <SmartActionMenu
                               actions={[
-                                { key: 'capa', label: 'إنشاء CAPA من هذه المخالفة', icon: <ShieldAlert className="size-3.5" />, onSelect: () => requestAnimationFrame(() => { document.getElementById('hr-inline-capa')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }), hidden: !(canCreateCapa && !(ded as any).relatedCapaId && ded.status === 'approved') },
-                                { key: 'edit', label: 'تعديل', icon: <Pencil className="size-3.5" />, onSelect: () => openEditDialog(ded), hidden: !canUpdate },
-                                { key: 'archive', label: (ded as any).archived ? 'استعادة من الأرشيف' : 'أرشفة', icon: <Archive className="size-3.5" />, onSelect: () => ((ded as any).archived ? void handleArchive(ded.id, false) : setArchivingId(ded.id)), hidden: !canUpdate },
-                                { key: 'delete', label: 'حذف', icon: <Trash2 className="size-3.5" />, destructive: true, onSelect: () => setDeletingId(ded.id), hidden: !canDelete },
+                                { key: 'capa', label: translateUIText('إنشاء CAPA من هذه المخالفة', locale), icon: <ShieldAlert className="size-3.5" />, onSelect: () => requestAnimationFrame(() => { document.getElementById('hr-inline-capa')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }), hidden: !(canCreateCapa && !(ded as any).relatedCapaId && ded.status === 'approved') },
+                                { key: 'edit', label: translateUIText('تعديل', locale), icon: <Pencil className="size-3.5" />, onSelect: () => openEditDialog(ded), hidden: !canUpdate },
+                                { key: 'archive', label: (ded as any).archived ? translateUIText('استعادة من الأرشيف', locale) : translateUIText('أرشفة', locale), icon: <Archive className="size-3.5" />, onSelect: () => ((ded as any).archived ? void handleArchive(ded.id, false) : setArchivingId(ded.id)), hidden: !canUpdate },
+                                { key: 'delete', label: translateUIText('حذف', locale), icon: <Trash2 className="size-3.5" />, destructive: true, onSelect: () => setDeletingId(ded.id), hidden: !canDelete },
                               ]}
                             />
                           </div>
@@ -664,9 +671,9 @@ export default function HrDeductionsPage() {
       <ConfirmDialog
         open={!!archivingId}
         onOpenChange={(o) => { if (!o) setArchivingId(null); }}
-        title="أرشفة الخصم"
-        description="الخصم المؤرشف يصبح سجلاً تاريخياً: لن يحسب في الإجماليات النشطة أو مؤشرات KPI الحالية، ويبقى قابلاً للتدقيق في الأرشيف."
-        confirmLabel="أرشفة"
+        title={translateUIText('أرشفة الخصم', locale)}
+        description={translateUIText('الخصم المؤرشف يصبح سجلاً تاريخياً: لن يحسب في الإجماليات النشطة أو مؤشرات KPI الحالية، ويبقى قابلاً للتدقيق في الأرشيف.', locale)}
+        confirmLabel={translateUIText('أرشفة', locale)}
         destructive={false}
         loading={archiveLoading}
         onConfirm={async () => { if (archivingId) await handleArchive(archivingId, true); }}
@@ -676,7 +683,7 @@ export default function HrDeductionsPage() {
       <ConfirmDialog
         open={!!deletingId}
         onOpenChange={(o) => { if (!o) setDeletingId(null); }}
-        description="سيتم حذف خصم الموارد البشرية نهائياً من النظام."
+        description={translateUIText('سيتم حذف خصم الموارد البشرية نهائياً من النظام.', locale)}
         loading={deleteLoading}
         onConfirm={async () => { if (deletingId) await handleDelete(deletingId); }}
       />
@@ -689,7 +696,7 @@ export default function HrDeductionsPage() {
             id="hr-inline-capa"
             tone="violet"
             icon={<ShieldAlert className="size-3.5 text-brand-400" />}
-            title="إنشاء CAPA من مخالفة HR"
+            title={translateUIText('إنشاء CAPA من مخالفة HR', locale)}
             onClose={() => setCapaPrefill(null)}
           >
             <CAPAInlineForm
@@ -711,8 +718,8 @@ export default function HrDeductionsPage() {
       <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
         <DialogContent className="backdrop-blur-xl bg-slate-900 border-slate-700 max-w-lg">
           <DialogHeader>
-            <DialogTitle className="text-white">إضافة خصم جديد</DialogTitle>
-            <DialogDescription className="text-slate-400">أدخل تفاصيل الخصم</DialogDescription>
+            <DialogTitle className="text-white"><T>إضافة خصم جديد</T></DialogTitle>
+            <DialogDescription className="text-slate-400"><T>أدخل تفاصيل الخصم</T></DialogDescription>
           </DialogHeader>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="sm:col-span-2">
@@ -720,12 +727,12 @@ export default function HrDeductionsPage() {
                 employees={employees}
                 value={addForm.employeeId}
                 onChange={(id) => setAddForm((p) => ({ ...p, employeeId: id }))}
-                label="الموظف"
-                placeholder="ابحث عن اسم الموظف..."
+                label={translateUIText('الموظف', locale)}
+                placeholder={translateUIText('ابحث عن اسم الموظف...', locale)}
               />
             </div>
             <div className="space-y-2">
-              <Label className="text-slate-300">نوع الخصم</Label>
+              <Label className="text-slate-300"><T>نوع الخصم</T></Label>
               <Select
                 value={addForm.type}
                 onValueChange={(v) => setAddForm((p) => ({ ...p, type: v }))}
@@ -736,14 +743,14 @@ export default function HrDeductionsPage() {
                 <SelectContent>
                   {DEDUCTION_TYPES.map((dt) => (
                     <SelectItem key={dt.value} value={dt.value} className="text-white">
-                      {dt.label}
+                      <T>{dt.label}</T>
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
             <div className="space-y-2">
-              <Label className="text-slate-300">الوحدة</Label>
+              <Label className="text-slate-300"><T>الوحدة</T></Label>
               <Select
                 value={addForm.unit}
                 onValueChange={(v) => setAddForm((p) => ({ ...p, unit: v as 'days' | 'EGP' }))}
@@ -752,13 +759,13 @@ export default function HrDeductionsPage() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="days" className="text-white">أيام</SelectItem>
-                  <SelectItem value="EGP" className="text-white">جنيه</SelectItem>
+                  <SelectItem value="days" className="text-white"><T>أيام</T></SelectItem>
+                  <SelectItem value="EGP" className="text-white"><T>جنيه</T></SelectItem>
                 </SelectContent>
               </Select>
             </div>
             <div className="space-y-2">
-              <Label className="text-slate-300">المبلغ / العدد</Label>
+              <Label className="text-slate-300"><T>المبلغ / العدد</T></Label>
               <Input
                 type="number"
                 min="0"
@@ -771,25 +778,25 @@ export default function HrDeductionsPage() {
               />
             </div>
             <div className="space-y-2">
-              <Label className="text-slate-300">الشهر</Label>
+              <Label className="text-slate-300"><T>الشهر</T></Label>
               <Select
                 value={addForm.month}
                 onValueChange={(v) => setAddForm((p) => ({ ...p, month: v }))}
               >
                 <SelectTrigger className="bg-slate-800 border-slate-600 text-white">
-                  <SelectValue placeholder="اختر الشهر" />
+                  <SelectValue placeholder={translateUIText('اختر الشهر', locale)} />
                 </SelectTrigger>
                 <SelectContent>
                   {MONTH_OPTIONS.map((m) => (
                     <SelectItem key={m.value} value={m.value} className="text-white">
-                      {m.label}
+                      {formatMonthKey(m.value, locale)}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
             <div className="space-y-2 sm:col-span-2">
-              <Label className="text-slate-300">تاريخ الخصم</Label>
+              <Label className="text-slate-300"><T>تاريخ الخصم</T></Label>
               <Input
                 value={addForm.deductionDate}
                 onChange={(e) => setAddForm((p) => ({ ...p, deductionDate: e.target.value }))}
@@ -799,12 +806,12 @@ export default function HrDeductionsPage() {
               />
             </div>
             <div className="space-y-2 sm:col-span-2">
-              <Label className="text-slate-300">السبب</Label>
+              <Label className="text-slate-300"><T>السبب</T></Label>
               <Textarea
                 value={addForm.reason}
                 onChange={(e) => setAddForm((p) => ({ ...p, reason: e.target.value }))}
                 className="bg-slate-800 border-slate-600 text-white"
-                placeholder="اكتب سبب الخصم..."
+                placeholder={translateUIText('اكتب سبب الخصم...', locale)}
                 required
               />
             </div>
@@ -815,14 +822,14 @@ export default function HrDeductionsPage() {
               onClick={() => setIsAddOpen(false)}
               className="border-slate-600 text-slate-300"
             >
-              إلغاء
+              <T>إلغاء</T>
             </Button>
             <Button
               onClick={handleAdd}
               disabled={saving || !addForm.employeeId || !addForm.amount || !addForm.month || !addForm.reason}
               className="bg-linear-to-r from-brand-600 to-brand-700 hover:from-brand-700 hover:to-brand-800 text-white h-9 px-5 shadow-lg shadow-brand-500/20 transition-all"
             >
-              {saving ? 'جاري الحفظ...' : 'إضافة'}
+              {saving ? <T>جاري الحفظ...</T> : <T>إضافة</T>}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -832,12 +839,12 @@ export default function HrDeductionsPage() {
       <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>
         <DialogContent className="backdrop-blur-xl bg-slate-900 border-slate-700 max-w-lg">
           <DialogHeader>
-            <DialogTitle className="text-white">تعديل الخصم</DialogTitle>
-            <DialogDescription className="text-slate-400">قم بتعديل تفاصيل الخصم</DialogDescription>
+            <DialogTitle className="text-white"><T>تعديل الخصم</T></DialogTitle>
+            <DialogDescription className="text-slate-400"><T>قم بتعديل تفاصيل الخصم</T></DialogDescription>
           </DialogHeader>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label className="text-slate-300">نوع الخصم</Label>
+              <Label className="text-slate-300"><T>نوع الخصم</T></Label>
               <Select
                 value={editForm.type}
                 onValueChange={(v) => setEditForm((p) => ({ ...p, type: v }))}
@@ -848,14 +855,14 @@ export default function HrDeductionsPage() {
                 <SelectContent>
                   {DEDUCTION_TYPES.map((dt) => (
                     <SelectItem key={dt.value} value={dt.value} className="text-white">
-                      {dt.label}
+                      <T>{dt.label}</T>
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
             <div className="space-y-2">
-              <Label className="text-slate-300">الوحدة</Label>
+              <Label className="text-slate-300"><T>الوحدة</T></Label>
               <Select
                 value={editForm.unit}
                 onValueChange={(v) => setEditForm((p) => ({ ...p, unit: v as 'days' | 'EGP' }))}
@@ -864,13 +871,13 @@ export default function HrDeductionsPage() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="days" className="text-white">أيام</SelectItem>
-                  <SelectItem value="EGP" className="text-white">جنيه</SelectItem>
+                  <SelectItem value="days" className="text-white"><T>أيام</T></SelectItem>
+                  <SelectItem value="EGP" className="text-white"><T>جنيه</T></SelectItem>
                 </SelectContent>
               </Select>
             </div>
             <div className="space-y-2">
-              <Label className="text-slate-300">المبلغ / العدد</Label>
+              <Label className="text-slate-300"><T>المبلغ / العدد</T></Label>
               <Input
                 type="number"
                 min="0"
@@ -883,25 +890,25 @@ export default function HrDeductionsPage() {
               />
             </div>
             <div className="space-y-2">
-              <Label className="text-slate-300">الشهر</Label>
+              <Label className="text-slate-300"><T>الشهر</T></Label>
               <Select
                 value={editForm.month}
                 onValueChange={(v) => setEditForm((p) => ({ ...p, month: v }))}
               >
                 <SelectTrigger className="bg-slate-800 border-slate-600 text-white">
-                  <SelectValue placeholder="اختر الشهر" />
+                  <SelectValue placeholder={translateUIText('اختر الشهر', locale)} />
                 </SelectTrigger>
                 <SelectContent>
                   {MONTH_OPTIONS.map((m) => (
                     <SelectItem key={m.value} value={m.value} className="text-white">
-                      {m.label}
+                      {formatMonthKey(m.value, locale)}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
             <div className="space-y-2 sm:col-span-2">
-              <Label className="text-slate-300">تاريخ الخصم</Label>
+              <Label className="text-slate-300"><T>تاريخ الخصم</T></Label>
               <Input
                 value={editForm.deductionDate}
                 onChange={(e) => setEditForm((p) => ({ ...p, deductionDate: e.target.value }))}
@@ -911,12 +918,12 @@ export default function HrDeductionsPage() {
               />
             </div>
             <div className="space-y-2 sm:col-span-2">
-              <Label className="text-slate-300">السبب</Label>
+              <Label className="text-slate-300"><T>السبب</T></Label>
               <Textarea
                 value={editForm.reason}
                 onChange={(e) => setEditForm((p) => ({ ...p, reason: e.target.value }))}
                 className="bg-slate-800 border-slate-600 text-white"
-                placeholder="اكتب سبب الخصم..."
+                placeholder={translateUIText('اكتب سبب الخصم...', locale)}
                 required
               />
             </div>
@@ -927,14 +934,14 @@ export default function HrDeductionsPage() {
               onClick={() => setIsEditOpen(false)}
               className="border-slate-600 text-slate-300"
             >
-              إلغاء
+              <T>إلغاء</T>
             </Button>
             <Button
               onClick={handleEdit}
               disabled={saving || !editForm.amount || !editForm.reason}
               className="bg-linear-to-r from-brand-600 to-brand-700 hover:from-brand-700 hover:to-brand-800 text-white h-9 px-5 shadow-lg shadow-brand-500/20 transition-all"
             >
-              {saving ? 'جاري الحفظ...' : 'حفظ التعديلات'}
+              {saving ? <T>جاري الحفظ...</T> : <T>حفظ التعديلات</T>}
             </Button>
           </DialogFooter>
         </DialogContent>

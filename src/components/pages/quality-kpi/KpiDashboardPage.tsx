@@ -39,16 +39,10 @@ import type {
   DashboardMonthlyScore,
   DashboardLeaderboardEntry,
 } from '@/lib/kpi-dashboard';
-
-// ─── Constants ────────────────────────────────────────────────
-const MONTH_LABELS_AR = ['يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو', 'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر'];
-
-function formatMonth(monthKey: string): string {
-  const [y, m] = monthKey.split('-');
-  const idx = parseInt(m, 10) - 1;
-  if (idx < 0 || idx > 11) return monthKey;
-  return `${MONTH_LABELS_AR[idx]} ${y}`;
-}
+import { T } from '@/lib/i18n/T';
+import { useLanguage } from '@/lib/i18n/language-context';
+import { translateUIText } from '@/lib/i18n/ui-text';
+import { formatMonthKey, formatNumber, formatInteger } from '@/lib/i18n/format';
 
 // ─── Stat card ────────────────────────────────────────────────
 function StatCard({
@@ -60,6 +54,7 @@ function StatCard({
   accent: string;
   hint?: string;
 }) {
+  const { locale } = useLanguage();
   return (
     <Card className="bg-slate-800/30 border-slate-700/40">
       <CardContent className="p-4 flex items-center gap-3">
@@ -67,8 +62,8 @@ function StatCard({
           <Icon className="size-5" />
         </div>
         <div className="min-w-0">
-          <p className="text-xs text-slate-400 truncate">{label}</p>
-          <p className="text-xl font-bold text-slate-100 tabular-nums">{value}</p>
+          <p className="text-xs text-slate-400 truncate"><T>{label}</T></p>
+          <p className="text-xl font-bold text-slate-100 tabular-nums">{typeof value === 'number' ? formatNumber(value, { locale }) : value}</p>
           {hint && <p className="text-[11px] text-slate-500 truncate">{hint}</p>}
         </div>
       </CardContent>
@@ -83,12 +78,13 @@ function CategoryBar({ name, points, maxPoints, color }: {
   maxPoints: number;
   color: string;
 }) {
+  const { locale } = useLanguage();
   const pct = maxPoints > 0 ? Math.min(100, (points / maxPoints) * 100) : 0;
   return (
     <div className="space-y-1">
       <div className="flex items-center justify-between text-xs">
         <span className="text-slate-300 truncate">{name}</span>
-        <span className="text-slate-400 tabular-nums shrink-0">{points}</span>
+        <span className="text-slate-400 tabular-nums shrink-0">{formatNumber(points, { locale })}</span>
       </div>
       <div className="h-2 rounded-full bg-slate-700/50 overflow-hidden">
         <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, backgroundColor: color }} />
@@ -99,11 +95,12 @@ function CategoryBar({ name, points, maxPoints, color }: {
 
 // ─── Department Ranking Widget ────────────────────────────────
 function DepartmentRankingWidget({ ranking }: { ranking: DashboardDepartmentRankEntry[] }) {
+  const { locale } = useLanguage();
   if (!ranking || ranking.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-6 text-center">
         <Building2 className="size-7 text-slate-600 mb-2" />
-        <p className="text-xs text-slate-500">لا توجد بيانات تصنيف الأقسام</p>
+        <p className="text-xs text-slate-500"><T>لا توجد بيانات تصنيف الأقسام</T></p>
       </div>
     );
   }
@@ -115,19 +112,19 @@ function DepartmentRankingWidget({ ranking }: { ranking: DashboardDepartmentRank
           key={dept.department}
           className="flex items-center gap-3 px-3 py-2 rounded-lg bg-slate-800/30"
         >
-          <span className="w-6 text-center text-xs font-bold text-slate-500 tabular-nums">{i + 1}</span>
+          <span className="w-6 text-center text-xs font-bold text-slate-500 tabular-nums">{formatInteger(i + 1, locale)}</span>
           <div className="flex-1 min-w-0">
             <p className="text-sm font-medium text-slate-200 truncate">{dept.department}</p>
             <p className="text-[11px] text-slate-500">
-              {dept.employeeCount} موظف · {dept.totalObservations} ملاحظة
+              {formatInteger(dept.employeeCount, locale)} <T>موظف</T> · {formatInteger(dept.totalObservations, locale)} <T>ملاحظة</T>
             </p>
           </div>
           <ScoreBadge score={dept.averageScore} />
           {dept.totalDeductionPoints > 0 && (
-            <span className="text-[11px] text-rose-400 tabular-nums">-{dept.totalDeductionPoints}</span>
+            <span className="text-[11px] text-rose-400 tabular-nums">-{formatNumber(dept.totalDeductionPoints, { locale })}</span>
           )}
           {dept.totalBonusPoints > 0 && (
-            <span className="text-[11px] text-emerald-400 tabular-nums">+{dept.totalBonusPoints}</span>
+            <span className="text-[11px] text-emerald-400 tabular-nums">+{formatNumber(dept.totalBonusPoints, { locale })}</span>
           )}
         </div>
       ))}
@@ -137,6 +134,7 @@ function DepartmentRankingWidget({ ranking }: { ranking: DashboardDepartmentRank
 
 // ─── Approval Statistics Widget ────────────────────────────────
 function ApprovalStatsWidget({ stats }: { stats: DashboardApprovalStats }) {
+  const { locale } = useLanguage();
   const navigateTo = useAppStore((s) => s.navigateTo);
 
   return (
@@ -165,7 +163,7 @@ function ApprovalStatsWidget({ stats }: { stats: DashboardApprovalStats }) {
           label="بانتظار الاعتماد"
           value={stats.pending}
           accent="bg-amber-500/10 text-amber-400"
-          hint={stats.pending > 0 ? 'اضغط للعرض' : undefined}
+          hint={stats.pending > 0 ? translateUIText('اضغط للعرض', locale) : undefined}
         />
       </div>
       <StatCard
@@ -180,17 +178,18 @@ function ApprovalStatsWidget({ stats }: { stats: DashboardApprovalStats }) {
 
 // ─── Monthly Scores mini-table ──────────────────────────────
 function MonthlyScoresWidget({ scores }: { scores: DashboardMonthlyScore[] }) {
+  const { locale } = useLanguage();
   if (!scores || scores.length === 0) return null;
 
   return (
     <div className="space-y-1">
       {scores.map((s) => (
         <div key={s.monthKey} className="flex items-center gap-3 px-3 py-1.5 rounded-lg bg-slate-800/20 text-xs">
-          <span className="text-slate-400 tabular-nums w-20 shrink-0">{formatMonth(s.monthKey)}</span>
+          <span className="text-slate-400 tabular-nums w-20 shrink-0">{formatMonthKey(s.monthKey, locale)}</span>
           <ScoreBadge score={s.avgScore} />
           {s.isLive && (
             <Badge variant="outline" className="bg-blue-500/10 text-blue-400 border-blue-500/20 text-[10px] px-1.5 py-0 gap-1">
-              <Radio className="size-2.5" /> مباشر
+              <Radio className="size-2.5" /> <T>مباشر</T>
             </Badge>
           )}
         </div>
@@ -201,6 +200,7 @@ function MonthlyScoresWidget({ scores }: { scores: DashboardMonthlyScore[] }) {
 
 // ─── Page ─────────────────────────────────────────────────────
 export default function KpiDashboardPage() {
+  const { locale } = useLanguage();
   const { canView, canViewPage } = usePermissions('kpiDashboard');
   const [range, setRange] = useState<KpiRangePreset>('current_month');
   const [customMonths, setCustomMonths] = useState('');
@@ -254,28 +254,28 @@ export default function KpiDashboardPage() {
     return Object.entries(dist)
       .map(([id, points]) => ({
         id,
-        name: categoryMap.get(id)?.name ?? 'غير مصنف',
+        name: categoryMap.get(id)?.name ?? translateUIText('غير مصنف', locale),
         color: categoryMap.get(id)?.color ?? '#64748b',
         points,
       }))
       .sort((a, b) => b.points - a.points);
-  }, [dashboard.categoryDistribution, categoryMap]);
+  }, [dashboard.categoryDistribution, categoryMap, locale]);
 
   const maxCategoryPoints = sortedCategories.length > 0 ? sortedCategories[0].points : 0;
 
   const monthsLabel = useMemo(() => {
     const months = dashboard.months ?? [];
     if (months.length === 0) return '';
-    if (months.length === 1) return formatMonth(months[0]);
-    return `${formatMonth(months[months.length - 1])} — ${formatMonth(months[0])}`;
-  }, [dashboard.months]);
+    if (months.length === 1) return formatMonthKey(months[0], locale);
+    return `${formatMonthKey(months[months.length - 1], locale)} — ${formatMonthKey(months[0], locale)}`;
+  }, [dashboard.months, locale]);
 
   const navigateTo = useAppStore((s) => s.navigateTo);
 
   if (!canView) {
     return (
       <div className="flex flex-col items-center justify-center py-24 text-slate-400">
-        <p>ليس لديك صلاحية للوصول إلى هذه الصفحة</p>
+        <p><T>ليس لديك صلاحية للوصول إلى هذه الصفحة</T></p>
       </div>
     );
   }
@@ -315,10 +315,10 @@ export default function KpiDashboardPage() {
         iconClassName="bg-blue-500/15 border-blue-500/30 text-blue-400"
         description={
           <>
-            {monthsLabel || 'ملخص أداء الجودة'}
+            {monthsLabel || translateUIText('ملخص أداء الجودة', locale)}
             {dashboard.isLive && (
               <Badge variant="outline" className="bg-blue-500/10 text-blue-400 border-blue-500/20 text-[10px] px-1.5 py-0 gap-1 mr-1 align-middle">
-                <Radio className="size-2.5 animate-pulse" /> مباشر
+                <Radio className="size-2.5 animate-pulse" /> <T>مباشر</T>
               </Badge>
             )}
           </>
@@ -337,10 +337,10 @@ export default function KpiDashboardPage() {
           >
             <SelectTrigger className="w-40 bg-slate-800/50 border-slate-700">
               <Building2 className="size-3.5 text-slate-400 me-2" />
-              <SelectValue placeholder="كل الأقسام" />
+              <SelectValue placeholder={translateUIText('كل الأقسام', locale)} />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">كل الأقسام</SelectItem>
+              <SelectItem value="all"><T>كل الأقسام</T></SelectItem>
               {departments.map((d) => (
                 <SelectItem key={d} value={d}>{d}</SelectItem>
               ))}
@@ -351,7 +351,7 @@ export default function KpiDashboardPage() {
             size="icon"
             onClick={() => refetch()}
             disabled={isFetching}
-            title="تحديث"
+            title={translateUIText('تحديث', locale)}
           >
             <Activity className={`size-4 ${isFetching ? 'animate-spin' : ''}`} />
           </Button>
@@ -359,7 +359,7 @@ export default function KpiDashboardPage() {
               permanently on the dashboard surface. */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="outline" size="icon" title="خيارات" aria-label="خيارات اللوحة">
+              <Button variant="outline" size="icon" title={translateUIText('خيارات', locale)} aria-label={translateUIText('خيارات اللوحة', locale)}>
                 <MoreVertical className="size-4" />
               </Button>
             </DropdownMenuTrigger>
@@ -369,7 +369,7 @@ export default function KpiDashboardPage() {
                 className="gap-2 cursor-pointer text-xs text-slate-300 focus:text-white focus:bg-slate-800"
               >
                 <Scale className="size-3.5" />
-                {schemeSummaryOpen ? 'إخفاء أوزان المؤشرات' : 'أوزان المؤشرات'}
+                <T>{schemeSummaryOpen ? 'إخفاء أوزان المؤشرات' : 'أوزان المؤشرات'}</T>
               </DropdownMenuItem>
               {canViewPage('kpiSettings') && (
                 <DropdownMenuItem
@@ -377,7 +377,7 @@ export default function KpiDashboardPage() {
                   className="gap-2 cursor-pointer text-xs text-slate-300 focus:text-white focus:bg-slate-800"
                 >
                   <Settings2 className="size-3.5" />
-                  إعدادات محرك الأداء
+                  <T>إعدادات محرك الأداء</T>
                 </DropdownMenuItem>
               )}
             </DropdownMenuContent>
@@ -398,21 +398,21 @@ export default function KpiDashboardPage() {
           label="إجمالي الخصومات"
           value={dashboard.totalDeductions ?? 0}
           accent="bg-rose-500/10 text-rose-400"
-          hint="نقطة"
+          hint={translateUIText('نقطة', locale)}
         />
         <StatCard
           icon={ArrowUpCircle}
           label="إجمالي المكافآت"
           value={dashboard.totalBonuses ?? 0}
           accent="bg-emerald-500/10 text-emerald-400"
-          hint={dashboard.settings?.allowBonus ? `حد أقصى ${dashboard.settings.maximumBonus}` : 'معطّل'}
+          hint={dashboard.settings?.allowBonus ? `${translateUIText('حد أقصى', locale)} ${formatNumber(dashboard.settings.maximumBonus, { locale })}` : translateUIText('معطّل', locale)}
         />
         <StatCard
           icon={Clock}
           label="بانتظار الاعتماد"
           value={dashboard.pendingApprovals ?? 0}
           accent="bg-amber-500/10 text-amber-400"
-          hint="ملاحظة"
+          hint={translateUIText('ملاحظة', locale)}
         />
       </div>
 
@@ -430,10 +430,10 @@ export default function KpiDashboardPage() {
         {/* Average score ring */}
         <Card className="bg-slate-800/30 border-slate-700/40">
           <CardContent className="p-5 flex flex-col items-center justify-center text-center">
-            <p className="text-sm text-slate-400 mb-3">متوسط درجة الأداء</p>
+            <p className="text-sm text-slate-400 mb-3"><T>متوسط درجة الأداء</T></p>
             <ScoreRing score={avg} max={maxScore} size={120} />
             <p className="text-xs text-slate-500 mt-3">
-              الحد الأقصى: {maxScore} · الحد الأدنى: {dashboard.settings?.minimumScore ?? 0}
+              <T>الحد الأقصى: </T>{formatNumber(maxScore, { locale })} · <T>الحد الأدنى: </T>{formatNumber(dashboard.settings?.minimumScore ?? 0, { locale })}
             </p>
           </CardContent>
         </Card>
@@ -442,7 +442,7 @@ export default function KpiDashboardPage() {
         <Card className="bg-slate-800/30 border-slate-700/40">
           <CardContent className="p-5 space-y-4">
             <div className="flex items-center justify-between">
-              <p className="text-sm text-slate-400">اتجاه الأداء</p>
+              <p className="text-sm text-slate-400"><T>اتجاه الأداء</T></p>
               <TrendingDown className="size-4 text-slate-500" />
             </div>
             {hasTrend ? (
@@ -453,12 +453,12 @@ export default function KpiDashboardPage() {
                 </div>
                 <div className="grid grid-cols-2 gap-3 text-xs">
                   <div>
-                    <p className="text-slate-500">المتوسط المتحرك</p>
-                    <p className="text-slate-200 font-semibold tabular-nums">{trend!.rollingAverage}</p>
+                    <p className="text-slate-500"><T>المتوسط المتحرك</T></p>
+                    <p className="text-slate-200 font-semibold tabular-nums">{formatNumber(trend!.rollingAverage, { locale })}</p>
                   </div>
                   <div>
-                    <p className="text-slate-500">عدد الشهور</p>
-                    <p className="text-slate-200 font-semibold tabular-nums">{trend!.sampleSize}</p>
+                    <p className="text-slate-500"><T>عدد الشهور</T></p>
+                    <p className="text-slate-200 font-semibold tabular-nums">{formatInteger(trend!.sampleSize, locale)}</p>
                   </div>
                 </div>
               </>
@@ -466,7 +466,7 @@ export default function KpiDashboardPage() {
               <div className="flex flex-col items-center justify-center py-6 text-center">
                 <AlertCircle className="size-8 text-slate-600 mb-2" />
                 <p className="text-xs text-slate-500">
-                  لا توجد بيانات اتجاه بعد. يُحسب الاتجاه من الأشهر المغلقة.
+                  <T>لا توجد بيانات اتجاه بعد. يُحسب الاتجاه من الأشهر المغلقة.</T>
                 </p>
               </div>
             )}
@@ -477,17 +477,20 @@ export default function KpiDashboardPage() {
         <Card className="bg-slate-800/30 border-slate-700/40">
           <CardContent className="p-5 space-y-4">
             <div className="flex items-center justify-between">
-              <p className="text-sm text-slate-400">معامل الأداء</p>
-              <Badge variant="outline" className="text-blue-400 border-blue-500/30">الجودة</Badge>
+              <p className="text-sm text-slate-400"><T>معامل الأداء</T></p>
+              <Badge variant="outline" className="text-blue-400 border-blue-500/30"><T>الجودة</T></Badge>
             </div>
             <div>
               <p className="text-3xl font-bold text-slate-100 tabular-nums">
-                {dashboard.performanceFactor
-                  ? Math.round((dashboard.performanceFactor.normalized ?? 0) * 100)
-                  : 0}
+                {formatNumber(
+                  dashboard.performanceFactor
+                    ? Math.round((dashboard.performanceFactor.normalized ?? 0) * 100)
+                    : 0,
+                  { locale },
+                )}
                 <span className="text-base text-slate-400">%</span>
               </p>
-              <p className="text-xs text-slate-500 mt-1">النسبة المعيارية من الحد الأقصى</p>
+              <p className="text-xs text-slate-500 mt-1"><T>النسبة المعيارية من الحد الأقصى</T></p>
             </div>
           </CardContent>
         </Card>
@@ -500,7 +503,7 @@ export default function KpiDashboardPage() {
           <CardContent className="p-4 space-y-2">
             <div className="flex items-center gap-2 px-1 pb-2 border-b border-slate-700/40">
               <Trophy className="size-4 text-amber-400" />
-              <h3 className="text-sm font-semibold text-slate-200">الأعلى أداءً</h3>
+              <h3 className="text-sm font-semibold text-slate-200"><T>الأعلى أداءً</T></h3>
             </div>
             <motion.div
               initial="hidden"
@@ -512,7 +515,7 @@ export default function KpiDashboardPage() {
                 variant="top"
                 maxItems={10}
                 onSelect={(eid) => navigateTo('employee360', undefined, { employeeId: eid })}
-                emptyLabel={`لا يوجد موظفون مؤهلون بعد — الترتيب يتطلب درجة تصل للمرجعية (${maxScore}) مع ملاحظات جودة مسجّلة فعلياً (الدرجة بدون ملاحظات لا تمثل أداءً)`}
+                emptyLabel={`${translateUIText('لا يوجد موظفون مؤهلون بعد — الترتيب يتطلب درجة تصل للمرجعية', locale)} (${formatNumber(maxScore, { locale })}) ${translateUIText('مع ملاحظات جودة مسجّلة فعلياً (الدرجة بدون ملاحظات لا تمثل أداءً)', locale)}`}
               />
             </motion.div>
           </CardContent>
@@ -524,10 +527,10 @@ export default function KpiDashboardPage() {
             <div className="flex items-center justify-between px-1 pb-2 border-b border-slate-700/40">
               <div className="flex items-center gap-2">
                 <TrendingDown className="size-4 text-rose-400" />
-                <h3 className="text-sm font-semibold text-slate-200">يحتاجون تحسيناً</h3>
+                <h3 className="text-sm font-semibold text-slate-200"><T>يحتاجون تحسيناً</T></h3>
               </div>
               <Badge variant="outline" className="text-slate-500 border-slate-600/40 text-[10px] shrink-0">
-                أقل من {maxScore}
+                <T>أقل من </T>{formatNumber(maxScore, { locale })}
               </Badge>
             </div>
             <Leaderboard
@@ -535,7 +538,7 @@ export default function KpiDashboardPage() {
               variant="bottom"
               maxItems={10}
               onSelect={(eid) => navigateTo('employee360', undefined, { employeeId: eid })}
-              emptyLabel="لا يوجد موظفون بحاجة إلى تحسين"
+              emptyLabel={translateUIText('لا يوجد موظفون بحاجة إلى تحسين', locale)}
             />
           </CardContent>
         </Card>
@@ -548,7 +551,7 @@ export default function KpiDashboardPage() {
           <CardContent className="p-4 space-y-2">
             <div className="flex items-center gap-2 px-1 pb-2 border-b border-slate-700/40">
               <Building2 className="size-4 text-brand-400" />
-              <h3 className="text-sm font-semibold text-slate-200">تصنيف الأقسام</h3>
+              <h3 className="text-sm font-semibold text-slate-200"><T>تصنيف الأقسام</T></h3>
             </div>
             <DepartmentRankingWidget ranking={dashboard.departmentRanking ?? []} />
           </CardContent>
@@ -559,7 +562,7 @@ export default function KpiDashboardPage() {
           <CardContent className="p-4 space-y-2">
             <div className="flex items-center gap-2 px-1 pb-2 border-b border-slate-700/40">
               <CheckCircle2 className="size-4 text-blue-400" />
-              <h3 className="text-sm font-semibold text-slate-200">إحصائيات الاعتماد</h3>
+              <h3 className="text-sm font-semibold text-slate-200"><T>إحصائيات الاعتماد</T></h3>
             </div>
             <ApprovalStatsWidget stats={dashboard.approvalStats ?? { total: 0, pending: 0, approved: 0, rejected: 0, avgApprovalHours: 0 }} />
           </CardContent>
@@ -572,7 +575,7 @@ export default function KpiDashboardPage() {
           <CardContent className="p-4 space-y-3">
             <div className="flex items-center gap-2 px-1">
               <BarChart3 className="size-4 text-cyan-400" />
-              <h3 className="text-sm font-semibold text-slate-200">النتائج الشهرية</h3>
+              <h3 className="text-sm font-semibold text-slate-200"><T>النتائج الشهرية</T></h3>
             </div>
             <MonthlyScoresWidget scores={dashboard.monthlyScores} />
           </CardContent>
@@ -582,10 +585,10 @@ export default function KpiDashboardPage() {
       {/* Category distribution */}
       <Card className="bg-slate-800/30 border-slate-700/40">
         <CardContent className="p-4 space-y-3">
-          <div className="flex items-center gap-2 px-1">
-            <BarChart3 className="size-4 text-blue-400" />
-            <h3 className="text-sm font-semibold text-slate-200">توزيع الملاحظات حسب الفئة</h3>
-          </div>
+            <div className="flex items-center gap-2 px-1">
+              <BarChart3 className="size-4 text-blue-400" />
+              <h3 className="text-sm font-semibold text-slate-200"><T>توزيع الملاحظات حسب الفئة</T></h3>
+            </div>
           {sortedCategories.length > 0 ? (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-3">
               {sortedCategories.map((cat) => (
@@ -601,7 +604,7 @@ export default function KpiDashboardPage() {
           ) : (
             <div className="flex flex-col items-center justify-center py-8 text-center">
               <BarChart3 className="size-8 text-slate-600 mb-2" />
-              <p className="text-xs text-slate-500">لا توجد ملاحظات معتمدة في هذه الفترة</p>
+              <p className="text-xs text-slate-500"><T>لا توجد ملاحظات معتمدة في هذه الفترة</T></p>
             </div>
           )}
         </CardContent>

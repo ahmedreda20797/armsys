@@ -5,6 +5,8 @@ import type { CAPACase } from '@/types';
 import {
   SLA_DAYS, WORKFLOW_STAGES, CATEGORY_LABELS, ROOT_CAUSE_LABELS, SOURCE_LABELS,
 } from './capa-constants';
+import { displayLocale, formatDate as localeFormatDate } from '@/lib/i18n/format';
+import type { Locale } from '@/lib/i18n/dictionary';
 import {
   FolderOpen, Search, Brain, Wrench, Shield, ClipboardList,
   CheckCircle2, X, RefreshCw, CircleDot,
@@ -52,14 +54,14 @@ export function getActionStatusConfig(status: string) {
 //  Date & Formatting Helpers
 // ═══════════════════════════════════════════════════
 
-export function formatDate(iso: string) {
+export function formatDate(iso: string, locale: Locale = displayLocale()) {
   if (!iso) return '—';
-  return new Date(iso).toLocaleDateString('ar-EG', { year: 'numeric', month: 'short', day: 'numeric' });
+  return localeFormatDate(iso, locale, { year: 'numeric', month: 'short', day: 'numeric' });
 }
 
-export function formatDateTime(iso: string) {
+export function formatDateTime(iso: string, locale: Locale = displayLocale()) {
   if (!iso) return '—';
-  return new Date(iso).toLocaleDateString('ar-EG', {
+  return localeFormatDate(iso, locale, {
     year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
   });
 }

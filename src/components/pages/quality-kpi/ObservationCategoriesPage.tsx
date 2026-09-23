@@ -25,6 +25,9 @@ import {
   useObservationCategories, useCreateCategory, useUpdateCategory, useDeleteCategory,
 } from '@/hooks/use-kpi-queries';
 import type { ObservationCategory, Priority } from '@/types/quality-kpi';
+import { T } from '@/lib/i18n/T';
+import { translateUIText } from '@/lib/i18n/ui-text';
+import { useLanguage } from '@/lib/i18n/language-context';
 
 // ─── Constants ────────────────────────────────────────────────
 const PRIORITY_LABELS: Record<Priority, string> = {
@@ -75,6 +78,7 @@ function CategoryDialog({
   onSave: (data: CategoryFormData) => Promise<void>;
   busy: boolean;
 }) {
+  const { locale } = useLanguage();
   const [form, setForm] = useState<CategoryFormData>(initial ?? EMPTY_FORM);
   const isEdit = !!initial;
 
@@ -118,7 +122,7 @@ function CategoryDialog({
             {isEdit ? 'تعديل فئة' : 'فئة جديدة'}
           </DialogTitle>
           <DialogDescription className="text-slate-400">
-            الفئات تتحكم في النقاط والوزن واللون المعروض في الملاحظات
+            <T>الفئات تتحكم في النقاط والوزن واللون المعروض في الملاحظات</T>
           </DialogDescription>
         </DialogHeader>
 
@@ -127,24 +131,24 @@ function CategoryDialog({
           <div className="flex items-start gap-2.5 rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2.5 text-xs text-amber-300">
             <ShieldAlert className="size-4 shrink-0 mt-0.5" />
             <p>
-              تعديل هذه الفئة يؤثر على الملاحظات والقوالب الجديدة فقط.
-              الملاحظات التاريخية والبيانات المجمدة تحتفظ بقيمها الأصلية ولا تتأثر.
+              <T>تعديل هذه الفئة يؤثر على الملاحظات والقوالب الجديدة فقط.
+              الملاحظات التاريخية والبيانات المجمدة تحتفظ بقيمها الأصلية ولا تتأثر.</T>
             </p>
           </div>
         )}
 
         <div className="grid grid-cols-2 gap-3">
           <div className="space-y-1 col-span-2">
-            <Label>الاسم (عربي)</Label>
+            <Label><T>الاسم (عربي)</T></Label>
             <Input
               value={form.name}
               onChange={(e) => update('name', e.target.value)}
-              placeholder="مثال: تأخر متابعة"
+              placeholder={translateUIText('مثال: تأخر متابعة', locale)}
               className="bg-slate-800/50 border-slate-700"
             />
           </div>
           <div className="space-y-1">
-            <Label>المعرّف البرمجي</Label>
+            <Label><T>المعرّف البرمجي</T></Label>
             <Input
               value={form.key}
               onChange={(e) => update('key', e.target.value.toLowerCase().replace(/\s+/g, '_'))}
@@ -154,7 +158,7 @@ function CategoryDialog({
             />
           </div>
           <div className="space-y-1">
-            <Label>النقاط الافتراضية</Label>
+            <Label><T>النقاط الافتراضية</T></Label>
             <Input
               type="number"
               min={0}
@@ -164,7 +168,7 @@ function CategoryDialog({
             />
           </div>
           <div className="space-y-1">
-            <Label>الوزن</Label>
+            <Label><T>الوزن</T></Label>
             <Input
               type="number"
               min={0}
@@ -175,7 +179,7 @@ function CategoryDialog({
             />
           </div>
           <div className="space-y-1">
-            <Label>الأولوية</Label>
+            <Label><T>الأولوية</T></Label>
             <Select value={form.priority} onValueChange={(v) => update('priority', v as Priority)}>
               <SelectTrigger className="bg-slate-800/50 border-slate-700"><SelectValue /></SelectTrigger>
               <SelectContent>
@@ -186,7 +190,7 @@ function CategoryDialog({
             </Select>
           </div>
           <div className="space-y-1 col-span-2">
-            <Label>اللون</Label>
+            <Label><T>اللون</T></Label>
             <div className="flex flex-wrap gap-2">
               {COLOR_TOKENS.map((tok) => (
                 <button
@@ -205,8 +209,8 @@ function CategoryDialog({
             <div className="flex items-center gap-2">
               <Sparkles className="size-4 text-emerald-400" />
               <div>
-                <p className="text-sm text-slate-200">فئة مكافأة افتراضية</p>
-                <p className="text-xs text-slate-500">عند التفعيل، الملاحظات الجديدة تبدأ كمكافأة بدل الخصم</p>
+                <p className="text-sm text-slate-200"><T>فئة مكافأة افتراضية</T></p>
+                <p className="text-xs text-slate-500"><T>عند التفعيل، الملاحظات الجديدة تبدأ كمكافأة بدل الخصم</T></p>
               </div>
             </div>
             <Switch checked={form.isBonusDefault} onCheckedChange={(v) => update('isBonusDefault', v)} />
@@ -214,7 +218,7 @@ function CategoryDialog({
         </div>
 
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>إلغاء</Button>
+          <Button variant="outline" onClick={() => onOpenChange(false)}><T>إلغاء</T></Button>
           <Button onClick={handleSubmit} disabled={busy} className="gap-2">
             {busy ? 'جارٍ الحفظ...' : isEdit ? 'حفظ التغييرات' : 'إنشاء الفئة'}
           </Button>
@@ -268,7 +272,7 @@ function CategoryCard({
           </Badge>
           <Badge variant="outline" className="text-slate-400 border-slate-600/40">
             <TrendingUp className="size-3 mr-1" />
-            وزن {cat.weight}
+            <T>وزن </T>{cat.weight}
           </Badge>
         </div>
       </CardContent>
@@ -278,6 +282,7 @@ function CategoryCard({
 
 // ─── Page ─────────────────────────────────────────────────────
 export default function ObservationCategoriesPage() {
+  const { locale } = useLanguage();
   const { canView, canCreate, canUpdate, canDelete } = usePermissions('observationCategories');
   const { data, isLoading } = useObservationCategories();
   const createMut = useCreateCategory();
@@ -296,7 +301,7 @@ export default function ObservationCategoriesPage() {
   if (!canView) {
     return (
       <div className="flex flex-col items-center justify-center py-24 text-slate-400">
-        <p>ليس لديك صلاحية للوصول إلى هذه الصفحة</p>
+        <p><T>ليس لديك صلاحية للوصول إلى هذه الصفحة</T></p>
       </div>
     );
   }
@@ -376,12 +381,12 @@ export default function ObservationCategoriesPage() {
         pageId="observationCategories"
         icon={<Tags className="size-5" />}
         iconClassName="bg-blue-500/15 border-blue-500/30 text-blue-400"
-        title="فئات ملاحظات الجودة"
-        description="فئات قابلة للتكوين تتحكم في النقاط والوزن والأولوية — مصدر تكوين المؤشرات"
+        title={translateUIText('فئات ملاحظات الجودة', locale)}
+        description={translateUIText('فئات قابلة للتكوين تتحكم في النقاط والوزن والأولوية — مصدر تكوين المؤشرات', locale)}
         actions={canCreate && (
           <Button onClick={() => { setEditing(null); setDialogOpen(true); }} className="gap-2">
             <Plus className="size-4" />
-            فئة جديدة
+            <T>فئة جديدة</T>
           </Button>
         )}
       />
@@ -407,7 +412,7 @@ export default function ObservationCategoriesPage() {
       ) : (
         <div className="flex flex-col items-center justify-center py-24 text-slate-400">
           <Tags className="size-12 mb-3 opacity-50" />
-          <p className="text-sm">لا توجد فئات. تُضاف الفئات الافتراضية تلقائياً.</p>
+          <p className="text-sm"><T>لا توجد فئات. تُضاف الفئات الافتراضية تلقائياً.</T></p>
         </div>
       )}
 
@@ -426,7 +431,7 @@ export default function ObservationCategoriesPage() {
       <ConfirmDialog
         open={!!deleteTarget}
         onOpenChange={(open) => { if (!open) setDeleteTarget(null); }}
-        description="سيتم حذف الفئة. الملاحظات الحالية لا تتأثر."
+        description={translateUIText('سيتم حذف الفئة. الملاحظات الحالية لا تتأثر.', locale)}
         itemName={deleteTarget?.name}
         loading={deleteMut.isPending}
         onConfirm={confirmDelete}

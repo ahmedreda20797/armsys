@@ -115,6 +115,12 @@ export interface AttentionItem {
   groupKey?: string;
   /** whole row click — open the record, navigate, … */
   onClick?: () => void;
+  /**
+   * §Home-CC — inline primary action label rendered at the row's end
+   * (e.g. "مراجعة →"). Fires the SAME onClick as the row itself;
+   * purely a visible affordance for "what can I do about this".
+   */
+  actionLabel?: string;
   /** optional ⋮ OverflowMenu items for secondary actions */
   overflowItems?: OverflowMenuItem[];
   /** skip this row in the persisted collapsed-state (never show at all) */
@@ -157,6 +163,16 @@ export interface AttentionPanelProps {
   bodyMaxHeight?: number;
   /** when the consumer wants to render its own row content for absolute parity */
   customRowRenderer?: (item: AttentionItem, idx: number) => React.ReactNode;
+  /**
+   * §Home-CC — presentation variant.
+   *  'panel' (default) — the bordered collapsible card used across
+   *    Travel / Risk / CAPA / Follow-Ups. Unchanged behavior.
+   *  'queue' — the Home WORK-QUEUE presentation: no card shell, an
+   *    open queue of operational rows (severity dot · WHAT · WHO/WHY ·
+   *    urgency · inline action). Same items contract, same persistence,
+   *    same severity roll-up — only the presentation differs.
+   */
+  variant?: 'panel' | 'queue';
   /** accessibility label for the panel region */
   ariaLabel?: string;
 }
@@ -182,6 +198,7 @@ export function AttentionPanel({
   maxRows,
   bodyMaxHeight = 420,
   customRowRenderer,
+  variant = 'panel',
   ariaLabel,
 }: AttentionPanelProps) {
   const visibleItems = useMemo(() => items.filter((i) => !i.hidden), [items]);
@@ -202,7 +219,7 @@ export function AttentionPanel({
   //   • Stored preference (true/false) → the user's choice wins and
   //     survives navigation + reloads via userPreferences.ui.
   //   • defaultCollapsed only seeds the LOCAL (no-persistKey) state.
-  const [localCollapsed, setLocalCollapsed] = useState<boolean>(defaultCollapsed ?? true);
+  const [localCollapsed, setLocalCollapsed] = useState<boolean>(defaultCollapsed ?? variant === 'queue');
   // Instant-ack mirror of the toggled value. The React Query cache is
   // patched in the same click handler, so this override only guards
   // against a stale background refetch landing mid-PUT; it follows the
@@ -212,7 +229,7 @@ export function AttentionPanel({
   // Collapsed state:
   //   • With persistKey — an in-flight override wins (instant), then
   //     stored pref if the user ever toggled, otherwise DEFAULT
-  //     COLLAPSED (undefined → collapsed).
+  //     COLLAPSED (undefined → collapsed) — §10 GLOBAL ALERT CONTRACT.
   //   • Otherwise — localCollapsed is the user-toggled value, but it
   //     is ignored when there are no items (so the empty state shows
   //     instead of a collapsed header that hides the "no items" message).
@@ -223,9 +240,17 @@ export function AttentionPanel({
     : visibleItems.length === 0
       ? false
       : localCollapsed;
+  // §Home-CC — the QUEUE variant (Home work queue) opens by DEFAULT:
+  // the first viewport must show its rows. The panel's §10 default
+  // above stays untouched; the queue only overrides the ABSENT-
+  // preference case — an explicit stored choice always wins, and an
+  // in-session toggle (overrideCollapsed) always wins.
+  const effectiveCollapsed = variant === 'queue' && collapsedPref === undefined && overrideCollapsed === null
+    ? false
+    : collapsed;
 
   const toggleCollapsed = useCallback(() => {
-    const next = !collapsed;
+    const next = !effectiveCollapsed;
     if (persistKey) {
       // 1) flip NOW — the panel reacts in the same frame as the click.
       setOverrideCollapsed(next);
@@ -256,7 +281,7 @@ export function AttentionPanel({
     } else {
       setLocalCollapsed(next);
     }
-  }, [collapsed, persistKey, qc]);
+  }, [effectiveCollapsed, persistKey, qc]);
 
   // ── Severity roll-up for the header summary ──
   const severityCounts = useMemo(() => {
@@ -299,6 +324,31 @@ export function AttentionPanel({
     });
     return { groups, byGroup, orphanIndices };
   }, [groups, displayItems]);
+
+  // ── §Home-CC WORK-QUEUE presentation ──
+  // Same items contract, same persistence and severity roll-up as the
+  // panel — only the presentation differs: no card shell, an open
+  // queue of operational rows. (Branch sits after ALL hooks — the
+  // persistence/severity logic above is shared by both variants.)
+  if (variant === 'queue') {
+    return (
+      <AttentionQueue
+        title={title}
+        subtitle={subtitle}
+        items={displayItems}
+        visibleCount={visibleItems.length}
+        totalCount={totalCount}
+        severityCounts={severityCounts}
+        topSeverity={topSeverity}
+        collapsed={effectiveCollapsed}
+        onToggle={toggleCollapsed}
+        emptyState={emptyState}
+        maxRows={maxRows}
+        controlId={`attention-panel-${persistKey ?? 'local'}`}
+        ariaLabel={ariaLabel}
+      />
+    );
+  }
 
   return (
     <section
@@ -596,6 +646,229 @@ function EmptyAttention({ emptyState }: { emptyState?: AttentionPanelProps['empt
     </div>
   );
 }
+
+/* ═══ §Home-CC — WORK-QUEUE variant (variant='queue') ═══
+   A borderless operational queue: a typographic header line with the
+   severity roll-up, then rows of WHAT · WHO/WHY · urgency · action.
+   Borders appear only where they communicate (row separators, hover
+   state). The row itself is the action target — the trailing label is
+   a visible affordance, not a nested button. */
+
+const SEVERITY_DOT: Record<AttentionSeverity, string> = {
+  critical: 'bg-red-500',
+  urgent: 'bg-orange-500',
+  warning: 'bg-amber-500',
+  info: 'bg-cyan-500',
+};
+
+interface AttentionQueueProps {
+  title: string;
+  subtitle?: string;
+  items: AttentionItem[];
+  visibleCount: number;
+  totalCount: number;
+  severityCounts: Record<AttentionSeverity, number>;
+  topSeverity: AttentionSeverity | null;
+  collapsed: boolean;
+  onToggle: () => void;
+  emptyState?: AttentionPanelProps['emptyState'];
+  maxRows?: number;
+  controlId: string;
+  ariaLabel?: string;
+}
+
+function AttentionQueue({
+  title,
+  subtitle,
+  items,
+  visibleCount,
+  totalCount,
+  severityCounts,
+  topSeverity,
+  collapsed,
+  onToggle,
+  emptyState,
+  maxRows,
+  controlId,
+  ariaLabel,
+}: AttentionQueueProps) {
+  return (
+    <section role="region" aria-label={ariaLabel ?? title}>
+      {/* ── Header line — typography + status dot, not a card header ── */}
+      <div className="flex items-center gap-2.5 pb-1.5 min-w-0">
+        <button
+          type="button"
+          onClick={onToggle}
+          aria-expanded={!collapsed}
+          aria-controls={controlId}
+          className="flex items-center gap-2 min-w-0 group/qh focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/40 rounded-md"
+        >
+          <span
+            aria-hidden="true"
+            className={cn(
+              'size-2 rounded-full shrink-0 transition-colors',
+              visibleCount === 0
+                ? 'bg-slate-600'
+                : topSeverity ? SEVERITY_DOT[topSeverity] : 'bg-slate-600',
+              visibleCount > 0 && collapsed && 'animate-pulse',
+            )}
+          />
+          <h2 className="text-[11px] font-bold uppercase tracking-[0.14em] text-text-muted group-hover/qh:text-text-secondary transition-colors truncate">
+            {title}
+          </h2>
+          {subtitle && !collapsed && (
+            <span className="text-[10px] text-text-muted/70 truncate hidden md:inline">{subtitle}</span>
+          )}
+        </button>
+
+        {/* severity roll-up — bare dot+count pairs, no badge boxes */}
+        <span className="flex items-center gap-2.5 text-[10px] font-semibold tabular-nums text-text-muted ms-1">
+          {(Object.keys(severityCounts) as AttentionSeverity[]).map((sev) =>
+            severityCounts[sev] === 0 ? null : (
+              <span key={sev} className="inline-flex items-center gap-1" title={SEVERITY_META[sev].heading}>
+                <span aria-hidden="true" className={cn('size-1.5 rounded-full', SEVERITY_DOT[sev])} />
+                {severityCounts[sev]}
+              </span>
+            ),
+          )}
+        </span>
+
+        <span className="flex-1 min-w-4" />
+        {totalCount > 0 && (
+          <span className="text-[10px] text-text-muted tabular-nums shrink-0">
+            {totalCount} {totalCount === 1 ? 'عنصر' : 'عناصر'}
+          </span>
+        )}
+        <button
+          type="button"
+          onClick={onToggle}
+          aria-expanded={!collapsed}
+          aria-controls={controlId}
+          aria-label={collapsed ? 'توسيع' : 'طي'}
+          className="p-1 rounded-md text-text-muted hover:text-text-secondary hover:bg-surface-hover/60 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/40"
+        >
+          <motion.span
+            animate={{ rotate: collapsed ? 90 : 0 }}
+            transition={{ duration: 0.18, ease: [0.4, 0, 0.2, 1] }}
+            className="inline-flex"
+            aria-hidden="true"
+          >
+            <ChevronDown className="size-3.5" />
+          </motion.span>
+        </button>
+      </div>
+
+      {/* ── Queue rows ── */}
+      <AnimatePresence initial={false}>
+        {!collapsed && (
+          <motion.div
+            key="queue-body"
+            id={controlId}
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.2, ease: [0.4, 0, 0.2, 1] }}
+            style={{ overflow: 'hidden' }}
+          >
+            {items.length === 0 ? (
+              <div className="flex items-center gap-2 py-4 px-2">
+                {emptyState?.icon ?? <CheckCircle2 className="size-4 text-emerald-500/60" />}
+                <p className="text-xs text-text-secondary">
+                  {emptyState?.title ?? 'لا توجد عناصر تحتاج انتباه'}
+                </p>
+                {emptyState?.description && (
+                  <span className="text-[10px] text-text-muted truncate hidden sm:inline">— {emptyState.description}</span>
+                )}
+              </div>
+            ) : (
+              <ul className="divide-y divide-slate-500/10">
+                {items.map((item) => <QueueRow key={item.id} item={item} />)}
+              </ul>
+            )}
+            {typeof maxRows === 'number' && visibleCount > maxRows && (
+              <p className="pt-1.5 text-[10px] text-text-muted">
+                يعرض أول {maxRows} من {visibleCount} — العناصر الباقية في الصفحة المرتبطة
+              </p>
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
+      {collapsed && totalCount > 0 && (
+        <p className="text-[10px] text-text-muted pb-1">
+          الطابور مكتوم — {totalCount} {totalCount === 1 ? 'عنصر' : 'عناصر'} بانتظارك. اضغط للعرض.
+        </p>
+      )}
+    </section>
+  );
+}
+
+/* §PERF — memoized queue row (same rationale as DefaultAttentionRow). */
+const QueueRow = memo(function QueueRow({ item }: { item: AttentionItem }) {
+  const meta = SEVERITY_META[item.severity];
+  const interactive = typeof item.onClick === 'function';
+
+  return (
+    <li>
+      <div
+        role={interactive ? 'button' : undefined}
+        tabIndex={interactive ? 0 : undefined}
+        onClick={item.onClick}
+        onKeyDown={
+          interactive
+            ? (e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  item.onClick?.();
+                }
+              }
+            : undefined
+        }
+        className={cn(
+          'group flex items-center gap-3 py-2.5 -mx-2 px-2 rounded-lg transition-colors',
+          interactive && 'cursor-pointer hover:bg-surface-hover/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/40',
+        )}
+      >
+        {/* severity dot (§5 — aria label carries the meaning, not color alone) */}
+        <span
+          aria-hidden="true"
+          className={cn('size-2 rounded-full shrink-0', SEVERITY_DOT[item.severity])}
+        />
+        <span className="sr-only">{meta.aria}</span>
+
+        {/* WHAT + WHO/WHY */}
+        <span className="flex-1 min-w-0">
+          <span className="block text-[13px] font-semibold text-foreground truncate leading-tight">{item.primary}</span>
+          {item.secondary && (
+            <span className="block text-[11px] text-text-muted truncate mt-0.5">{item.secondary}</span>
+          )}
+        </span>
+
+        {/* urgency / age meta */}
+        {item.trailing && (
+          <span className="text-[10px] text-text-muted tabular-nums shrink-0 hidden sm:block">{item.trailing}</span>
+        )}
+
+        {/* inline primary-action affordance (directional arrow flips with RTL) */}
+        {interactive && item.actionLabel && (
+          <span className="shrink-0 inline-flex items-center gap-0.5 text-[11px] font-semibold text-brand-400 group-hover:text-brand-300 transition-colors">
+            {item.actionLabel}
+            <ChevronLeft className="size-3 rotate-180 rtl:rotate-0" aria-hidden="true" />
+          </span>
+        )}
+
+        {/* overflow decisions (approve / reject / …) */}
+        {item.overflowItems && item.overflowItems.length > 0 && (
+          <span
+            onClick={(e) => e.stopPropagation()}
+            className="shrink-0 opacity-60 group-hover:opacity-100 transition-opacity"
+          >
+            <OverflowMenu items={item.overflowItems} label="إجراءات إضافية" />
+          </span>
+        )}
+      </div>
+    </li>
+  );
+});
 
 /* ── Re-exports of common severity icons so consumers can use them
  *    in their groups / item.primary without importing lucide. ── */

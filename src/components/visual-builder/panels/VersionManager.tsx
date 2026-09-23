@@ -11,6 +11,8 @@ import {
   Clock, Upload, X, ArrowLeftRight,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { useLanguage } from '@/lib/i18n/language-context';
+import { formatDate } from '@/lib/i18n/format';
 import type { VBWorkflowVersion, VBVersionStatus } from '../engine/v2-types';
 
 // Sample versions seeded from the in-memory store
@@ -48,6 +50,7 @@ interface VersionManagerProps {
 export const VersionManager = memo(function VersionManager({
   onClose, onRollback, onPublish,
 }: VersionManagerProps) {
+  const { locale } = useLanguage();
   const [versions, setVersions] = useState<VBWorkflowVersion[]>(seedVersions);
   const [filter, setFilter] = useState<VBVersionStatus | 'all'>('all');
   const [compareA, setCompareA] = useState<string | null>(null);
@@ -151,7 +154,7 @@ export const VersionManager = memo(function VersionManager({
               <div className="flex items-center gap-3 text-[9px] text-slate-600 mb-2">
                 <span>{v.nodeCount} عقدة</span>
                 <span>·</span>
-                <span>{new Date(v.createdAt).toLocaleDateString('ar')}</span>
+                <span>{formatDate(v.createdAt, locale)}</span>
                 {v.publishedBy && (<><span>·</span><span>اعتمد: {v.publishedBy}</span></>)}
               </div>
 

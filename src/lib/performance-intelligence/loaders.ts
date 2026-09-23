@@ -25,6 +25,7 @@ import type { KpiReportingLoaders } from '@/lib/kpi-reporting';
 import { defaultKpiReportingLoaders } from '@/lib/kpi-reporting';
 import { isEffectiveDeduction } from '@/lib/quality-deductions/domain';
 import { attributeMonth, monthKeyOfDisplayDate, monthKeyOfStoredMonth } from './month-attribution';
+import { getDealMonthKey } from '@/lib/deal-dates';
 
 /** The RTDB org-tree collection (literal parity with lib/organization). */
 export const ORG_NODES_TABLE = 'orgNodes';
@@ -253,9 +254,25 @@ export function monthOfFollowUp(record: FollowUp): string | null {
   return monthKeyOfDisplayDate(record.date) ?? monthOfIsoOrDisplay(record.createdAt);
 }
 
-/** Deal attribution — departure date (DD/MM/YYYY), createdAt fallback. */
-export function monthOfTravelDeal(record: TravelDeal): string | null {
-  return monthKeyOfDisplayDate(record.departureDate) ?? monthOfIsoOrDisplay(record.createdAt);
+// ── §DEAL-DATES — deal attribution is DIMENSION-EXPLICIT ──
+// Every deal metric declares which canonical date it is counted by;
+// a missing date in one dimension is UNKNOWN (unattributed) and is
+// never replaced by another dimension's date.
+
+/** Deal TRAVEL attribution — the customer's departure month (TRAVEL dimension). */
+export function monthOfDealTravel(record: TravelDeal): string | null {
+  return getDealMonthKey(record, 'TRAVEL');
+}
+
+/** Deal CLOSED attribution — the observed closure month (CLOSED dimension,
+ *  closedAt). Null when the closure moment is unknown — never fabricated. */
+export function monthOfDealClosed(record: TravelDeal): string | null {
+  return getDealMonthKey(record, 'CLOSED');
+}
+
+/** Deal CREATED attribution — record-creation month (CREATED dimension, intake). */
+export function monthOfDealCreated(record: TravelDeal): string | null {
+  return getDealMonthKey(record, 'CREATED');
 }
 
 function monthOfIsoOrDisplay(value: string): string | null {

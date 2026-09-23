@@ -13,6 +13,10 @@ import { authFetch } from '@/lib/api-fetch';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import type { KpiValueBasis } from '@/lib/kpi-reporting';
+import { useLanguage } from '@/lib/i18n/language-context';
+import { translateUIText } from '@/lib/i18n/ui-text';
+import { formatMonthKey, formatNumber, formatPercentage } from '@/lib/i18n/format';
+import type { Locale } from '@/lib/i18n/dictionary';
 
 // ─────────────────────────────────────────────────────────────
 //  Month formatting (same convention as MonthClosePage)
@@ -47,6 +51,7 @@ export interface MonthOption {
  */
 export function buildMonthOptions(
   snapshots: Array<{ monthKey: string; status: 'open' | 'closed' }> | undefined,
+  locale?: Locale,
 ): MonthOption[] {
   const current = currentMonthKey();
   const seen = new Map<string, boolean>();
@@ -60,7 +65,7 @@ export function buildMonthOptions(
     .slice(0, 24)
     .map(([value, closed]) => ({
       value,
-      label: `${formatMonth(value)}${closed ? ' 🔒' : ''}`,
+      label: `${formatMonthKey(value, locale)}${closed ? ' 🔒' : ''}`,
       closed,
     }));
 }
@@ -82,36 +87,37 @@ const STATUS_STYLES: Record<string, string> = {
   COMPLETE: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30',
 };
 
-const STATUS_LABELS_AR: Record<string, string> = {
-  FINALIZED: 'مجمّد',
-  AVAILABLE: 'متاح',
-  INCOMPLETE: 'غير مكتمل',
-  PENDING: 'معلّق',
-  ZERO: 'صفر',
-  NOT_ELIGIBLE: 'غير مؤهل',
-  NO_SCHEME: 'لا يوجد مخطط',
-  AMBIGUOUS: 'مخططات متعددة',
-  OVERRIDE_NOT_RESOLVABLE: 'تجاوز غير قابل للتطبيق',
-  COMPLETE: 'مكتمل',
+const STATUS_LABELS: Record<string, [string, string]> = {
+  FINALIZED: ['مجمّد', 'Frozen'],
+  AVAILABLE: ['متاح', 'Available'],
+  INCOMPLETE: ['غير مكتمل', 'Incomplete'],
+  PENDING: ['معلّق', 'Suspended'],
+  ZERO: ['صفر', 'Zero'],
+  NOT_ELIGIBLE: ['غير مؤهل', 'Ineligible'],
+  NO_SCHEME: ['لا يوجد مخطط', 'No scheme'],
+  AMBIGUOUS: ['مخططات متعددة', 'Multiple schemes'],
+  OVERRIDE_NOT_RESOLVABLE: ['تجاوز غير قابل للتطبيق', 'Unresolvable override'],
+  COMPLETE: ['مكتمل', 'Completed'],
 };
 
 export function StatusBadge({ status, className }: { status: string | null; className?: string }) {
+  const { locale } = useLanguage();
   if (!status) return <span className="text-slate-500">—</span>;
   return (
     <Badge
       variant="outline"
       className={cn('font-mono text-[11px] whitespace-nowrap', STATUS_STYLES[status] ?? 'bg-slate-500/15 text-slate-300 border-slate-500/30', className)}
-      title={STATUS_LABELS_AR[status] ?? status}
+      title={STATUS_LABELS[status]?.[locale === 'en' ? 1 : 0] ?? status}
     >
       {status}
     </Badge>
   );
 }
 
-const BASIS_LABELS: Record<KpiValueBasis, string> = {
-  MTD: 'MTD — حتى تاريخه',
-  LIVE: 'حية (غير نهائية)',
-  FINALIZED: 'مجمّدة نهائية',
+const BASIS_LABELS: Record<KpiValueBasis, [string, string]> = {
+  MTD: ['MTD — حتى تاريخه', 'MTD — month to date'],
+  LIVE: ['حية (غير نهائية)', 'Live (non-final)'],
+  FINALIZED: ['مجمّدة نهائية', 'Finalized'],
 };
 
 const BASIS_STYLES: Record<KpiValueBasis, string> = {
@@ -121,9 +127,11 @@ const BASIS_STYLES: Record<KpiValueBasis, string> = {
 };
 
 export function ValueBasisBadge({ basis }: { basis: KpiValueBasis }) {
+  const { locale } = useLanguage();
+  const label = BASIS_LABELS[basis];
   return (
     <Badge variant="outline" className={cn('text-[11px] whitespace-nowrap', BASIS_STYLES[basis])}>
-      {BASIS_LABELS[basis]}
+      {locale === 'en' ? label[1] : label[0]}
     </Badge>
   );
 }
@@ -132,21 +140,24 @@ export function ValueBasisBadge({ basis }: { basis: KpiValueBasis }) {
 //  Number formatting
 // ─────────────────────────────────────────────────────────────
 
-export function formatScore(value: number | null | undefined): string {
+export function formatScore(value: number | null | undefined, locale?: Locale): string {
   if (value === null || value === undefined) return '—';
   const rounded = Math.round(value * 100) / 100;
-  return `${rounded}%`;
+  return formatPercentage(rounded, { locale, maximumFractionDigits: 2 });
 }
 
-export function formatContribution(value: number | null | undefined, max: number | null | undefined): string {
+export function formatContribution(value: number | null | undefined, max: number | null | undefined, locale?: Locale): string {
   if (value === null || value === undefined) return '—';
   const rounded = Math.round(value * 100) / 100;
-  return max === null || max === undefined ? `${rounded}` : `${rounded} / ${max}`;
+  return max === null || max === undefined
+    ? formatNumber(rounded, { locale })
+    : `${formatNumber(rounded, { locale })} / ${formatNumber(max, { locale })}`;
 }
 
-export function formatSignedPoints(value: number): string {
-  if (value > 0) return `+${Math.round(value * 100) / 100}`;
-  return `${Math.round(value * 100) / 100}`;
+export function formatSignedPoints(value: number, locale?: Locale): string {
+  const rounded = Math.round(value * 100) / 100;
+  if (value > 0) return `+${formatNumber(rounded, { locale })}`;
+  return formatNumber(rounded, { locale });
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -177,7 +188,7 @@ export async function downloadKpiReportExcel(
     body: JSON.stringify({ reportId, format: 'excel', ...payload }),
   });
   if (!res.ok) {
-    let message = 'فشل تصدير التقرير';
+    let message = translateUIText('فشل تصدير التقرير');
     try {
       const parsed = await res.json();
       message = parsed?.error?.message ?? message;

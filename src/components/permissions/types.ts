@@ -15,6 +15,7 @@ import type {
   DataScope,
   PermissionsMap,
 } from '@/config/permissions';
+import type { OrgBoundarySource, OrgBoundaryExplanation } from '@/lib/scope/boundary';
 
 export interface ProfileIdentity {
   id: string;
@@ -30,6 +31,8 @@ export interface ProfileIdentity {
   linkedEmployeeId: string | null;
   linkedEmployeeName: string | null;
   linkedEmployeeCode: string | null;
+  /** §ORG-BOUNDARY raw stored override (null = تلقائي/inherit). */
+  orgBoundaryNodeIds: string[] | null;
 }
 
 export interface ProfilePage {
@@ -51,6 +54,12 @@ export interface ProfileOrganization {
   managedBranches: Array<{ id: string; name: string; type: string }>;
   /** True when the user has a resolvable organization placement. */
   resolvable: boolean;
+  /** §ORG-BOUNDARY — the ENFORCED boundary (server-resolved). */
+  boundary: OrgBoundaryExplanation;
+  /** The raw stored override (null = تلقائي — من التعيين التنظيمي). */
+  overrideNodeIds: string[] | null;
+  /** Canonical tree facts for the boundary EDITOR (id/name/type/status). */
+  availableNodes: Array<{ id: string; name: string; type: string; status: string }>;
 }
 
 export interface AuthorizationProfile {

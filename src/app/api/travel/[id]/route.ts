@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getById, updateRecord, deleteRecord } from '@/lib/db';
 import { verifyPermission } from '@/lib/verify-permission';
 import { asScopeViewer, employeeInScope } from '@/lib/scope/server';
+import { closedAtForStatusTransition } from '@/lib/deal-dates';
 
 export async function PUT(
   request: NextRequest,
@@ -38,7 +39,21 @@ export async function PUT(
       return NextResponse.json({ error: 'الرحلة غير موجودة' }, { status: 404 });
     }
 
-    const trip = await updateRecord('travelDeals', id, body);
+    // ── §DEAL-DATES — closedAt is a SERVER-side closure ledger ──
+    // The client's closedAt (if any) is never trusted: the stamp is
+    // derived from the observed status transition (entering
+    // 'completed' = now; leaving it = cleared; staying = verbatim).
+    const updates: Record<string, unknown> = { ...(body as Record<string, unknown>) };
+    delete updates.closedAt;
+    if (typeof updates.status === 'string' && updates.status !== existing.status) {
+      updates.closedAt = closedAtForStatusTransition({
+        previousStatus: existing.status,
+        nextStatus: updates.status as string,
+        existingClosedAt: existing.closedAt ?? null,
+      });
+    }
+
+    const trip = await updateRecord('travelDeals', id, updates);
 
     return NextResponse.json(trip);
   } catch (error) {

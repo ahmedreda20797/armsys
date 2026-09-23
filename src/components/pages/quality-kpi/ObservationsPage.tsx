@@ -1,11 +1,16 @@
 'use client';
 
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, type ReactNode } from 'react';
 import { authFetch } from '@/lib/api-fetch';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
 import { usePermissions } from '@/hooks/usePermissions';
 import { useAppStore } from '@/lib/store';
+import { useLanguage } from '@/lib/i18n/language-context';
+import { formatDate, formatNumber, formatInteger, formatMonthKey } from '@/lib/i18n/format';
+import { T } from '@/lib/i18n/T';
+import { translateUIText } from '@/lib/i18n/ui-text';
+import type { Locale } from '@/lib/i18n/dictionary';
 import { useRecordHighlight } from '@/hooks/use-record-highlight';
 import { logCreate, logUpdate, logDelete, logApprove } from '@/lib/activity-logger';
 import { Card, CardContent } from '@/components/ui/card';
@@ -61,13 +66,21 @@ import type { QualityObservation } from '@/types/quality-kpi';
 // ─── Helpers ──────────────────────────────────────────────────
 const CURRENT_MONTH = new Date().toISOString().slice(0, 7);
 
-const SEVERITY_LABELS: Record<string, string> = {
-  low: 'منخفض', medium: 'متوسط', high: 'عالٍ', critical: 'حرج',
+// §5 — system enum codes → [ar, en] display labels, picked by locale at
+// the render site. User/business data never passes through these maps.
+const SEVERITY_LABELS: Record<string, [string, string]> = {
+  low: ['منخفض', 'Low'], medium: ['متوسط', 'Medium'], high: ['عالٍ', 'High'], critical: ['حرج', 'Critical'],
 };
 
-const STATUS_LABELS: Record<string, string> = {
-  open: 'مفتوحة', in_review: 'قيد المراجعة', resolved: 'تم الحل', closed: 'مغلقة',
+const STATUS_LABELS: Record<string, [string, string]> = {
+  open: ['مفتوحة', 'Open'], in_review: ['قيد المراجعة', 'In review'], resolved: ['تم الحل', 'Resolved'], closed: ['مغلقة', 'Closed'],
 };
+
+/** Pick the locale side of an enum-label pair; unknown codes pass raw. */
+function enumLabel(map: Record<string, [string, string]>, code: string, locale: Locale): string {
+  const pair = map[code];
+  return pair ? (locale === 'en' ? pair[1] : pair[0]) : code;
+}
 
 /** §7 — GLOBAL RULE (inline contract): "إنشاء CAPA" from a quality note
  *  opens the REAL CAPA form INLINE on this page with the observation
@@ -87,6 +100,7 @@ function capaDefaultsFromObservation(obs: QualityObservation) {
 // ─── Page ─────────────────────────────────────────────────────
 export default function ObservationsPage() {
   const { canView, canCreate, canUpdate, canDelete, canApprove, isAdmin } = usePermissions('observations');
+  const { locale } = useLanguage();
 
   // Filters — Phase 5.3 (spec §27/§28): an evidence deep-link seeds the
   // month filter with the RECORD's own month (server-derived meta.month).
@@ -192,10 +206,10 @@ export default function ObservationsPage() {
     try {
       await deleteMut.mutateAsync(deleteTarget.id);
       logDelete('observations', 'ملاحظة', deleteTarget.employeeName);
-      toast.success('تم حذف الملاحظة');
+      toast.success(translateUIText('تم حذف الملاحظة', locale));
       setDeleteTarget(null);
     } catch (e) {
-      toast.error('فشل الحذف', { description: e instanceof Error ? e.message : undefined });
+      toast.error(translateUIText('فشل الحذف', locale), { description: e instanceof Error ? e.message : undefined });
     }
   }
 
@@ -229,7 +243,7 @@ export default function ObservationsPage() {
   if (!canView) {
     return (
       <div className="flex flex-col items-center justify-center py-24 text-slate-400">
-        <p>ليس لديك صلاحية للوصول إلى هذه الصفحة</p>
+        <p><T>ليس لديك صلاحية للوصول إلى هذه الصفحة</T></p>
       </div>
     );
   }
@@ -240,9 +254,9 @@ export default function ObservationsPage() {
       <PageHeaderBar
         icon={<Eye className="size-5" />}
         iconClassName="bg-blue-500/15 border-blue-500/30 text-blue-400"
-        title="ملاحظات الجودة"
-        description="إدارة ملاحظات الجودة واعتمادها — المصدر الأساسي لمؤشرات الأداء"
-        primaryAction={canCreate ? { label: 'ملاحظة جديدة', onClick: () => setCreateOpen(true) } : undefined}
+        title={translateUIText('ملاحظات الجودة', locale)}
+        description={translateUIText('إدارة ملاحظات الجودة واعتمادها — المصدر الأساسي لمؤشرات الأداء', locale)}
+        primaryAction={canCreate ? { label: translateUIText('ملاحظة جديدة', locale), onClick: () => setCreateOpen(true) } : undefined}
       />
 
       {/* Toolbar */}
@@ -250,14 +264,14 @@ export default function ObservationsPage() {
         <div className="relative flex-1 min-w-[200px]">
           <Search className="absolute right-3 top-1/2 -translate-y-1/2 size-4 text-slate-500" />
           <Input
-            placeholder="بحث..."
+            placeholder={translateUIText('بحث...', locale)}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="pr-9 bg-slate-800/50 border-slate-700"
           />
         </div>
         <Button variant="outline" size="sm" onClick={() => setShowFilters((s) => !s)} className="gap-2">
-          <Filter className="size-4" /> فلترة
+          <Filter className="size-4" /> <T>فلترة</T>
         </Button>
         {/* Phase 6.2 (spec §68): the ACTIVE period is always visible in the
             toolbar — a month-filtered view must never look like the whole
@@ -266,20 +280,20 @@ export default function ObservationsPage() {
           type="button"
           data-testid="observations-period-indicator"
           onClick={() => setShowFilters((s) => !s)}
-          title="الفترة المعروضة — اضغط لتغيير الشهر"
+          title={translateUIText('الفترة المعروضة — اضغط لتغيير الشهر', locale)}
           className="flex items-center gap-1.5 rounded-full border border-sky-500/30 bg-sky-500/10 px-3 py-1.5 text-xs text-sky-200 hover:bg-sky-500/15"
         >
           <CalendarDays className="size-3.5" />
-          فترة العرض: {filters.month ? formatMonth(filters.month) : 'كل الأشهر'}
+          <T>فترة العرض: </T>{filters.month ? formatMonthKey(filters.month, locale) : <T>كل الأشهر</T>}
         </button>
         {filters.month && (
           <Button variant="ghost" size="sm" data-testid="observations-show-all-months" onClick={showAllMonths} className="text-xs text-slate-400">
-            عرض كل الأشهر
+            <T>عرض كل الأشهر</T>
           </Button>
         )}
         {Object.values(filters).some(Boolean) && (
           <Button variant="ghost" size="sm" onClick={clearFilters} className="text-xs text-slate-400">
-            مسح الفلاتر
+            <T>مسح الفلاتر</T>
           </Button>
         )}
       </div>
@@ -289,7 +303,7 @@ export default function ObservationsPage() {
         <Card className="border-slate-700/40 bg-slate-800/30">
           <CardContent className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 pt-4">
             <div className="space-y-1">
-              <Label className="text-xs text-slate-400">الشهر</Label>
+              <Label className="text-xs text-slate-400"><T>الشهر</T></Label>
               <Input
                 type="month"
                 value={filters.month ?? ''}
@@ -298,43 +312,43 @@ export default function ObservationsPage() {
               />
             </div>
             <div className="space-y-1">
-              <Label className="text-xs text-slate-400">حالة الاعتماد</Label>
+              <Label className="text-xs text-slate-400"><T>حالة الاعتماد</T></Label>
               <Select
                 value={filters.approvalStatus ?? 'all'}
                 onValueChange={(v) => setFilters((f) => ({ ...f, approvalStatus: v === 'all' ? undefined : v }))}
               >
                 <SelectTrigger className="bg-slate-800/50 border-slate-700"><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">الكل</SelectItem>
-                  <SelectItem value="pending">بانتظار الاعتماد</SelectItem>
-                  <SelectItem value="approved">معتمدة</SelectItem>
-                  <SelectItem value="rejected">مرفوضة</SelectItem>
+                  <SelectItem value="all"><T>الكل</T></SelectItem>
+                  <SelectItem value="pending"><T>بانتظار الاعتماد</T></SelectItem>
+                  <SelectItem value="approved"><T>معتمدة</T></SelectItem>
+                  <SelectItem value="rejected"><T>مرفوضة</T></SelectItem>
                 </SelectContent>
               </Select>
             </div>
             <div className="space-y-1">
-              <Label className="text-xs text-slate-400">النوع</Label>
+              <Label className="text-xs text-slate-400"><T>النوع</T></Label>
               <Select
                 value={filters.isBonus ?? 'all'}
                 onValueChange={(v) => setFilters((f) => ({ ...f, isBonus: v === 'all' ? undefined : v }))}
               >
                 <SelectTrigger className="bg-slate-800/50 border-slate-700"><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">الكل</SelectItem>
-                  <SelectItem value="false">خصومات</SelectItem>
-                  <SelectItem value="true">مكافآت</SelectItem>
+                  <SelectItem value="all"><T>الكل</T></SelectItem>
+                  <SelectItem value="false"><T>خصومات</T></SelectItem>
+                  <SelectItem value="true"><T>مكافآت</T></SelectItem>
                 </SelectContent>
               </Select>
             </div>
             <div className="space-y-1">
-              <Label className="text-xs text-slate-400">القسم</Label>
+              <Label className="text-xs text-slate-400"><T>القسم</T></Label>
               <Select
                 value={filters.department ?? 'all'}
                 onValueChange={(v) => setFilters((f) => ({ ...f, department: v === 'all' ? undefined : v }))}
               >
                 <SelectTrigger className="bg-slate-800/50 border-slate-700"><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">كل الأقسام</SelectItem>
+                  <SelectItem value="all"><T>كل الأقسام</T></SelectItem>
                   {departments.map((d) => (
                     <SelectItem key={d} value={d}>{d}</SelectItem>
                   ))}
@@ -342,28 +356,28 @@ export default function ObservationsPage() {
               </Select>
             </div>
             <div className="space-y-1">
-              <Label className="text-xs text-slate-400">الموظف</Label>
+              <Label className="text-xs text-slate-400"><T>الموظف</T></Label>
               <EmployeeSearchInput
                 employees={employeeList}
                 value={filters.employeeId ?? ''}
                 onChange={(id) => setFilters((f) => ({ ...f, employeeId: id === 'all' ? undefined : id }))}
-                placeholder="فلتر حسب الموظف"
+                placeholder={translateUIText('فلتر حسب الموظف', locale)}
                 variant="filter"
                 showDepartment
                 showAllOption
                 allOptionValue="all"
-                allOptionLabel="كل الموظفين"
+                allOptionLabel={translateUIText('كل الموظفين', locale)}
               />
             </div>
             <div className="space-y-1">
-              <Label className="text-xs text-slate-400">التصنيف</Label>
+              <Label className="text-xs text-slate-400"><T>التصنيف</T></Label>
               <Select
                 value={filters.categoryId ?? 'all'}
                 onValueChange={(v) => setFilters((f) => ({ ...f, categoryId: v === 'all' ? undefined : v }))}
               >
                 <SelectTrigger className="bg-slate-800/50 border-slate-700"><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">كل التصنيفات</SelectItem>
+                  <SelectItem value="all"><T>كل التصنيفات</T></SelectItem>
                   {categoriesList.map((c) => (
                     <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
                   ))}
@@ -371,18 +385,18 @@ export default function ObservationsPage() {
               </Select>
             </div>
             <div className="space-y-1">
-              <Label className="text-xs text-slate-400">الحالة</Label>
+              <Label className="text-xs text-slate-400"><T>الحالة</T></Label>
               <Select
                 value={filters.status ?? 'all'}
                 onValueChange={(v) => setFilters((f) => ({ ...f, status: v === 'all' ? undefined : v }))}
               >
                 <SelectTrigger className="bg-slate-800/50 border-slate-700"><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">الكل</SelectItem>
-                  <SelectItem value="open">مفتوحة</SelectItem>
-                  <SelectItem value="in_review">قيد المراجعة</SelectItem>
-                  <SelectItem value="resolved">تم الحل</SelectItem>
-                  <SelectItem value="closed">مغلقة</SelectItem>
+                  <SelectItem value="all"><T>الكل</T></SelectItem>
+                  <SelectItem value="open"><T>مفتوحة</T></SelectItem>
+                  <SelectItem value="in_review"><T>قيد المراجعة</T></SelectItem>
+                  <SelectItem value="resolved"><T>تم الحل</T></SelectItem>
+                  <SelectItem value="closed"><T>مغلقة</T></SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -392,10 +406,10 @@ export default function ObservationsPage() {
 
       {/* Stats summary */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <StatChip label="الإجمالي" value={obsList.length} icon={ClipboardList} className="text-slate-300" />
-        <StatChip label="بانتظار الاعتماد" value={obsList.filter((o) => o.approvalStatus === 'pending').length} icon={Clock} className="text-amber-400" />
-        <StatChip label="معتمدة" value={obsList.filter((o) => o.approvalStatus === 'approved').length} icon={Check} className="text-emerald-400" />
-        <StatChip label="مرفوضة" value={obsList.filter((o) => o.approvalStatus === 'rejected').length} icon={X} className="text-rose-400" />
+        <StatChip label={<T>الإجمالي</T>} value={obsList.length} icon={ClipboardList} className="text-slate-300" />
+        <StatChip label={<T>بانتظار الاعتماد</T>} value={obsList.filter((o) => o.approvalStatus === 'pending').length} icon={Clock} className="text-amber-400" />
+        <StatChip label={<T>معتمدة</T>} value={obsList.filter((o) => o.approvalStatus === 'approved').length} icon={Check} className="text-emerald-400" />
+        <StatChip label={<T>مرفوضة</T>} value={obsList.filter((o) => o.approvalStatus === 'rejected').length} icon={X} className="text-rose-400" />
       </div>
 
       {/* §7 inline CAPA host (GLOBAL RULE) — the REAL CAPA form opens
@@ -408,7 +422,7 @@ export default function ObservationsPage() {
             id="observation-inline-capa"
             tone="violet"
             icon={<ShieldCheck className="size-3.5 text-brand-400" />}
-            title={`إنشاء CAPA من ملاحظة — ${capaTarget.employeeName}`}
+            title={`${translateUIText('إنشاء CAPA من ملاحظة', locale)} — ${capaTarget.employeeName}`}
             onClose={() => setCapaTarget(null)}
           >
             <CAPAInlineForm
@@ -429,7 +443,7 @@ export default function ObservationsPage() {
         </div>
       ) : filtered.length === 0 ? (
         <EmptyState
-          monthLabel={filters.month ? formatMonth(filters.month) : null}
+          monthLabel={filters.month ? formatMonthKey(filters.month, locale) : null}
           hasFilters={!!search || Object.values(filters).some(Boolean)}
           onShowAllMonths={showAllMonths}
         />
@@ -513,7 +527,7 @@ export default function ObservationsPage() {
       <ConfirmDialog
         open={!!deleteTarget}
         onOpenChange={(open) => { if (!open) setDeleteTarget(null); }}
-        description="سيتم حذف ملاحظة الجودة نهائياً من النظام."
+        description={translateUIText('سيتم حذف ملاحظة الجودة نهائياً من النظام.', locale)}
         itemName={deleteTarget ? deleteTarget.employeeName : undefined}
         loading={deleteMut.isPending}
         onConfirm={confirmDelete}
@@ -524,13 +538,14 @@ export default function ObservationsPage() {
 
 // ─── Sub-components ───────────────────────────────────────────
 
-function StatChip({ label, value, icon: Icon, className }: { label: string; value: number; icon: typeof ClipboardList; className?: string }) {
+function StatChip({ label, value, icon: Icon, className }: { label: ReactNode; value: number; icon: typeof ClipboardList; className?: string }) {
+  const { locale } = useLanguage();
   return (
     <Card className="border-slate-700/40 bg-slate-800/30">
       <CardContent className="flex items-center gap-3 py-3">
         <Icon className={`size-5 ${className ?? ''}`} />
         <div>
-          <p className="text-lg font-bold tabular-nums">{value}</p>
+          <p className="text-lg font-bold tabular-nums">{formatInteger(value, locale)}</p>
           <p className="text-xs text-slate-400">{label}</p>
         </div>
       </CardContent>
@@ -557,14 +572,14 @@ function EmptyState({
           <Eye className="size-6 text-slate-600" />
         </div>
         <p className="text-slate-400 text-sm font-medium">
-          {monthLabel ? `لا توجد ملاحظات مسجلة في ${monthLabel}` : 'لا توجد نتائج مطابقة'}
+          {monthLabel ? (<><T>لا توجد ملاحظات مسجلة في </T>{monthLabel}</>) : <T>لا توجد نتائج مطابقة</T>}
         </p>
         <p className="text-slate-600 text-xs mt-1">
           {monthLabel
-            ? 'العرض مُفلتر على هذه الفترة — غيّر الشهر أو اعرض كل الأشهر.'
+            ? <T>العرض مُفلتر على هذه الفترة — غيّر الشهر أو اعرض كل الأشهر.</T>
             : hasFilters
-              ? 'لم يتم العثور على نتائج مع الفلاتر المحددة'
-              : 'لم يتم تسجيل أي ملاحظات جودة بعد'}
+              ? <T>لم يتم العثور على نتائج مع الفلاتر المحددة</T>
+              : <T>لم يتم تسجيل أي ملاحظات جودة بعد</T>}
         </p>
         {monthLabel && (
           <Button
@@ -575,7 +590,7 @@ function EmptyState({
             className="mt-4 border-slate-700/50 text-slate-300 hover:bg-slate-800/60"
           >
             <CalendarDays className="size-3.5 ml-1" />
-            عرض كل الأشهر
+            <T>عرض كل الأشهر</T>
           </Button>
         )}
       </CardContent>
@@ -601,6 +616,7 @@ function ObservationCard({
   onCreateCapa: (obs: QualityObservation) => void;
 }) {
   const openEmployee360 = useAppStore((s) => s.openEmployee360);
+  const { locale } = useLanguage();
 
   // Approved observations are editable/deletable ONLY by Admin, and only
   // while the month is OPEN (backend enforces the same policy).
@@ -615,18 +631,18 @@ function ObservationCard({
     targetType: 'record',
     targetId: obs.id,
     route: 'observations',
-    label: `ملاحظة: ${obs.employeeName} — ${obs.categoryName}`,
-  }), [obs.id, obs.employeeName, obs.categoryName]);
+    label: `${translateUIText('ملاحظة', locale)}: ${obs.employeeName} — ${obs.categoryName}`,
+  }), [obs.id, obs.employeeName, obs.categoryName, locale]);
   const markState = useMarkState(descriptor);
   const toggleFavorite = useFavoriteToggleAction();
   const togglePin = usePinToggleAction();
 
   const overflowItems: OverflowMenuItem[] = [
-    { key: 'edit', label: 'تعديل', icon: <Pencil className="size-3.5" />, onSelect: onEdit, separatorBefore: true },
-    { key: 'favorite', label: markState.favoriteActive ? 'إزالة من المفضلة' : 'إضافة للمفضلة ⭐', icon: <Star className={cn('size-3.5', markState.favoriteActive && 'text-amber-400 fill-amber-400')} />, onSelect: () => void toggleFavorite(descriptor) },
-    { key: 'pin', label: markState.pinActive ? 'إزالة التثبيت' : 'تثبيت 📌', icon: <PinIcon className={cn('size-3.5', markState.pinActive && 'text-cyan-400 fill-cyan-400')} />, onSelect: () => void togglePin(descriptor) },
-    { key: 'capa', label: 'إنشاء CAPA', icon: <ShieldCheck className="size-3.5" />, onSelect: () => onCreateCapa(obs), separatorBefore: true },
-    { key: 'delete', label: 'حذف', icon: <Trash2 className="size-3.5" />, destructive: true, onSelect: onDelete, separatorBefore: true },
+    { key: 'edit', label: translateUIText('تعديل', locale), icon: <Pencil className="size-3.5" />, onSelect: onEdit, separatorBefore: true },
+    { key: 'favorite', label: markState.favoriteActive ? translateUIText('إزالة من المفضلة', locale) : translateUIText('إضافة للمفضلة ⭐', locale), icon: <Star className={cn('size-3.5', markState.favoriteActive && 'text-amber-400 fill-amber-400')} />, onSelect: () => void toggleFavorite(descriptor) },
+    { key: 'pin', label: markState.pinActive ? translateUIText('إزالة التثبيت', locale) : translateUIText('تثبيت 📌', locale), icon: <PinIcon className={cn('size-3.5', markState.pinActive && 'text-cyan-400 fill-cyan-400')} />, onSelect: () => void togglePin(descriptor) },
+    { key: 'capa', label: translateUIText('إنشاء CAPA', locale), icon: <ShieldCheck className="size-3.5" />, onSelect: () => onCreateCapa(obs), separatorBefore: true },
+    { key: 'delete', label: translateUIText('حذف', locale), icon: <Trash2 className="size-3.5" />, destructive: true, onSelect: onDelete, separatorBefore: true },
   ].filter((item) => {
     if ((item.key === 'edit' || item.key === 'delete') && !(item.key === 'edit' ? canEditThis : canDeleteThis)) return false;
     return true;
@@ -650,16 +666,16 @@ function ObservationCard({
               <Badge variant="outline" className="bg-slate-700/30 text-slate-300 text-[10px] px-1.5">{obs.department}</Badge>
               <ApprovalStatusBadge status={obs.approvalStatus} />
               {obs.isBonus ? (
-                <Badge variant="outline" className="bg-emerald-500/10 text-emerald-400 border-emerald-500/20 text-[10px] px-1.5">+{obs.points} مكافأة</Badge>
+                <Badge variant="outline" className="bg-emerald-500/10 text-emerald-400 border-emerald-500/20 text-[10px] px-1.5">+{formatNumber(obs.points, { locale })} <T>مكافأة</T></Badge>
               ) : obs.applyPointDeduction ? (
-                <Badge variant="outline" className="bg-rose-500/10 text-rose-400 border-rose-500/20 text-[10px] px-1.5">-{obs.points} خصم</Badge>
+                <Badge variant="outline" className="bg-rose-500/10 text-rose-400 border-rose-500/20 text-[10px] px-1.5">-{formatNumber(obs.points, { locale })} <T>خصم</T></Badge>
               ) : null}
             </div>
             <p className="text-xs text-slate-400 mt-1 line-clamp-1">{obs.notes || '—'}</p>
             <div className="flex items-center gap-2 mt-1.5 text-[11px] text-slate-500 flex-wrap">
               <span>{obs.categoryName}</span><span>•</span>
               <span>{obs.observationDate}</span><span>•</span>
-              <span>{SEVERITY_LABELS[obs.severity] ?? obs.severity}</span>
+              <span>{enumLabel(SEVERITY_LABELS, obs.severity, locale)}</span>
               {/* §2 — "Added by" appears HERE ONLY (card level, no click
                   needed) and ONLY for viewers the server authorized: the
                   API strips observerName for everyone without the
@@ -668,8 +684,8 @@ function ObservationCard({
               {obs.observerName && (
                 <>
                   <span>•</span>
-                  <span className="text-slate-400" title="أضافها">
-                    بواسطة: <span className="text-slate-300">{obs.observerName}</span>
+                  <span className="text-slate-400" title={translateUIText('أضافها', locale)}>
+                    <T>بواسطة: </T><span className="text-slate-300">{obs.observerName}</span>
                   </span>
                 </>
               )}
@@ -683,10 +699,10 @@ function ObservationCard({
             {!monthClosed && canApprove && obs.applyPointDeduction && obs.approvalStatus === 'pending' && (
               <>
                 <Button size="sm" variant="outline" className="h-7 gap-1.5 px-2 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10" onClick={onApprove}>
-                  <Check className="size-3.5" /> اعتماد
+                  <Check className="size-3.5" /> <T>اعتماد</T>
                 </Button>
                 <Button size="sm" variant="outline" className="h-7 gap-1.5 px-2 border-rose-500/30 text-rose-400 hover:bg-rose-500/10" onClick={onReject}>
-                  <X className="size-3.5" /> رفض
+                  <X className="size-3.5" /> <T>رفض</T>
                 </Button>
               </>
             )}
@@ -698,17 +714,17 @@ function ObservationCard({
               variant="ghost"
               className="h-7 w-7 p-0 text-slate-400"
               onClick={onDetails}
-              aria-label="تفاصيل الملاحظة"
-              title="تفاصيل الملاحظة"
+              aria-label={translateUIText('تفاصيل الملاحظة', locale)}
+              title={translateUIText('تفاصيل الملاحظة', locale)}
             >
               <Info className="size-3.5" />
             </Button>
             {!monthClosed && overflowItems.length > 0 && (
-              <SmartActionMenu actions={overflowItems} label="إجراءات الملاحظة" />
+              <SmartActionMenu actions={overflowItems} label={translateUIText('إجراءات الملاحظة', locale)} />
             )}
             {monthClosed && (
               <Badge variant="outline" className="justify-center gap-1 text-blue-400 border-blue-500/30 text-[10px]">
-                <Lock className="size-3" /> مغلق
+                <Lock className="size-3" /> <T>مغلق</T>
               </Badge>
             )}
           </div>
@@ -738,6 +754,7 @@ function ObservationDetailDialog({
   onDelete: () => void;
 }) {
   const openEmployee360 = useAppStore((s) => s.openEmployee360);
+  const { locale } = useLanguage();
 
   // Approved observations are editable/deletable ONLY by Admin, and only
   // while the month is OPEN (backend enforces the same policy).
@@ -755,32 +772,32 @@ function ObservationDetailDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>تفاصيل الملاحظة</DialogTitle>
+          <DialogTitle><T>تفاصيل الملاحظة</T></DialogTitle>
           <DialogDescription>{obs.employeeName} — {obs.observationDate}</DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4">
           {/* Info grid */}
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-xs">
-            <InfoCell label="الموظف" value={obs.employeeName} onClick={() => openEmployee360(obs.employeeId)} />
-            <InfoCell label="القسم" value={obs.department} />
-            <InfoCell label="التصنيف" value={obs.categoryName} />
-            <InfoCell label="الخطورة" value={SEVERITY_LABELS[obs.severity] ?? obs.severity} />
-            <InfoCell label="الحالة" value={STATUS_LABELS[obs.status] ?? obs.status} />
-            <InfoCell label="الاعتماد" value={obs.approvalStatus} />
-            <InfoCell label="النقاط" value={obs.applyPointDeduction ? `${obs.isBonus ? '+' : '-'}${obs.points}` : '—'} />
+            <InfoCell label={<T>الموظف</T>} value={obs.employeeName} onClick={() => openEmployee360(obs.employeeId)} />
+            <InfoCell label={<T>القسم</T>} value={obs.department} />
+            <InfoCell label={<T>التصنيف</T>} value={obs.categoryName} />
+            <InfoCell label={<T>الخطورة</T>} value={enumLabel(SEVERITY_LABELS, obs.severity, locale)} />
+            <InfoCell label={<T>الحالة</T>} value={enumLabel(STATUS_LABELS, obs.status, locale)} />
+            <InfoCell label={<T>الاعتماد</T>} value={obs.approvalStatus} />
+            <InfoCell label={<T>النقاط</T>} value={obs.applyPointDeduction ? `${obs.isBonus ? '+' : '-'}${formatNumber(obs.points, { locale })}` : '—'} />
             {/* §2 — «بواسطة» is NOT repeated here: it already appears ONCE
                 on the card row (and only reaches authorized viewers — the
                 API strips the identity for everyone else). */}
-            <InfoCell label="تاريخ الإنشاء" value={new Date(obs.createdAt).toLocaleDateString('ar-EG')} />
-            {obs.correctiveAction && <InfoCell label="الإجراء التصحيحي" value={obs.correctiveAction} />}
-            {obs.dueDate && <InfoCell label="تاريخ الاستحقاق" value={obs.dueDate} />}
-            {obs.resolvedDate && <InfoCell label="تاريخ الحل" value={obs.resolvedDate} />}
+            <InfoCell label={<T>تاريخ الإنشاء</T>} value={formatDate(obs.createdAt, locale)} />
+            {obs.correctiveAction && <InfoCell label={<T>الإجراء التصحيحي</T>} value={obs.correctiveAction} />}
+            {obs.dueDate && <InfoCell label={<T>تاريخ الاستحقاق</T>} value={obs.dueDate} />}
+            {obs.resolvedDate && <InfoCell label={<T>تاريخ الحل</T>} value={obs.resolvedDate} />}
           </div>
 
           {obs.notes && (
             <div className="rounded-lg border border-slate-700/40 bg-slate-800/30 p-3">
-              <p className="text-[11px] text-slate-400 mb-1">الملاحظات</p>
+              <p className="text-[11px] text-slate-400 mb-1"><T>الملاحظات</T></p>
               <p className="text-sm text-slate-200 whitespace-pre-wrap">{obs.notes}</p>
             </div>
           )}
@@ -793,7 +810,7 @@ function ObservationDetailDialog({
             <div className="flex items-center gap-2 rounded-lg border border-blue-500/30 bg-blue-500/5 px-3 py-2">
               <Lock className="size-4 text-blue-400 shrink-0" />
               <p className="text-xs text-blue-300">
-                الشهر {obs.month} مغلق — لا يمكن تعديل أو حذف أو اعتماد ملاحظاته
+                <T>الشهر </T>{formatMonthKey(obs.month, locale)} <T>مغلق — لا يمكن تعديل أو حذف أو اعتماد ملاحظاته</T>
               </p>
             </div>
           ) : (
@@ -801,27 +818,27 @@ function ObservationDetailDialog({
               {canApprove && obs.applyPointDeduction && obs.approvalStatus === 'pending' && (
                 <>
                   <Button size="sm" className="gap-1.5" onClick={onApprove}>
-                    <Check className="size-3.5" /> اعتماد
+                    <Check className="size-3.5" /> <T>اعتماد</T>
                   </Button>
                   <Button size="sm" variant="destructive" className="gap-1.5" onClick={onReject}>
-                    <X className="size-3.5" /> رفض
+                    <X className="size-3.5" /> <T>رفض</T>
                   </Button>
                 </>
               )}
               {canEditThis && approved && isAdmin && (
                 <Button size="sm" variant="outline" className="gap-1.5 border-amber-500/40 text-amber-400 hover:bg-amber-500/10" onClick={onEdit}>
-                  <ShieldAlert className="size-3.5" /> تعديل (مدير النظام)
+                  <ShieldAlert className="size-3.5" /> <T>تعديل (مدير النظام)</T>
                 </Button>
               )}
               {canEditThis && !approved && (
                 <Button size="sm" variant="outline" className="gap-1.5" onClick={onEdit}>
-                  <Pencil className="size-3.5" /> تعديل
+                  <Pencil className="size-3.5" /> <T>تعديل</T>
                 </Button>
               )}
               {canDeleteThis && approved && isAdmin && (
                 <Button size="sm" variant="outline" className="gap-1.5 border-rose-500/40 text-rose-400 hover:bg-rose-500/10" onClick={onDelete}>
-                  <Trash2 className="size-3.5" /> حذف (مدير النظام)
-                </Button>
+                  <Trash2 className="size-3.5" /><T> حذف (مدير النظام)
+                </T></Button>
               )}
             </div>
           )}
@@ -829,22 +846,22 @@ function ObservationDetailDialog({
           {/* Approval history (append-only, backend-provided) */}
           <div>
             <h4 className="text-sm font-semibold text-slate-200 mb-2 flex items-center gap-1.5">
-              <Check className="size-3.5 text-emerald-400" /> سجل الاعتماد
-            </h4>
+              <Check className="size-3.5 text-emerald-400" /><T> سجل الاعتماد
+            </T></h4>
             <ApprovalHistoryTimeline events={obs.approvalHistory ?? []} />
           </div>
 
           {/* Full timeline (derived via pure lib buildTimeline) */}
           <div>
             <h4 className="text-sm font-semibold text-slate-200 mb-2 flex items-center gap-1.5">
-              <Clock className="size-3.5 text-blue-400" /> سجل الأحداث
-            </h4>
+              <Clock className="size-3.5 text-blue-400" /><T> سجل الأحداث
+            </T></h4>
             <TimelineView points={timeline} />
           </div>
         </div>
 
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>إغلاق</Button>
+          <Button variant="outline" onClick={() => onOpenChange(false)}><T>إغلاق</T></Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -887,8 +904,8 @@ function ObservationEvidenceSection({ evidence }: { evidence: string }) {
     return (
       <div className="rounded-lg border border-slate-700/40 bg-slate-800/30 p-3">
         <p className="text-[11px] text-slate-400 mb-1 flex items-center gap-1.5">
-          <Link2 className="size-3.5" /> الدليل / الإثبات
-        </p>
+          <Link2 className="size-3.5" /><T> الدليل / الإثبات
+        </T></p>
         <p className="text-sm text-slate-500">{EVIDENCE_EMPTY_LABEL}</p>
       </div>
     );
@@ -899,8 +916,8 @@ function ObservationEvidenceSection({ evidence }: { evidence: string }) {
   return (
     <div className="rounded-lg border border-cyan-500/25 bg-cyan-500/5 p-3 min-w-0">
       <p className="text-[11px] text-slate-400 mb-1.5 flex items-center gap-1.5">
-        <Link2 className="size-3.5 text-cyan-400" /> الدليل / الإثبات
-      </p>
+        <Link2 className="size-3.5 text-cyan-400" /><T> الدليل / الإثبات
+      </T></p>
 
       {isUrl ? (
         // Visual truncation only — Copy/View/Open always use the full URL.
@@ -915,11 +932,11 @@ function ObservationEvidenceSection({ evidence }: { evidence: string }) {
 
       <div className="flex flex-wrap gap-2 mt-2.5">
         <Button size="sm" variant="outline" className="gap-1.5 h-7" onClick={copyEvidence}>
-          <Copy className="size-3.5" /> نسخ الدليل
-        </Button>
+          <Copy className="size-3.5" /><T> نسخ الدليل
+        </T></Button>
         <Button size="sm" variant="outline" className="gap-1.5 h-7" onClick={() => setPreviewOpen(true)}>
-          <Eye className="size-3.5" /> عرض الدليل
-        </Button>
+          <Eye className="size-3.5" /><T> عرض الدليل
+        </T></Button>
         {isUrl && (
           <a
             href={classified.url}
@@ -927,8 +944,8 @@ function ObservationEvidenceSection({ evidence }: { evidence: string }) {
             rel="noopener noreferrer"
             className="inline-flex items-center justify-center gap-1.5 h-7 rounded-md border border-blue-500/40 bg-blue-500/10 px-3 text-xs font-medium text-blue-300 hover:bg-blue-500/20 transition-colors"
           >
-            <ExternalLink className="size-3.5" /> فتح الرابط
-          </a>
+            <ExternalLink className="size-3.5" /><T> فتح الرابط
+          </T></a>
         )}
       </div>
 
@@ -958,9 +975,9 @@ function EvidencePreviewDialog({
       <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-1.5">
-            <Link2 className="size-4 text-cyan-400" /> الدليل / الإثبات
-          </DialogTitle>
-          <DialogDescription>القيمة الكاملة للدليل كما تم تسجيلها — بدون أي اقتطاع</DialogDescription>
+            <Link2 className="size-4 text-cyan-400" /><T> الدليل / الإثبات
+          </T></DialogTitle>
+          <DialogDescription><T>القيمة الكاملة للدليل كما تم تسجيلها — بدون أي اقتطاع</T></DialogDescription>
         </DialogHeader>
 
         <div className="rounded-lg border border-slate-700/40 bg-slate-800/30 p-3 min-w-0 max-h-[45vh] overflow-y-auto">
@@ -973,8 +990,8 @@ function EvidencePreviewDialog({
 
         <DialogFooter>
           <Button variant="outline" className="gap-1.5" onClick={onCopy}>
-            <Copy className="size-3.5" /> نسخ الدليل
-          </Button>
+            <Copy className="size-3.5" /><T> نسخ الدليل
+          </T></Button>
           {url && (
             <a
               href={url}
@@ -982,17 +999,17 @@ function EvidencePreviewDialog({
               rel="noopener noreferrer"
               className="inline-flex items-center justify-center gap-1.5 h-9 rounded-md border border-blue-500/40 bg-blue-500/10 px-4 text-sm font-medium text-blue-300 hover:bg-blue-500/20 transition-colors"
             >
-              <ExternalLink className="size-4" /> فتح الرابط
-            </a>
+              <ExternalLink className="size-4" /><T> فتح الرابط
+            </T></a>
           )}
-          <Button onClick={() => onOpenChange(false)}>إغلاق</Button>
+          <Button onClick={() => onOpenChange(false)}><T>إغلاق</T></Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
   );
 }
 
-function InfoCell({ label, value, onClick }: { label: string; value: string; onClick?: () => void }) {
+function InfoCell({ label, value, onClick }: { label: ReactNode; value: string; onClick?: () => void }) {
   return (
     <div className="rounded border border-slate-700/40 bg-slate-800/20 px-2 py-1.5">
       <p className="text-slate-500">{label}</p>
@@ -1071,16 +1088,16 @@ function CreateObservationDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>ملاحظة جودة جديدة</DialogTitle>
-          <DialogDescription>إنشاء ملاحظة جودة جديدة للموظف</DialogDescription>
+          <DialogTitle><T>ملاحظة جودة جديدة</T></DialogTitle>
+          <DialogDescription><T>إنشاء ملاحظة جودة جديدة للموظف</T></DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4">
           {templates.length > 0 && (
             <div className="space-y-2">
               <Label className="text-xs text-slate-400 flex items-center gap-1.5">
-                <Star className="size-3" /> قوالب سريعة
-              </Label>
+                <Star className="size-3" /><T> قوالب سريعة
+              </T></Label>
               <div className="flex flex-wrap gap-2">
                 {templates.slice(0, 6).map((t) => (
                   <Button key={t.id} size="sm" variant="outline" className="text-xs gap-1" onClick={() => applyTemplate(t)}>
@@ -1102,14 +1119,14 @@ function CreateObservationDialog({
               showPosition
             />
             <div className="space-y-1">
-              <Label>التاريخ *</Label>
+              <Label><T>التاريخ *</T></Label>
               <Input value={observationDate} onChange={(e) => setObservationDate(e.target.value)} placeholder="DD/MM/YYYY" className="bg-slate-800/50 border-slate-700" />
             </div>
           </div>
 
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1">
-              <Label>التصنيف *</Label>
+              <Label><T>التصنيف *</T></Label>
               <Select value={categoryId} onValueChange={setCategoryId}>
                 <SelectTrigger className="bg-slate-800/50 border-slate-700"><SelectValue placeholder="اختر التصنيف" /></SelectTrigger>
                 <SelectContent>
@@ -1118,33 +1135,33 @@ function CreateObservationDialog({
               </Select>
             </div>
             <div className="space-y-1">
-              <Label>الخطورة</Label>
+              <Label><T>الخطورة</T></Label>
               <Select value={severity} onValueChange={(v) => setSeverity(v as 'low' | 'medium' | 'high' | 'critical')}>
                 <SelectTrigger className="bg-slate-800/50 border-slate-700"><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="low">منخفض</SelectItem>
-                  <SelectItem value="medium">متوسط</SelectItem>
-                  <SelectItem value="high">عالٍ</SelectItem>
-                  <SelectItem value="critical">حرج</SelectItem>
+                  <SelectItem value="low"><T>منخفض</T></SelectItem>
+                  <SelectItem value="medium"><T>متوسط</T></SelectItem>
+                  <SelectItem value="high"><T>عالٍ</T></SelectItem>
+                  <SelectItem value="critical"><T>حرج</T></SelectItem>
                 </SelectContent>
               </Select>
             </div>
           </div>
 
           <div className="space-y-1">
-            <Label>الملاحظات</Label>
+            <Label><T>الملاحظات</T></Label>
             <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} className="bg-slate-800/50 border-slate-700" />
           </div>
 
           <div className="space-y-1">
-            <Label>الأدلة</Label>
+            <Label><T>الأدلة</T></Label>
             <Textarea value={evidence} onChange={(e) => setEvidence(e.target.value)} rows={1} className="bg-slate-800/50 border-slate-700" />
           </div>
 
           <div className="flex items-center justify-between rounded-lg border border-slate-700/40 bg-slate-800/30 p-3">
             <div>
-              <Label className="cursor-pointer">تطبيق الخصم/المكافأة على النقاط</Label>
-              <p className="text-xs text-slate-500 mt-0.5">يحتاج اعتماد المدير قبل التأثير على المؤشر</p>
+              <Label className="cursor-pointer"><T>تطبيق الخصم/المكافأة على النقاط</T></Label>
+              <p className="text-xs text-slate-500 mt-0.5"><T>يحتاج اعتماد المدير قبل التأثير على المؤشر</T></p>
             </div>
             <Switch checked={applyPoints} onCheckedChange={setApplyPoints} />
           </div>
@@ -1152,16 +1169,16 @@ function CreateObservationDialog({
           {applyPoints && (
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
-                <Label>النقاط</Label>
+                <Label><T>النقاط</T></Label>
                 <Input type="number" value={points} onChange={(e) => setPoints(e.target.value === '' ? '' : Number(e.target.value))} className="bg-slate-800/50 border-slate-700" />
               </div>
               <div className="space-y-1">
-                <Label>النوع</Label>
+                <Label><T>النوع</T></Label>
                 <Select value={isBonus ? 'bonus' : 'deduction'} onValueChange={(v) => setIsBonus(v === 'bonus')}>
                   <SelectTrigger className="bg-slate-800/50 border-slate-700"><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="deduction">خصم</SelectItem>
-                    <SelectItem value="bonus">مكافأة</SelectItem>
+                    <SelectItem value="deduction"><T>خصم</T></SelectItem>
+                    <SelectItem value="bonus"><T>مكافأة</T></SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -1170,7 +1187,7 @@ function CreateObservationDialog({
         </div>
 
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>إلغاء</Button>
+          <Button variant="outline" onClick={() => onOpenChange(false)}><T>إلغاء</T></Button>
           <Button onClick={handleSubmit} disabled={createMut.isPending}>
             {createMut.isPending ? 'جاري الإنشاء...' : 'إنشاء'}
           </Button>
@@ -1217,7 +1234,7 @@ function EditObservationDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-lg">
         <DialogHeader>
-          <DialogTitle>تعديل الملاحظة</DialogTitle>
+          <DialogTitle><T>تعديل الملاحظة</T></DialogTitle>
           <DialogDescription>{obs.employeeName} — {obs.observationDate}</DialogDescription>
         </DialogHeader>
         <div className="space-y-3">
@@ -1225,14 +1242,14 @@ function EditObservationDialog({
             <div className="flex items-start gap-2 rounded-lg border border-amber-500/40 bg-amber-500/5 p-3">
               <ShieldAlert className="size-4 text-amber-400 shrink-0 mt-0.5" />
               <p className="text-xs text-amber-300">
-                هذه ملاحظة معتمدة. تعديل القيم المؤثرة على المؤشر (التصنيف أو النقاط)
+                <T>هذه ملاحظة معتمدة. تعديل القيم المؤثرة على المؤشر (التصنيف أو النقاط)
                 سيُبطل الاعتماد ويعيد الملاحظة إلى «بانتظار الاعتماد» حتى اعتماد جديد.
-                تعديل الحقول غير المؤثرة (الملاحظات، الأدلة، الخطورة) يحافظ على الاعتماد.
+                تعديل الحقول غير المؤثرة (الملاحظات، الأدلة، الخطورة) يحافظ على الاعتماد.</T>
               </p>
             </div>
           )}
           <div className="space-y-1">
-            <Label>التصنيف</Label>
+            <Label><T>التصنيف</T></Label>
             <Select value={categoryId} onValueChange={setCategoryId}>
               <SelectTrigger className="bg-slate-800/50 border-slate-700"><SelectValue /></SelectTrigger>
               <SelectContent>
@@ -1242,35 +1259,35 @@ function EditObservationDialog({
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1">
-              <Label>الخطورة</Label>
+              <Label><T>الخطورة</T></Label>
               <Select value={severity} onValueChange={(v) => setSeverity(v as 'low' | 'medium' | 'high' | 'critical')}>
                 <SelectTrigger className="bg-slate-800/50 border-slate-700"><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="low">منخفض</SelectItem>
-                  <SelectItem value="medium">متوسط</SelectItem>
-                  <SelectItem value="high">عالٍ</SelectItem>
-                  <SelectItem value="critical">حرج</SelectItem>
+                  <SelectItem value="low"><T>منخفض</T></SelectItem>
+                  <SelectItem value="medium"><T>متوسط</T></SelectItem>
+                  <SelectItem value="high"><T>عالٍ</T></SelectItem>
+                  <SelectItem value="critical"><T>حرج</T></SelectItem>
                 </SelectContent>
               </Select>
             </div>
             {obs.applyPointDeduction && (
               <div className="space-y-1">
-                <Label>النقاط</Label>
+                <Label><T>النقاط</T></Label>
                 <Input type="number" value={points} onChange={(e) => setPoints(e.target.value === '' ? '' : Number(e.target.value))} className="bg-slate-800/50 border-slate-700" />
               </div>
             )}
           </div>
           <div className="space-y-1">
-            <Label>الملاحظات</Label>
+            <Label><T>الملاحظات</T></Label>
             <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} className="bg-slate-800/50 border-slate-700" />
           </div>
           <div className="space-y-1">
-            <Label>الأدلة</Label>
+            <Label><T>الأدلة</T></Label>
             <Textarea value={evidence} onChange={(e) => setEvidence(e.target.value)} rows={1} className="bg-slate-800/50 border-slate-700" />
           </div>
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>إلغاء</Button>
+          <Button variant="outline" onClick={() => onOpenChange(false)}><T>إلغاء</T></Button>
           <Button onClick={handleSubmit} disabled={updateMut.isPending}>
             {updateMut.isPending ? 'جاري الحفظ...' : 'حفظ'}
           </Button>
@@ -1305,21 +1322,21 @@ function ApproveDialog({ obs, open, onOpenChange }: { obs: QualityObservation; o
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle>اعتماد الملاحظة</DialogTitle>
+          <DialogTitle><T>اعتماد الملاحظة</T></DialogTitle>
           <DialogDescription>{obs.employeeName} — النقاط الحالية: {obs.points}</DialogDescription>
         </DialogHeader>
         <div className="space-y-3">
           <div className="space-y-1">
-            <Label>تجاوز النقاط (اختياري)</Label>
+            <Label><T>تجاوز النقاط (اختياري)</T></Label>
             <Input type="number" value={overridePoints} onChange={(e) => setOverridePoints(e.target.value === '' ? '' : Number(e.target.value))} placeholder={String(obs.points)} className="bg-slate-800/50 border-slate-700" />
           </div>
           <div className="space-y-1">
-            <Label>ملاحظات</Label>
+            <Label><T>ملاحظات</T></Label>
             <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} placeholder="ملاحظات الاعتماد..." className="bg-slate-800/50 border-slate-700" />
           </div>
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>إلغاء</Button>
+          <Button variant="outline" onClick={() => onOpenChange(false)}><T>إلغاء</T></Button>
           <Button onClick={handleSubmit} disabled={approveMut.isPending} className="gap-1.5">
             <Check className="size-4" /> {approveMut.isPending ? 'جاري...' : 'اعتماد'}
           </Button>
@@ -1351,15 +1368,15 @@ function RejectDialog({ obs, open, onOpenChange }: { obs: QualityObservation; op
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle>رفض الملاحظة</DialogTitle>
+          <DialogTitle><T>رفض الملاحظة</T></DialogTitle>
           <DialogDescription>{obs.employeeName}</DialogDescription>
         </DialogHeader>
         <div className="space-y-1">
-          <Label>سبب الرفض *</Label>
+          <Label><T>سبب الرفض *</T></Label>
           <Textarea value={reason} onChange={(e) => setReason(e.target.value)} rows={3} className="bg-slate-800/50 border-slate-700" />
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>إلغاء</Button>
+          <Button variant="outline" onClick={() => onOpenChange(false)}><T>إلغاء</T></Button>
           <Button onClick={handleSubmit} disabled={rejectMut.isPending} variant="destructive" className="gap-1.5">
             <X className="size-4" /> {rejectMut.isPending ? 'جاري...' : 'رفض'}
           </Button>

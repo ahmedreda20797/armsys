@@ -143,7 +143,7 @@ export function buildRealDatasetParitySummary(dataset: EmployeePerformanceDatase
     observationPending: dataset.quality.observations.pending,
     qualityDeductionCount: dataset.quality.deductions.count,
     totalDeductionDays: dataset.quality.deductions.totalDays,
-    travelDealCount: dataset.deals.total,
+    travelDealCount: dataset.deals.travelTotal,
     complaintCount: dataset.complaints.total,
     capaCount: dataset.capa.total,
     followUpCount: dataset.followUps.total,

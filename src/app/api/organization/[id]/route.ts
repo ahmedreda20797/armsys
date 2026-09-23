@@ -26,7 +26,8 @@ import {
   type OrgNodeStatus,
 } from '@/lib/organization';
 
-const NODE_TYPES: ReadonlySet<string> = new Set(['company', 'department', 'team', 'subteam']);
+// §ORG-LEVELS — the canonical stored-type vocabulary (see ./route.ts).
+const NODE_TYPES: ReadonlySet<string> = new Set(['general_administration', 'company', 'department', 'team', 'subteam']);
 const NODE_STATUSES: ReadonlySet<string> = new Set(['active', 'archived']);
 
 export async function PUT(
@@ -54,6 +55,13 @@ export async function PUT(
     if (body.type !== undefined && body.type !== node.type) {
       if (!NODE_TYPES.has(body.type)) {
         return validationError('نوع عقدة غير صالح');
+      }
+      // §ORG-LEVELS — at most ONE General Administration node.
+      if (body.type === 'general_administration') {
+        const nodes = await getAll<OrgNode>(ORG_NODES_TABLE);
+        if (nodes.some((n) => n.id !== id && n.type === 'general_administration')) {
+          return conflictError('توجد إدارة عامة بالفعل — لا يمكن إنشاء أكثر من واحدة');
+        }
       }
       before.type = node.type; updates.type = body.type as OrgNodeType;
     }

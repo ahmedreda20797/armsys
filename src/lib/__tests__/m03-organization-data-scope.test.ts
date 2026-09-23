@@ -273,7 +273,7 @@ describe('M0.3 C — engine resolution (matrix 1–8, 15–19)', () => {
   it('[matrix 1] ALL: admin + employees read → every employee, including unassigned', () => {
     const { orgNodes, employees } = fixture();
     const ctx = resolveEmployeeScope(
-      { userId: 'uAdmin', role: 'quality', linkedEmployeeId: 'empSara' },
+      { userId: 'uAdmin', role: 'admin', linkedEmployeeId: 'empSara' },
       'employees', mapWithScope('quality', 'all'), { orgNodes, employees },
     );
     assert.equal(ctx.isUnrestricted, true);
@@ -292,22 +292,25 @@ describe('M0.3 C — engine resolution (matrix 1–8, 15–19)', () => {
     assert.equal(ctx.includes('empSara'), false);    // other department
   });
 
-  it('[matrix 3] DEPARTMENT: the assigned department subtree', () => {
+  it('[matrix 3] DEPARTMENT: the boundary department node\'s membership per the tree', () => {
     const { orgNodes, employees } = fixture();
+    // §ORG-BOUNDARY: the department anchor is the boundary's
+    // DEPARTMENT node — granted explicitly (a team-level assignment
+    // boundary never climbs to its department).
     const ctx = resolveEmployeeScope(
-      { userId: 'uAhmed', role: 'manager', linkedEmployeeId: 'empAhmed' },
+      { userId: 'uAhmed', role: 'manager', linkedEmployeeId: 'empAhmed', orgBoundaryNodeIds: ['sales'] },
       'employees', mapWithScope('manager', 'department'), { orgNodes, employees },
     );
     for (const id of ['empAhmed', 'empMohamed', 'empAli', 'empOmar']) {
-      assert.equal(ctx.includes(id), true, `${id} in sales subtree`);
+      assert.equal(ctx.includes(id), true, `${id} in sales membership`);
     }
     assert.equal(ctx.includes('empSara'), false);
   });
 
-  it('[matrix 4] BRANCH: an intermediate node subtree resolves like a branch (generic-depth tree)', () => {
-    // A "branch" is any intermediate org node; the department anchor
-    // walks to the nearest department-typed ancestor (branchX) and
-    // its whole subtree — nested teams included.
+  it('[matrix 4] BRANCH: an intermediate node boundary resolves its subtree (generic-depth tree)', () => {
+    // A "branch" is any intermediate org node; with the branch
+    // granted as the organizational boundary, DEPARTMENT resolves
+    // its whole membership — nested teams included.
     const orgNodes: OrgNode[] = [
       node('company', 'company', null),
       node('branchX', 'department', 'company'),
@@ -319,7 +322,7 @@ describe('M0.3 C — engine resolution (matrix 1–8, 15–19)', () => {
       { id: 'empHQ', orgNodeId: 'company' },
     ];
     const ctx = resolveEmployeeScope(
-      { userId: 'uBranchMgr', role: 'manager', linkedEmployeeId: 'empC1' },
+      { userId: 'uBranchMgr', role: 'manager', linkedEmployeeId: 'empC1', orgBoundaryNodeIds: ['branchX'] },
       'employees', mapWithScope('manager', 'department'), { orgNodes, employees },
     );
     assert.equal(ctx.includes('empC1'), true);
@@ -379,7 +382,7 @@ describe('M0.3 C — engine resolution (matrix 1–8, 15–19)', () => {
   it('[matrix 19] filters can only NARROW: server filtering applies on top of the scope', () => {
     const { orgNodes, employees } = fixture();
     const ctx = resolveEmployeeScope(
-      { userId: 'uAhmed', role: 'manager', linkedEmployeeId: 'empAhmed' },
+      { userId: 'uAhmed', role: 'manager', linkedEmployeeId: 'empAhmed', orgBoundaryNodeIds: ['sales'] },
       'employees', mapWithScope('manager', 'department'), { orgNodes, employees },
     );
     const filtered = filterEmployeesByScope(employees, ctx).map((e) => e.id).sort();
@@ -487,7 +490,8 @@ describe('M0.3 D — route wiring guards', () => {
     assert.match(pmSrc, /if \(scope === 'inherit'\) delete entry\.scope;/);                 // inherit = absent, never stored as a value
     assert.match(pmSrc, /else entry\.scope = scope;/);                                      // chosen value stored explicitly (incl. 'all')
     const rowSrc = stripComments(readFileSync(join(PROJECT_ROOT, 'src', 'components', 'permissions', 'PageAccessRow.tsx'), 'utf8'));
-    assert.match(rowSrc, /resolvePageScope\(/);            // preview through the CANONICAL scope resolver
+    assert.match(rowSrc, /explainScopeSource\(/);          // preview through the CANONICAL scope + scope-SOURCE resolver
     assert.match(rowSrc, /describeDataScope\(/);           // canonical scope labels, no parallel vocabulary
+    assert.match(rowSrc, /DATA_SCOPE_PAGE_KEY/);           // displayed scope = the enforced canonical entry (display = enforcement)
   });
 });

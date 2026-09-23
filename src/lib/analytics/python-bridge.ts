@@ -420,7 +420,7 @@ function datasetStructuralSummary(dataset: EmployeePerformanceDataset): Record<s
       complaints: dataset?.complaints?.total ?? 0,
       capa: dataset?.capa?.total ?? 0,
       followUps: dataset?.followUps?.total ?? 0,
-      deals: dataset?.deals?.total ?? 0,
+      deals: dataset?.deals?.travelTotal ?? 0,
     },
     attendanceAvailable: dataset?.attendance?.status === 'AVAILABLE',
     kpiStatus: dataset?.kpi?.overallStatus ?? null,

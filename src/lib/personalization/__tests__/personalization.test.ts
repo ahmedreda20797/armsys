@@ -73,8 +73,9 @@ describe('dashboard widget layout', () => {
   });
 
   it('PERMISSION WINS: an unauthorized widget never renders even if not hidden', () => {
-    // Only 'home'-permission widgets permitted — quickAccess + attentionRequired
-    // are both permitted; pendingRequests is not.
+    // Only 'home'-permission widgets permitted — attentionRequired,
+    // operationalTimeline, performancePulse and quickAccess are all
+    // 'home'; pendingRequests ('requests') is not.
     const homeOnly = (w: WidgetConfig) => w.permissionKey === 'home';
     const layout = resolveWidgetLayout(
       DASHBOARD_WIDGETS,
@@ -82,9 +83,12 @@ describe('dashboard widget layout', () => {
       homeOnly,
     );
     // pendingRequests is excluded; the order array pins the relative
-    // order of permitted widgets.
+    // order of permitted widgets, unranked 'home' widgets append in
+    // registry order.
     assert.ok(!layout.some((w) => w.id === 'pendingRequests'));
-    assert.deepEqual(layout.map((w) => w.id), ['quickAccess', 'attentionRequired']);
+    assert.deepEqual(layout.map((w) => w.id), [
+      'quickAccess', 'attentionRequired', 'operationalTimeline', 'performancePulse',
+    ]);
   });
 
   it('permission loss reconciliation: widget hidden after permission revocation stays gone; regrant + unhide restores', () => {

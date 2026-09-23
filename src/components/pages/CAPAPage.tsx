@@ -5,6 +5,10 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { usePermissions } from '@/hooks/usePermissions';
 import { usePageState } from '@/hooks/use-page-state';
 import { useAuth } from '@/contexts/AuthContext';
+import { useLanguage } from '@/lib/i18n/language-context';
+import { T } from '@/lib/i18n/T';
+import { translateUIText } from '@/lib/i18n/ui-text';
+import { formatInteger, formatPercentage, formatMonthKey } from '@/lib/i18n/format';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { AttentionPanel, type AttentionItem } from '@/components/shared/AttentionPanel';
@@ -84,6 +88,7 @@ function CAPAListPage() {
   const { user } = useAuth();
   const navParams = useAppStore((s) => s.navParams);
   const navigateTo = useAppStore((s) => s.navigateTo);
+  const { locale } = useLanguage();
 
   // ═══ State ═══
   const [cases, setCases] = useState<CAPACase[]>([]);
@@ -253,10 +258,10 @@ function CAPAListPage() {
     let avgClosure = '—';
     if (closedCases.length > 0) {
       const avg = closedCases.reduce((sum, c) => sum + (new Date(c.closedAt!).getTime() - new Date(c.createdAt).getTime()), 0) / closedCases.length;
-      avgClosure = `${Math.round(avg / 86400000)} يوم`;
+      avgClosure = `${formatInteger(Math.round(avg / 86400000), locale)} ${translateUIText('يوم', locale)}`;
     }
     return { total, open, inProgress, overdue, closed, pendingVerification, critical, reopened, verificationRate, avgClosure };
-  }, [cases]);
+  }, [cases, locale]);
 
   // ═══ Navigate to Detail ═══
   const openDetail = (item: CAPACase) => {
@@ -271,10 +276,10 @@ function CAPAListPage() {
       const res = await authFetch(`/api/capa-cases/${id}`, { method: 'DELETE' });
       if (res.ok) {
         logDelete('capa', 'حالة كابا', '');
-        toast.success('تم حذف الحالة');
+        toast.success(translateUIText('تم حذف الحالة', locale));
         setCases((p) => p.filter((c) => c.id !== id));
       }
-    } catch { toast.error('فشل في الحذف'); }
+    } catch { toast.error(translateUIText('فشل في الحذف', locale)); }
     setDeleting(false);
     setDeletingId(null);
   };
@@ -298,9 +303,9 @@ function CAPAListPage() {
       const res = await authFetch('/api/reports/capa-export', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ format, filters }),
+        body: JSON.stringify({ format, filters, lang: locale }),
       });
-      if (!res.ok) { toast.error('فشل في التصدير'); return; }
+      if (!res.ok) { toast.error(translateUIText('فشل في التصدير', locale)); return; }
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -310,8 +315,8 @@ function CAPAListPage() {
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
-      toast.success(`تم التصدير بنجاح (${format.toUpperCase()})`);
-    } catch { toast.error('حدث خطأ أثناء التصدير'); }
+      toast.success(`${translateUIText('تم التصدير بنجاح', locale)} (${format.toUpperCase()})`);
+    } catch { toast.error(translateUIText('حدث خطأ أثناء التصدير', locale)); }
     finally { setExporting(false); }
   };
 
@@ -330,9 +335,9 @@ function CAPAListPage() {
         const data = await res.json();
         setReportData(data);
       } else {
-        toast.error('فشل في تحميل التقرير');
+        toast.error(translateUIText('فشل في تحميل التقرير', locale));
       }
-    } catch { toast.error('حدث خطأ أثناء تحميل التقرير'); }
+    } catch { toast.error(translateUIText('حدث خطأ أثناء تحميل التقرير', locale)); }
     finally { setReportLoading(false); }
   };
 
@@ -342,7 +347,7 @@ function CAPAListPage() {
         <div className="size-16 rounded-full bg-slate-800 flex items-center justify-center mb-4">
           <ShieldCheck className="size-8 text-slate-500" />
         </div>
-        <p className="text-slate-400 text-sm font-medium">غير مصرح بالوصول</p>
+        <p className="text-slate-400 text-sm font-medium"><T>غير مصرح بالوصول</T></p>
       </div>
     );
   }
@@ -353,20 +358,20 @@ function CAPAListPage() {
       <PageHeaderBar
         icon={<ShieldCheck className="size-5" />}
         iconClassName="bg-linear-to-br from-brand-600/20 to-brand-700/20 border-brand-500/30 text-brand-400"
-        title="نظام كابا — الإجراءات التصحيحية والوقائية"
-        description="محرك تحسين الجودة وحل المشكلات"
+        title={translateUIText('نظام كابا — الإجراءات التصحيحية والوقائية', locale)}
+        description={<T>محرك تحسين الجودة وحل المشكلات</T>}
         primaryAction={canCreate ? {
-          label: 'إنشاء حالة كابا',
+          label: translateUIText('إنشاء حالة كابا', locale),
           onClick: () => { setCreateDefaults({}); setIsCreateOpen(true); },
         } : undefined}
         actions={
           <>
             <Button onClick={openReport} size="sm" variant="outline" className="border-slate-700/70 text-slate-300 hover:bg-slate-800 hover:text-white h-9 px-3">
-              <BarChart3 className="size-4 ml-1" /> التقرير
+              <BarChart3 className="size-4 ml-1" /> <T>التقرير</T>
             </Button>
             <Button onClick={() => handleExport('xlsx')} disabled={exporting} size="sm" variant="outline" className="border-slate-700/70 text-slate-300 hover:bg-slate-800 hover:text-white h-9 px-3">
               {exporting ? <Loader2 className="size-4 animate-spin ml-1" /> : <Download className="size-4 ml-1" />}
-              {exporting ? 'جارٍ...' : 'تصدير'}
+              <T>{exporting ? 'جارٍ...' : 'تصدير'}</T>
             </Button>
           </>
         }
@@ -375,17 +380,17 @@ function CAPAListPage() {
       {/* ═══ Enhanced Dashboard Widgets ═══ */}
       <motion.div initial={{ opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }} className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2.5">
         {[
-          { label: 'إجمالي الحالات', value: stats.total, color: 'border-brand-500/30 bg-brand-500/8', textColor: 'text-brand-400' },
-          { label: 'مفتوحة', value: stats.open, color: 'border-blue-500/25 bg-blue-500/8', textColor: 'text-blue-400' },
-          { label: 'قيد التنفيذ', value: stats.inProgress, color: 'border-amber-500/25 bg-amber-500/8', textColor: 'text-amber-400' },
-          { label: 'متأخرة', value: stats.overdue, color: 'border-red-500/25 bg-red-500/8', textColor: 'text-red-400' },
-          { label: 'حرجة', value: stats.critical, color: 'border-orange-500/25 bg-orange-500/8', textColor: 'text-orange-400' },
-          { label: 'معاد فتحها', value: stats.reopened, color: 'border-rose-500/25 bg-rose-500/8', textColor: 'text-rose-400' },
-          { label: 'نسبة الفعالية', value: `${stats.verificationRate}%`, color: 'border-emerald-500/25 bg-emerald-500/8', textColor: 'text-emerald-400' },
+          { label: 'إجمالي الحالات', value: formatInteger(stats.total, locale), color: 'border-brand-500/30 bg-brand-500/8', textColor: 'text-brand-400' },
+          { label: 'مفتوحة', value: formatInteger(stats.open, locale), color: 'border-blue-500/25 bg-blue-500/8', textColor: 'text-blue-400' },
+          { label: 'قيد التنفيذ', value: formatInteger(stats.inProgress, locale), color: 'border-amber-500/25 bg-amber-500/8', textColor: 'text-amber-400' },
+          { label: 'متأخرة', value: formatInteger(stats.overdue, locale), color: 'border-red-500/25 bg-red-500/8', textColor: 'text-red-400' },
+          { label: 'حرجة', value: formatInteger(stats.critical, locale), color: 'border-orange-500/25 bg-orange-500/8', textColor: 'text-orange-400' },
+          { label: 'معاد فتحها', value: formatInteger(stats.reopened, locale), color: 'border-rose-500/25 bg-rose-500/8', textColor: 'text-rose-400' },
+          { label: 'نسبة الفعالية', value: formatPercentage(stats.verificationRate, { locale }), color: 'border-emerald-500/25 bg-emerald-500/8', textColor: 'text-emerald-400' },
           { label: 'متوسط الحل', value: stats.avgClosure, color: 'border-sky-500/25 bg-sky-500/8', textColor: 'text-sky-400' },
         ].map((stat) => (
           <div key={stat.label} className={`rounded-lg border ${stat.color} px-3.5 py-2.5`}>
-            <p className="text-slate-500 text-[10px] mb-0.5">{stat.label}</p>
+            <p className="text-slate-500 text-[10px] mb-0.5"><T>{stat.label}</T></p>
             <p className={`${stat.textColor} font-bold text-lg leading-tight`}>{stat.value}</p>
           </div>
         ))}
@@ -397,26 +402,26 @@ function CAPAListPage() {
       {repetitionAlerts.length > 0 && (
         <motion.div initial={{ opacity: 0, y: -5 }} animate={{ opacity: 1, y: 0 }}>
           <AttentionPanel
-            title="مشكلات متكررة"
+            title={translateUIText('مشكلات متكررة', locale)}
             icon={<AlertOctagon className="size-3.5 text-amber-300" />}
-            subtitle={`${repetitionAlerts.length} موظف بنمط متكرر خلال آخر 30 يوماً — يُنصح بفتح CAPA`}
+            subtitle={`${formatInteger(repetitionAlerts.length, locale)} ${translateUIText('موظف بنمط متكرر خلال آخر 30 يوماً — يُنصح بفتح CAPA', locale)}`}
             persistKey="capaRepetitionAttention"
             items={repetitionAlerts.map((alert, idx): AttentionItem => {
               const empName = employees.find((e: any) => e.id === alert.employeeId)?.name || alert.employeeId;
-              const sourceLabel = alert.source === 'followUp' ? 'متابعة' : alert.source === 'complaint' ? 'شكوى' : 'ملاحظة';
+              const sourceLabel = translateUIText(alert.source === 'followUp' ? 'متابعة' : alert.source === 'complaint' ? 'شكوى' : 'ملاحظة', locale);
               return {
                 id: `${alert.employeeId}:${alert.source}:${alert.issueKey}:${idx}`,
                 severity: 'warning',
                 primary: empName,
-                secondary: `${alert.issueLabel} · ${alert.occurrenceCount} مرات`,
+                secondary: `${alert.issueLabel} · ${formatInteger(alert.occurrenceCount, locale)} ${translateUIText('مرات', locale)}`,
                 trailing: <span className="font-mono">{alert.firstDay} → {alert.lastDay}</span>,
                 onClick: () => {
                   setCreateDefaults(buildCapaPrefillFromAlert(alert, empName));
                   setIsCreateOpen(true);
                 },
                 overflowItems: [
-                  { key: 'view', label: 'فتح ملف الموظف', icon: <Eye className="size-3.5" />, onSelect: () => useAppStore.getState().openEmployee360(alert.employeeId) },
-                  { key: 'capa', label: 'إنشاء CAPA', icon: <ShieldAlert className="size-3.5" />, separatorBefore: true, onSelect: () => { setCreateDefaults(buildCapaPrefillFromAlert(alert, empName)); setIsCreateOpen(true); } },
+                  { key: 'view', label: translateUIText('فتح ملف الموظف', locale), icon: <Eye className="size-3.5" />, onSelect: () => useAppStore.getState().openEmployee360(alert.employeeId) },
+                  { key: 'capa', label: translateUIText('إنشاء CAPA', locale), icon: <ShieldAlert className="size-3.5" />, separatorBefore: true, onSelect: () => { setCreateDefaults(buildCapaPrefillFromAlert(alert, empName)); setIsCreateOpen(true); } },
                 ],
               };
             })}
@@ -437,7 +442,7 @@ function CAPAListPage() {
             id="capa-inline-create"
             tone="violet"
             icon={<Plus className="size-3.5 text-brand-400" />}
-            title="إنشاء حالة CAPA جديدة"
+            title={translateUIText('إنشاء حالة CAPA جديدة', locale)}
             onClose={() => { setIsCreateOpen(false); setCreateDefaults({}); }}
           >
             <CAPAInlineForm
@@ -457,33 +462,33 @@ function CAPAListPage() {
         <div className="flex flex-col sm:flex-row gap-2.5">
           <div className="relative flex-1 max-w-sm">
             <Search className="absolute right-3 top-1/2 -translate-y-1/2 size-4 text-slate-500" />
-            <Input placeholder="بحث بالعنوان أو ID..." value={search} onChange={(e) => setSearch(e.target.value)}
+            <Input placeholder={translateUIText('بحث بالعنوان أو ID...', locale)} value={search} onChange={(e) => setSearch(e.target.value)}
               className="bg-slate-800/70 border-slate-700/70 text-white pr-9 placeholder:text-slate-500 h-9 text-sm" />
             {search && <button onClick={() => setSearch('')} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300"><X className="size-3.5" /></button>}
           </div>
           <Select value={statusFilter} onValueChange={setStatusFilter}>
             <SelectTrigger className="bg-slate-800/70 border-slate-700/70 text-white w-full sm:w-36 h-9 text-sm">
-              <Clock className="size-3.5 ml-1.5 text-slate-500" /><SelectValue placeholder="الحالة" />
+              <Clock className="size-3.5 ml-1.5 text-slate-500" /><SelectValue placeholder={translateUIText('الحالة', locale)} />
             </SelectTrigger>
-            <SelectContent>{<SelectItem value="all" className="text-white">الكل</SelectItem>}{STATUS_OPTIONS.map((s) => (<SelectItem key={s.value} value={s.value} className="text-white">{s.label}</SelectItem>))}</SelectContent>
+            <SelectContent>{<SelectItem value="all" className="text-white"><T>الكل</T></SelectItem>}{STATUS_OPTIONS.map((s) => (<SelectItem key={s.value} value={s.value} className="text-white"><T>{s.label}</T></SelectItem>))}</SelectContent>
           </Select>
           <Select value={priorityFilter} onValueChange={setPriorityFilter}>
             <SelectTrigger className="bg-slate-800/70 border-slate-700/70 text-white w-full sm:w-36 h-9 text-sm">
-              <AlertTriangle className="size-3.5 ml-1.5 text-slate-500" /><SelectValue placeholder="الأولوية" />
+              <AlertTriangle className="size-3.5 ml-1.5 text-slate-500" /><SelectValue placeholder={translateUIText('الأولوية', locale)} />
             </SelectTrigger>
-            <SelectContent>{<SelectItem value="all" className="text-white">الكل</SelectItem>}{PRIORITY_OPTIONS.map((p) => (<SelectItem key={p.value} value={p.value} className="text-white">{p.label}</SelectItem>))}</SelectContent>
+            <SelectContent>{<SelectItem value="all" className="text-white"><T>الكل</T></SelectItem>}{PRIORITY_OPTIONS.map((p) => (<SelectItem key={p.value} value={p.value} className="text-white"><T>{p.label}</T></SelectItem>))}</SelectContent>
           </Select>
           <Select value={categoryFilter} onValueChange={setCategoryFilter}>
             <SelectTrigger className="bg-slate-800/70 border-slate-700/70 text-white w-full sm:w-40 h-9 text-sm">
-              <FileText className="size-3.5 ml-1.5 text-slate-500" /><SelectValue placeholder="التصنيف" />
+              <FileText className="size-3.5 ml-1.5 text-slate-500" /><SelectValue placeholder={translateUIText('التصنيف', locale)} />
             </SelectTrigger>
-            <SelectContent>{<SelectItem value="all" className="text-white">الكل</SelectItem>}{ISSUE_CATEGORIES.map((c) => (<SelectItem key={c.value} value={c.value} className="text-white">{c.label}</SelectItem>))}</SelectContent>
+            <SelectContent>{<SelectItem value="all" className="text-white"><T>الكل</T></SelectItem>}{ISSUE_CATEGORIES.map((c) => (<SelectItem key={c.value} value={c.value} className="text-white"><T>{c.label}</T></SelectItem>))}</SelectContent>
           </Select>
           <Select value={departmentFilter} onValueChange={setDepartmentFilter}>
             <SelectTrigger className="bg-slate-800/70 border-slate-700/70 text-white w-full sm:w-36 h-9 text-sm">
-              <Users className="size-3.5 ml-1.5 text-slate-500" /><SelectValue placeholder="القسم" />
+              <Users className="size-3.5 ml-1.5 text-slate-500" /><SelectValue placeholder={translateUIText('القسم', locale)} />
             </SelectTrigger>
-            <SelectContent>{<SelectItem value="all" className="text-white">الكل</SelectItem>}{DEPARTMENTS.map((d) => (<SelectItem key={d} value={d} className="text-white">{d}</SelectItem>))}</SelectContent>
+            <SelectContent>{<SelectItem value="all" className="text-white"><T>الكل</T></SelectItem>}{DEPARTMENTS.map((d) => (<SelectItem key={d} value={d} className="text-white">{d}</SelectItem>))}</SelectContent>
           </Select>
         </div>
 
@@ -502,7 +507,7 @@ function CAPAListPage() {
               className={`px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap transition-colors ${
                 activeTab === tab.key ? 'bg-linear-to-r from-brand-600 to-brand-700 text-white shadow-md shadow-brand-500/20' : 'text-slate-400 hover:bg-slate-800 hover:text-white'
               }`}>
-              {tab.label}{tab.count !== undefined ? ` (${tab.count})` : ''}
+              {tab.label && <T>{tab.label}</T>}{tab.count !== undefined ? ` (${formatInteger(tab.count, locale)})` : ''}
             </button>
           ))}
         </div>
@@ -515,19 +520,19 @@ function CAPAListPage() {
         <Card className="border-rose-500/30 bg-rose-500/5">
           <CardContent className="flex flex-col items-center justify-center py-14">
             <div className="size-12 rounded-full bg-rose-500/10 flex items-center justify-center mb-3"><AlertTriangle className="size-6 text-rose-400" /></div>
-            <p className="text-rose-300 text-sm font-medium">{error}</p>
-            <Button variant="outline" size="sm" className="mt-4" onClick={() => fetchData()}>إعادة المحاولة</Button>
+            <p className="text-rose-300 text-sm font-medium">{error && <T>{error}</T>}</p>
+            <Button variant="outline" size="sm" className="mt-4" onClick={() => fetchData()}><T>إعادة المحاولة</T></Button>
           </CardContent>
         </Card>
       ) : displayed.length === 0 ? (
         <Card className="border-slate-700/40 bg-slate-800/30">
           <CardContent className="flex flex-col items-center justify-center py-14">
             <div className="size-12 rounded-full bg-slate-800 flex items-center justify-center mb-3"><ShieldCheck className="size-6 text-slate-600" /></div>
-            <p className="text-slate-400 text-sm font-medium">لا توجد حالات كابا</p>
-            <p className="text-slate-600 text-xs mt-1">{search ? 'لم يتم العثور على نتائج' : 'لم يتم تسجيل أي حالات بعد'}</p>
+            <p className="text-slate-400 text-sm font-medium"><T>لا توجد حالات كابا</T></p>
+            <p className="text-slate-600 text-xs mt-1"><T>{search ? 'لم يتم العثور على نتائج' : 'لم يتم تسجيل أي حالات بعد'}</T></p>
             {canCreate && !search && (
               <Button onClick={() => { setCreateDefaults({}); setIsCreateOpen(true); }} size="sm" className="mt-3 bg-brand-600 hover:bg-brand-700 text-white">
-                <Plus className="size-4 ml-1" /> إنشاء أول حالة
+                <Plus className="size-4 ml-1" /> <T>إنشاء أول حالة</T>
               </Button>
             )}
           </CardContent>
@@ -558,23 +563,23 @@ function CAPAListPage() {
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2">
                             <span className="text-[10px] text-slate-500 font-mono" dir="ltr">{item.capaId || '—'}</span>
-                            {overdue && <span className="flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-bold bg-red-500/20 text-red-400 border border-red-500/30"><Flame className="size-2.5" /> متأخرة</span>}
+                            {overdue && <span className="flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-bold bg-red-500/20 text-red-400 border border-red-500/30"><Flame className="size-2.5" /> <T>متأخرة</T></span>}
                             {/* SLA Badge */}
                             {sla.state === 'warning' && (
                               <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-500/20 text-amber-400 border border-amber-500/30">
-                                <Clock className="size-2 inline" /> {sla.daysRemaining} يوم متبقي
+                                <Clock className="size-2 inline" /> {formatInteger(sla.daysRemaining, locale)} <T>يوم متبقي</T>
                               </span>
                             )}
                             {sla.state === 'critical' && (
                               <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-red-500/20 text-red-400 border border-red-500/30">
-                                <AlertTriangle className="size-2 inline" /> تجاوز المهلة
+                                <AlertTriangle className="size-2 inline" /> <T>تجاوز المهلة</T>
                               </span>
                             )}
                           </div>
-                          <h3 className="text-white font-semibold text-sm leading-tight mt-0.5">{item.title || 'بدون عنوان'}</h3>
+                          <h3 className="text-white font-semibold text-sm leading-tight mt-0.5">{item.title || translateUIText('بدون عنوان', locale)}</h3>
                           <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
-                            <div className={`flex items-center gap-1 px-2 py-0.5 rounded border text-[10px] font-medium ${sc.color}`}><SIcon className="size-2.5" />{sc.label}</div>
-                            <div className={`px-2 py-0.5 rounded border text-[10px] font-medium ${pc.color}`}>{pc.label}</div>
+                            <div className={`flex items-center gap-1 px-2 py-0.5 rounded border text-[10px] font-medium ${sc.color}`}><SIcon className="size-2.5" /><T>{sc.label}</T></div>
+                            <div className={`px-2 py-0.5 rounded border text-[10px] font-medium ${pc.color}`}><T>{pc.label}</T></div>
                             {item.department && <span className="text-[10px] text-slate-500 px-1.5 py-0.5 rounded bg-slate-700/50">{item.department}</span>}
                           </div>
                         </div>
@@ -605,7 +610,7 @@ function CAPAListPage() {
                           {/* §2 — SmartActionMenu */}
                           <SmartActionMenu
                             actions={[
-                              { key: 'delete', label: 'حذف الحالة', icon: <Trash2 className="size-3.5" />, destructive: true, onSelect: () => setDeletingId(item.id), hidden: !canDelete },
+                              { key: 'delete', label: translateUIText('حذف الحالة', locale), icon: <Trash2 className="size-3.5" />, destructive: true, onSelect: () => setDeletingId(item.id), hidden: !canDelete },
                             ]}
                           />
                         </div>
@@ -623,21 +628,21 @@ function CAPAListPage() {
                             transition={{ duration: 0.5 }}
                           />
                         </div>
-                        <span className="text-[10px] text-slate-500 min-w-[28px] text-left" dir="ltr">{pct}%</span>
+                        <span className="text-[10px] text-slate-500 min-w-[28px] text-left" dir="ltr">{formatPercentage(pct, { locale })}</span>
                       </div>
 
                       {/* Key Info Row */}
                       <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[11px]">
                         {item.assignedToName && <span className="text-slate-500 flex items-center gap-1"><UserCheck className="size-3" />{item.assignedToName}</span>}
                         {item.issueCategory && <span className="text-slate-500">{CATEGORY_LABELS[item.issueCategory] || item.issueCategory}</span>}
-                        <span className="text-slate-500 flex items-center gap-1"><CalendarDays className="size-3" />{formatDate(item.createdAt)}</span>
-                        {item.correctiveDueDate && <span className="text-slate-500 flex items-center gap-1"><Clock className="size-3" />موعد التصحيح: <span dir="ltr" className="text-slate-300">{item.correctiveDueDate}</span></span>}
+                        <span className="text-slate-500 flex items-center gap-1"><CalendarDays className="size-3" />{formatDate(item.createdAt, locale)}</span>
+                        {item.correctiveDueDate && <span className="text-slate-500 flex items-center gap-1"><Clock className="size-3" /><T>موعد التصحيح: </T><span dir="ltr" className="text-slate-300">{item.correctiveDueDate}</span></span>}
                       </div>
 
                       {/* Quick Root Cause / Actions Preview */}
                       {item.rootCauseDescription && (
                         <div className="rounded-lg bg-amber-500/5 border border-amber-500/10 px-3 py-1.5">
-                          <p className="text-amber-500/70 text-[10px] font-medium mb-0.5">السبب الجذري</p>
+                          <p className="text-amber-500/70 text-[10px] font-medium mb-0.5"><T>السبب الجذري</T></p>
                           <p className="text-slate-400 text-xs leading-relaxed">{truncate(item.rootCauseDescription, 100)}</p>
                         </div>
                       )}
@@ -646,16 +651,16 @@ function CAPAListPage() {
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                           <div className="rounded-lg bg-blue-500/5 border border-blue-500/10 px-3 py-1.5">
                             <div className="flex items-center justify-between mb-0.5">
-                              <p className="text-blue-400 text-[10px] font-medium">الإجراء التصحيحي</p>
-                              {item.correctiveStatus && (() => { const ac = getActionStatusConfig(item.correctiveStatus); return <span className={`px-1.5 py-0.5 rounded text-[9px] border ${ac.color}`}>{ac.label}</span>; })()}
+                              <p className="text-blue-400 text-[10px] font-medium"><T>الإجراء التصحيحي</T></p>
+                              {item.correctiveStatus && (() => { const ac = getActionStatusConfig(item.correctiveStatus); return <span className={`px-1.5 py-0.5 rounded text-[9px] border ${ac.color}`}><T>{ac.label}</T></span>; })()}
                             </div>
                             <p className="text-slate-400 text-xs leading-relaxed">{truncate(item.correctiveAction, 80)}</p>
                           </div>
                           {item.preventiveAction && (
                             <div className="rounded-lg bg-brand-500/5 border border-brand-500/10 px-3 py-1.5">
                               <div className="flex items-center justify-between mb-0.5">
-                                <p className="text-brand-400 text-[10px] font-medium">الإجراء الوقائي</p>
-                                {item.preventiveStatus && (() => { const ac = getActionStatusConfig(item.preventiveStatus); return <span className={`px-1.5 py-0.5 rounded text-[9px] border ${ac.color}`}>{ac.label}</span>; })()}
+                                <p className="text-brand-400 text-[10px] font-medium"><T>الإجراء الوقائي</T></p>
+                                {item.preventiveStatus && (() => { const ac = getActionStatusConfig(item.preventiveStatus); return <span className={`px-1.5 py-0.5 rounded text-[9px] border ${ac.color}`}><T>{ac.label}</T></span>; })()}
                               </div>
                               <p className="text-slate-400 text-xs leading-relaxed">{truncate(item.preventiveAction, 80)}</p>
                             </div>
@@ -677,7 +682,7 @@ function CAPAListPage() {
       <ConfirmDialog
         open={!!deletingId}
         onOpenChange={(open) => { if (!open) setDeletingId(null); }}
-        description="هل أنت متأكد من حذف هذه الحالة؟ لا يمكن التراجع عن هذه العملية."
+        description={translateUIText('هل أنت متأكد من حذف هذه الحالة؟ لا يمكن التراجع عن هذه العملية.', locale)}
         itemName={deletingId ? cases.find((c) => c.id === deletingId)?.title : undefined}
         loading={deleting}
         onConfirm={async () => { if (deletingId) await handleDelete(deletingId); }}
@@ -687,8 +692,8 @@ function CAPAListPage() {
       <Dialog open={showReport} onOpenChange={(o) => { if (!o) { setShowReport(false); setReportData(null); } }}>
         <DialogContent className="backdrop-blur-xl bg-slate-900 border-slate-700 max-w-3xl max-h-[85vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle className="text-white flex items-center gap-2"><BarChart3 className="size-5 text-brand-400" />تقرير حالات كابا</DialogTitle>
-            <DialogDescription className="text-slate-400">إحصائيات وتحليلات شاملة لحالات CAPA</DialogDescription>
+            <DialogTitle className="text-white flex items-center gap-2"><BarChart3 className="size-5 text-brand-400" /><T>تقرير حالات كابا</T></DialogTitle>
+            <DialogDescription className="text-slate-400"><T>إحصائيات وتحليلات شاملة لحالات CAPA</T></DialogDescription>
           </DialogHeader>
           {reportLoading ? (
             <div className="flex items-center justify-center py-12"><Loader2 className="size-8 text-brand-400 animate-spin" /></div>
@@ -697,17 +702,17 @@ function CAPAListPage() {
               {/* Summary KPIs */}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
                 {[
-                  { label: 'إجمالي الحالات', value: reportData.summary?.total ?? 0, color: 'text-brand-400', border: 'border-brand-500/30' },
-                  { label: 'مفتوحة', value: reportData.summary?.open ?? 0, color: 'text-blue-400', border: 'border-blue-500/30' },
-                  { label: 'مغلقة', value: reportData.summary?.closed ?? 0, color: 'text-green-400', border: 'border-green-500/30' },
-                  { label: 'متأخرة', value: reportData.summary?.overdue ?? 0, color: 'text-red-400', border: 'border-red-500/30' },
-                  { label: 'حرجة', value: reportData.summary?.critical ?? 0, color: 'text-orange-400', border: 'border-orange-500/30' },
-                  { label: 'معاد فتحها', value: reportData.summary?.reopened ?? 0, color: 'text-rose-400', border: 'border-rose-500/30' },
-                  { label: 'نسبة الفعالية', value: `${reportData.summary?.effectivenessPct ?? 0}%`, color: 'text-emerald-400', border: 'border-emerald-500/30' },
-                  { label: 'قيد التنفيذ', value: (reportData.summary?.total ?? 0) - (reportData.summary?.open ?? 0) - (reportData.summary?.closed ?? 0), color: 'text-amber-400', border: 'border-amber-500/30' },
+                  { label: 'إجمالي الحالات', value: formatInteger(reportData.summary?.total ?? 0, locale), color: 'text-brand-400', border: 'border-brand-500/30' },
+                  { label: 'مفتوحة', value: formatInteger(reportData.summary?.open ?? 0, locale), color: 'text-blue-400', border: 'border-blue-500/30' },
+                  { label: 'مغلقة', value: formatInteger(reportData.summary?.closed ?? 0, locale), color: 'text-green-400', border: 'border-green-500/30' },
+                  { label: 'متأخرة', value: formatInteger(reportData.summary?.overdue ?? 0, locale), color: 'text-red-400', border: 'border-red-500/30' },
+                  { label: 'حرجة', value: formatInteger(reportData.summary?.critical ?? 0, locale), color: 'text-orange-400', border: 'border-orange-500/30' },
+                  { label: 'معاد فتحها', value: formatInteger(reportData.summary?.reopened ?? 0, locale), color: 'text-rose-400', border: 'border-rose-500/30' },
+                  { label: 'نسبة الفعالية', value: formatPercentage(reportData.summary?.effectivenessPct ?? 0, { locale }), color: 'text-emerald-400', border: 'border-emerald-500/30' },
+                  { label: 'قيد التنفيذ', value: formatInteger((reportData.summary?.total ?? 0) - (reportData.summary?.open ?? 0) - (reportData.summary?.closed ?? 0), locale), color: 'text-amber-400', border: 'border-amber-500/30' },
                 ].map((kpi) => (
                   <div key={kpi.label} className={`rounded-lg border ${kpi.border} bg-slate-800/40 px-3 py-2.5`}>
-                    <p className="text-slate-500 text-[10px]">{kpi.label}</p>
+                    <p className="text-slate-500 text-[10px]"><T>{kpi.label}</T></p>
                     <p className={`${kpi.color} font-bold text-xl leading-tight`}>{kpi.value}</p>
                   </div>
                 ))}
@@ -717,17 +722,17 @@ function CAPAListPage() {
               {/* By Department */}
               {reportData.byDepartment && Object.keys(reportData.byDepartment).length > 0 && (
                 <div className="space-y-2">
-                  <h3 className="text-slate-300 text-sm font-semibold flex items-center gap-1.5"><Users className="size-4 text-brand-400" />حسب القسم</h3>
+                  <h3 className="text-slate-300 text-sm font-semibold flex items-center gap-1.5"><Users className="size-4 text-brand-400" /><T>حسب القسم</T></h3>
                   <div className="space-y-1.5">
                     {Object.entries(reportData.byDepartment).sort((a: any, b: any) => (b[1] as any).total - (a[1] as any).total).map(([dept, metrics]: [string, any]) => (
                       <div key={dept} className="flex items-center gap-3 text-xs px-3 py-2 rounded-lg bg-slate-800/30 border border-slate-700/30">
                         <span className="text-slate-300 w-28 truncate">{dept}</span>
                         <div className="flex-1 flex gap-3">
-                          <span className="text-slate-500">إجمالي: <span className="text-white">{metrics.total}</span></span>
-                          <span className="text-slate-500">مفتوح: <span className="text-blue-400">{metrics.open}</span></span>
-                          <span className="text-slate-500">مغلق: <span className="text-green-400">{metrics.closed}</span></span>
-                          <span className="text-slate-500">متأخر: <span className="text-red-400">{metrics.overdue}</span></span>
-                          <span className="text-slate-500">فعالية: <span className="text-emerald-400">{metrics.effectivenessPct}%</span></span>
+                          <span className="text-slate-500"><T>إجمالي: </T><span className="text-white">{formatInteger(metrics.total, locale)}</span></span>
+                          <span className="text-slate-500"><T>مفتوح: </T><span className="text-blue-400">{formatInteger(metrics.open, locale)}</span></span>
+                          <span className="text-slate-500"><T>مغلق: </T><span className="text-green-400">{formatInteger(metrics.closed, locale)}</span></span>
+                          <span className="text-slate-500"><T>متأخر: </T><span className="text-red-400">{formatInteger(metrics.overdue, locale)}</span></span>
+                          <span className="text-slate-500"><T>فعالية: </T><span className="text-emerald-400">{formatPercentage(metrics.effectivenessPct, { locale })}</span></span>
                         </div>
                       </div>
                     ))}
@@ -738,13 +743,13 @@ function CAPAListPage() {
               {/* By Status */}
               {reportData.byStatus && Object.keys(reportData.byStatus).length > 0 && (
                 <div className="space-y-2">
-                  <h3 className="text-slate-300 text-sm font-semibold flex items-center gap-1.5"><CircleDot className="size-4 text-brand-400" />حسب الحالة</h3>
+                  <h3 className="text-slate-300 text-sm font-semibold flex items-center gap-1.5"><CircleDot className="size-4 text-brand-400" /><T>حسب الحالة</T></h3>
                   <div className="flex flex-wrap gap-2">
                     {Object.entries(reportData.byStatus).sort((a: any, b: any) => b[1] - a[1]).map(([status, count]: [string, any]) => {
                       const cfg = getStatusConfig(status);
                       return (
                         <div key={status} className={`px-3 py-1.5 rounded-lg border ${cfg.color} text-xs font-medium`}>
-                          {cfg.label}: {count}
+                          <T>{cfg.label}</T>: {formatInteger(count, locale)}
                         </div>
                       );
                     })}
@@ -755,13 +760,13 @@ function CAPAListPage() {
               {/* By Priority */}
               {reportData.byPriority && Object.keys(reportData.byPriority).length > 0 && (
                 <div className="space-y-2">
-                  <h3 className="text-slate-300 text-sm font-semibold flex items-center gap-1.5"><AlertTriangle className="size-4 text-brand-400" />حسب الأولوية</h3>
+                  <h3 className="text-slate-300 text-sm font-semibold flex items-center gap-1.5"><AlertTriangle className="size-4 text-brand-400" /><T>حسب الأولوية</T></h3>
                   <div className="flex flex-wrap gap-2">
                     {Object.entries(reportData.byPriority).sort((a: any, b: any) => b[1] - a[1]).map(([priority, count]: [string, any]) => {
                       const cfg = getPriorityConfig(priority);
                       return (
                         <div key={priority} className={`px-3 py-1.5 rounded-lg border ${cfg.color} text-xs font-medium`}>
-                          {cfg.label}: {count}
+                          <T>{cfg.label}</T>: {formatInteger(count, locale)}
                         </div>
                       );
                     })}
@@ -772,15 +777,15 @@ function CAPAListPage() {
               {/* Monthly Trends */}
               {reportData.monthlyTrends && reportData.monthlyTrends.length > 0 && (
                 <div className="space-y-2">
-                  <h3 className="text-slate-300 text-sm font-semibold flex items-center gap-1.5"><TrendingUp className="size-4 text-brand-400" />الاتجاه الشهري (آخر 12 شهر)</h3>
+                  <h3 className="text-slate-300 text-sm font-semibold flex items-center gap-1.5"><TrendingUp className="size-4 text-brand-400" /><T>الاتجاه الشهري (آخر 12 شهر)</T></h3>
                   <div className="space-y-1 max-h-48 overflow-y-auto">
                     {reportData.monthlyTrends.filter((m: any) => m.total > 0).map((m: any) => (
                       <div key={m.month} className="flex items-center gap-3 text-xs px-3 py-1.5 rounded-lg bg-slate-800/30">
-                        <span className="text-slate-400 w-20" dir="ltr">{m.month}</span>
+                        <span className="text-slate-400 w-20" dir="ltr">{formatMonthKey(m.month, locale)}</span>
                         <div className="flex-1 flex gap-4">
-                          <span className="text-slate-500">جديد: <span className="text-white">{m.total}</span></span>
-                          <span className="text-slate-500">مغلق: <span className="text-green-400">{m.closed}</span></span>
-                          <span className="text-slate-500">متأخر: <span className="text-red-400">{m.overdue}</span></span>
+                          <span className="text-slate-500"><T>جديد: </T><span className="text-white">{formatInteger(m.total, locale)}</span></span>
+                          <span className="text-slate-500"><T>مغلق: </T><span className="text-green-400">{formatInteger(m.closed, locale)}</span></span>
+                          <span className="text-slate-500"><T>متأخر: </T><span className="text-red-400">{formatInteger(m.overdue, locale)}</span></span>
                         </div>
                       </div>
                     ))}
@@ -791,11 +796,11 @@ function CAPAListPage() {
               {/* By Category */}
               {reportData.byCategory && Object.keys(reportData.byCategory).length > 0 && (
                 <div className="space-y-2">
-                  <h3 className="text-slate-300 text-sm font-semibold flex items-center gap-1.5"><FileText className="size-4 text-brand-400" />حسب التصنيف</h3>
+                  <h3 className="text-slate-300 text-sm font-semibold flex items-center gap-1.5"><FileText className="size-4 text-brand-400" /><T>حسب التصنيف</T></h3>
                   <div className="flex flex-wrap gap-2">
                     {Object.entries(reportData.byCategory).sort((a: any, b: any) => b[1] - a[1]).map(([cat, count]: [string, any]) => (
                       <div key={cat} className="px-3 py-1.5 rounded-lg border border-slate-700/40 bg-slate-800/40 text-xs">
-                        <span className="text-slate-400">{CATEGORY_LABELS[cat] || cat}:</span> <span className="text-white font-medium">{count}</span>
+                        <span className="text-slate-400"><T>{CATEGORY_LABELS[cat] || cat}</T>:</span> <span className="text-white font-medium">{formatInteger(count, locale)}</span>
                       </div>
                     ))}
                   </div>
@@ -805,11 +810,11 @@ function CAPAListPage() {
               {/* By Source */}
               {reportData.bySource && Object.keys(reportData.bySource).length > 0 && (
                 <div className="space-y-2">
-                  <h3 className="text-slate-300 text-sm font-semibold flex items-center gap-1.5"><Zap className="size-4 text-brand-400" />حسب المصدر</h3>
+                  <h3 className="text-slate-300 text-sm font-semibold flex items-center gap-1.5"><Zap className="size-4 text-brand-400" /><T>حسب المصدر</T></h3>
                   <div className="flex flex-wrap gap-2">
                     {Object.entries(reportData.bySource).sort((a: any, b: any) => b[1] - a[1]).map(([source, count]: [string, any]) => (
                       <div key={source} className="px-3 py-1.5 rounded-lg border border-slate-700/40 bg-slate-800/40 text-xs">
-                        <span className="text-slate-400">{SOURCE_LABELS[source] || source}:</span> <span className="text-white font-medium">{count}</span>
+                        <span className="text-slate-400"><T>{SOURCE_LABELS[source] || source}</T>:</span> <span className="text-white font-medium">{formatInteger(count, locale)}</span>
                       </div>
                     ))}
                   </div>
@@ -820,17 +825,17 @@ function CAPAListPage() {
               <Separator className="bg-slate-700/50" />
               <div className="flex gap-2 justify-end">
                 <Button size="sm" variant="outline" className="border-slate-600 text-slate-300" onClick={() => handleExport('csv')}>
-                  <Download className="size-3.5 ml-1" /> تصدير CSV
+                  <Download className="size-3.5 ml-1" /> <T>تصدير CSV</T>
                 </Button>
                 <Button size="sm" variant="outline" className="border-slate-600 text-slate-300" onClick={() => handleExport('xlsx')}>
-                  <Download className="size-3.5 ml-1" /> تصدير Excel
+                  <Download className="size-3.5 ml-1" /> <T>تصدير Excel</T>
                 </Button>
               </div>
             </div>
           ) : (
             <div className="flex flex-col items-center justify-center py-12">
               <AlertTriangle className="size-8 text-slate-600 mb-2" />
-              <p className="text-slate-500 text-sm">لا تتوفر بيانات التقرير</p>
+              <p className="text-slate-500 text-sm"><T>لا تتوفر بيانات التقرير</T></p>
             </div>
           )}
         </DialogContent>

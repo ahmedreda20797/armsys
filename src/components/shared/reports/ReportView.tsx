@@ -34,6 +34,10 @@ import { EmployeeSearchInput } from '@/components/shared/EmployeeSearchInput';
 import { authFetch } from '@/lib/api-fetch';
 import { generateMonthOptions } from '@/lib/date-utils';
 import { useEmployees } from '@/hooks/use-queries';
+import { useLanguage } from '@/lib/i18n/language-context';
+import { T } from '@/lib/i18n/T';
+import { translateUIText } from '@/lib/i18n/ui-text';
+import { formatNumber, formatDateTime, formatMonthKey } from '@/lib/i18n/format';
 import { usePageState } from '@/hooks/use-page-state';
 import { useReportDefinition, useReportFilterOptions, useReportRun } from '@/hooks/use-report-queries';
 import type { ReportColumnSpec, ReportRunRequest } from '@/lib/reports/types';
@@ -80,17 +84,21 @@ export function ReportSummaryCards({
   metrics: ReadonlyArray<{ metricId: string; label: string; unit?: string }>;
   summary: Record<string, number>;
 }) {
+  const { locale } = useLanguage();
   const visible = metrics.filter((m) => m.metricId in summary);
   if (visible.length === 0) return null;
   return (
     <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
       {visible.map((m) => (
         <div key={m.metricId} className="rounded-xl border border-slate-700/50 bg-slate-900/40 p-3">
-          <div className="text-[11px] text-slate-400 truncate">{m.label}</div>
-          <div className="text-lg font-bold text-slate-100 mt-1 tabular-nums">
-            {summary[m.metricId]}
-            {m.unit === 'EGP' ? <span className="text-xs font-normal text-slate-400 mr-1">ج.م</span> : null}
-            {m.unit === 'days' ? <span className="text-xs font-normal text-slate-400 mr-1">يوم</span> : null}
+          <div className="text-[11px] text-slate-400 truncate"><T>{m.label}</T></div>
+          {/* §I18N-BOUNDARY — the value is application-generated data:
+              locale-formatted (never translated), protected from any
+              ancestor UI zone. */}
+          <div data-i18n="false" className="text-lg font-bold text-slate-100 mt-1 tabular-nums">
+            {formatNumber(summary[m.metricId], { locale })}
+            {m.unit === 'EGP' ? <span className="text-xs font-normal text-slate-400 mr-1"><T>ج.م</T></span> : null}
+            {m.unit === 'days' ? <span className="text-xs font-normal text-slate-400 mr-1"><T>يوم</T></span> : null}
           </div>
         </div>
       ))}
@@ -110,6 +118,7 @@ export function ReportTable({
 }) {
   // §11 expansion state — row id → expanded (page-local, not persisted).
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+  const { locale } = useLanguage();
   const toggleRow = (id: string) => {
     setExpandedIds((prev) => {
       const next = new Set(prev);
@@ -126,9 +135,11 @@ export function ReportTable({
           <TableHeader>
             <TableRow className="border-slate-700/50 hover:bg-transparent">
               {renderExpanded && <TableHead className="w-8" />}
+              {/* Column labels are application-owned catalog constants —
+                  claimed UI; the cells below are business data. */}
               {columns.map((col) => (
                 <TableHead key={col.key} className="text-slate-300 text-xs whitespace-nowrap text-right">
-                  {col.label}
+                  <T>{col.label}</T>
                 </TableHead>
               ))}
             </TableRow>
@@ -146,7 +157,7 @@ export function ReportTable({
                           type="button"
                           onClick={() => toggleRow(rowId)}
                           aria-expanded={isExpanded}
-                          aria-label={isExpanded ? 'طي التفاصيل' : 'توسيع التفاصيل'}
+                          aria-label={translateUIText(isExpanded ? 'طي التفاصيل' : 'توسيع التفاصيل', locale)}
                           className="p-1 rounded-md text-slate-500 hover:text-white hover:bg-slate-700/40 transition-colors"
                         >
                           {isExpanded ? <ChevronDown className="size-4" /> : <ChevronLeft className="size-4" />}
@@ -157,12 +168,13 @@ export function ReportTable({
                       <TableCell
                         key={col.key}
                         onClick={isTriggerColumn(col.key) ? () => toggleRow(rowId) : undefined}
+                        data-i18n="false"
                         className={`text-slate-200 text-xs text-right ${isTriggerColumn(col.key) ? 'cursor-pointer select-none' : ''} ${typeof row[col.key] === 'string' && (row[col.key] as string).includes('\n') ? 'whitespace-pre-line leading-relaxed align-top' : 'whitespace-nowrap'}`}
                         {...(isTriggerColumn(col.key) ? { 'aria-expanded': isExpanded } : {})}
                       >
                         {renderCell
-                          ? (renderCell(col, row) ?? formatCell(row[col.key]))
-                          : formatCell(row[col.key])}
+                          ? (renderCell(col, row) ?? formatCell(row[col.key], locale))
+                          : formatCell(row[col.key], locale)}
                       </TableCell>
                     ))}
                   </TableRow>
@@ -183,9 +195,15 @@ export function ReportTable({
   );
 }
 
-function formatCell(value: unknown): React.ReactNode {
+/**
+ * §I18N-BOUNDARY — cell values are BUSINESS DATA: rendered exactly as
+ * stored (names, notes, codes untouched). Only application-generated
+ * NUMBERS get locale-aware digit formatting — never IDs/codes (strings
+ * pass through verbatim, so EMP-067 stays EMP-067).
+ */
+function formatCell(value: unknown, locale: 'ar' | 'en'): React.ReactNode {
   if (value === null || value === undefined || value === '') return <span className="text-slate-500">—</span>;
-  if (typeof value === 'number') return <span className="tabular-nums">{value}</span>;
+  if (typeof value === 'number') return <span className="tabular-nums">{formatNumber(value, { locale })}</span>;
   return String(value);
 }
 
@@ -194,7 +212,7 @@ export function ReportEmptyState({ label }: { label?: string }) {
   return (
     <div className="flex flex-col items-center justify-center py-16 rounded-2xl border border-dashed border-slate-700/60 bg-slate-900/30">
       <Search className="size-10 text-slate-600 mb-3" />
-      <p className="text-slate-400 text-sm">{label ?? 'لا توجد بيانات مطابقة للفلاتر المحددة'}</p>
+      <p className="text-slate-400 text-sm">{label ? <T>{label}</T> : <T>لا توجد بيانات مطابقة للفلاتر المحددة</T>}</p>
     </div>
   );
 }
@@ -205,6 +223,7 @@ export function ReportEmptyState({ label }: { label?: string }) {
 
 export function ReportView({ reportId, renderCell, renderExpanded, expandTriggerColumns, insufficientBelow }: ReportViewProps) {
   const { definition, isLoading: defLoading } = useReportDefinition(reportId);
+  const { locale } = useLanguage();
   const { data: employees } = useEmployees();
   const { data: filterOptions } = useReportFilterOptions();
 
@@ -316,7 +335,7 @@ export function ReportView({ reportId, renderCell, renderExpanded, expandTrigger
       rows: (response.rows as Row[]).map((row) =>
         columns.map((c) => {
           const v = row[c.key];
-          return v === null || v === undefined || v === '' ? '—' : typeof v === 'number' ? v.toLocaleString('ar-EG') : String(v);
+          return v === null || v === undefined || v === '' ? '—' : typeof v === 'number' ? formatNumber(v, { locale }) : String(v);
         }),
       ),
       ltrColumns: columns.map((c, i) => (c.width ? i : -1)).filter((i) => i >= 0),
@@ -338,7 +357,9 @@ export function ReportView({ reportId, renderCell, renderExpanded, expandTrigger
   }
 
   const response = run.data;
-  const modeBadge =
+  // §I18N-BOUNDARY — system-generated status captions are claimed UI;
+  // the report name/description are application-owned catalog constants.
+  const modeBadgeRaw =
     response?.meta.dataMode.dataMode === 'snapshot' ? 'نتيجة شهرية معتمدة'
     : response?.meta.dataMode.dataMode === 'hybrid' ? 'بيانات مختلطة'
     : 'بيانات حية';
@@ -352,26 +373,26 @@ export function ReportView({ reportId, renderCell, renderExpanded, expandTrigger
             <BarChart3 className="size-5 text-brand-400" />
           </div>
           <div>
-            <h1 className="text-xl font-bold text-slate-100">{definition.name}</h1>
-            <p className="text-xs text-slate-400 mt-0.5 max-w-xl">{definition.description}</p>
+            <h1 className="text-xl font-bold text-slate-100"><T>{definition.name}</T></h1>
+            <p className="text-xs text-slate-400 mt-0.5 max-w-xl"><T>{definition.description}</T></p>
           </div>
         </div>
         <div className="flex items-center gap-2">
           {response && (
             <Badge variant="outline" className="border-brand-500/30 bg-brand-500/10 text-brand-300 text-[11px]">
-              {modeBadge}
+              {translateUIText(modeBadgeRaw, locale)}
             </Badge>
           )}
           {definition.exportFormats.includes('excel') && canExport && (
             <Button size="sm" variant="secondary" onClick={handleExport} disabled={exporting || !response?.hasData}>
               {exporting ? <Loader2 className="size-4 animate-spin" /> : <FileSpreadsheet className="size-4" />}
-              تصدير Excel
+              <T>تصدير Excel</T>
             </Button>
           )}
           {definition.exportFormats.includes('print') && response?.hasData && (
             <Button size="sm" variant="secondary" onClick={handlePrint}>
               <Printer className="size-4" />
-              طباعة
+              <T>طباعة</T>
             </Button>
           )}
         </div>
@@ -388,21 +409,21 @@ export function ReportView({ reportId, renderCell, renderExpanded, expandTrigger
                 onClick={() => setFilter('useDateRange', false)}
                 className={`px-3 py-1.5 text-xs rounded-md transition-colors ${!filters.useDateRange ? 'bg-brand-500/20 text-brand-300' : 'text-slate-400 hover:text-slate-200'}`}
               >
-                حسب الشهر
+                <T>حسب الشهر</T>
               </button>
               <button
                 type="button"
                 onClick={() => setFilter('useDateRange', true)}
                 className={`px-3 py-1.5 text-xs rounded-md transition-colors ${filters.useDateRange ? 'bg-brand-500/20 text-brand-300' : 'text-slate-400 hover:text-slate-200'}`}
               >
-                نطاق تاريخ
+                <T>نطاق تاريخ</T>
               </button>
             </div>
           )}
 
           {!filters.useDateRange && hasFilter('monthKey') && (
             <div className="min-w-40">
-              <label className="block text-[11px] text-slate-400 mb-1">الشهر</label>
+              <label className="block text-[11px] text-slate-400 mb-1"><T>الشهر</T></label>
               <Select value={filters.monthKey} onValueChange={(v) => setFilter('monthKey', v)}>
                 <SelectTrigger className="h-9 bg-slate-950/40 border-slate-700/60 text-slate-200 text-xs">
                   <SelectValue />
@@ -419,11 +440,11 @@ export function ReportView({ reportId, renderCell, renderExpanded, expandTrigger
           {filters.useDateRange && hasFilter('fromDate') && (
             <>
               <div>
-                <label className="block text-[11px] text-slate-400 mb-1">من تاريخ</label>
+                <label className="block text-[11px] text-slate-400 mb-1"><T>من تاريخ</T></label>
                 <Input type="date" value={filters.fromDate} onChange={(e) => setFilter('fromDate', e.target.value)} className="h-9 w-40 bg-slate-950/40 border-slate-700/60 text-slate-200 text-xs" />
               </div>
               <div>
-                <label className="block text-[11px] text-slate-400 mb-1">إلى تاريخ</label>
+                <label className="block text-[11px] text-slate-400 mb-1"><T>إلى تاريخ</T></label>
                 <Input type="date" value={filters.toDate} onChange={(e) => setFilter('toDate', e.target.value)} className="h-9 w-40 bg-slate-950/40 border-slate-700/60 text-slate-200 text-xs" />
               </div>
             </>
@@ -431,16 +452,16 @@ export function ReportView({ reportId, renderCell, renderExpanded, expandTrigger
 
           {hasFilter('employeeId') && (
             <div className="min-w-56 flex-1 max-w-xs">
-              <label className="block text-[11px] text-slate-400 mb-1">الموظف</label>
+              <label className="block text-[11px] text-slate-400 mb-1"><T>الموظف</T></label>
               <EmployeeSearchInput
                 employees={(employees ?? []) as never}
                 value={filters.employeeId}
                 onChange={(id) => setFilter('employeeId', id)}
-                placeholder="كل الموظفين"
+                placeholder={translateUIText('كل الموظفين', locale)}
                 variant="filter"
                 showAllOption
                 allOptionValue=""
-                allOptionLabel="كل الموظفين"
+                allOptionLabel={translateUIText('كل الموظفين', locale)}
                 allowClear
               />
             </div>
@@ -448,13 +469,13 @@ export function ReportView({ reportId, renderCell, renderExpanded, expandTrigger
 
           {hasFilter('search') && (
             <div className="min-w-44">
-              <label className="block text-[11px] text-slate-400 mb-1">بحث باسم الموظف</label>
+              <label className="block text-[11px] text-slate-400 mb-1"><T>بحث باسم الموظف</T></label>
               <div className="relative">
                 <Search className="absolute right-2.5 top-1/2 -translate-y-1/2 size-3.5 text-slate-500" />
                 <Input
                   value={filters.search}
                   onChange={(e) => setFilter('search', e.target.value)}
-                  placeholder="اسم أو رقم الموظف"
+                  placeholder={translateUIText('اسم أو رقم الموظف', locale)}
                   className="h-9 w-44 bg-slate-950/40 border-slate-700/60 text-slate-200 text-xs pr-8"
                 />
               </div>
@@ -463,18 +484,20 @@ export function ReportView({ reportId, renderCell, renderExpanded, expandTrigger
 
           {hasFilter('department') && (
             <div className="min-w-40">
-              <label className="block text-[11px] text-slate-400 mb-1">القسم</label>
+              <label className="block text-[11px] text-slate-400 mb-1"><T>القسم</T></label>
               <Select
                 value={filters.department || ALL_VALUE}
                 onValueChange={(v) => setFilter('department', v === ALL_VALUE ? '' : v)}
               >
                 <SelectTrigger className="h-9 bg-slate-950/40 border-slate-700/60 text-slate-200 text-xs">
-                  <SelectValue placeholder="كل الأقسام" />
+                  <SelectValue placeholder={translateUIText('كل الأقسام', locale)} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value={ALL_VALUE}>كل الأقسام</SelectItem>
+                  {/* §I18N-BOUNDARY — the "all" option is UI; the department
+                      names below are BUSINESS DATA and render as stored. */}
+                  <SelectItem value={ALL_VALUE}><T>كل الأقسام</T></SelectItem>
                   {(filterOptions?.departments ?? []).map((d) => (
-                    <SelectItem key={d} value={d}>{d}</SelectItem>
+                    <SelectItem key={d} value={d} data-i18n="false">{d}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -483,18 +506,18 @@ export function ReportView({ reportId, renderCell, renderExpanded, expandTrigger
 
           {hasFilter('team') && (
             <div className="min-w-40">
-              <label className="block text-[11px] text-slate-400 mb-1">الفريق</label>
+              <label className="block text-[11px] text-slate-400 mb-1"><T>الفريق</T></label>
               <Select
                 value={filters.team || ALL_VALUE}
                 onValueChange={(v) => setFilter('team', v === ALL_VALUE ? '' : v)}
               >
                 <SelectTrigger className="h-9 bg-slate-950/40 border-slate-700/60 text-slate-200 text-xs">
-                  <SelectValue placeholder="كل الفرق" />
+                  <SelectValue placeholder={translateUIText('كل الفرق', locale)} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value={ALL_VALUE}>كل الفرق</SelectItem>
+                  <SelectItem value={ALL_VALUE}><T>كل الفرق</T></SelectItem>
                   {(filterOptions?.teams ?? []).map((t) => (
-                    <SelectItem key={t} value={t}>{t}</SelectItem>
+                    <SelectItem key={t} value={t} data-i18n="false">{t}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -503,15 +526,15 @@ export function ReportView({ reportId, renderCell, renderExpanded, expandTrigger
 
           {hasFilter('archived') && (
             <div className="min-w-36">
-              <label className="block text-[11px] text-slate-400 mb-1">حالة الخصم</label>
+              <label className="block text-[11px] text-slate-400 mb-1"><T>حالة الخصم</T></label>
               <Select value={filters.archived} onValueChange={(v) => setFilter('archived', v)}>
                 <SelectTrigger className="h-9 bg-slate-950/40 border-slate-700/60 text-slate-200 text-xs">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="active">الخصومات النشطة</SelectItem>
-                  <SelectItem value="archived">الخصومات المؤرشفة</SelectItem>
-                  <SelectItem value="all">الكل</SelectItem>
+                  <SelectItem value="active"><T>الخصومات النشطة</T></SelectItem>
+                  <SelectItem value="archived"><T>الخصومات المؤرشفة</T></SelectItem>
+                  <SelectItem value="all"><T>الكل</T></SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -519,8 +542,8 @@ export function ReportView({ reportId, renderCell, renderExpanded, expandTrigger
 
           {hasFilter('category') && (
             <div>
-              <label className="block text-[11px] text-slate-400 mb-1">نوع الخصم</label>
-              <Input value={filters.category} onChange={(e) => setFilter('category', e.target.value)} placeholder="الكل" className="h-9 w-36 bg-slate-950/40 border-slate-700/60 text-slate-200 text-xs" />
+              <label className="block text-[11px] text-slate-400 mb-1"><T>نوع الخصم</T></label>
+              <Input value={filters.category} onChange={(e) => setFilter('category', e.target.value)} placeholder={translateUIText('الكل', locale)} className="h-9 w-36 bg-slate-950/40 border-slate-700/60 text-slate-200 text-xs" />
             </div>
           )}
 
@@ -531,7 +554,7 @@ export function ReportView({ reportId, renderCell, renderExpanded, expandTrigger
             onClick={resetFilters}
           >
             <RotateCcw className="size-4" />
-            تصفير
+            <T>تصفير</T>
           </Button>
         </div>
       </div>
@@ -556,11 +579,11 @@ export function ReportView({ reportId, renderCell, renderExpanded, expandTrigger
             && (response.summary.totalCount ?? response.rows.length) > 0
             && (
               <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3.5 py-2.5 text-xs text-amber-200">
-                بيانات غير كافية للتحليل — الأرقام المعروضة مازالت مستدلة من السجلات الفعلية ولكنها لا تكفي لاستنتاج أنماط.
+                <T>بيانات غير كافية للتحليل — الأرقام المعروضة مازالت مستدلة من السجلات الفعلية ولكنها لا تكفي لاستنتاج أنماط.</T>
               </div>
             )}
           <div className="text-[11px] text-slate-500 print:text-slate-600">
-            الفترة: {response.meta.period} · عدد الصفوف: {response.rows.length} · تاريخ الإنشاء: {new Date(response.meta.generatedAt).toLocaleString('ar-EG')}
+            <T>الفترة: </T>{formatMonthKey(response.meta.period, locale)} · <T>عدد الصفوف: </T>{formatNumber(response.rows.length, { locale })} · <T>تاريخ الإنشاء: </T>{formatDateTime(response.meta.generatedAt, locale)}
           </div>
           <ReportTable columns={definition.visibleColumns} rows={response.rows} renderCell={renderCell} renderExpanded={renderExpanded} expandTriggerColumns={expandTriggerColumns} />
         </div>
@@ -570,7 +593,7 @@ export function ReportView({ reportId, renderCell, renderExpanded, expandTrigger
       {response?.hasData && !canExport && definition.exportFormats.includes('excel') && (
         <div className="flex items-center gap-2 text-[11px] text-slate-500 print:hidden">
           <Download className="size-3" />
-          تصدير Excel يتطلب صلاحية تصدير التقارير
+          <T>تصدير Excel يتطلب صلاحية تصدير التقارير</T>
         </div>
       )}
     </div>

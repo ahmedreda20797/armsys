@@ -36,6 +36,9 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table';
 import { cn } from '@/lib/utils';
+import { useLanguage } from '@/lib/i18n/language-context';
+import { T } from '@/lib/i18n/T';
+import { translateUIText } from '@/lib/i18n/ui-text';
 import { useEmployeeAnalytics } from '@/hooks/use-kpi-queries';
 import type { AnalyticsApiResponse } from '@/lib/analytics/types';
 import { SectionCard } from './report-sections';
@@ -46,30 +49,31 @@ import {
 } from './analytics-view';
 
 export function AnalyticsSection({ employeeId, month }: { employeeId: string; month: string }) {
+  const { locale } = useLanguage();
   const analyticsQuery = useEmployeeAnalytics(employeeId || null, month || null);
 
   // Explicit state machine (spec §27/§28): loading, network error,
   // ERROR (failed analytics) degrades
   // this section alone — the rest of the report is untouched.
-  let view = buildAnalyticsView(analyticsQuery.data as AnalyticsApiResponse | undefined);
+  let view = buildAnalyticsView(analyticsQuery.data as AnalyticsApiResponse | undefined, locale);
   if (analyticsQuery.isLoading) view = { kind: 'LOADING' };
   if (analyticsQuery.isError) {
     view = {
       kind: 'ERROR',
       reason: 'NETWORK_ERROR',
-      message: 'تعذر الاتصال بخدمة التحليل الإحصائي — باقي التقرير يعمل بشكل طبيعي',
+      message: translateUIText('تعذر الاتصال بخدمة التحليل الإحصائي — باقي التقرير يعمل بشكل طبيعي', locale),
     };
   }
 
   return (
     <SectionCard
       icon={Sigma}
-      title="التحليل الإحصائي"
-      subtitle="نتائج تحليلية حتمية فوق مجموعة البيانات المتحقق منها — طبقة تحليل فقط، بلا أحكام أو تفسير"
+      title={translateUIText('التحليل الإحصائي', locale)}
+      subtitle={translateUIText('نتائج تحليلية حتمية فوق مجموعة البيانات المتحقق منها — طبقة تحليل فقط، بلا أحكام أو تفسير', locale)}
       actions={<OverallConfidenceBadge view={view} />}
     >
       {view.kind === 'IDLE' && (
-        <p className="text-xs text-slate-500">بانتظار بيانات الفترة…</p>
+        <p className="text-xs text-slate-500"><T>بانتظار بيانات الفترة…</T></p>
       )}
 
       {view.kind === 'LOADING' && (
@@ -86,7 +90,7 @@ export function AnalyticsSection({ employeeId, month }: { employeeId: string; mo
           <div className="space-y-1 min-w-0">
             <p className="text-sm text-sky-200">{view.message}</p>
             <p className="text-[11px] text-slate-500">
-              سبب الحالة: <span className="font-mono" dir="ltr">{view.reason}</span>
+              <T>سبب الحالة: </T><span className="font-mono" dir="ltr">{view.reason}</span>
             </p>
           </div>
         </div>
@@ -108,7 +112,7 @@ export function AnalyticsSection({ employeeId, month }: { employeeId: string; mo
             onClick={() => analyticsQuery.refetch()}
           >
             <RefreshCw className="h-3.5 w-3.5 ml-1" />
-            إعادة المحاولة
+            <T>إعادة المحاولة</T>
           </Button>
         </div>
       )}
@@ -129,7 +133,7 @@ export function AnalyticsSection({ employeeId, month }: { employeeId: string; mo
             onClick={() => analyticsQuery.refetch()}
           >
             <RefreshCw className="h-3.5 w-3.5 ml-1" />
-            إعادة المحاولة
+            <T>إعادة المحاولة</T>
           </Button>
         </div>
       )}
@@ -144,7 +148,7 @@ function OverallConfidenceBadge({ view }: { view: ReturnType<typeof buildAnalyti
   return (
     <div className="flex items-center gap-1.5">
       <ToneBadge badge={view.overallConfidence} />
-      <span className="hidden sm:inline text-[10px] text-slate-500">الثقة الإجمالية</span>
+      <span className="hidden sm:inline text-[10px] text-slate-500"><T>الثقة الإجمالية</T></span>
     </div>
   );
 }
@@ -189,7 +193,7 @@ function ReadyBlocks({ view }: { view: AnalyticsReadyView }) {
           <BlockTitle icon={Sigma}>{view.trend.statusLabel}</BlockTitle>
           <div className="flex items-center gap-1.5">
             <ToneBadge badge={view.trend.confidence} />
-            <span className="text-[10px] text-slate-500">اتجاه: {view.trend.directionLabel}</span>
+            <span className="text-[10px] text-slate-500"><T>اتجاه: </T>{view.trend.directionLabel}</span>
           </div>
         </div>
         <div className="grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-4">
@@ -220,7 +224,7 @@ function ReadyBlocks({ view }: { view: AnalyticsReadyView }) {
                 variant="outline"
                 className="border-slate-500/30 bg-slate-500/15 font-normal text-[11px] text-slate-300"
               >
-                تركّز {c.label}: <span className="mx-1 tabular-nums">{c.text}</span>
+                <T>تركّز </T>{c.label}: <span className="mx-1 tabular-nums">{c.text}</span>
               </Badge>
             ))}
           </div>
@@ -230,7 +234,7 @@ function ReadyBlocks({ view }: { view: AnalyticsReadyView }) {
       {/* §6 Period-over-period count deltas */}
       {hasDeltas && (
         <div className="space-y-2">
-          <BlockTitle icon={Percent}>مقارنة الفترة بالشهر السابق (عدد السجلات)</BlockTitle>
+          <BlockTitle icon={Percent}><T>مقارنة الفترة بالشهر السابق (عدد السجلات)</T></BlockTitle>
           <div className="flex flex-wrap gap-1.5">
             {view.deltas.map((d) => (
               <Badge
@@ -252,18 +256,18 @@ function ReadyBlocks({ view }: { view: AnalyticsReadyView }) {
 
       {/* §10 Anomalies — explicitly NOT wrongdoing */}
       <div className="space-y-2">
-        <BlockTitle icon={AlertTriangle}>الاختلافات الإحصائية</BlockTitle>
+        <BlockTitle icon={AlertTriangle}><T>الاختلافات الإحصائية</T></BlockTitle>
         {hasAnomalies ? (
           <div className="overflow-x-auto">
             <Table>
               <TableHeader>
                 <TableRow className="border-slate-700/50">
-                  <TableHead className="text-slate-400">الاختلاف</TableHead>
-                  <TableHead className="text-slate-400">المؤشر</TableHead>
-                  <TableHead className="text-slate-400">القيمة المرصودة</TableHead>
-                  <TableHead className="text-slate-400">النطاق المتوقع</TableHead>
-                  <TableHead className="text-slate-400">الشدة</TableHead>
-                  <TableHead className="text-slate-400">الثقة</TableHead>
+                  <TableHead className="text-slate-400"><T>الاختلاف</T></TableHead>
+                  <TableHead className="text-slate-400"><T>المؤشر</T></TableHead>
+                  <TableHead className="text-slate-400"><T>القيمة المرصودة</T></TableHead>
+                  <TableHead className="text-slate-400"><T>النطاق المتوقع</T></TableHead>
+                  <TableHead className="text-slate-400"><T>الشدة</T></TableHead>
+                  <TableHead className="text-slate-400"><T>الثقة</T></TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -299,14 +303,14 @@ function ReadyBlocks({ view }: { view: AnalyticsReadyView }) {
           </div>
         ) : (
           <p className="text-xs text-slate-500">
-            لا توجد اختلافات إحصائية ضمن العتبات المحافظة المطبقة لهذه الفترة.
+            <T>لا توجد اختلافات إحصائية ضمن العتبات المحافظة المطبقة لهذه الفترة.</T>
           </p>
         )}
       </div>
 
       {/* §17 Cross-domain temporal associations */}
       <div className="space-y-2">
-        <BlockTitle icon={Network}>أنماط زمنية عبر النطاقات</BlockTitle>
+        <BlockTitle icon={Network}><T>أنماط زمنية عبر النطاقات</T></BlockTitle>
         {hasPatterns ? (
           <ul className="space-y-2">
             {view.patterns.map((p, idx) => (
@@ -324,14 +328,14 @@ function ReadyBlocks({ view }: { view: AnalyticsReadyView }) {
             ))}
           </ul>
         ) : (
-          <p className="text-xs text-slate-500">لا توجد أنماط تزامن مؤهلة ضمن العتبات المطبقة.</p>
+          <p className="text-xs text-slate-500"><T>لا توجد أنماط تزامن مؤهلة ضمن العتبات المطبقة.</T></p>
         )}
       </div>
 
       {/* §18 Correlations — reported with n and limitations only */}
       {hasCorrelations && (
         <div className="space-y-2">
-          <BlockTitle icon={Percent}>الارتباطات (بشرط كفاية العينة)</BlockTitle>
+          <BlockTitle icon={Percent}><T>الارتباطات (بشرط كفاية العينة)</T></BlockTitle>
           <ul className="space-y-2">
             {view.correlations.map((c, idx) => (
               <li
@@ -350,13 +354,13 @@ function ReadyBlocks({ view }: { view: AnalyticsReadyView }) {
               </li>
             ))}
           </ul>
-          <p className="text-[10px] text-slate-500">الارتباط الإحصائي ليس سببية — يُعرض للتتبع التحليلي فقط.</p>
+          <p className="text-[10px] text-slate-500"><T>الارتباط الإحصائي ليس سببية — يُعرض للتتبع التحليلي فقط.</T></p>
         </div>
       )}
 
       {/* §19 Analytics data quality — gaps never hidden */}
       <div className="space-y-2 rounded-xl border border-slate-700/40 bg-slate-900/20 p-3">
-        <BlockTitle icon={Info}>جودة بيانات التحليل</BlockTitle>
+        <BlockTitle icon={Info}><T>جودة بيانات التحليل</T></BlockTitle>
         {view.gaps.length > 0 && (
           <ul className="space-y-1">
             {view.gaps.map((g, idx) => (
@@ -368,10 +372,10 @@ function ReadyBlocks({ view }: { view: AnalyticsReadyView }) {
           </ul>
         )}
         {view.gaps.length === 0 && (
-          <p className="text-[11px] text-slate-500">جميع التحليلات استوفت الحد الأدنى من البيانات.</p>
+          <p className="text-[11px] text-slate-500"><T>جميع التحليلات استوفت الحد الأدنى من البيانات.</T></p>
         )}
         {view.unavailableMetricsLabel && (
-          <p className="text-[11px] text-slate-500">مؤشرات غير متاحة: {view.unavailableMetricsLabel}</p>
+          <p className="text-[11px] text-slate-500"><T>مؤشرات غير متاحة: </T>{view.unavailableMetricsLabel}</p>
         )}
         {view.noteLabels.length > 0 && (
           <ul className="space-y-1 border-t border-slate-800/60 pt-2">
@@ -385,9 +389,9 @@ function ReadyBlocks({ view }: { view: AnalyticsReadyView }) {
       <Card className="bg-slate-900/30 border-slate-700/30">
         <CardContent className="p-3">
           <p className="text-[10px] leading-5 text-slate-500">
-            هذه النتائج طبقة تحليل إحصائي حتمية (FACT + ANALYSIS) فوق بيانات ذكاء الأداء المتحقق منها —
+            <T>هذه النتائج طبقة تحليل إحصائي حتمية (FACT + ANALYSIS) فوق بيانات ذكاء الأداء المتحقق منها —
             لا تتضمن أي حكم على الموظف، ولا سرداً توليدياً، ولا توصيات. القيم المعروضة منسوخة كما أنتجها
-            محرك التحليل ولا تمثل إعادة حساب لأي مؤشر KPI.
+            محرك التحليل ولا تمثل إعادة حساب لأي مؤشر KPI.</T>
           </p>
         </CardContent>
       </Card>

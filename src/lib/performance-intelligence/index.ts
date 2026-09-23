@@ -73,7 +73,9 @@ export {
   monthOfComplaint,
   monthOfCapa,
   monthOfFollowUp,
-  monthOfTravelDeal,
+  monthOfDealTravel,
+  monthOfDealClosed,
+  monthOfDealCreated,
 } from './loaders';
 export type {
   PerformanceIntelligenceLoaders,

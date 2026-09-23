@@ -28,6 +28,9 @@ import { Button } from '@/components/ui/button';
 import { Printer } from 'lucide-react';
 import { usePrintReportStore } from '@/components/print/print-report-store';
 import { managementReportToPrintModel } from '@/components/print/print-adapters';
+import { T } from '@/lib/i18n/T';
+import { useLanguage } from '@/lib/i18n/language-context';
+import { formatNumber, formatInteger } from '@/lib/i18n/format';
 
 const DOMAIN_ORDER: ManagementDomainSource[] = [
   'complaints',
@@ -44,6 +47,7 @@ const DOMAIN_ICONS: Record<ManagementDomainSource, React.ReactNode> = {
 };
 
 export default function ManagementReportTab({ month }: { month: string }) {
+  const { locale } = useLanguage();
   const query = useManagementReport(month);
   const report = query.data as ManagementReport | undefined;
   // §PRINT — hook order: called unconditionally before early returns.
@@ -66,7 +70,7 @@ export default function ManagementReportTab({ month }: { month: string }) {
   if (query.isError || !report) {
     return (
       <Card className="bg-red-950/20 border-red-800/40">
-        <CardContent className="p-6 text-red-300 text-sm">تعذر تحميل التقرير الإداري — أعد المحاولة.</CardContent>
+        <CardContent className="p-6 text-red-300 text-sm"><T>تعذر تحميل التقرير الإداري — أعد المحاولة.</T></CardContent>
       </Card>
     );
   }
@@ -77,7 +81,7 @@ export default function ManagementReportTab({ month }: { month: string }) {
       <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-200">
         <span className="flex items-center gap-2">
           <Info className="h-4 w-4 shrink-0" />
-          {report.qualitySummary.label}
+          <T>{report.qualitySummary.label}</T>
         </span>
         <span className="flex items-center gap-2">
           <ValueBasisBadge basis={report.qualitySummary.valueBasis} />
@@ -88,7 +92,7 @@ export default function ManagementReportTab({ month }: { month: string }) {
             onClick={() => openPrintReport(managementReportToPrintModel(report))}
           >
             <Printer className="size-3.5" />
-            طباعة / PDF
+            <T>طباعة / PDF</T>
           </Button>
         </span>
       </div>
@@ -122,17 +126,18 @@ export default function ManagementReportTab({ month }: { month: string }) {
 }
 
 function DomainTotalCard({ facts }: { facts: DomainPeriodFacts }) {
+  const { locale } = useLanguage();
   return (
     <div className="rounded-xl border border-slate-700/40 bg-slate-900/40 p-4 space-y-1">
       <p className="text-xs text-slate-400 flex items-center gap-1.5">
         {DOMAIN_ICONS[facts.source]}
-        {facts.label}
+        <T>{facts.label}</T>
       </p>
-      <p className="text-2xl font-bold text-slate-100">{facts.total}</p>
+      <p className="text-2xl font-bold text-slate-100">{formatInteger(facts.total, locale)}</p>
       <p className="text-[11px] text-slate-500">
-        مفتوح: <span className="text-amber-300">{facts.open}</span>
+        <T>مفتوح: </T><span className="text-amber-300">{formatInteger(facts.open, locale)}</span>
         {' · '}
-        مغلق: <span className="text-emerald-300">{facts.closed}</span>
+        <T>مغلق: </T><span className="text-emerald-300">{formatInteger(facts.closed, locale)}</span>
       </p>
     </div>
   );
@@ -145,23 +150,24 @@ function GroupTable({
   title: string;
   rows: DepartmentManagementRow[];
 }) {
+  const { locale } = useLanguage();
   return (
     <Card className="bg-slate-800/30 border-slate-700/40">
       <CardHeader className="pb-2">
-        <CardTitle className="text-base text-slate-200">{title}</CardTitle>
+        <CardTitle className="text-base text-slate-200"><T>{title}</T></CardTitle>
       </CardHeader>
       <CardContent>
         {rows.length === 0 ? (
-          <p className="text-sm text-slate-500 py-4 text-center">لا توجد بيانات مجمّعة لهذه الفترة</p>
+          <p className="text-sm text-slate-500 py-4 text-center"><T>لا توجد بيانات مجمّعة لهذه الفترة</T></p>
         ) : (
           <div className="overflow-x-auto">
             <Table>
               <TableHeader>
                 <TableRow className="border-slate-700/40">
-                  <TableHead className="text-right">المجموعة</TableHead>
-                  <TableHead className="text-right">الموظفون</TableHead>
-                  <TableHead className="text-right">متوسط الجودة (خام)</TableHead>
-                  <TableHead className="text-right">متوسط المساهمة</TableHead>
+                  <TableHead className="text-right"><T>المجموعة</T></TableHead>
+                  <TableHead className="text-right"><T>الموظفون</T></TableHead>
+                  <TableHead className="text-right"><T>متوسط الجودة (خام)</T></TableHead>
+                  <TableHead className="text-right"><T>متوسط المساهمة</T></TableHead>
                   {DOMAIN_ORDER.map((d) => (
                     <TableHead key={d} className="text-right">
                       {DOMAIN_ICONS[d]}
@@ -177,28 +183,28 @@ function GroupTable({
                       <span className="flex items-center gap-2">
                         {row.label}
                         {row.quality ? (
-                          <Badge variant="outline" className="text-[10px] border-slate-600/50 text-slate-500">جودة KPI</Badge>
+                          <Badge variant="outline" className="text-[10px] border-slate-600/50 text-slate-500"><T>جودة KPI</T></Badge>
                         ) : (
-                          <Badge variant="outline" className="text-[10px] border-slate-700/60 text-slate-600">عمليات فقط</Badge>
+                          <Badge variant="outline" className="text-[10px] border-slate-700/60 text-slate-600"><T>عمليات فقط</T></Badge>
                         )}
                       </span>
                     </TableCell>
-                    <TableCell className="text-slate-300 font-mono">{row.employeeCount}</TableCell>
+                    <TableCell className="text-slate-300 font-mono">{formatInteger(row.employeeCount, locale)}</TableCell>
                     <TableCell className="font-mono text-slate-100">
-                      {row.quality ? formatScore(row.quality.avgRawScore) : '—'}
+                      {row.quality ? formatScore(row.quality.avgRawScore, locale) : '—'}
                     </TableCell>
                     <TableCell className="font-mono text-slate-300">
-                      {row.quality?.avgContribution ?? '—'}
+                      {row.quality?.avgContribution != null ? formatNumber(row.quality.avgContribution, { locale }) : '—'}
                     </TableCell>
                     {DOMAIN_ORDER.map((d) => {
                       const facts = row.domains[d];
                       return (
                         <TableCell key={d} className="font-mono text-xs">
                           <span className={facts.total > 0 ? 'text-slate-100' : 'text-slate-600'}>
-                            {facts.total}
+                            {formatInteger(facts.total, locale)}
                           </span>
                           {facts.open > 0 && (
-                            <span className="text-amber-400/80"> ({facts.open})</span>
+                            <span className="text-amber-400/80"> ({formatInteger(facts.open, locale)})</span>
                           )}
                         </TableCell>
                       );

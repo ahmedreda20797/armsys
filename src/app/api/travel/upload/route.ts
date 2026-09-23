@@ -195,6 +195,9 @@ export async function POST(request: NextRequest) {
           customerNames: customerNames || null,
           notes: notes || null,
           status,
+          // §DEAL-DATES — the source sheet has no closure timestamp;
+          // completed rows stay closedAt=null (unknown closure month).
+          closedAt: null,
           hasFlight: false,
           hasHotel: false,
           hasVisa: false,

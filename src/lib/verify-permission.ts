@@ -29,6 +29,8 @@ export interface VerifyResult {
     role: string;
     permissions: PermissionsMap;
     linkedEmployeeId?: string | null;
+    /** §ORG-BOUNDARY explicit per-user override (loaded server-side). */
+    orgBoundaryNodeIds?: string[] | null;
   };
 }
 
@@ -39,6 +41,20 @@ function safeParsePerms(permissions: any): Record<string, any> {
   if (!permissions) return {};
   if (typeof permissions === 'object') return permissions;
   try { return JSON.parse(permissions); } catch { return {}; }
+}
+
+/**
+ * §ORG-BOUNDARY — shape-only sanitization of the stored boundary
+ * override (users.orgBoundaryNodeIds). Non-arrays / junk entries
+ * degrade to null (= INHERIT from the organization assignment);
+ * node EXISTENCE is validated by the boundary resolver itself (an
+ * override whose ids all vanished stays explicit and fails closed —
+ * it never falls through to the assignment tier).
+ */
+function sanitizeBoundaryIds(value: unknown): string[] | null {
+  if (!Array.isArray(value)) return null;
+  const ids = value.filter((id): id is string => typeof id === 'string' && id.length > 0);
+  return ids.length > 0 ? ids : null;
 }
 
 /**
@@ -58,6 +74,16 @@ export interface AuthenticatedCaller {
   permissions: PermissionsMap;
   linkedEmployeeId?: string | null;
   positionId?: string | null;
+  /**
+   * §ORG-BOUNDARY — the user's EXPLICIT organizational access
+   * boundary override (users.orgBoundaryNodeIds): canonical org node
+   * ids, optionally multiple (Company A + Company B, or the General
+   * Administration root). Loaded from the user record — never
+   * client-supplied. Absent/null = INHERIT: the boundary derives
+   * from the user's organization-tree assignment (managed nodes ∪
+   * linked employee's node), resolved by lib/scope/boundary.
+   */
+  orgBoundaryNodeIds?: string[] | null;
   /**
    * RAW permission tiers the effective map was resolved from — kept
    * (optional, additive) so authorize() can produce a TRUE tier trace
@@ -135,6 +161,9 @@ function authenticateFromRequestUncached(request: Request): Promise<Authenticate
       permissions,
       linkedEmployeeId: user.linkedEmployeeId ?? null,
       positionId: user.positionId ?? null,
+      // §ORG-BOUNDARY — sanitized canonical ids only (strings that
+      // exist in the array); shape junk degrades to null = inherit.
+      orgBoundaryNodeIds: sanitizeBoundaryIds(user.orgBoundaryNodeIds),
       storedPermissions: stored,
       positionTemplate,
     };
@@ -407,7 +436,13 @@ export async function verifyPermission(
 
   return {
     allowed: true,
-    user: { id: auth.userId, role: auth.role, permissions: auth.permissions, linkedEmployeeId: auth.linkedEmployeeId ?? null },
+    user: {
+      id: auth.userId,
+      role: auth.role,
+      permissions: auth.permissions,
+      linkedEmployeeId: auth.linkedEmployeeId ?? null,
+      orgBoundaryNodeIds: auth.orgBoundaryNodeIds ?? null,
+    },
   };
 }
 
@@ -441,7 +476,13 @@ export async function verifyAnyAction(
     if (decision.allowed) {
       return {
         allowed: true,
-        user: { id: auth.userId, role: auth.role, permissions: auth.permissions, linkedEmployeeId: auth.linkedEmployeeId ?? null },
+        user: {
+          id: auth.userId,
+          role: auth.role,
+          permissions: auth.permissions,
+          linkedEmployeeId: auth.linkedEmployeeId ?? null,
+          orgBoundaryNodeIds: auth.orgBoundaryNodeIds ?? null,
+        },
       };
     }
     last = { allowed: false, error: decision.reason };

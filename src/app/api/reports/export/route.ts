@@ -2,6 +2,42 @@ import { NextResponse } from 'next/server';
 import ExcelJS from 'exceljs';
 import { verifyPermission } from '@/lib/verify-permission';
 import { asScopeViewer, filterRowsByEmployeeScope, resolveEmployeeScopeFromDb } from '@/lib/scope/server';
+import { formatDate as sharedFormatDate } from '@/lib/i18n/format';
+import type { Locale } from '@/lib/i18n/dictionary';
+
+// ════════════════════════════════════════════════════
+//  Bilingual UI labels for THIS route's own literal
+//  strings (captions, headers, notes). Data values
+//  (names, codes, figures) are never translated here.
+// ════════════════════════════════════════════════════
+const LABELS = {
+  ar: {
+    sheetTitle: 'تقرير الخصومات الشهري',
+    month: 'الشهر',
+    workingDays: 'عدد أيام العمل',
+    dayUnit: 'يوم',
+    employees: 'عدد الموظفين',
+    exportDate: 'تاريخ التصدير',
+    attendanceSection: 'بيانات الحضور',
+    deductionsSection: 'الخصومات',
+    total: 'الإجمالي',
+    footerNote: 'ملاحظة: كل موظف يحصل على 4 أيام إعفاء تلقائي شهرياً من الخصومات. الأيام الغائبة الأقل من 4 تُحسب كمكافأة حضور.',
+    headers: ['م', 'اسم الموظف', 'القسم', 'المسمى الوظيفي', 'أيام الحضور', 'أيام التأخير', 'دقائق التأخير', 'أيام الغياب', 'أيام الإعفاء', 'إجمالي الإعفاء التلقائي', 'أيام المكافأة', 'نسبة الالتزام', 'خصم التأخير', 'خصم الغياب', 'خصم الحضور الكلي', 'خصم الجودة', 'مبلغ الجودة', 'إجمالي الخصم'],
+  },
+  en: {
+    sheetTitle: 'Monthly Deductions Report',
+    month: 'Month',
+    workingDays: 'Working days',
+    dayUnit: 'days',
+    employees: 'Employees',
+    exportDate: 'Export date',
+    attendanceSection: 'Attendance Data',
+    deductionsSection: 'Deductions',
+    total: 'Total',
+    footerNote: 'Note: every employee receives 4 automatic exemption days per month from deductions. Absent days below 4 count as an attendance bonus.',
+    headers: ['#', 'Employee Name', 'Department', 'Job Title', 'Present Days', 'Late Days', 'Late Minutes', 'Absent Days', 'Exempt Days', 'Total Auto Exemption', 'Bonus Days', 'Compliance %', 'Late Deduction', 'Absence Deduction', 'Total Attendance Deduction', 'Quality Days', 'Quality Amount', 'Total Deduction'],
+  },
+} as const;
 
 export async function POST(request: Request) {
   try {
@@ -12,7 +48,11 @@ export async function POST(request: Request) {
     }
 
     const body = await request.json();
-    const { month, data: postedData, meta } = body;
+    const { month, data: postedData, meta, lang: rawLang } = body;
+    const lang: Locale = rawLang === 'en' ? 'en' : 'ar';
+    type LabelKey = keyof typeof LABELS.ar;
+    const L = (key: LabelKey): string => LABELS[lang][key] as string;
+    const LList = (key: LabelKey): readonly string[] => LABELS[lang][key] as readonly string[];
 
     if (!postedData || !Array.isArray(postedData)) {
       return NextResponse.json({ error: 'No data provided' }, { status: 400 });
@@ -39,7 +79,7 @@ export async function POST(request: Request) {
     workbook.creator = 'Qnlys';
     workbook.created = new Date();
 
-    const sheet = workbook.addWorksheet('تقرير الخصومات الشهري', {
+    const sheet = workbook.addWorksheet(L('sheetTitle'), {
       properties: { tabColor: { argb: '1F4E79' } },
       views: [{ state: 'frozen', ySplit: 7 }],
     });
@@ -59,7 +99,7 @@ export async function POST(request: Request) {
     // ════════════════════════════════════════════════════
     sheet.mergeCells('A1:R1');
     const titleCell = sheet.getCell('A1');
-    titleCell.value = 'تقرير الخصومات الشهري';
+    titleCell.value = L('sheetTitle');
     titleCell.font = { name: 'Arial', size: 18, bold: true, color: { argb: 'FFFFFF' } };
     titleCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: '1F4E79' } };
     titleCell.alignment = { horizontal: 'center', vertical: 'middle' };
@@ -70,26 +110,26 @@ export async function POST(request: Request) {
     // ════════════════════════════════════════════════════
     sheet.mergeCells('A2:D2');
     const monthCell = sheet.getCell('A2');
-    monthCell.value = `الشهر: ${month || ''}`;
+    monthCell.value = `${L('month')}: ${month || ''}`;
     monthCell.font = { name: 'Arial', size: 11, bold: true, color: { argb: '1F4E79' } };
     monthCell.alignment = { horizontal: 'right', vertical: 'middle', indent: 1 };
 
     sheet.mergeCells('E2:J2');
     const daysCell = sheet.getCell('E2');
-    daysCell.value = `عدد أيام العمل: ${meta?.monthWorkingDays || ''} يوم`;
+    daysCell.value = `${L('workingDays')}: ${meta?.monthWorkingDays || ''} ${L('dayUnit')}`;
     daysCell.font = { name: 'Arial', size: 11, bold: true, color: { argb: '1F4E79' } };
     daysCell.alignment = { horizontal: 'center', vertical: 'middle' };
 
     sheet.mergeCells('K2:N2');
     const empCountCell = sheet.getCell('K2');
-    empCountCell.value = `عدد الموظفين: ${data.length}`;
+    empCountCell.value = `${L('employees')}: ${data.length}`;
     empCountCell.font = { name: 'Arial', size: 11, bold: true, color: { argb: '1F4E79' } };
     empCountCell.alignment = { horizontal: 'center', vertical: 'middle' };
 
     sheet.mergeCells('O2:R2');
     const dateCell = sheet.getCell('O2');
     const today = new Date();
-    dateCell.value = `تاريخ التصدير: ${today.toLocaleDateString('ar-EG')}`;
+    dateCell.value = `${L('exportDate')}: ${sharedFormatDate(today, lang)}`;
     dateCell.font = { name: 'Arial', size: 11, bold: true, color: { argb: '1F4E79' } };
     dateCell.alignment = { horizontal: 'right', vertical: 'middle', indent: 1 };
 
@@ -105,14 +145,14 @@ export async function POST(request: Request) {
     // ════════════════════════════════════════════════════
     sheet.mergeCells('A4:J4');
     const section1 = sheet.getCell('A4');
-    section1.value = 'بيانات الحضور';
+    section1.value = L('attendanceSection');
     section1.font = { name: 'Arial', size: 11, bold: true, color: { argb: 'FFFFFF' } };
     section1.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: '2E75B6' } };
     section1.alignment = { horizontal: 'center', vertical: 'middle' };
 
     sheet.mergeCells('K4:R4');
     const section2 = sheet.getCell('K4');
-    section2.value = 'الخصومات';
+    section2.value = L('deductionsSection');
     section2.font = { name: 'Arial', size: 11, bold: true, color: { argb: 'FFFFFF' } };
     section2.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'C00000' } };
     section2.alignment = { horizontal: 'center', vertical: 'middle' };
@@ -122,26 +162,8 @@ export async function POST(request: Request) {
     // ════════════════════════════════════════════════════
     // ROW 5: Column Headers
     // ════════════════════════════════════════════════════
-    const headers = [
-      { text: 'م', width: 5 },
-      { text: 'اسم الموظف', width: 28 },
-      { text: 'القسم', width: 16 },
-      { text: 'المسمى الوظيفي', width: 18 },
-      { text: 'أيام الحضور', width: 12 },
-      { text: 'أيام التأخير', width: 12 },
-      { text: 'دقائق التأخير', width: 14 },
-      { text: 'أيام الغياب', width: 12 },
-      { text: 'أيام الإعفاء', width: 12 },
-      { text: 'إجمالي الإعفاء التلقائي', width: 16 },
-      { text: 'أيام المكافأة', width: 12 },
-      { text: 'نسبة الالتزام', width: 14 },
-      { text: 'خصم التأخير', width: 12 },
-      { text: 'خصم الغياب', width: 12 },
-      { text: 'خصم الحضور الكلي', width: 14 },
-      { text: 'خصم الجودة', width: 12 },
-      { text: 'مبلغ الجودة', width: 14 },
-      { text: 'إجمالي الخصم', width: 14 },
-    ];
+    const headerWidths = [5, 28, 16, 18, 12, 12, 14, 12, 12, 16, 12, 14, 12, 12, 14, 12, 14, 14];
+    const headers = LList('headers').map((text, idx) => ({ text, width: headerWidths[idx] }));
 
     const headerRow = sheet.getRow(5);
     headerRow.height = 28;
@@ -274,7 +296,7 @@ export async function POST(request: Request) {
     // Merge label
     sheet.mergeCells(`A${summaryStartRow}:D${summaryStartRow}`);
     const sumLabel = summaryRow.getCell(1);
-    sumLabel.value = 'الإجمالي';
+    sumLabel.value = L('total');
     sumLabel.font = { name: 'Arial', size: 11, bold: true, color: { argb: 'FFFFFF' } };
     sumLabel.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: '1F4E79' } };
     sumLabel.alignment = { horizontal: 'center', vertical: 'middle' };
@@ -322,7 +344,7 @@ export async function POST(request: Request) {
     const footerRow = summaryStartRow + 2;
     sheet.mergeCells(`A${footerRow}:R${footerRow}`);
     const footerCell = sheet.getCell(`A${footerRow}`);
-    footerCell.value = 'ملاحظة: كل موظف يحصل على 4 أيام إعفاء تلقائي شهرياً من الخصومات. الأيام الغائبة الأقل من 4 تُحسب كمكافأة حضور.';
+    footerCell.value = L('footerNote');
     footerCell.font = { name: 'Arial', size: 9, italic: true, color: { argb: '666666' } };
     footerCell.alignment = { horizontal: 'center', vertical: 'middle' };
 

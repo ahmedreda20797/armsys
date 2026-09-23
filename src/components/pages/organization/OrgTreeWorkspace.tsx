@@ -36,11 +36,12 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { Building2, ChevronLeft, Minus, Plus, Users, Maximize2, Network } from 'lucide-react';
+import { Building2, ChevronLeft, GitBranch, Landmark, Minus, Plus, Users, Maximize2, Network } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import type { OrgTreeNode } from '@/lib/organization';
-import { ORG_NODE_TYPE_LABELS_AR } from '@/lib/organization';
+import { ORG_NODE_LEVEL_LABELS_AR, ORG_NODE_LEVEL_LABELS_EN, resolveOrgTreeNodeLevel, type OrgNodeLevel } from '@/lib/organization';
+import { useLanguage } from '@/lib/i18n/language-context';
 
 // ─── Layout metrics ───────────────────────────────────────────
 const NODE_W = 216;
@@ -68,21 +69,29 @@ export interface OrgMemberRef {
   code: string | null;
 }
 
-const TYPE_NODE_STYLES: Record<string, string> = {
+// §ORG-LEVELS — cards are styled by the node's SEMANTIC LEVEL (the
+// normalization layer resolves the General Administration root out of
+// its legacy company-typed node), so الإدارة العامة / شركة / قسم /
+// فريق / فريق فرعي are distinguishable by label + icon + shape —
+// never by color alone.
+const LEVEL_NODE_STYLES: Record<OrgNodeLevel, string> = {
+  general_administration: 'border-violet-500/50 bg-violet-500/[0.09]',
   company: 'border-brand-500/40 bg-brand-500/[0.07]',
   department: 'border-blue-500/40 bg-blue-500/[0.07]',
   team: 'border-emerald-500/40 bg-emerald-500/[0.07]',
   subteam: 'border-cyan-500/40 bg-cyan-500/[0.07]',
 };
 
-const TYPE_TEXT_STYLES: Record<string, string> = {
+const LEVEL_TEXT_STYLES: Record<OrgNodeLevel, string> = {
+  general_administration: 'text-violet-300',
   company: 'text-brand-300',
   department: 'text-blue-300',
   team: 'text-emerald-300',
   subteam: 'text-cyan-300',
 };
 
-const TYPE_EDGE_STROKES: Record<string, string> = {
+const LEVEL_EDGE_STROKES: Record<OrgNodeLevel, string> = {
+  general_administration: 'rgba(167,139,250,0.6)',
   company: 'rgba(225,29,72,0.55)',
   department: 'rgba(96,165,250,0.5)',
   team: 'rgba(52,211,153,0.5)',
@@ -118,7 +127,7 @@ interface LaidOutNode {
 interface Edge {
   id: string;
   parentId: string;
-  childType: string;
+  childLevel: OrgNodeLevel | null;
   x1: number; y1: number; x2: number; y2: number;
 }
 
@@ -183,7 +192,7 @@ function layoutTree(
       edges.push({
         id: `${n.node.id}->${child.id}`,
         parentId: n.node.id,
-        childType: child.type,
+        childLevel: resolveOrgTreeNodeLevel(child),
         x1: n.x,
         y1: n.y + n.h,
         x2: c.x,
@@ -218,6 +227,7 @@ export function OrgTreeWorkspace({
   onSelectNode,
   onNodeAction,
 }: OrgTreeWorkspaceProps) {
+  const { dir, locale, t } = useLanguage();
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [openRosters, setOpenRosters] = useState<Set<string>>(new Set());
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -252,15 +262,36 @@ export function OrgTreeWorkspace({
     startPan: { x: 0, y: 0 },
     startZ: 1,
     // zoom anchor: A = cursor (container coords), (xd, yd) = the DATA
-    // point under it. Screen mapping (§RTL-ZOOM-ORIGIN): the data box
-    // right-hugs the container in RTL static positioning, so its
-    // top-right corner — the transform origin — sits at x = cw:
-    //   screen_x = cw + px − z·x  ·  screen_y = py + z·y
-    // Empirically confirmed live (the cw model pins exactly; a
-    // data-box-width origin drifts by Wd − cw and pushes cards away).
+    // point under it. Screen mapping (§ZOOM-ORIGIN): the data box is
+    // anchored explicitly per direction (RTL → right edge, LTR → left
+    // edge), so its top-right corner — the transform origin — sits at
+    // container-X = ORIGIN X, which is direction-dependent:
+    //   RTL: the box right-hugs the container →  O = container width
+    //   LTR: the box left-hugs  the container →  O = box width
+    //   screen_x = O + px − z·x  ·  screen_y = py + z·y
+    // ONE geometric zoom implementation; direction enters ONLY as this
+    // origin X — never as different math (§13 direction-independence).
     anchor: null as { ax: number; ay: number; xd: number; yd: number } | null,
   });
   const fittedRef = useRef(false);
+
+  /** Container-X of the data box's transform-origin corner (top-right).
+   *  RTL static/explicit anchoring right-hugs the container (O = cw);
+   *  LTR left-hugs it (O = the box's own width). offsetWidth is
+   *  transform-immune, so this is exact in every zoom state. */
+  const originX = useCallback((): number => {
+    const container = containerRef.current;
+    const box = viewBoxRef.current;
+    if (!container || !box) return 0;
+    return dir === 'rtl' ? container.clientWidth : box.offsetWidth;
+  }, [dir]);
+
+  /** Pan X that right-aligns the fitted tree to the container edge —
+   *  the RTL fit (px = 0) generalized to both directions. */
+  const fitPanX = useCallback((): number => {
+    const container = containerRef.current;
+    return container ? container.clientWidth - originX() : 0;
+  }, [originX]);
 
   const applyTransform = useCallback(() => {
     const box = viewBoxRef.current;
@@ -284,15 +315,11 @@ export function OrgTreeWorkspace({
       v.py += (v.pyT - v.py) * EASE_PAN;
       // …and whenever an anchor is set (wheel OR middle-drag), pan pins
       // the cursor's data point EXACTLY while z eases toward zT:
-      //   screen_x = cw + px − z·x  →  px = A.x − cw + z·x_d
-      //   screen_y = py + z·y       →  py = A.y − z·y_d
+      //   screen_x = O + px − z·x  →  px = A.x − O + z·x_d
+      //   screen_y = py + z·y      →  py = A.y − z·y_d
       if (v.anchor) {
-        const container = containerRef.current;
-        if (container) {
-          const cw = container.clientWidth;
-          v.px = v.anchor.ax - cw + v.z * v.anchor.xd;
-          v.py = v.anchor.ay - v.z * v.anchor.yd;
-        }
+        v.px = v.anchor.ax - originX() + v.z * v.anchor.xd;
+        v.py = v.anchor.ay - v.z * v.anchor.yd;
       }
       v.pxT = v.px;
       v.pyT = v.py;
@@ -308,32 +335,28 @@ export function OrgTreeWorkspace({
       v.raf = requestAnimationFrame(tick);
     };
     v.raf = requestAnimationFrame(tick);
-  }, [applyTransform]);
+  }, [applyTransform, originX]);
 
   const zoomAround = useCallback(
     (nextZRaw: number, cursor: { x: number; y: number } | null) => {
       const v = viewRef.current;
       const zNew = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, nextZRaw));
       if (cursor) {
-        const container = containerRef.current;
-        if (container) {
-          const cw = container.clientWidth;
-          // Data point under the cursor with the CURRENT state:
-          //   x_d = (cw + px − A.x) / z  ·  y_d = (A.y − py) / z
-          v.anchor = {
-            ax: cursor.x,
-            ay: cursor.y,
-            xd: (cw + v.px - cursor.x) / v.z,
-            yd: (cursor.y - v.py) / v.z,
-          };
-        }
+        // Data point under the cursor with the CURRENT state:
+        //   x_d = (O + px − A.x) / z  ·  y_d = (A.y − py) / z
+        v.anchor = {
+          ax: cursor.x,
+          ay: cursor.y,
+          xd: (originX() + v.px - cursor.x) / v.z,
+          yd: (cursor.y - v.py) / v.z,
+        };
       } else {
         v.anchor = null;
       }
       v.zT = zNew;
       ensureLoop();
     },
-    [ensureLoop],
+    [ensureLoop, originX],
   );
 
   // Re-assert the transform after React re-renders (tree changes).
@@ -353,10 +376,10 @@ export function OrgTreeWorkspace({
     );
     const v = viewRef.current;
     v.zT = z;
-    v.pxT = 0;
+    v.pxT = fitPanX();
     v.pyT = 0;
     ensureLoop();
-  }, [layout.width, layout.height, ensureLoop]);
+  }, [layout.width, layout.height, ensureLoop, fitPanX]);
 
   const fitView = useCallback(() => {
     const container = containerRef.current;
@@ -367,11 +390,11 @@ export function OrgTreeWorkspace({
     );
     const v = viewRef.current;
     v.zT = z;
-    v.pxT = 0;
+    v.pxT = fitPanX();
     v.pyT = 0;
     v.anchor = null;
     ensureLoop();
-  }, [layout.width, layout.height, ensureLoop]);
+  }, [layout.width, layout.height, ensureLoop, fitPanX]);
 
   const zoomBy = useCallback(
     (factor: number) => {
@@ -427,12 +450,11 @@ export function OrgTreeWorkspace({
       if (!container) return;
       const rect = container.getBoundingClientRect();
       const cursor = { x: e.clientX - rect.left, y: e.clientY - rect.top };
-      const cw = container.clientWidth;
       // Pin the data point under the grab for the whole gesture.
       v.anchor = {
         ax: cursor.x,
         ay: cursor.y,
-        xd: (cw + v.px - cursor.x) / v.z,
+        xd: (originX() + v.px - cursor.x) / v.z,
         yd: (cursor.y - v.py) / v.z,
       };
       v.mode = 'zoom';
@@ -512,7 +534,7 @@ export function OrgTreeWorkspace({
     return (
       <div className="flex flex-col items-center justify-center py-16 text-center">
         <Network className="size-12 text-slate-600 mb-3" />
-        <p className="text-slate-400 text-sm">لا يوجد هيكل تنظيمي لعرضه</p>
+        <p className="text-slate-400 text-sm">{t('org.tree.empty')}</p>
       </div>
     );
   }
@@ -521,18 +543,18 @@ export function OrgTreeWorkspace({
     <div className="space-y-2">
       {/* Toolbar */}
       <div className="flex items-center gap-1.5 flex-wrap">
-        <span className="text-[10px] text-slate-500 mr-1">
-          مساحة العمل: السحب بالزر الأيسر للتحريك · الزر الأوسط (البكره) للتقريب الحر · عجلة الفأرة أيضاً · نقرة مزدوجة للتفاصيل
+        <span className="text-[10px] text-slate-500 me-1">
+          {t('org.tree.hint')}
         </span>
-        <div className="flex items-center gap-1 mr-auto">
-          <Button variant="outline" size="icon" className="size-7 border-slate-700/50 text-slate-300 hover:bg-slate-800" onClick={() => zoomBy(1 / 1.25)} aria-label="تصغير">
+        <div className="flex items-center gap-1 ms-auto">
+          <Button variant="outline" size="icon" className="size-7 border-slate-700/50 text-slate-300 hover:bg-slate-800" onClick={() => zoomBy(1 / 1.25)} aria-label={t('org.tree.zoomOut')}>
             <Minus className="size-3.5" />
           </Button>
           <span ref={zoomLabelRef} className="text-[10px] text-slate-400 tabular-nums w-10 text-center">85%</span>
-          <Button variant="outline" size="icon" className="size-7 border-slate-700/50 text-slate-300 hover:bg-slate-800" onClick={() => zoomBy(1.25)} aria-label="تكبير">
+          <Button variant="outline" size="icon" className="size-7 border-slate-700/50 text-slate-300 hover:bg-slate-800" onClick={() => zoomBy(1.25)} aria-label={t('org.tree.zoomIn')}>
             <Plus className="size-3.5" />
           </Button>
-          <Button variant="outline" size="icon" className="size-7 border-slate-700/50 text-slate-300 hover:bg-slate-800" onClick={fitView} aria-label="ملاءمة العرض" title="ملاءمة العرض">
+          <Button variant="outline" size="icon" className="size-7 border-slate-700/50 text-slate-300 hover:bg-slate-800" onClick={fitView} aria-label={t('org.tree.fit')} title={t('org.tree.fit')}>
             <Maximize2 className="size-3.5" />
           </Button>
         </div>
@@ -560,6 +582,12 @@ export function OrgTreeWorkspace({
             transformOrigin: 'top right',
             width: layout.width,
             height: layout.height,
+            // §ZOOM-ORIGIN — explicit direction anchoring: the box hugs
+            // the container edge the sidebar layout puts it on, so the
+            // origin-corner X is deterministic in BOTH languages
+            // (RTL → right edge, LTR → left edge; same as the static
+            // positioning, now guaranteed).
+            ...(dir === 'rtl' ? { right: 0 } : { left: 0 }),
           }}
         >
           {/* ── Connectors — elastic bezier links ──
@@ -588,7 +616,7 @@ export function OrgTreeWorkspace({
                         d: { type: 'spring', stiffness: 320, damping: 30 },
                       }}
                       fill="none"
-                      stroke={TYPE_EDGE_STROKES[e.childType] ?? 'rgba(148,163,184,0.35)'}
+                      stroke={(e.childLevel && LEVEL_EDGE_STROKES[e.childLevel]) || 'rgba(148,163,184,0.35)'}
                       strokeWidth={1.75}
                       strokeLinecap="round"
                       vectorEffect="non-scaling-stroke"
@@ -604,8 +632,18 @@ export function OrgTreeWorkspace({
             {layout.nodes.map(({ node, x, y, depth, parentId }) => {
               const isCollapsed = collapsed.has(node.id);
               const isSelected = selectedId === node.id;
-              const style = TYPE_NODE_STYLES[node.type] ?? TYPE_NODE_STYLES.team;
-              const textStyle = TYPE_TEXT_STYLES[node.type] ?? 'text-slate-300';
+              // §ORG-LEVELS — semantic level drives style/icon/label.
+              const level = resolveOrgTreeNodeLevel(node) ?? 'department';
+              const style = LEVEL_NODE_STYLES[level];
+              const textStyle = LEVEL_TEXT_STYLES[level];
+              const LevelIcon = level === 'general_administration'
+                ? Landmark
+                : level === 'subteam'
+                  ? GitBranch
+                  : level === 'team'
+                    ? Users
+                    : Building2;
+              const levelLabel = (locale === 'en' ? ORG_NODE_LEVEL_LABELS_EN[level] : ORG_NODE_LEVEL_LABELS_AR[level]);
               const members = membersOf(node.id);
               const rosterOpen = openRosters.has(node.id) && members.length > 0;
               const parentPos = parentId ? positionsById.get(parentId) : null;
@@ -657,7 +695,7 @@ export function OrgTreeWorkspace({
                   }}
                 >
                   <div className="flex items-start gap-2">
-                    <Building2 className={cn('size-4 mt-0.5 shrink-0', textStyle)} />
+                    <LevelIcon className={cn('size-4 mt-0.5 shrink-0', textStyle)} />
                     <div className="min-w-0 flex-1">
                       {/* Long node names truncate at the END (inline-end
                           ellipsis — natural for Arabic RTL and English
@@ -667,12 +705,12 @@ export function OrgTreeWorkspace({
                           collapse/roster buttons can never be pushed
                           out of the card. */}
                       <p className="text-xs font-bold text-slate-100 truncate min-w-0" title={node.name}>{node.name}</p>
-                      <p className={cn('text-[9px] font-semibold mt-0.5', textStyle)}>{ORG_NODE_TYPE_LABELS_AR[node.type]}</p>
+                      <p className={cn('text-[9px] font-semibold mt-0.5', textStyle)}>{levelLabel}</p>
                       <p className="text-[9px] text-slate-500 mt-0.5 flex items-center gap-1 min-w-0">
                         <Users className="size-2.5 shrink-0" />
-                        <span className="shrink-0">{node.subtreeEmployeeCount} موظف</span>
+                        <span className="shrink-0">{node.subtreeEmployeeCount} {t('org.tree.employees')}</span>
                         {node.managerUserName ? (
-                          <span className="truncate min-w-0" title={`مدير: ${node.managerUserName}`}>· {node.managerUserName}</span>
+                          <span className="truncate min-w-0" title={`${t('org.tree.manager')}: ${node.managerUserName}`}>· {node.managerUserName}</span>
                         ) : null}
                       </p>
                     </div>
@@ -684,7 +722,7 @@ export function OrgTreeWorkspace({
                             e.stopPropagation();
                             toggleCollapse(node.id);
                           }}
-                          aria-label={isCollapsed ? 'توسيع' : 'طي'}
+                          aria-label={isCollapsed ? t('org.tree.expand') : t('org.tree.collapse')}
                           className="shrink-0 size-5 flex items-center justify-center rounded-md bg-slate-900/70 border border-slate-700/60 text-slate-400 hover:text-white"
                         >
                           <ChevronLeft className={cn('size-3 transition-transform duration-200', isCollapsed ? '-rotate-90' : 'rotate-0')} />
@@ -697,9 +735,9 @@ export function OrgTreeWorkspace({
                             e.stopPropagation();
                             toggleRoster(node.id);
                           }}
-                          aria-label={rosterOpen ? 'إخفاء الموظفين' : 'عرض الموظفين'}
+                          aria-label={rosterOpen ? t('org.tree.hideEmployees') : t('org.tree.showEmployees')}
                           aria-expanded={rosterOpen}
-                          title="عرض الموظفين"
+                          title={t('org.tree.showEmployees')}
                           className={cn(
                             'shrink-0 size-5 flex items-center justify-center rounded-md border transition-colors',
                             rosterOpen
@@ -716,9 +754,10 @@ export function OrgTreeWorkspace({
                   {/* ── Member roster — unfolds from inside the card.
                           ALL direct members are listed; the panel keeps
                           a compact 4-row height and scrolls for the rest
-                          (§ROSTER-SCROLL). data-no-i18n: employee names
-                          are user data — the runtime translator must
-                          never touch them. ── */}
+                          (§ROSTER-SCROLL). data-no-i18n sits on each
+                          member NAME only (user data the runtime
+                          translator must never touch) — the scroll note
+                          below is application UI and stays translatable. ── */}
                   <AnimatePresence initial={false}>
                     {rosterOpen && (
                       <motion.div
@@ -728,10 +767,7 @@ export function OrgTreeWorkspace({
                         exit={{ height: 0, opacity: 0, transition: { duration: 0.18, ease: 'easeIn' } }}
                         className="overflow-hidden"
                       >
-                        <div
-                          className="mt-2 pt-2 border-t border-slate-700/40"
-                          data-no-i18n
-                        >
+                        <div className="mt-2 pt-2 border-t border-slate-700/40">
                           <div
                             className="arm-scroll space-y-1 overflow-y-auto"
                             style={{ maxHeight: ROSTER_MAX_ROWS * ROSTER_ROW }}
@@ -742,9 +778,13 @@ export function OrgTreeWorkspace({
                                 className="flex items-center gap-1.5 min-w-0"
                               >
                                 <span className="shrink-0 size-4 rounded-full bg-slate-700/80 border border-slate-600/60 grid place-items-center text-[7px] font-bold text-slate-300">
-                                  {(member.name ?? '؟').trim().charAt(0)}
+                                  {(member.name ?? t('org.tree.unknownInitial')).trim().charAt(0)}
                                 </span>
-                                <span className="text-[10px] text-slate-300 truncate flex-1" title={member.name ?? undefined}>
+                                <span
+                                  className="text-[10px] text-slate-300 truncate flex-1"
+                                  data-no-i18n
+                                  title={member.name ?? undefined}
+                                >
                                   {member.name ?? '—'}
                                 </span>
                                 {member.code && (
@@ -755,7 +795,7 @@ export function OrgTreeWorkspace({
                           </div>
                           {members.length > ROSTER_MAX_ROWS && (
                             <p className="text-[8px] text-slate-500 pt-1">
-                              {members.length} موظف — مرر للأسفل لعرض الجميع
+                              {members.length} {t('org.tree.employees')} — {t('org.tree.rosterMore')}
                             </p>
                           )}
                         </div>
@@ -768,12 +808,13 @@ export function OrgTreeWorkspace({
           </AnimatePresence>
         </div>
 
-        {/* Legend */}
-        <div className="absolute bottom-2 right-2 flex items-center gap-2 rounded-lg bg-slate-900/80 border border-slate-700/50 px-2.5 py-1.5 text-[9px] text-slate-400 backdrop-blur">
-          <span className="flex items-center gap-1"><span className="size-2 rounded-sm bg-brand-500/60" />شركة</span>
-          <span className="flex items-center gap-1"><span className="size-2 rounded-sm bg-blue-500/60" />قسم</span>
-          <span className="flex items-center gap-1"><span className="size-2 rounded-sm bg-emerald-500/60" />فريق</span>
-          <span className="flex items-center gap-1"><span className="size-2 rounded-sm bg-cyan-500/60" />فريق فرعي</span>
+        {/* Legend — semantic LEVELS (label + icon + color together) */}
+        <div className="absolute bottom-2 end-2 flex items-center gap-2 rounded-lg bg-slate-900/80 border border-slate-700/50 px-2.5 py-1.5 text-[9px] text-slate-400 backdrop-blur flex-wrap">
+          <span className="flex items-center gap-1"><Landmark className="size-2.5 text-violet-300" />{ORG_NODE_LEVEL_LABELS_AR.general_administration}</span>
+          <span className="flex items-center gap-1"><span className="size-2 rounded-sm bg-brand-500/60" />{ORG_NODE_LEVEL_LABELS_AR.company}</span>
+          <span className="flex items-center gap-1"><span className="size-2 rounded-sm bg-blue-500/60" />{ORG_NODE_LEVEL_LABELS_AR.department}</span>
+          <span className="flex items-center gap-1"><Users className="size-2.5 text-emerald-300" />{ORG_NODE_LEVEL_LABELS_AR.team}</span>
+          <span className="flex items-center gap-1"><GitBranch className="size-2.5 text-cyan-300" />{ORG_NODE_LEVEL_LABELS_AR.subteam}</span>
         </div>
       </div>
     </div>

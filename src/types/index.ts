@@ -205,6 +205,15 @@ export interface TravelDeal {
   notes: string | null;
   status: 'upcoming' | 'in_progress' | 'completed' | 'canceled';
   createdAt: string;
+  /**
+   * §DEAL-DATES — the moment the deal was OBSERVED entering the
+   * 'completed' state (server-stamped on the status transition; ISO).
+   * Canonical CLOSED-dimension date for closed-deal/productivity
+   * attribution. Legacy completed records and Excel imports carry no
+   * trustworthy closure timestamp → null (unknown — never fabricated
+   * from departureDate). Client-supplied values are ignored.
+   */
+  closedAt?: string | null;
 }
 
 export interface FollowUp {

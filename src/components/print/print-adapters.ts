@@ -12,22 +12,38 @@
 // ══════════════════════════════════════════════════════════════
 
 import type { PrintReportModel, PrintSection } from './print-report-store';
+import { formatNumber, formatPercentage, formatMonthKey, displayLocale } from '@/lib/i18n/format';
 
 const dash = (v: unknown): string =>
   v === null || v === undefined || v === '' ? '—' : String(v);
 
 const num = (v: unknown): string =>
-  v === null || v === undefined ? '—' : Number(v).toLocaleString('ar-EG');
+  v === null || v === undefined ? '—' : formatNumber(Number(v));
 
 const pct = (v: unknown): string =>
-  v === null || v === undefined ? '—' : `${Number(v).toLocaleString('ar-EG')}%`;
+  v === null || v === undefined ? '—' : formatPercentage(Number(v));
 
-const monthLabel = (monthKey?: string | null): string => {
-  if (!monthKey) return '';
-  const [y, m] = monthKey.split('-').map(Number);
-  if (!y || !m) return monthKey;
-  const d = new Date(y, m - 1, 1);
-  return d.toLocaleDateString('ar-EG', { month: 'long', year: 'numeric' });
+const monthLabel = (monthKey?: string | null): string => formatMonthKey(monthKey);
+
+// ─────────────────────────────────────────────────────────────
+//  §I18N-BOUNDARY — system-generated STATUS labels only.
+//  These helpers localize APPLICATION-OWNED enum vocabulary (status /
+//  severity / employment / decision SYSTEM labels) at model-build time.
+//  They must never be fed user data — names, notes and descriptions
+//  bypass them entirely and are rendered exactly as stored.
+// ─────────────────────────────────────────────────────────────
+const ui = (ar: string, en: string): string => (displayLocale() === 'en' ? en : ar);
+
+/** [ar, en] label for a system enum code; unknown codes pass through raw. */
+const uiMap = (map: Record<string, [string, string]>, code: string | null | undefined, fallback = '—'): string => {
+  if (!code) return fallback;
+  const entry = map[code];
+  return entry ? (displayLocale() === 'en' ? entry[1] : entry[0]) : fallback;
+};
+
+const SEVERITY_LABELS: Record<string, [string, string]> = {
+  low: ['منخفضة', 'Low'], medium: ['متوسطة', 'Medium'], high: ['مرتفعة', 'High'], critical: ['حرجة', 'Critical'],
+  HIGH: ['مرتفعة', 'High'], MEDIUM: ['متوسطة', 'Medium'], LOW: ['منخفضة', 'Low'],
 };
 
 // ─────────────────────────────────────────────────────────────
@@ -99,7 +115,10 @@ export function qualitySummaryToPrintModel(summary: KpiManagementSummaryLike): P
       groupSection('الأداء حسب القسم', summary.departments),
       groupSection('الأداء حسب الفريق', summary.teams),
     ],
-    footerNote: 'إحصائيات جودة KPI (ليست إحصائيات KPI على مستوى الشركة) — مصدر البيانات: محرك الجودة.',
+    footerNote: ui(
+      'إحصائيات جودة KPI (ليست إحصائيات KPI على مستوى الشركة) — مصدر البيانات: محرك الجودة.',
+      'Quality KPI statistics (never company-level KPI statistics) — data source: the quality engine.',
+    ),
   };
 }
 
@@ -134,12 +153,13 @@ interface ManagementReportLike {
 }
 
 const DOMAIN_ORDER = ['complaints', 'capaCases', 'followUps', 'hrDeductions'] as const;
-const DOMAIN_LABELS: Record<string, string> = {
-  complaints: 'الشكاوى',
-  capaCases: 'كابا',
-  followUps: 'المتابعات',
-  hrDeductions: 'خصومات الموارد البشرية',
+const DOMAIN_LABELS: Record<string, [string, string]> = {
+  complaints: ['الشكاوى', 'Complaints'],
+  capaCases: ['كابا', 'CAPA'],
+  followUps: ['المتابعات', 'Follow-ups'],
+  hrDeductions: ['خصومات الموارد البشرية', 'HR Deductions'],
 };
+const domainLabel = (k: string): string => (DOMAIN_LABELS[k] ? (displayLocale() === 'en' ? DOMAIN_LABELS[k][1] : DOMAIN_LABELS[k][0]) : k);
 
 function deptTable(rows?: DepartmentRowLike[]): PrintSection {
   const tableRows = (rows ?? []).map((r) => {
@@ -158,8 +178,8 @@ function deptTable(rows?: DepartmentRowLike[]): PrintSection {
     table: {
       columns: [
         'المجموعة', 'الموظفون', 'متوسط درجة الجودة', 'متوسط المساهمة',
-        ...DOMAIN_ORDER.map((k) => `${DOMAIN_LABELS[k]} (إجمالي)`),
-        ...DOMAIN_ORDER.map((k) => `${DOMAIN_LABELS[k]} (مفتوح)`),
+        ...DOMAIN_ORDER.map((k) => `${domainLabel(k)} ${ui('(إجمالي)', '(total)')}`),
+        ...DOMAIN_ORDER.map((k) => `${domainLabel(k)} ${ui('(مفتوح)', '(open)')}`),
       ],
       rows: tableRows,
       ltrColumns: [],
@@ -178,9 +198,9 @@ export function managementReportToPrintModel(report: ManagementReportLike): Prin
       { label: 'الشهر', value: monthLabel(report.monthKey) || '—' },
       { label: 'موظفون بنشاط مسجل', value: num(report.activeEmployeeCount) },
       ...DOMAIN_ORDER.map((k) => ({
-        label: `${DOMAIN_LABELS[k]} — إجمالي`,
+        label: `${domainLabel(k)} ${ui('— إجمالي', '— total')}`,
         value: num(totals[k]?.total ?? 0),
-        hint: totals[k] ? `مفتوح: ${num(totals[k]?.open ?? 0)}` : undefined,
+        hint: totals[k] ? `${ui('مفتوح', 'Open')}: ${num(totals[k]?.open ?? 0)}` : undefined,
       })),
     ],
     sections: [
@@ -190,7 +210,10 @@ export function managementReportToPrintModel(report: ManagementReportLike): Prin
         ? [{ heading: 'منهجية التقرير', paragraphs: [report.explanation] } satisfies PrintSection]
         : []),
     ],
-    footerNote: 'الكتل الكمية: كتل إدارية بحتة — لا تغيّر أي قاعدة عمل أو نتيجة KPI.',
+    footerNote: ui(
+      'الكتل الكمية: كتل إدارية بحتة — لا تغيّر أي قاعدة عمل أو نتيجة KPI.',
+      'Quantity blocks: purely administrative — no business rule or KPI result changes.',
+    ),
   };
 }
 
@@ -243,10 +266,10 @@ interface DatasetLike {
   generatedAt?: string;
 }
 
-const OBS_STATUS_LABELS: Record<string, string> = {
-  pending: 'قيد الاعتماد',
-  approved: 'معتمدة',
-  rejected: 'مرفوضة',
+const OBS_STATUS_LABELS: Record<string, [string, string]> = {
+  pending: ['قيد الاعتماد', 'Pending'],
+  approved: ['معتمدة', 'Approved'],
+  rejected: ['مرفوضة', 'Rejected'],
 };
 
 export function performanceDatasetToPrintModel(
@@ -260,9 +283,9 @@ export function performanceDatasetToPrintModel(
     // Deterministic distributions first — the printed report must carry
     // the same analysis the screen shows, not only the raw record list.
     const distroRows: Array<Array<string | number>> = [
-      ...Object.entries(observations.bySeverity ?? {}).map(([k, v]) => ['الخطورة', k, v] as Array<string | number>),
-      ...Object.entries(observations.byResolutionStatus ?? {}).map(([k, v]) => ['حالة المعالجة', k, v] as Array<string | number>),
-      ...(observations.byCategory ?? []).map((c) => ['التصنيف', c.categoryId === '_unclassified' ? 'غير مصنّف' : c.categoryName, c.count] as Array<string | number>),
+      ...Object.entries(observations.bySeverity ?? {}).map(([k, v]) => [ui('الخطورة', 'Severity'), uiMap(SEVERITY_LABELS, k, k), v] as Array<string | number>),
+      ...Object.entries(observations.byResolutionStatus ?? {}).map(([k, v]) => [ui('حالة المعالجة', 'Resolution status'), uiMap(SEVERITY_LABELS, k, k), v] as Array<string | number>),
+      ...(observations.byCategory ?? []).map((c) => [ui('التصنيف', 'Category'), c.categoryId === '_unclassified' ? ui('غير مصنّف', 'Uncategorized') : c.categoryName, c.count] as Array<string | number>),
     ];
     sections.push({
       heading: 'إحصائيات ملاحظات الجودة',
@@ -284,7 +307,7 @@ export function performanceDatasetToPrintModel(
           dash(o.observationDate),
           dash(o.categoryName),
           o.isBonus ? `+${num(o.points)}` : (o.points ? `−${num(o.points)}` : '—'),
-          OBS_STATUS_LABELS[o.approvalStatus ?? ''] ?? dash(o.approvalStatus),
+          uiMap(OBS_STATUS_LABELS, o.approvalStatus, dash(o.approvalStatus)),
           dash(o.notes),
         ]),
       },
@@ -455,9 +478,9 @@ interface EmployeeKpiReportLike {
   } | null;
 }
 
-const COMPONENT_STATUS_AR: Record<string, string> = {
-  AVAILABLE: 'متاح', ZERO: 'صفر', PENDING: 'غير متاح', NOT_ELIGIBLE: 'غير مؤهل',
-  INCOMPLETE: 'جزئي', FINALIZED: 'مجمّد',
+const COMPONENT_STATUS: Record<string, [string, string]> = {
+  AVAILABLE: ['متاح', 'Available'], ZERO: ['صفر', 'Zero'], PENDING: ['غير متاح', 'N/A'], NOT_ELIGIBLE: ['غير مؤهل', 'Not eligible'],
+  INCOMPLETE: ['جزئي', 'Partial'], FINALIZED: ['مجمّد', 'Frozen'],
 };
 
 export function employeeKpiReportToPrintModel(
@@ -475,11 +498,11 @@ export function employeeKpiReportToPrintModel(
         rows: components.map((c) => [
           c.name ?? '—',
           c.weight == null ? '—' : `${c.weight}%`,
-          c.rawScore === null || c.rawScore === undefined ? 'غير متاح' : pct(c.rawScore),
+          c.rawScore === null || c.rawScore === undefined ? ui('غير متاح', 'N/A') : pct(c.rawScore),
           c.weightedContribution === null || c.weightedContribution === undefined
-            ? 'غير متاح'
+            ? ui('غير متاح', 'N/A')
             : `${num(c.weightedContribution)} / ${c.maxContribution ?? '—'}`,
-          COMPONENT_STATUS_AR[c.status ?? ''] ?? dash(c.status),
+          uiMap(COMPONENT_STATUS, c.status, dash(c.status)),
         ]),
       },
     });
@@ -493,12 +516,12 @@ export function employeeKpiReportToPrintModel(
         columns: ['الشهر', 'الدرجة الخام', 'المساهمة', 'الأساس', 'الحالة'],
         rows: points.map((p) => [
           monthLabel(p.monthKey) ?? dash(p.monthKey),
-          p.available ? pct(p.rawScore) : 'غير متاح',
+          p.available ? pct(p.rawScore) : ui('غير متاح', 'N/A'),
           p.available && p.weightedContribution !== null && p.weightedContribution !== undefined
             ? `${num(p.weightedContribution)} / ${p.weight ?? '—'}`
             : '—',
           dash(p.valueBasis),
-          p.available ? (p.finalized ? 'مجمّدة' : 'مفتوحة') : dash(p.rowStatus),
+          p.available ? (p.finalized ? ui('مجمّدة', 'Frozen') : ui('مفتوحة', 'Open')) : dash(p.rowStatus),
         ]),
       },
     });
@@ -518,7 +541,7 @@ export function employeeKpiReportToPrintModel(
           dash(o.approvalStatus ?? o.status),
           o.effect?.counted
             ? (o.effect.signedPoints ?? 0 >= 0 ? `+${num(o.effect.signedPoints)}` : num(o.effect.signedPoints))
-            : o.effect?.applies ? 'بانتظار الاعتماد' : 'لا يؤثر',
+            : o.effect?.applies ? ui('بانتظار الاعتماد', 'Pending approval') : ui('لا يؤثر', 'No effect'),
         ]),
       },
     });
@@ -546,7 +569,7 @@ export function employeeKpiReportToPrintModel(
       { label: 'درجة الجودة (خام)', value: pct(report.quality?.rawScore) },
       { label: 'مساهمة الجودة', value: num(report.quality?.weightedContribution) },
       { label: 'وزن الجودة', value: pct(report.quality?.weight) },
-      { label: 'KPI الشركة', value: report.overallStatus === 'COMPLETE' ? 'مكتمل' : dash(report.overallStatus) },
+      { label: 'KPI الشركة', value: report.overallStatus === 'COMPLETE' ? ui('مكتمل', 'Complete') : dash(report.overallStatus) },
       { label: 'ملاحظات (أدلة)', value: num(evidence?.counts?.total) },
       { label: 'معتمدة', value: num(evidence?.counts?.approved) },
     ],
@@ -590,7 +613,7 @@ export function tableToPrintModel(input: {
         },
       },
     ],
-    footerNote: input.footerNote ?? 'تقرير رسمي — مصدر البيانات: قاعدة بيانات النظام للفترة المحددة.',
+    footerNote: input.footerNote ?? ui('تقرير رسمي — مصدر البيانات: قاعدة بيانات النظام للفترة المحددة.', 'Official report — data source: the system database for the selected period.'),
   };
 }
 
@@ -624,8 +647,8 @@ interface HrPerformanceReportLike {
   generatedAt?: string;
 }
 
-const HR_EMPLOYMENT_AR: Record<string, string> = {
-  active: 'نشط', inactive: 'غير نشط', archived: 'مؤرشف', unknown: '—',
+const HR_EMPLOYMENT: Record<string, [string, string]> = {
+  active: ['نشط', 'Active'], inactive: ['غير نشط', 'Inactive'], archived: ['مؤرشف', 'Archived'], unknown: ['—', '—'],
 };
 
 export function hrPerformanceToPrintModel(report: HrPerformanceReportLike): PrintReportModel {
@@ -635,7 +658,7 @@ export function hrPerformanceToPrintModel(report: HrPerformanceReportLike): Prin
     r.department ?? '—',
     r.team ?? '—',
     r.position ?? '—',
-    HR_EMPLOYMENT_AR[r.employmentStatus ?? 'unknown'] ?? '—',
+    uiMap(HR_EMPLOYMENT, r.employmentStatus, '—'),
     r.performanceScore === null || r.performanceScore === undefined ? '—' : pct(r.performanceScore),
     r.performanceStatus ?? '—',
   ]);
@@ -660,7 +683,288 @@ export function hrPerformanceToPrintModel(report: HrPerformanceReportLike): Prin
         },
       },
     ],
-    footerNote:
+    footerNote: ui(
       'تقرير الموارد البشرية — نتيجة الأداء النهائية والسياق التنظيمي فقط. مصدر النتائج: خط مؤشرات الأداء القانوني للنظام (قيم حرفية بلا إعادة حساب).',
+      'HR report — final performance results and organizational context only. Source: the system canonical KPI line (literal values, never recomputed).',
+    ),
+  };
+}
+
+// ─────────────────────────────────────────────────────────────
+//  7) قرار دعم الموارد البشرية — HR Decision-Support
+//
+//     Pure projections of the ALREADY-SANITIZED decision view
+//     models (/api/reports/hr-performance/decision[/employee]).
+//     The server structurally excludes technical evidence from
+//     those payloads, so printing these models can never leak
+//     technical detail. Missing values render '—', never
+//     fabricated; the safety disclaimer is ALWAYS present.
+// ─────────────────────────────────────────────────────────────
+
+const HR_DECISION_STATUS: Record<string, [string, string]> = {
+  STABLE: ['مستقر', 'Stable'],
+  IMPROVING: ['يتحسّن', 'Improving'],
+  NEEDS_COACHING: ['يحتاج توجيهاً/تدريباً', 'Needs coaching/training'],
+  PERFORMANCE_IMPROVEMENT_REVIEW: ['مراجعة خطة تحسين الأداء', 'Performance improvement plan review'],
+  MANAGEMENT_REVIEW: ['مراجعة من الإدارة والموارد البشرية', 'Management & HR review'],
+};
+
+const HR_ACTION: Record<string, [string, string]> = {
+  CONTINUE_MONITORING: ['متابعة دورية اعتيادية', 'Routine periodic follow-up'],
+  RECOGNIZE_IMPROVEMENT: ['متابعة مع تشجيع التحسّن', 'Follow-up with encouragement'],
+  COACHING: ['توجيه/تدريب موجّه', 'Targeted coaching/training'],
+  IMPROVEMENT_PLAN: ['مراجعة أداء رسمية / خطة تحسين', 'Formal performance review / improvement plan'],
+  MANAGEMENT_HR_REVIEW: ['مراجعة الإدارة والموارد البشرية', 'Management & HR review'],
+};
+
+const HR_TREND: Record<string, [string, string]> = {
+  UP: ['تحسّن', 'Improving'], DOWN: ['تراجع', 'Declining'], STABLE: ['مستقر', 'Stable'],
+};
+
+const HR_SEVERITY: Record<string, [string, string]> = {
+  HIGH: ['مرتفعة', 'High'], MEDIUM: ['متوسطة', 'Medium'], LOW: ['منخفضة', 'Low'],
+};
+
+/** System-generated review disclaimer — system UI vocabulary, locale-aware. */
+export const hrDecisionDisclaimer = (): string =>
+  ui(
+    'توصية مراجعة إجرائية فقط — ليست قراراً نهائياً بشأن التوظيف. ' +
+    'أي قرار نهائي يبقى قراراً بشرياً تتخذه الإدارة/الموارد البشرية خارج نظام التقييم الآلي.',
+    'Procedural review recommendation only — not a final employment decision. ' +
+    'Any final decision remains a human one made by management/HR outside the automated evaluation system.',
+  );
+
+interface HrDecisionRowLike {
+  employeeName?: string | null;
+  employeeCode?: string | null;
+  department?: string | null;
+  team?: string | null;
+  status?: string | null;
+  actionKind?: string | null;
+  kpiScore?: number | null;
+  trendDirection?: string | null;
+}
+
+interface HrDecisionReportLike {
+  monthKey?: string;
+  rows?: HrDecisionRowLike[];
+  totals?: Partial<Record<
+    'employees' | 'stable' | 'improving' | 'needsCoaching'
+    | 'performanceImprovementReview' | 'managementReview' | 'withKpiResult' | 'averageKpi',
+    number | null
+  >>;
+  operational?: {
+    followUps?: { averageCompletionRate?: number | null; totalOverdue?: number | null };
+    attendance?: { averageCompliance?: number | null; totalLateDays?: number | null; totalAbsentDays?: number | null };
+    productivity?: { employeesWithDeals?: number | null; travelVolume?: number | null; closedDeals?: number | null };
+    trend?: { improving?: number; stable?: number; declining?: number; noData?: number };
+  };
+  generatedAt?: string;
+}
+
+/** Team/department decision report → print (distributions, never a leaderboard). */
+export function hrDecisionToPrintModel(report: HrDecisionReportLike): PrintReportModel {
+  const t = report.totals ?? {};
+  const o = report.operational ?? {};
+  const rows = (report.rows ?? []).map((r) => [
+    r.employeeName ?? '—',
+    r.employeeCode ?? '—',
+    r.department ?? '—',
+    r.team ?? '—',
+    uiMap(HR_DECISION_STATUS, r.status, r.status ?? '—'),
+    uiMap(HR_ACTION, r.actionKind, '—'),
+    r.kpiScore === null || r.kpiScore === undefined ? '—' : pct(r.kpiScore),
+    r.trendDirection ? uiMap(HR_TREND, r.trendDirection, '—') : '—',
+  ]);
+  const trend = o.trend ?? {};
+  return {
+    title: 'تقرير دعم قرارات الأداء — الموارد البشرية',
+    period: monthLabel(report.monthKey),
+    generatedAt: report.generatedAt,
+    stats: [
+      { label: 'الموظفون', value: num(t.employees ?? 0) },
+      { label: 'مستقر', value: num(t.stable ?? 0) },
+      { label: 'يتحسّن', value: num(t.improving ?? 0) },
+      { label: 'يحتاج توجيهاً', value: num(t.needsCoaching ?? 0) },
+      { label: 'مراجعة تحسين أداء', value: num(t.performanceImprovementReview ?? 0) },
+      { label: 'مراجعة إدارة', value: num(t.managementReview ?? 0) },
+      { label: 'متوسط الأداء', value: t.averageKpi === null || t.averageKpi === undefined ? '—' : pct(t.averageKpi) },
+    ],
+    sections: [
+      {
+        table: {
+          columns: ['الموظف', 'الكود', 'القسم', 'الفريق', 'الحالة', 'الإجراء المقترح', 'نتيجة الأداء', 'الاتجاه'],
+          rows,
+          ltrColumns: [1, 6],
+        },
+      },
+      {
+        heading: 'مؤشرات تشغيلية مجمّعة',
+        stats: [
+          { label: 'متوسط إنجاز المتابعات', value: o.followUps?.averageCompletionRate == null ? '—' : pct(o.followUps.averageCompletionRate) },
+          { label: 'إجمالي المتابعات المتأخرة', value: num(o.followUps?.totalOverdue ?? 0) },
+          { label: 'متوسط الالتزام بالحضور', value: o.attendance?.averageCompliance == null ? '—' : pct(o.attendance.averageCompliance) },
+          // §DEAL-DATES — the two canonical deal dimensions, same
+          // numbers the UI card shows (never recomputed here).
+          { label: 'صفقات مكتملة (تاريخ الإغلاق)', value: num(o.productivity?.closedDeals ?? 0) },
+          { label: 'حجم السفر (تاريخ المغادرة)', value: num(o.productivity?.travelVolume ?? 0) },
+          { label: 'اتجاه التحسّن/التراجع', value: `${num(trend.improving ?? 0)} / ${num(trend.declining ?? 0)}` },
+        ],
+      },
+    ],
+    footerNote: hrDecisionDisclaimer(),
+  };
+}
+
+interface HrDecisionFactorLike {
+  category?: string | null;
+  kind?: string | null;
+  severity?: string | null;
+  signalAr?: string | null;
+  value?: number | null;
+  comparisonAr?: string | null;
+}
+
+const HR_FACTOR_CATEGORY: Record<string, [string, string]> = {
+  KPI: ['مؤشر الأداء', 'Performance KPI'],
+  FOLLOW_UP: ['المتابعات اليومية', 'Daily follow-ups'],
+  PRODUCTIVITY: ['الإنتاجية', 'Productivity'],
+  QUALITY: ['إشارة الجودة', 'Quality signal'],
+  ATTENDANCE: ['الانضباط والحضور', 'Attendance discipline'],
+  HR_DISCIPLINARY: ['إشارة الموارد البشرية', 'HR signal'],
+  TREND: ['الاتجاه الزمني', 'Time trend'],
+};
+
+interface HrDecisionEmployeeReportLike {
+  monthKey?: string;
+  employee?: {
+    employeeName?: string | null;
+    employeeCode?: string | null;
+    department?: string | null;
+    team?: string | null;
+    position?: string | null;
+  };
+  executive?: {
+    status?: string | null;
+    kpiScore?: number | null;
+    trendDirection?: string | null;
+    riskLevel?: string | null;
+  };
+  scorecard?: Array<{
+    labelAr?: string | null;
+    availability?: string | null;
+    unavailableReasonAr?: string | null;
+    state?: string | null;
+    metrics?: Array<{ labelAr?: string | null; value?: number | null; unit?: string | null; hintAr?: string | null }>;
+  }>;
+  trend?: {
+    points?: Array<{ monthKey?: string; available?: boolean; rawScore?: number | null }>;
+    direction?: string | null;
+    consecutiveBelowTarget?: number;
+    targetScore?: number;
+  };
+  strengths?: HrDecisionFactorLike[];
+  concerns?: HrDecisionFactorLike[];
+  action?: { actionAr?: string | null; rationaleAr?: string | null; disclaimerAr?: string | null };
+  dataQuality?: { notesAr?: string[] };
+  generatedAt?: string;
+}
+
+function factorRows(factors?: HrDecisionFactorLike[]): string[][] {
+  return (factors ?? []).map((f) => [
+    uiMap(HR_FACTOR_CATEGORY, f.category, f.category ?? '—'),
+    f.kind === 'POSITIVE' ? ui('إيجابية', 'Positive') : ui('سلبية', 'Negative'),
+    uiMap(HR_SEVERITY, f.severity, f.severity ?? '—'),
+    f.signalAr ?? '—',
+    f.value === null || f.value === undefined ? '—' : String(f.value),
+    f.comparisonAr ?? '—',
+  ]);
+}
+
+function formatMetricValue(value: number | null | undefined, unit: string | null | undefined): string {
+  if (value === null || value === undefined) return '—';
+  if (unit === 'percent') return pct(value);
+  if (unit === 'days') return `${num(value)} ${ui('يوم', 'day(s)')}`;
+  if (unit === 'minutes') return `${num(value)} ${ui('دقيقة', 'minute(s)')}`;
+  return num(value);
+}
+
+function scorecardStateAr(entry: NonNullable<HrDecisionEmployeeReportLike['scorecard']>[number]): string {
+  if (entry.availability === 'NOT_AVAILABLE') return ui('غير متاح', 'N/A');
+  switch (entry.state) {
+    case 'WEAK': return ui('ضعيف', 'Weak');
+    case 'WATCH': return ui('للمراقبة', 'Watch');
+    case 'POSITIVE': return ui('إيجابي', 'Positive');
+    case 'OK': return ui('سليم', 'Sound');
+    default: return ui('بلا حكم', 'No verdict');
+  }
+}
+
+/** Per-employee decision report → print (the full HR-safe evidence). */
+export function hrDecisionEmployeeToPrintModel(report: HrDecisionEmployeeReportLike): PrintReportModel {
+  const e = report.employee ?? {};
+  const x = report.executive ?? {};
+  const sections: PrintSection[] = [];
+
+  sections.push({
+    heading: 'بطاقة الأداء',
+    table: {
+      columns: ['البُعد', 'الحالة', 'المؤشرات'],
+      rows: (report.scorecard ?? []).map((entry) => [
+        entry.labelAr ?? '—',
+        scorecardStateAr(entry),
+        (entry.metrics ?? [])
+          .map((m) => `${m.labelAr ?? ''}: ${formatMetricValue(m.value, m.unit)}${m.hintAr ? ` (${m.hintAr})` : ''}`)
+          .join(' — ') || (entry.unavailableReasonAr ?? '—'),
+      ]),
+    },
+  });
+
+  const trendPoints = (report.trend?.points ?? [])
+    .map((p) => `${p.monthKey ?? '—'}: ${p.available && p.rawScore !== null && p.rawScore !== undefined ? pct(p.rawScore) : ui('غير متاح', 'N/A')}`)
+    .join(' | ');
+  sections.push({
+    heading: 'الاتجاه الزمني',
+    paragraphs: [
+      trendPoints || '—',
+      `${ui('الاتجاه', 'Trend')}: ${report.trend?.direction ? uiMap(HR_TREND, report.trend.direction, '—') : '—'}`
+        + ` ${ui('— أشهر متتالية تحت الهدف:', '— consecutive months below target:')} ${num(report.trend?.consecutiveBelowTarget ?? 0)}`
+        + ` (الهدف المُهيّأ ${report.trend?.targetScore === null || report.trend?.targetScore === undefined ? '—' : pct(report.trend.targetScore)})`,
+    ],
+  });
+
+  const factorColumns = ['البُعد', 'النوع', 'الشدة', 'الإشارة', 'القيمة', 'المقارنة'];
+  sections.push({
+    heading: 'نقاط القوة (من إشارات مقاسة)',
+    table: { columns: factorColumns, rows: factorRows(report.strengths) },
+  });
+  sections.push({
+    heading: 'مواطن الاهتمام (من إشارات مقاسة)',
+    table: { columns: factorColumns, rows: factorRows(report.concerns) },
+  });
+
+  if ((report.dataQuality?.notesAr ?? []).length > 0) {
+    sections.push({ heading: 'جودة البيانات', paragraphs: report.dataQuality?.notesAr ?? [] });
+  }
+
+  return {
+    title: 'تقرير دعم قرار أداء موظف — الموارد البشرية',
+    identity: {
+      name: e.employeeName ?? undefined,
+      code: e.employeeCode ?? undefined,
+      department: e.department ?? undefined,
+      team: e.team ?? undefined,
+      position: e.position ?? undefined,
+    },
+    period: monthLabel(report.monthKey),
+    generatedAt: report.generatedAt,
+    stats: [
+      { label: 'الحالة', value: uiMap(HR_DECISION_STATUS, x.status, x.status ?? '—') },
+      { label: 'نتيجة الأداء', value: x.kpiScore === null || x.kpiScore === undefined ? '—' : pct(x.kpiScore) },
+      { label: 'الاتجاه', value: x.trendDirection ? uiMap(HR_TREND, x.trendDirection, '—') : '—'},
+      { label: 'مستوى المخاطر', value: x.riskLevel ?? '—' },
+    ],
+    sections,
+    footerNote: `${report.action?.actionAr ?? '—'} — ${report.action?.rationaleAr ?? ''} · ${report.action?.disclaimerAr ?? hrDecisionDisclaimer()}`,
   };
 }

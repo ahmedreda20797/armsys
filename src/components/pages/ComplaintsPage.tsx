@@ -72,6 +72,10 @@ import {
   CAPAInlineForm,
   type CapaInlineFormState,
 } from '@/components/shared/inline-forms';
+import { T } from '@/lib/i18n/T';
+import { translateUIText } from '@/lib/i18n/ui-text';
+import { useLanguage } from '@/lib/i18n/language-context';
+import { formatInteger } from '@/lib/i18n/format';
 
 type ComplaintDescriptor = {
   targetType: 'record';
@@ -216,6 +220,7 @@ function getStatusColor(status: string) {
 
 export default function ComplaintsPage() {
   const { canView, canCreate, canUpdate, canDelete } = usePermissions('complaints');
+  const { locale } = useLanguage();
   // §12 GLOBAL INLINE FORM STANDARD — creating a CAPA from a complaint
   // opens the shared inline CAPA form HERE (gated by CAPA's own
   // create permission); it never navigates to the CAPA page.
@@ -402,8 +407,8 @@ export default function ComplaintsPage() {
     return (
       <div className="flex flex-col items-center justify-center py-20">
         <ShieldCheck className="size-16 text-slate-600 mb-4" />
-        <h2 className="text-xl font-semibold text-slate-400">صلاحية غير كافية</h2>
-        <p className="text-slate-500 mt-2">هذه الصفحة غير متاحة لحسابك</p>
+        <h2 className="text-xl font-semibold text-slate-400"><T>صلاحية غير كافية</T></h2>
+        <p className="text-slate-500 mt-2"><T>هذه الصفحة غير متاحة لحسابك</T></p>
       </div>
     );
   }
@@ -503,9 +508,9 @@ export default function ComplaintsPage() {
       <PageHeaderBar
         icon={<MessageSquareWarning className="size-5" />}
         iconClassName="bg-rose-500/15 border-rose-500/30 text-rose-400"
-        title="شكاوى العملاء"
-        description={`${filtered.length} شكوى مسجلة`}
-        primaryAction={canCreate ? { label: 'إضافة شكوى', onClick: openCreateInline } : undefined}
+        title={translateUIText('شكاوى العملاء', locale)}
+        description={<>{formatInteger(filtered.length, locale)} <T>شكوى مسجلة</T></>}
+        primaryAction={canCreate ? { label: translateUIText('إضافة شكوى', locale), onClick: openCreateInline } : undefined}
       />
 
       {/* ━━━ §12 INLINE CREATE FORM — the SAME shared ComplaintInlineForm
@@ -518,13 +523,13 @@ export default function ComplaintsPage() {
             id="complaints-inline-create"
             tone="rose"
             icon={<Plus className="size-3.5 text-rose-400" />}
-            title="إضافة شكوى جديدة"
+            title={translateUIText('إضافة شكوى جديدة', locale)}
             onClose={() => { setIsCreateInlineOpen(false); setSourceContext(null); }}
           >
             {sourceContext && (
               <div className="mb-3 rounded-lg border border-sky-500/30 bg-sky-500/10 px-3 py-2 text-[11px] text-sky-300 flex items-center gap-1.5">
                 <Plane className="size-3.5 shrink-0" />
-                تمت التعبئة تلقائياً من صفحة السفر — راجع البيانات وعدّلها قبل الحفظ.
+                <T>تمت التعبئة تلقائياً من صفحة السفر — راجع البيانات وعدّلها قبل الحفظ.</T>
               </div>
             )}
             <ComplaintInlineForm
@@ -548,7 +553,7 @@ export default function ComplaintsPage() {
             id="complaints-inline-capa"
             tone="violet"
             icon={<ShieldAlert className="size-3.5 text-brand-400" />}
-            title="إنشاء CAPA من شكوى"
+            title={translateUIText('إنشاء CAPA من شكوى', locale)}
             onClose={() => setCapaPrefill(null)}
           >
             <CAPAInlineForm
@@ -571,21 +576,21 @@ export default function ComplaintsPage() {
           className="grid grid-cols-2 sm:grid-cols-4 gap-2.5"
         >
           <div className="rounded-lg border border-slate-500/25 bg-slate-500/8 px-3.5 py-2.5">
-            <p className="text-slate-500 text-[11px] mb-0.5">إجمالي الشكاوى</p>
-            <p className="text-slate-300 font-bold text-lg leading-tight">{stats.total}</p>
+            <p className="text-slate-500 text-[11px] mb-0.5"><T>إجمالي الشكاوى</T></p>
+            <p className="text-slate-300 font-bold text-lg leading-tight">{formatInteger(stats.total, locale)}</p>
           </div>
           <div className="rounded-lg border border-blue-500/25 bg-blue-500/8 px-3.5 py-2.5">
-            <p className="text-slate-500 text-[11px] mb-0.5">مفتوحة</p>
-            <p className="text-blue-400 font-bold text-lg leading-tight">{stats.openCount}</p>
+            <p className="text-slate-500 text-[11px] mb-0.5"><T>مفتوحة</T></p>
+            <p className="text-blue-400 font-bold text-lg leading-tight">{formatInteger(stats.openCount, locale)}</p>
           </div>
           <div className="rounded-lg border border-brand-500/30 bg-emerald-500/8 px-3.5 py-2.5">
-            <p className="text-slate-500 text-[11px] mb-0.5">تم الحل</p>
-            <p className="text-brand-400 font-bold text-lg leading-tight">{stats.resolvedCount}</p>
+            <p className="text-slate-500 text-[11px] mb-0.5"><T>تم الحل</T></p>
+            <p className="text-brand-400 font-bold text-lg leading-tight">{formatInteger(stats.resolvedCount, locale)}</p>
           </div>
           <div className="rounded-lg border border-amber-500/25 bg-amber-500/8 px-3.5 py-2.5">
-            <p className="text-slate-500 text-[11px] mb-0.5">متوسط وقت الحل</p>
+            <p className="text-slate-500 text-[11px] mb-0.5"><T>متوسط وقت الحل</T></p>
             <p className="text-amber-400 font-bold text-lg leading-tight">
-              {stats.avgResolution > 0 ? `${Math.round(stats.avgResolution)} يوم` : '—'}
+              {stats.avgResolution > 0 ? <>{formatInteger(Math.round(stats.avgResolution), locale)} <T>يوم</T></> : '—'}
             </p>
           </div>
         </motion.div>
@@ -604,7 +609,7 @@ export default function ComplaintsPage() {
                 ? 'bg-rose-600 text-white shadow-md shadow-rose-500/20'
                 : 'text-slate-400 hover:bg-slate-800 hover:text-white'
             }`}>
-            {tab.label} ({tab.count})
+            <T>{tab.label}</T> ({formatInteger(tab.count, locale)})
           </button>
         ))}
       </div>
@@ -614,7 +619,7 @@ export default function ComplaintsPage() {
         <div className="relative flex-1 max-w-sm">
           <Search className="absolute right-3 top-1/2 -translate-y-1/2 size-4 text-slate-500" />
           <Input
-            placeholder="بحث بالاسم أو الوصف أو رقم الصفقة..."
+            placeholder={translateUIText('بحث بالاسم أو الوصف أو رقم الصفقة...', locale)}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="bg-slate-800/70 border-slate-700/70 text-white pr-9 placeholder:text-slate-500 h-9 text-sm"
@@ -631,10 +636,10 @@ export default function ComplaintsPage() {
         <Select value={employeeFilter} onValueChange={setEmployeeFilter}>
           <SelectTrigger className="bg-slate-800/70 border-slate-700/70 text-white w-full sm:w-40 h-9 text-sm">
             <Users className="size-3.5 ml-1.5 text-slate-500" />
-            <SelectValue placeholder="الموظف" />
+            <SelectValue placeholder={translateUIText('الموظف', locale)} />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all" className="text-white">الكل</SelectItem>
+            <SelectItem value="all" className="text-white"><T>الكل</T></SelectItem>
             {employees.map((emp: any) => (
               <SelectItem key={emp.id} value={emp.id} className="text-white">
                 {emp.name}
@@ -645,13 +650,13 @@ export default function ComplaintsPage() {
         <Select value={statusFilter} onValueChange={setStatusFilter}>
           <SelectTrigger className="bg-slate-800/70 border-slate-700/70 text-white w-full sm:w-40 h-9 text-sm">
             <Clock className="size-3.5 ml-1.5 text-slate-500" />
-            <SelectValue placeholder="الحالة" />
+            <SelectValue placeholder={translateUIText('الحالة', locale)} />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all" className="text-white">الكل</SelectItem>
+            <SelectItem value="all" className="text-white"><T>الكل</T></SelectItem>
             {STATUS_OPTIONS.map((s) => (
               <SelectItem key={s.value} value={s.value} className="text-white">
-                {s.label}
+                <T>{s.label}</T>
               </SelectItem>
             ))}
           </SelectContent>
@@ -659,13 +664,13 @@ export default function ComplaintsPage() {
         <Select value={severityFilter} onValueChange={setSeverityFilter}>
           <SelectTrigger className="bg-slate-800/70 border-slate-700/70 text-white w-full sm:w-40 h-9 text-sm">
             <AlertTriangle className="size-3.5 ml-1.5 text-slate-500" />
-            <SelectValue placeholder="الخطورة" />
+            <SelectValue placeholder={translateUIText('الخطورة', locale)} />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all" className="text-white">الكل</SelectItem>
+            <SelectItem value="all" className="text-white"><T>الكل</T></SelectItem>
             {SEVERITY_OPTIONS.map((s) => (
               <SelectItem key={s.value} value={s.value} className="text-white">
-                {s.label}
+                <T>{s.label}</T>
               </SelectItem>
             ))}
           </SelectContent>
@@ -673,13 +678,13 @@ export default function ComplaintsPage() {
         <Select value={complaintTypeFilter} onValueChange={setComplaintTypeFilter}>
           <SelectTrigger className="bg-slate-800/70 border-slate-700/70 text-white w-full sm:w-40 h-9 text-sm">
             <FileText className="size-3.5 ml-1.5 text-slate-500" />
-            <SelectValue placeholder="النوع" />
+            <SelectValue placeholder={translateUIText('النوع', locale)} />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all" className="text-white">الكل</SelectItem>
+            <SelectItem value="all" className="text-white"><T>الكل</T></SelectItem>
             {COMPLAINT_TYPES.map((t) => (
               <SelectItem key={t.value} value={t.value} className="text-white">
-                {t.label}
+                <T>{t.label}</T>
               </SelectItem>
             ))}
           </SelectContent>
@@ -699,11 +704,11 @@ export default function ComplaintsPage() {
             <div className="size-12 rounded-full bg-slate-800 flex items-center justify-center mb-3">
               <MessageSquareWarning className="size-6 text-slate-600" />
             </div>
-            <p className="text-slate-400 text-sm font-medium">لا توجد شكاوى</p>
+            <p className="text-slate-400 text-sm font-medium"><T>لا توجد شكاوى</T></p>
             <p className="text-slate-600 text-xs mt-1">
               {search || employeeFilter !== 'all' || statusFilter !== 'all' || severityFilter !== 'all' || complaintTypeFilter !== 'all'
-                ? 'لم يتم العثور على نتائج'
-                : 'لم يتم تسجيل أي شكاوى بعد'}
+                ? <T>لم يتم العثور على نتائج</T>
+                : <T>لم يتم تسجيل أي شكاوى بعد</T>}
             </p>
           </CardContent>
         </Card>
@@ -737,13 +742,13 @@ export default function ComplaintsPage() {
                             variant="outline"
                             className={`text-[10px] px-2 py-0 h-5 border ${getComplaintTypeColor(complaint.complaintType)}`}
                           >
-                            {getComplaintTypeBadge(complaint.complaintType)}
+                            <T>{getComplaintTypeBadge(complaint.complaintType)}</T>
                           </Badge>
                           <Badge
                             variant="outline"
                             className={`text-[10px] px-2 py-0 h-5 border ${getSeverityColor(complaint.severity)}`}
                           >
-                            {getSeverityBadge(complaint.severity)}
+                            <T>{getSeverityBadge(complaint.severity)}</T>
                           </Badge>
                         </div>
                         <div className="flex items-center gap-1.5">
@@ -751,7 +756,7 @@ export default function ComplaintsPage() {
                             variant="outline"
                             className={`text-[10px] px-2 py-0 h-5 border ${getStatusColor(complaint.status)}`}
                           >
-                            {getStatusBadge(complaint.status)}
+                            <T>{getStatusBadge(complaint.status)}</T>
                           </Badge>
                           {/* §6: secondary/contextual actions grouped in the ⋮ overflow */}
                           <ComplaintCardActions
@@ -805,14 +810,14 @@ export default function ComplaintsPage() {
                         <div className="rounded-lg bg-emerald-500/8 border border-brand-500/30 p-3 space-y-1.5">
                           <div className="flex items-center gap-1.5 text-brand-400 text-[11px] font-medium">
                             <CheckCircle2 className="size-3.5" />
-                            الحل
+                            <T>الحل</T>
                           </div>
                           <p className="text-brand-300/80 text-xs leading-relaxed">
                             {complaint.resolution}
                           </p>
                           {complaint.compensation && (
                             <p className="text-brand-400/60 text-[10px] mt-1">
-                              التعويض: {complaint.compensation}
+                              <T>التعويض: </T>{complaint.compensation}
                             </p>
                           )}
                         </div>
@@ -844,10 +849,10 @@ export default function ComplaintsPage() {
         <DialogContent className="bg-slate-900 border-slate-700/60 max-h-[90vh] overflow-y-auto max-w-lg">
           <DialogHeader>
             <DialogTitle className="text-white text-lg">
-              {editingComplaint ? 'تعديل الشكوى' : 'إضافة شكوى جديدة'}
+              <T>{editingComplaint ? 'تعديل الشكوى' : 'إضافة شكوى جديدة'}</T>
             </DialogTitle>
             <DialogDescription className="text-slate-500 text-xs">
-              {editingComplaint ? 'قم بتعديل بيانات الشكوى' : 'أدخل بيانات الشكوى الجديدة'}
+              <T>{editingComplaint ? 'قم بتعديل بيانات الشكوى' : 'أدخل بيانات الشكوى الجديدة'}</T>
             </DialogDescription>
           </DialogHeader>
 
@@ -855,7 +860,7 @@ export default function ComplaintsPage() {
           {sourceContext && (
             <div className="rounded-lg border border-sky-500/30 bg-sky-500/10 px-3 py-2 text-[11px] text-sky-300 flex items-center gap-1.5">
               <Plane className="size-3.5 shrink-0" />
-              تمت التعبئة تلقائياً من صفحة السفر — راجع البيانات وعدّلها قبل الحفظ.
+              <T>تمت التعبئة تلقائياً من صفحة السفر — راجع البيانات وعدّلها قبل الحفظ.</T>
             </div>
           )}
 
@@ -863,21 +868,21 @@ export default function ComplaintsPage() {
             {/* Row 1: Customer name + Contact */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-1.5">
-                <Label className="text-slate-300 text-xs">اسم العميل *</Label>
+                <Label className="text-slate-300 text-xs"><T>اسم العميل *</T></Label>
                 <Input
                   value={form.customerName}
                   onChange={(e) => setForm((p) => ({ ...p, customerName: e.target.value }))}
                   className="bg-slate-800/70 border-slate-700/70 text-white h-9 text-sm"
-                  placeholder="اسم العميل"
+                  placeholder={translateUIText('اسم العميل', locale)}
                 />
               </div>
               <div className="space-y-1.5">
-                <Label className="text-slate-300 text-xs">بيانات الاتصال</Label>
+                <Label className="text-slate-300 text-xs"><T>بيانات الاتصال</T></Label>
                 <Input
                   value={form.customerContact}
                   onChange={(e) => setForm((p) => ({ ...p, customerContact: e.target.value }))}
                   className="bg-slate-800/70 border-slate-700/70 text-white h-9 text-sm"
-                  placeholder="رقم الهاتف أو البريد"
+                  placeholder={translateUIText('رقم الهاتف أو البريد', locale)}
                 />
               </div>
             </div>
@@ -885,12 +890,12 @@ export default function ComplaintsPage() {
             {/* Row 2: Deal ID + Employee */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-1.5">
-                <Label className="text-slate-300 text-xs">رقم الصفقة</Label>
+                <Label className="text-slate-300 text-xs"><T>رقم الصفقة</T></Label>
                 <Input
                   value={form.dealId}
                   onChange={(e) => setForm((p) => ({ ...p, dealId: e.target.value }))}
                   className="bg-slate-800/70 border-slate-700/70 text-white h-9 text-sm"
-                  placeholder="رقم الصفقة (اختياري)"
+                  placeholder={translateUIText('رقم الصفقة (اختياري)', locale)}
                 />
               </div>
               <div>
@@ -898,10 +903,10 @@ export default function ComplaintsPage() {
                   employees={employees}
                   value={form.employeeId || ''}
                   onChange={(id) => setForm((p) => ({ ...p, employeeId: id }))}
-                  label="الموظف المسؤول"
-                  placeholder="ابحث عن اسم الموظف (اختياري)..."
+                  label={translateUIText('الموظف المسؤول', locale)}
+                  placeholder={translateUIText('ابحث عن اسم الموظف (اختياري)...', locale)}
                   allowClear
-                  clearLabel="— بدون —"
+                  clearLabel={translateUIText('— بدون —', locale)}
                   variant="form"
                 />
               </div>
@@ -910,7 +915,7 @@ export default function ComplaintsPage() {
             {/* Row 3: Type + Severity */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-1.5">
-                <Label className="text-slate-300 text-xs">نوع الشكوى</Label>
+                <Label className="text-slate-300 text-xs"><T>نوع الشكوى</T></Label>
                 <Select value={form.complaintType} onValueChange={(v) => setForm((p) => ({ ...p, complaintType: v }))}>
                   <SelectTrigger className="bg-slate-800/70 border-slate-700/70 text-white h-9 text-sm">
                     <SelectValue />
@@ -918,14 +923,14 @@ export default function ComplaintsPage() {
                   <SelectContent>
                     {COMPLAINT_TYPES.map((t) => (
                       <SelectItem key={t.value} value={t.value} className="text-white">
-                        {t.label}
+                        <T>{t.label}</T>
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </div>
               <div className="space-y-1.5">
-                <Label className="text-slate-300 text-xs">الخطورة</Label>
+                <Label className="text-slate-300 text-xs"><T>الخطورة</T></Label>
                 <Select value={form.severity} onValueChange={(v) => setForm((p) => ({ ...p, severity: v }))}>
                   <SelectTrigger className="bg-slate-800/70 border-slate-700/70 text-white h-9 text-sm">
                     <SelectValue />
@@ -933,7 +938,7 @@ export default function ComplaintsPage() {
                   <SelectContent>
                     {SEVERITY_OPTIONS.map((s) => (
                       <SelectItem key={s.value} value={s.value} className="text-white">
-                        {s.label}
+                        <T>{s.label}</T>
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -943,7 +948,7 @@ export default function ComplaintsPage() {
 
             {/* Row 4: Status */}
             <div className="space-y-1.5">
-              <Label className="text-slate-300 text-xs">الحالة</Label>
+              <Label className="text-slate-300 text-xs"><T>الحالة</T></Label>
               <Select value={form.status} onValueChange={(v) => setForm((p) => ({ ...p, status: v }))}>
                 <SelectTrigger className="bg-slate-800/70 border-slate-700/70 text-white h-9 text-sm">
                   <SelectValue />
@@ -951,7 +956,7 @@ export default function ComplaintsPage() {
                 <SelectContent>
                   {STATUS_OPTIONS.map((s) => (
                     <SelectItem key={s.value} value={s.value} className="text-white">
-                      {s.label}
+                      <T>{s.label}</T>
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -960,23 +965,23 @@ export default function ComplaintsPage() {
 
             {/* Description */}
             <div className="space-y-1.5">
-              <Label className="text-slate-300 text-xs">الوصف *</Label>
+              <Label className="text-slate-300 text-xs"><T>الوصف *</T></Label>
               <Textarea
                 value={form.description}
                 onChange={(e) => setForm((p) => ({ ...p, description: e.target.value }))}
                 className="bg-slate-800/70 border-slate-700/70 text-white text-sm min-h-[80px] resize-none"
-                placeholder="وصف الشكوى بالتفصيل"
+                placeholder={translateUIText('وصف الشكوى بالتفصيل', locale)}
               />
             </div>
 
             {/* Resolution */}
             <div className="space-y-1.5">
-              <Label className="text-slate-300 text-xs">الحل</Label>
+              <Label className="text-slate-300 text-xs"><T>الحل</T></Label>
               <Textarea
                 value={form.resolution}
                 onChange={(e) => setForm((p) => ({ ...p, resolution: e.target.value }))}
                 className="bg-slate-800/70 border-slate-700/70 text-white text-sm min-h-[60px] resize-none"
-                placeholder="وصف الحل المقدم"
+                placeholder={translateUIText('وصف الحل المقدم', locale)}
               />
             </div>
 
@@ -986,21 +991,21 @@ export default function ComplaintsPage() {
                 users={systemUsers}
                 value={form.responsiblePersonId}
                 onChange={(id) => setForm((p) => ({ ...p, responsiblePersonId: id }))}
-                label="المسؤول"
-                placeholder="ابحث عن مستخدم مسؤول..."
+                label={translateUIText('المسؤول', locale)}
+                placeholder={translateUIText('ابحث عن مستخدم مسؤول...', locale)}
                 allowClear
-                clearLabel="— بدون —"
+                clearLabel={translateUIText('— بدون —', locale)}
               />
             </div>
 
             {/* Compensation */}
             <div className="space-y-1.5">
-              <Label className="text-slate-300 text-xs">التعويض المقدم</Label>
+              <Label className="text-slate-300 text-xs"><T>التعويض المقدم</T></Label>
               <Textarea
                 value={form.compensation}
                 onChange={(e) => setForm((p) => ({ ...p, compensation: e.target.value }))}
                 className="bg-slate-800/70 border-slate-700/70 text-white text-sm min-h-[60px] resize-none"
-                placeholder="وصف التعويض المقدم للعميل"
+                placeholder={translateUIText('وصف التعويض المقدم للعميل', locale)}
               />
             </div>
           </div>
@@ -1011,14 +1016,14 @@ export default function ComplaintsPage() {
               onClick={() => { setIsDialogOpen(false); setEditingComplaint(null); }}
               className="text-slate-400 hover:text-white hover:bg-slate-800"
             >
-              إلغاء
+              <T>إلغاء</T>
             </Button>
             <Button
               onClick={handleSave}
               disabled={isSaving || !form.customerName.trim() || !form.description.trim()}
               className="bg-rose-600 hover:bg-rose-700 text-white"
             >
-              {isSaving ? 'جاري الحفظ...' : editingComplaint ? 'حفظ التعديلات' : 'إضافة الشكوى'}
+              {isSaving ? <T>جاري الحفظ...</T> : editingComplaint ? <T>حفظ التعديلات</T> : <T>إضافة الشكوى</T>}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1028,7 +1033,7 @@ export default function ComplaintsPage() {
       <ConfirmDialog
         open={!!deletingId}
         onOpenChange={(open) => { if (!open) setDeletingId(null); }}
-        description="هل أنت متأكد من حذف هذه الشكوى؟ لا يمكن التراجع عن هذا الإجراء."
+        description={translateUIText('هل أنت متأكد من حذف هذه الشكوى؟ لا يمكن التراجع عن هذا الإجراء.', locale)}
         itemName={deletingId ? complaints.find((c) => c.id === deletingId)?.customerName : undefined}
         loading={deleteMutation.isPending}
         onConfirm={async () => { if (deletingId) await handleDelete(deletingId); }}
@@ -1051,11 +1056,12 @@ function ComplaintCardActions({
   onDelete: () => void;
   onCreateCapa: () => void;
 }) {
+  const { locale } = useLanguage();
   const descriptor: ComplaintDescriptor = {
     targetType: 'record',
     targetId: complaint.id,
     route: 'complaints',
-    label: `شكوى: ${complaint.customerName}`,
+    label: `${translateUIText('شكوى', locale)}: ${complaint.customerName}`,
   };
   const { favoriteActive, pinActive } = useMarkState(descriptor);
   const toggleFavorite = useFavoriteToggleAction();
@@ -1063,24 +1069,24 @@ function ComplaintCardActions({
 
   const items: OverflowMenuItem[] = [];
   if (canUpdate) {
-    items.push({ key: 'edit', label: 'تعديل', icon: <Pencil className="size-3.5" />, onSelect: onEdit });
+    items.push({ key: 'edit', label: translateUIText('تعديل', locale), icon: <Pencil className="size-3.5" />, onSelect: onEdit });
   }
   items.push(
     {
       key: 'favorite',
-      label: favoriteActive ? 'إزالة من المفضلة' : 'مفضلة ⭐',
+      label: favoriteActive ? translateUIText('إزالة من المفضلة', locale) : translateUIText('مفضلة ⭐', locale),
       icon: <Star className={`size-3.5 ${favoriteActive ? 'text-amber-400 fill-amber-400' : ''}`} />,
       onSelect: () => void toggleFavorite(descriptor),
     },
     {
       key: 'pin',
-      label: pinActive ? 'إزالة التثبيت' : 'تثبيت 📌',
+      label: pinActive ? translateUIText('إزالة التثبيت', locale) : translateUIText('تثبيت 📌', locale),
       icon: <PinIcon className={`size-3.5 ${pinActive ? 'text-cyan-400 fill-cyan-400' : ''}`} />,
       onSelect: () => void togglePin(descriptor),
     },
     {
       key: 'capa',
-      label: 'إنشاء CAPA',
+      label: translateUIText('إنشاء CAPA', locale),
       icon: <ShieldAlert className="size-3.5" />,
       separatorBefore: true,
       // §12 GLOBAL INLINE FORM STANDARD — opens the inline CAPA form on
@@ -1091,7 +1097,7 @@ function ComplaintCardActions({
   if (canDelete) {
     items.push({
       key: 'delete',
-      label: 'حذف',
+      label: translateUIText('حذف', locale),
       icon: <Trash2 className="size-3.5" />,
       destructive: true,
       separatorBefore: true,
@@ -1099,5 +1105,5 @@ function ComplaintCardActions({
     });
   }
 
-  return <SmartActionMenu actions={items} label={`إجراءات شكوى ${complaint.customerName}`} />;
+  return <SmartActionMenu actions={items} label={`${translateUIText('إجراءات شكوى', locale)} ${complaint.customerName}`} />;
 }

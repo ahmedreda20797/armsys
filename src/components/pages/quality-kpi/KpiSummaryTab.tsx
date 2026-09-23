@@ -21,9 +21,13 @@ import {
 } from '@/components/ui/table';
 import { useKpiManagementSummary } from '@/hooks/use-kpi-queries';
 import type { KpiManagementSummary } from '@/lib/kpi-reporting';
+import { T } from '@/lib/i18n/T';
+import { useLanguage } from '@/lib/i18n/language-context';
+import { formatNumber, formatInteger } from '@/lib/i18n/format';
 import { ValueBasisBadge, formatScore, formatContribution } from './kpi-reports-shared';
 
 export default function KpiSummaryTab({ month }: { month: string }) {
+  const { locale } = useLanguage();
   const query = useKpiManagementSummary(month);
   const summary = query.data as KpiManagementSummary | undefined;
   // §PRINT — hook order: called unconditionally at the top (the
@@ -43,7 +47,7 @@ export default function KpiSummaryTab({ month }: { month: string }) {
   if (query.isError || !summary) {
     return (
       <Card className="bg-red-950/20 border-red-800/40">
-        <CardContent className="p-6 text-red-300 text-sm">تعذر تحميل الملخص — أعد المحاولة.</CardContent>
+        <CardContent className="p-6 text-red-300 text-sm"><T>تعذر تحميل الملخص — أعد المحاولة.</T></CardContent>
       </Card>
     );
   }
@@ -56,7 +60,7 @@ export default function KpiSummaryTab({ month }: { month: string }) {
       <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-200">
         <span className="flex items-center gap-2">
           <Info className="h-4 w-4 shrink-0" />
-          {summary.label}
+          <T>{summary.label}</T>
         </span>
         <span className="flex items-center gap-2">
           <ValueBasisBadge basis={summary.valueBasis} />
@@ -67,7 +71,7 @@ export default function KpiSummaryTab({ month }: { month: string }) {
             onClick={() => openPrintReport(qualitySummaryToPrintModel(summary))}
           >
             <Printer className="size-3.5" />
-            طباعة / PDF
+            <T>طباعة / PDF</T>
           </Button>
         </span>
       </div>
@@ -87,27 +91,27 @@ export default function KpiSummaryTab({ month }: { month: string }) {
       {/* ── Averages ── */}
       <Card className="bg-slate-800/30 border-slate-700/40">
         <CardHeader className="pb-2">
-          <CardTitle className="text-base text-slate-200">متوسطات وأطراف الجودة</CardTitle>
+          <CardTitle className="text-base text-slate-200"><T>متوسطات وأطراف الجودة</T></CardTitle>
         </CardHeader>
         <CardContent className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
           <div className="rounded-xl border border-slate-700/40 bg-slate-900/40 p-4 space-y-1">
-            <p className="text-xs text-slate-400">متوسط درجة الجودة (خام)</p>
-            <p className="text-2xl font-bold text-emerald-300">{formatScore(averages.avgRawScore)}</p>
+            <p className="text-xs text-slate-400"><T>متوسط درجة الجودة (خام)</T></p>
+            <p className="text-2xl font-bold text-emerald-300">{formatScore(averages.avgRawScore, locale)}</p>
           </div>
           <div className="rounded-xl border border-slate-700/40 bg-slate-900/40 p-4 space-y-1">
-            <p className="text-xs text-slate-400">متوسط مساهمة الجودة</p>
+            <p className="text-xs text-slate-400"><T>متوسط مساهمة الجودة</T></p>
             <p className="text-2xl font-bold text-slate-100">
-              {averages.avgContribution === null ? '—' : averages.avgContribution}
-              <span className="text-sm text-slate-500"> نقطة</span>
+              {averages.avgContribution === null ? '—' : formatNumber(averages.avgContribution, { locale })}
+              <span className="text-sm text-slate-500"> <T>نقطة</T></span>
             </p>
           </div>
           <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-4 space-y-1">
             <p className="text-xs text-emerald-300/80 flex items-center gap-1">
-              <Award className="h-3.5 w-3.5" /> الأعلى
+              <Award className="h-3.5 w-3.5" /> <T>الأعلى</T>
             </p>
             {averages.highest ? (
               <>
-                <p className="text-lg font-bold text-slate-100">{formatScore(averages.highest.rawScore)}</p>
+                <p className="text-lg font-bold text-slate-100">{formatScore(averages.highest.rawScore, locale)}</p>
                 <p className="text-xs text-slate-400">{averages.highest.employeeName}</p>
               </>
             ) : (
@@ -116,11 +120,11 @@ export default function KpiSummaryTab({ month }: { month: string }) {
           </div>
           <div className="rounded-xl border border-red-500/30 bg-red-500/5 p-4 space-y-1">
             <p className="text-xs text-red-300/80 flex items-center gap-1">
-              <TrendingDown className="h-3.5 w-3.5" /> الأدنى
+              <TrendingDown className="h-3.5 w-3.5" /> <T>الأدنى</T>
             </p>
             {averages.lowest ? (
               <>
-                <p className="text-lg font-bold text-slate-100">{formatScore(averages.lowest.rawScore)}</p>
+                <p className="text-lg font-bold text-slate-100">{formatScore(averages.lowest.rawScore, locale)}</p>
                 <p className="text-xs text-slate-400">{averages.lowest.employeeName}</p>
               </>
             ) : (
@@ -156,10 +160,11 @@ function StatCard({
     purple: 'text-brand-300 border-brand-500/40',
     orange: 'text-orange-300 border-orange-500/40',
   };
+  const { locale } = useLanguage();
   return (
     <div className={`rounded-xl border bg-slate-900/40 p-4 space-y-1 ${toneClasses[tone]}`}>
-      <p className="text-xs text-slate-400 flex items-center gap-1.5">{icon}{label}</p>
-      <p className="text-2xl font-bold text-slate-100">{value}</p>
+      <p className="text-xs text-slate-400 flex items-center gap-1.5">{icon}<T>{label}</T></p>
+      <p className="text-2xl font-bold text-slate-100">{formatInteger(value, locale)}</p>
     </div>
   );
 }
@@ -171,22 +176,23 @@ function BreakdownCard({
   title: string;
   rows: KpiManagementSummary['departments'];
 }) {
+  const { locale } = useLanguage();
   return (
     <Card className="bg-slate-800/30 border-slate-700/40">
       <CardHeader className="pb-2">
-        <CardTitle className="text-base text-slate-200">{title}</CardTitle>
+        <CardTitle className="text-base text-slate-200"><T>{title}</T></CardTitle>
       </CardHeader>
       <CardContent>
         {rows.length === 0 ? (
-          <p className="text-sm text-slate-500 py-4 text-center">لا توجد بيانات مجمّعة</p>
+          <p className="text-sm text-slate-500 py-4 text-center"><T>لا توجد بيانات مجمّعة</T></p>
         ) : (
           <Table>
             <TableHeader>
               <TableRow className="border-slate-700/40">
-                <TableHead className="text-right">الاسم</TableHead>
-                <TableHead className="text-right">الموظفون</TableHead>
-                <TableHead className="text-right">متوسط الدرجة (خام)</TableHead>
-                <TableHead className="text-right">متوسط المساهمة</TableHead>
+                <TableHead className="text-right"><T>الاسم</T></TableHead>
+                <TableHead className="text-right"><T>الموظفون</T></TableHead>
+                <TableHead className="text-right"><T>متوسط الدرجة (خام)</T></TableHead>
+                <TableHead className="text-right"><T>متوسط المساهمة</T></TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -195,13 +201,13 @@ function BreakdownCard({
                   <TableCell className="text-slate-200">
                     <span className="flex items-center gap-2">
                       {row.label}
-                      <Badge variant="outline" className="text-[10px] border-slate-600/50 text-slate-500">جودة KPI</Badge>
+                      <Badge variant="outline" className="text-[10px] border-slate-600/50 text-slate-500"><T>جودة KPI</T></Badge>
                     </span>
                   </TableCell>
-                  <TableCell className="text-slate-300 font-mono">{row.employeeCount}</TableCell>
-                  <TableCell className="font-mono text-slate-100">{formatScore(row.avgRawScore)}</TableCell>
+                  <TableCell className="text-slate-300 font-mono">{formatInteger(row.employeeCount, locale)}</TableCell>
+                  <TableCell className="font-mono text-slate-100">{formatScore(row.avgRawScore, locale)}</TableCell>
                   <TableCell className="font-mono text-slate-300">
-                    {row.avgContribution === null ? '—' : formatContribution(row.avgContribution, null)}
+                    {row.avgContribution === null ? '—' : formatContribution(row.avgContribution, null, locale)}
                   </TableCell>
                 </TableRow>
               ))}

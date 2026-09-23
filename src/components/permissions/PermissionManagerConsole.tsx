@@ -24,8 +24,8 @@
 
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import {
-  BadgeCheck, Building2, Filter, GitCompare, Loader2,
-  Lock, RotateCcw, Save, Search, ShieldBan, User as UserIcon, X,
+  BadgeCheck, Building2, Filter, GitCompare, Landmark, Loader2,
+  Lock, MapPin, RotateCcw, Save, Search, ShieldBan, User as UserIcon, X,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
@@ -37,6 +37,8 @@ import { cn } from '@/lib/utils';
 import { authFetch } from '@/lib/api-fetch';
 import { usePageState } from '@/hooks/use-page-state';
 import { useAuth } from '@/contexts/AuthContext';
+import { orgNodeTypeLabel, type OrgNodeType } from '@/lib/organization';
+import { describeBoundarySource } from '@/lib/scope/boundary';
 import {
   APP_PAGES, SIDEBAR_GROUPS, localizedGroupLabel, migratePermission,
   resolveEffectivePermissions,
@@ -119,6 +121,12 @@ export function PermissionManagerConsole({ users, selectedUserId, onSelectUser, 
   const [profileError, setProfileError] = useState<string | null>(null);
   const [draft, setDraft] = useState<PermissionsMap>({});
   const [savedOverrides, setSavedOverrides] = useState<PermissionsMap>({});
+  // §ORG-BOUNDARY — the boundary override draft (null = تلقائي/
+  // inherit). Kept SEPARATE from the per-page permission entries:
+  // WHERE and HOW MUCH are different axes with different editors.
+  const [boundaryDraft, setBoundaryDraft] = useState<string[] | null>(null);
+  const [savedBoundary, setSavedBoundary] = useState<string[] | null>(null);
+  const [boundaryPickerOpen, setBoundaryPickerOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [expandedPage, setExpandedPage] = useState<string | null>(null);
 
@@ -134,6 +142,9 @@ export function PermissionManagerConsole({ users, selectedUserId, onSelectUser, 
       const stored: PermissionsMap = data.authorization.storedOverrides ?? {};
       setSavedOverrides(stored);
       setDraft(structuredClone(stored));
+      const overrideIds = data.identity.orgBoundaryNodeIds ?? null;
+      setSavedBoundary(overrideIds);
+      setBoundaryDraft(overrideIds);
       setProfileError(null);
     } catch (err) {
       setProfile(null);
@@ -271,7 +282,7 @@ export function PermissionManagerConsole({ users, selectedUserId, onSelectUser, 
       if (before === undefined) {
         out.push({ pageKey: k, label: `${title}: تجاوز جديد (${afterLevel ? LEVEL_LABELS[afterLevel] : '—'})` });
       } else if (after === undefined) {
-        out.push({ pageKey: k, label: `${title}: إزالة التجاوز (عودة للتوريث)` });
+        out.push({ pageKey: k, label: `${title}: إزالة التجاوز (عودة لقيمة الدور/الوظيفة)` });
       } else if (beforeLevel !== afterLevel && beforeLevel && afterLevel) {
         out.push({ pageKey: k, label: `${title}: ${LEVEL_LABELS[beforeLevel]} → ${LEVEL_LABELS[afterLevel]}` });
       } else {
@@ -281,20 +292,35 @@ export function PermissionManagerConsole({ users, selectedUserId, onSelectUser, 
     return out.sort((x, y) => x.label.localeCompare(y.label, 'ar'));
   }, [savedOverrides, draft]);
   const dirty = pendingChanges.length > 0;
+  // §ORG-BOUNDARY dirty tracking — independent of the page-override diff.
+  const boundaryDirty = useMemo(
+    () => JSON.stringify(boundaryDraft ?? null) !== JSON.stringify(savedBoundary ?? null),
+    [boundaryDraft, savedBoundary],
+  );
+
+  const toggleBoundaryNode = (nodeId: string) =>
+    setBoundaryDraft((prev) => {
+      const cur = prev ?? [];
+      return cur.includes(nodeId) ? cur.filter((id) => id !== nodeId) : [...cur, nodeId];
+    });
 
   const save = async () => {
-    if (!profile || !dirty) return;
+    if (!profile || (!dirty && !boundaryDirty)) return;
     setSaving(true);
     try {
+      const body: Record<string, unknown> = { permissions: draft };
+      // undefined = untouched (the server keeps the stored value).
+      if (boundaryDirty) body.orgBoundaryNodeIds = boundaryDraft;
       const res = await authFetch(`/api/dashboard/users/${profile.identity.id}/permissions`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ permissions: draft }),
+        body: JSON.stringify(body),
       });
-      const body = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(body.error || 'فشل حفظ الصلاحيات');
-      toast.success(`تم حفظ الصلاحيات — ${pendingChanges.length} تغيير (مسجّل في سجل التدقيق)`);
+      const resBody = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(resBody.error || 'فشل حفظ الصلاحيات');
+      toast.success('تم الحفظ (مسجّل في سجل التدقيق)');
       setSavedOverrides(structuredClone(draft));
+      setSavedBoundary(boundaryDraft);
       onSaved();
       await loadProfile(profile.identity.id);
     } catch (err) {
@@ -508,12 +534,126 @@ export function PermissionManagerConsole({ users, selectedUserId, onSelectUser, 
               </div>
             </div>
 
-            {/* ── source legend — the inheritance model at a glance ── */}
+            {/* ── §ORG-BOUNDARY — Access Location card (WHERE), kept
+                    deliberately SEPARATE from the scope axis (HOW MUCH)
+                    and from page access (WHAT) below ── */}
+            <div className="rounded-xl border border-slate-700/40 bg-slate-800/40 p-4">
+              <div className="flex items-start justify-between gap-3 flex-wrap">
+                <div className="min-w-0">
+                  <p className="text-[11px] font-semibold text-slate-300 flex items-center gap-1.5">
+                    <MapPin className="size-3.5 text-brand-400" />
+                    موقع الوصول التنظيمي (الحد) — أين تُطبَّق الصلاحيات
+                  </p>
+                  <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                    {(() => {
+                      const source = boundaryDraft && boundaryDraft.length > 0
+                        ? 'override' as const
+                        : profile.organization.boundary.source;
+                      const nodes = boundaryDraft && boundaryDraft.length > 0
+                        ? boundaryDraft
+                            .map((id) => profile.organization.availableNodes.find((n) => n.id === id))
+                            .filter((n): n is NonNullable<typeof n> => Boolean(n))
+                            .map((n) => ({ id: n.id, name: n.name, label: orgNodeTypeLabel(n.type as OrgNodeType, 'ar') }))
+                        : profile.organization.boundary.nodes.map((n) => ({
+                            id: n.id, name: n.name,
+                            label: n.level === 'general_administration' ? 'الإدارة العامة'
+                              : n.level === 'company' ? 'شركة' : n.level === 'department' ? 'قسم'
+                              : n.level === 'team' ? 'فريق' : 'فريق فرعي',
+                          }));
+                      if (nodes.length === 0) {
+                        return (
+                          <Badge variant="outline" className="text-[10px] border-amber-500/50 text-amber-300 bg-amber-500/10">
+                            لا حد تنظيمي محلول — الوصول مقيد (سجله الشخصي فقط)
+                          </Badge>
+                        );
+                      }
+                      return nodes.map((n) => (
+                        <Badge key={n.id} variant="outline" className="text-[10px] border-brand-600/40 text-brand-200 bg-brand-600/10 gap-1">
+                          <Landmark className="size-2.5" />
+                          {n.name}
+                          <span className="text-[8px] text-slate-400">({n.label})</span>
+                        </Badge>
+                      ));
+                    })()}
+                    <Badge variant="outline" className="text-[9px] border-slate-700/60 text-slate-400">
+                      المصدر: {boundaryDraft && boundaryDraft.length > 0
+                        ? describeBoundarySource('override')
+                        : describeBoundarySource(profile.organization.boundary.source)}
+                    </Badge>
+                  </div>
+                  <p className="text-[9px] text-slate-500 mt-1.5 leading-snug max-w-xl">
+                    «تلقائي — من التعيين التنظيمي» يشتق الحد من الفروع المُدارة و/أو عقدة الموظف المرتبط في الشجرة.
+                    تحديد عقدة/عقد صراحةً (شركة، أو الإدارة العامة) يثبّت الحد عليها — ويجوز اختيار أكثر من شركة لحساب واحد.
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  {boundaryDirty && (
+                    <Badge variant="outline" className="text-[9px] border-amber-500/50 text-amber-300 bg-amber-500/10">
+                      تغيير غير محفوظ
+                    </Badge>
+                  )}
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={!editable}
+                    onClick={() => setBoundaryPickerOpen((v) => !v)}
+                    className="text-xs h-8 border-slate-700 text-slate-300 hover:bg-slate-800"
+                  >
+                    <MapPin className="size-3.5" /> تعديل الحد
+                  </Button>
+                </div>
+              </div>
+              {boundaryPickerOpen && editable && (
+                <div className="mt-3 rounded-lg border border-slate-700/50 bg-slate-900/50 p-2.5">
+                  <div className="flex items-center justify-between mb-1.5">
+                    <p className="text-[10px] text-slate-400 font-medium">حدد عقدة أو أكثر (من الشجرة التنظيمية الرسمية فقط)</p>
+                    <button
+                      type="button"
+                      onClick={() => setBoundaryDraft(null)}
+                      className="text-[10px] text-brand-400 hover:text-brand-300"
+                    >
+                      تلقائي — من التعيين التنظيمي
+                    </button>
+                  </div>
+                  <div className="arm-scroll max-h-44 overflow-y-auto grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-1">
+                    {profile.organization.availableNodes.map((n) => {
+                      const checked = boundaryDraft?.includes(n.id) ?? false;
+                      return (
+                        <label
+                          key={n.id}
+                          className={cn(
+                            'flex items-center gap-2 rounded-md border px-2 py-1.5 cursor-pointer text-[11px]',
+                            checked ? 'border-brand-600/50 bg-brand-600/10 text-brand-200' : 'border-slate-800 bg-slate-900/40 text-slate-300 hover:border-slate-700',
+                          )}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() => toggleBoundaryNode(n.id)}
+                            className="accent-brand-500"
+                          />
+                          <span className="truncate" title={n.name}>{n.name}</span>
+                          <span className="text-[8px] text-slate-500 shrink-0">{orgNodeTypeLabel(n.type as OrgNodeType, 'ar')}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* ── derivation legend — how the effective result is composed ── */}
             <div className="rounded-xl border border-slate-700/40 bg-slate-800/25 px-4 py-2.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-[10px] text-slate-500">
-              <span className="font-semibold text-slate-400">نموذج الوراثة:</span>
+              <span className="font-semibold text-slate-400">كيف تُشتق الصلاحية:</span>
               <span>الدور الأساسي ← قالب الوظيفة ← التجاوز المباشر ← <span className="text-slate-300">النتيجة الفعلية</span></span>
               <span className="text-slate-600">|</span>
-              <span>الرفض الصريح يعلو أي منح موروث</span>
+              <span>«تلقائي» = لا تجاوز مباشر — تُطبَّق قيمة الدور أو الوظيفة</span>
+              <span className="text-slate-600">|</span>
+              <span className="flex items-center gap-1"><MapPin className="size-2.5 text-brand-400" /> الحد التنظيمي (أين) ونطاق البيانات (كم) محوران منفصلان — الحد يقيّد كل النطاقات</span>
+              <span className="text-slate-600">|</span>
+              <span>«الكل» يعني: كل السجلات المسموح بها داخل الحد التنظيمي — لا أكثر</span>
+              <span className="text-slate-600">|</span>
+              <span>الرفض الصريح المتجاوز يعلو أي منح من الدور أو الوظيفة</span>
               {profile.authorization.hasOverrides && (
                 <>
                   <span className="text-slate-600">|</span>
@@ -554,11 +694,16 @@ export function PermissionManagerConsole({ users, selectedUserId, onSelectUser, 
               dirty ? 'border-amber-500/40 bg-slate-900/90' : 'border-slate-700/40 bg-slate-900/70',
             )}>
               <div className="flex-1 min-w-0">
-                {dirty ? (
+                {dirty || boundaryDirty ? (
                   <div className="flex flex-wrap items-center gap-1.5">
                     <span className="text-[11px] font-semibold text-amber-300 flex items-center gap-1">
-                      <GitCompare className="size-3" /> {pendingChanges.length} تغيير جاهز للحفظ:
+                      <GitCompare className="size-3" /> {pendingChanges.length + (boundaryDirty ? 1 : 0)} تغيير جاهز للحفظ:
                     </span>
+                    {boundaryDirty && (
+                      <Badge variant="outline" className="text-[9px] border-amber-500/50 text-amber-300">
+                        الحد التنظيمي: {(boundaryDraft?.length ?? 0) > 0 ? `${boundaryDraft!.length} عقدة محددة` : 'تلقائي — من التعيين التنظيمي'}
+                      </Badge>
+                    )}
                     {pendingChanges.slice(0, 6).map((c) => (
                       <Badge key={c.pageKey} variant="outline" className="text-[9px] border-slate-700 text-slate-300">
                         {c.label}
@@ -579,8 +724,11 @@ export function PermissionManagerConsole({ users, selectedUserId, onSelectUser, 
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => setDraft(structuredClone(savedOverrides))}
-                  disabled={!dirty || saving}
+                  onClick={() => {
+                    setDraft(structuredClone(savedOverrides));
+                    setBoundaryDraft(savedBoundary);
+                  }}
+                  disabled={(!dirty && !boundaryDirty) || saving}
                   className="text-xs h-8 border-slate-700 text-slate-300 hover:bg-slate-800"
                 >
                   <RotateCcw className="size-3.5" /> تراجع
@@ -588,7 +736,7 @@ export function PermissionManagerConsole({ users, selectedUserId, onSelectUser, 
                 <Button
                   size="sm"
                   onClick={save}
-                  disabled={!dirty || saving || !editable}
+                  disabled={(!dirty && !boundaryDirty) || saving || !editable}
                   className="bg-brand-600 hover:bg-brand-700 text-white text-xs h-8 gap-1.5"
                 >
                   {saving ? <Loader2 className="size-3.5 animate-spin" /> : <Save className="size-3.5" />}

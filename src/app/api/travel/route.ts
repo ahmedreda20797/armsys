@@ -345,6 +345,10 @@ export async function POST(request: NextRequest) {
       transportationStatus: transportationStatus || null,
       notes: notes || null,
       status: status || 'upcoming',
+      // §DEAL-DATES — creation is the CREATED dimension; even a
+      // created-as-completed record has no trustworthy closure
+      // moment, so closedAt starts null (unknown, never fabricated).
+      closedAt: null,
     });
 
     return NextResponse.json(travelDeal, { status: 201 });

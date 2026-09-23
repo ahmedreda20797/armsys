@@ -1,0 +1,170 @@
+QNALYS — CANONICAL DEAL DATE SEMANTICS ACROSS THE ENTIRE SYSTEM
+Delivery Note — 2026-09-21
+======================================================================
+
+CANONICAL CONTRACT (§DEAL-DATES)
+--------------------------------
+One shared semantic layer — src/lib/deal-dates.ts — is now the ONLY
+place that decides which date a deal-derived metric is counted by:
+
+  CREATED → createdAt      record creation / intake activity
+  CLOSED  → closedAt       observed successful completion
+                           (closed deals, sales productivity)
+  TRAVEL  → departureDate  the customer's travel date
+                           (travel operations, travel volume)
+
+In Qnalys the deal entity IS the travel deal (collection
+'travelDeals'): departureDate is the travelDate dimension and a
+deal "closes" when its status transitions to 'completed'.
+
+closedAt LEDGER (introduced — §14 compliant)
+--------------------------------------------
+TravelDeal.closedAt (ISO, optional) is stamped ONLY by the server:
+  • PUT /api/travel/[id] — entering 'completed' stamps the observed
+    moment; leaving 'completed' clears it; staying 'completed'
+    keeps the stored value verbatim.
+  • Client-supplied closedAt is always stripped (never trusted).
+  • POST create + Excel upload → closedAt = null. A created-as-
+    completed record or a sheet row has NO trustworthy closure
+    timestamp, so it stays UNKNOWN — never fabricated.
+  • HISTORICAL DATA LIMITATION: every completed deal that predates
+    this change has closedAt = null. Its closure month is
+    UNKNOWABLE and is surfaced as "unknown" — it is NOT counted in
+    any month and NOT derived from its departure date. Going
+    forward, every new completion transition is stamped.
+
+PERIOD ATTRIBUTION — NO HIDDEN FALLBACK
+---------------------------------------
+Old behavior (performance-intelligence/loaders.ts):
+  deal month = departureDate ?? createdAt   ← mixed dimensions
+  (a deal with no departure date silently became a "createdAt"
+  deal; a completed deal's "completion" was really its departure
+  month).
+New behavior — three explicit, independently-tested functions:
+  monthOfDealTravel  → TRAVEL (departureDate; missing → unattributed)
+  monthOfDealClosed  → CLOSED (closedAt; missing → UNKNOWN)
+  monthOfDealCreated → CREATED (createdAt)
+A missing date is NEVER replaced by another dimension's date.
+
+CANONICAL DATE MAPPING (metric → meaning → date)
+------------------------------------------------
+  closedDeals / closedTotal (period)   → successful completions → closedAt
+  closedMonthly (window series)        → observed closures       → closedAt
+  closedUnknownMonth                   → completions w/o closedAt → UNKNOWN (surfaced)
+  travelTotal (period) / monthly       → customer travel volume   → departureDate
+  byStatus / active / canceled         → operational snapshot     → status (not period-attributed)
+  completionRate                       → status snapshot share    → status (among travel-period deals)
+  evidenceRecordMonth('travelDeals')   → evidence grouping        → departureDate (via canonical helper)
+  upcoming/urgent travel (home, AOCC,
+  travel page, travel-status lib)      → travel operations        → departureDate (unchanged)
+  unseen/polling counters              → record activity          → createdAt (unchanged)
+  KPI QUALITY ENGINE                   → contains NO deal-derived component (verified) — formula untouched
+  monthSnapshots/yearSnapshots closedAt → month-close audit timestamps — a DIFFERENT domain concept, untouched
+
+AFFECTED CONSUMERS (all read the canonical layer; no page computes
+its own "deal month")
+----------------------------------------------------------------------
+  src/lib/deal-dates.ts                                   NEW — getDealBusinessDate / getDealMonthKey /
+                                                          countClosedDealsForMonth / closedAtForStatusTransition
+  src/types/index.ts                                      TravelDeal += closedAt?: string | null
+  src/lib/performance-intelligence/loaders.ts             monthOfTravelDeal (mixed) → 3 dimension functions
+  src/lib/performance-intelligence/assemble.ts            TRAVEL + CLOSED attributions wired separately
+  src/lib/performance-intelligence/operations-analysis.ts aggregateTravelDeals: travelTotal + closedTotal +
+                                                          closedMonthly + closedUnknownMonth
+  src/lib/performance-intelligence/types.ts               TravelDealFacts restructured (dimension-explicit)
+  src/lib/analytics/engine.ts + types.ts                  AnalyticsDealResult: total → travelTotal,
+                                                          + closedTotal echo; deals analysis stays
+                                                          operational (no sales targets — comment §15)
+  python-analytics/employee_analytics.py                  mirrors the same field contract (parity preserved)
+  src/lib/hr-decision/report.ts                           productivity scorecard now labeled by dimension:
+                                                          'صفقات مكتملة (تاريخ الإغلاق)' = closedTotal,
+                                                          'حجم السفر (تاريخ المغادرة)' = travelTotal,
+                                                          + unknown-closure row when present;
+                                                          ops facts dealsTotal/dealsCompleted →
+                                                          dealsTravelVolume/dealsClosed; team aggregates
+                                                          travelVolume/closedDeals
+  src/lib/hr-decision/status-engine.ts                    PRODUCTIVITY factor value = closedTotal (closedAt);
+                                                          signal names both dimensions + unknown note
+  src/lib/hr-decision/service.ts                          scorecard label lookups updated to match
+  src/components/pages/quality-kpi/HrDecisionView.tsx     card leads with closed deals (تاريخ الإغلاق)
+  src/components/print/print-adapters.ts                  HR print carries BOTH dimensions — same canonical
+                                                          numbers as the UI (no recomputation, §12)
+  src/components/pages/quality-kpi/smart-report/
+    view-model.ts / report-sections.tsx                   DealsView dimension-explicit; closed vs travel chips;
+                                                          unknown-closure footnote
+  src/components/pages/quality-kpi/PerformanceAnalysisTab.tsx  dimension-labeled count chips
+  src/components/pages/quality-kpi/smart-report/analytics-view.ts  'deals.monthlyCount' label states the travel date
+  src/lib/ai/quality/input-builder.ts                     fact_deals names both dimensions + unknown count
+  src/lib/ai/quality/verification.ts                      travelDealCount reads travelTotal
+  src/app/api/travel/[id]/route.ts                        server-side closedAt ledger (client value stripped)
+  src/app/api/travel/route.ts (POST)                      closedAt starts null — creation ≠ closure
+  src/app/api/travel/upload/route.ts                      Excel import → closedAt null (no source timestamp)
+  src/app/api/employee-360/[id]/route.ts                  travel stats += closedCurrentMonth (closedAt) +
+                                                          closedUnknownMonth; active trips stay status-based
+  src/components/pages/Employee360Page.tsx                fixed the FALSE 'الرحلات النشطة — الشهر الحالي' label
+                                                          (status is not period-attributed) → 'الرحلات
+                                                          النشطة (حالياً)' + new truthful closed-month card
+  src/lib/evidence/record-projection.ts                   travelDeals evidence month routes through the
+                                                          canonical helper (also accepts D/M/YYYY now)
+
+UNCHANGED (verified correct, per §6/§16)
+----------------------------------------
+  • lib/travel-status.ts — near-travel/today/tomorrow/return logic
+    stays 100% departureDate-based (its own tests pin it).
+  • home/stats upcomingTravel + completed/inProgress counters —
+    status-based operational, no period attribution.
+  • AOCC urgent travel events — departureDate proximity.
+  • unseen.ts / background polling / notifications — untouched.
+  • KPI framework (kpi-framework/kpi-reporting) — zero deal
+    references; the quality KPI formula is untouched.
+  • Complaints/CAPA linked to deals — quality-domain attribution
+    rules preserved (§9).
+  • Authentication, permissions, scopes — untouched.
+
+TESTS (focused, all green)
+--------------------------
+  NEW src/lib/__tests__/deal-dates.test.ts — 16 tests:
+    the 3 non-negotiable examples (closed 28/08 + travel 15/09;
+    closed 05/09 + travel 10/10; closedAt null + travel populated),
+    dimension independence (created Jul / closed Aug / travel Sep),
+    unparseable = unknown, NO travelDate fallback for CLOSED,
+    NO createdAt fallback for TRAVEL, near-travel uses departure
+    (closed-tomorrow-deal still near; closed-today-next-month not),
+    closedAt transition ledger, countClosedDealsForMonth (MTD +
+    historical months attributed by closedAt).
+  performance-intelligence.test.ts — +4 (§17.1/2/12/14/15): one deal
+    counts in August for closures and September for travel;
+    completed-without-closedAt stays UNKNOWN (never attributed by
+    its departure month); historical closedMonthly series.
+  hr-decision.test.ts — +3 (§17.6): HR scorecard + productivity
+    factor values come from closedTotal, unknown closures surfaced;
+    NOT_AVAILABLE only when BOTH dimensions are empty.
+  smart-quality-report-ui.test.ts — +1: DealsView keeps CLOSED
+    (closedAt) separate from the status snapshot.
+  Updated fixtures: parity-fixtures, analytics fixtures/view tests,
+  python-analytics dataset, perf-intelligence DEALS assertions.
+  tsc: source-clean. eslint: clean on all changed files.
+  FULL SUITE: 2238 tests — 2232 pass, 6 fail — the SAME 6 failures
+  already present on the clean tree (sidebar-state ×2, travel-status,
+  quality-ai-ui-contract, download-opt contracts, find-user-by-email);
+  zero new failures. Python↔TypeScript parity suite passes.
+
+ACCEPTANCE ANSWERS (§19)
+------------------------
+  1  Employee's September closed deals      → CLOSED (closedAt)   ✓ independent
+  2  Customers traveling in September       → TRAVEL (departure)  ✓ independent
+  3  Deals created in September             → CREATED             ✓ independent
+  4  Deals the employee is expected to travel with → operational status + departure ✓
+  5  KPI/productivity deals                → CLOSED (closedAt)   ✓ (KPI quality formula itself has no deal component)
+  6  HR sales productivity                 → closedAt-derived, dimension-labeled ✓
+  7  Trips needing operational attention   → travelDate + existing status logic ✓ (unchanged)
+
+HISTORICAL-DATA LIMITATION
+--------------------------
+  All pre-existing 'completed' travel deals lack a closure timestamp.
+  Their closed-month attribution is UNKNOWN (explicitly surfaced as
+  'مكتملة بتاريخ إغلاق غير محدد' in HR/smart-report/360) and they are
+  never counted in any month nor derived from travel dates. From this
+  release onward, every completion transition stamps a truthful
+  server-side closedAt, so closed-deal period history accrues
+  naturally from live data.

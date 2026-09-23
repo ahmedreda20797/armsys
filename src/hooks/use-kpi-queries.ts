@@ -605,3 +605,40 @@ export function useKpiReportTable(
     staleTime: 15_000,
   });
 }
+
+/** Extra params for the HR decision-support endpoints. */
+export interface HrDecisionReportParams extends KpiReportTableParams {
+  decisionStatus?: string;
+}
+
+/**
+ * HR Decision-Support Team Report — deterministic statuses + the
+ * factors behind them (/api/reports/hr-performance/decision). The
+ * server resolves audience + scope; the response carries the
+ * HR-safe projection only (no technical evidence exists on it).
+ */
+export function useHrDecisionReport(month: string | null, params: HrDecisionReportParams = {}) {
+  const qs = kpiReportQueryString(params, month);
+  return useQuery({
+    queryKey: [...reportsKey('hr-decision'), month ?? 'none', qs],
+    queryFn: () => apiFetch(`/api/reports/hr-performance/decision${qs.startsWith('?') ? qs.slice(1) : qs}`),
+    enabled: !!month,
+    staleTime: 15_000,
+    retry: 1,
+  });
+}
+
+/** One employee's HR decision-support report (the team-row drill-down). */
+export function useHrDecisionEmployeeReport(
+  month: string | null,
+  employeeId: string | null,
+) {
+  const qs = buildQueryString({ month: month ?? undefined, employeeId: employeeId ?? undefined });
+  return useQuery({
+    queryKey: [...reportsKey('hr-decision-employee'), month ?? 'none', employeeId ?? 'none'],
+    queryFn: () => apiFetch(`/api/reports/hr-performance/decision/employee${qs}`),
+    enabled: !!month && !!employeeId,
+    staleTime: 15_000,
+    retry: 1,
+  });
+}

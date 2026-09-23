@@ -4,76 +4,132 @@ import { getAll, getEmployeeMap, TTL } from '@/lib/db';
 import { verifyPermission, requireAuth } from '@/lib/verify-permission';
 import { capaOverdueDays, CAPA_SLA_DAYS } from '@/lib/metrics';
 import { asScopeViewer, filterRowsByEmployeeScope, resolveEmployeeScopeFromDb } from '@/lib/scope/server';
+import { formatDate as sharedFormatDate } from '@/lib/i18n/format';
+import type { Locale } from '@/lib/i18n/dictionary';
 import type { CAPACase } from '@/types';
 
 // ══════════════════════════════════════════════════════════════
-//  Arabic Mapping Tables
+//  Bilingual UI labels for THIS route's own literal strings
+//  (sheet caption, column headers, value-label maps). Data
+//  values (names, codes, descriptions) are never translated.
 // ══════════════════════════════════════════════════════════════
 
-const STATUS_MAP: Record<string, string> = {
-  open: 'مفتوح',
-  investigation: 'تحقيق',
-  root_cause_analysis: 'تحليل السبب الجذري',
-  corrective_action: 'الإجراء التصحيحي',
-  preventive_action: 'الإجراء الوقائي',
-  verification: 'التحقق',
-  closed: 'مغلق',
-  rejected: 'مرفوض',
-  reopened: 'معاد فتحه',
-};
+interface CapaLabels {
+  sheetTitle: string;
+  headers: string[];
+  status: Record<string, string>;
+  priority: Record<string, string>;
+  source: Record<string, string>;
+  correctiveStatus: Record<string, string>;
+  verificationResult: Record<string, string>;
+}
 
-const PRIORITY_MAP: Record<string, string> = {
-  critical: 'حرج',
-  high: 'عالي',
-  medium: 'متوسط',
-  low: 'منخفض',
-};
-
-const SOURCE_MAP: Record<string, string> = {
-  audit: 'تدقيق',
-  complaint: 'شكوى',
-  mistake_pattern: 'نمط أخطاء',
-  management_review: 'مراجعة إدارية',
-  employee_feedback: 'ملاحظات موظف',
-  automation: 'أتمتة',
-  manual: 'يدوي',
-};
-
-const CORRECTIVE_STATUS_MAP: Record<string, string> = {
-  not_started: 'لم يبدأ',
-  in_progress: 'قيد التنفيذ',
-  completed: 'مكتمل',
-};
-
-const VERIFICATION_RESULT_MAP: Record<string, string> = {
-  effective: 'فعّال',
-  partially_effective: 'فعّال جزئياً',
-  not_effective: 'غير فعّال',
+const LABELS: Record<Locale, CapaLabels> = {
+  ar: {
+    sheetTitle: 'تقرير حالات كابا',
+    headers: ['رقم كابا', 'العنوان', 'القسم', 'الموظف', 'الحالة', 'الأولوية', 'التصنيف', 'المصدر', 'وصف المشكلة', 'المسؤول', 'أيام SLA', 'أيام التأخير', 'الإجراء التصحيحي', 'حالة الإجراء التصحيحي', 'الإجراء الوقائي', 'نتيجة التحقق', 'تاريخ الإنشاء', 'تاريخ الإغلاق'],
+    status: {
+      open: 'مفتوح',
+      investigation: 'تحقيق',
+      root_cause_analysis: 'تحليل السبب الجذري',
+      corrective_action: 'الإجراء التصحيحي',
+      preventive_action: 'الإجراء الوقائي',
+      verification: 'التحقق',
+      closed: 'مغلق',
+      rejected: 'مرفوض',
+      reopened: 'معاد فتحه',
+    },
+    priority: {
+      critical: 'حرج',
+      high: 'عالي',
+      medium: 'متوسط',
+      low: 'منخفض',
+    },
+    source: {
+      audit: 'تدقيق',
+      complaint: 'شكوى',
+      mistake_pattern: 'نمط أخطاء',
+      management_review: 'مراجعة إدارية',
+      employee_feedback: 'ملاحظات موظف',
+      automation: 'أتمتة',
+      manual: 'يدوي',
+    },
+    correctiveStatus: {
+      not_started: 'لم يبدأ',
+      in_progress: 'قيد التنفيذ',
+      completed: 'مكتمل',
+    },
+    verificationResult: {
+      effective: 'فعّال',
+      partially_effective: 'فعّال جزئياً',
+      not_effective: 'غير فعّال',
+    },
+  },
+  en: {
+    sheetTitle: 'CAPA Cases Report',
+    headers: ['CAPA ID', 'Title', 'Department', 'Employee', 'Status', 'Priority', 'Category', 'Source', 'Problem Description', 'Assignee', 'SLA Days', 'Overdue Days', 'Corrective Action', 'Corrective Status', 'Preventive Action', 'Verification Result', 'Created At', 'Closed At'],
+    status: {
+      open: 'Open',
+      investigation: 'Investigation',
+      root_cause_analysis: 'Root Cause Analysis',
+      corrective_action: 'Corrective Action',
+      preventive_action: 'Preventive Action',
+      verification: 'Verification',
+      closed: 'Closed',
+      rejected: 'Rejected',
+      reopened: 'Reopened',
+    },
+    priority: {
+      critical: 'Critical',
+      high: 'High',
+      medium: 'Medium',
+      low: 'Low',
+    },
+    source: {
+      audit: 'Audit',
+      complaint: 'Complaint',
+      mistake_pattern: 'Mistake Pattern',
+      management_review: 'Management Review',
+      employee_feedback: 'Employee Feedback',
+      automation: 'Automation',
+      manual: 'Manual',
+    },
+    correctiveStatus: {
+      not_started: 'Not Started',
+      in_progress: 'In Progress',
+      completed: 'Completed',
+    },
+    verificationResult: {
+      effective: 'Effective',
+      partially_effective: 'Partially Effective',
+      not_effective: 'Not Effective',
+    },
+  },
 };
 
 // ══════════════════════════════════════════════════════════════
-//  Column Definitions
+//  Column Definitions (headers come from LABELS by language)
 // ══════════════════════════════════════════════════════════════
 
 const COLUMNS = [
-  { key: 'capaId', header: 'رقم كابا', width: 18 },
-  { key: 'title', header: 'العنوان', width: 32 },
-  { key: 'department', header: 'القسم', width: 18 },
-  { key: 'employeeName', header: 'الموظف', width: 22 },
-  { key: 'status', header: 'الحالة', width: 20 },
-  { key: 'priority', header: 'الأولوية', width: 12 },
-  { key: 'issueCategory', header: 'التصنيف', width: 18 },
-  { key: 'source', header: 'المصدر', width: 16 },
-  { key: 'problemDescription', header: 'وصف المشكلة', width: 40 },
-  { key: 'assignedToName', header: 'المسؤول', width: 22 },
-  { key: 'slaDays', header: 'أيام SLA', width: 12 },
-  { key: 'overdueDays', header: 'أيام التأخير', width: 14 },
-  { key: 'correctiveAction', header: 'الإجراء التصحيحي', width: 40 },
-  { key: 'correctiveStatus', header: 'حالة الإجراء التصحيحي', width: 22 },
-  { key: 'preventiveAction', header: 'الإجراء الوقائي', width: 40 },
-  { key: 'verificationResult', header: 'نتيجة التحقق', width: 18 },
-  { key: 'createdAt', header: 'تاريخ الإنشاء', width: 20 },
-  { key: 'closedAt', header: 'تاريخ الإغلاق', width: 20 },
+  { key: 'capaId', width: 18 },
+  { key: 'title', width: 32 },
+  { key: 'department', width: 18 },
+  { key: 'employeeName', width: 22 },
+  { key: 'status', width: 20 },
+  { key: 'priority', width: 12 },
+  { key: 'issueCategory', width: 18 },
+  { key: 'source', width: 16 },
+  { key: 'problemDescription', width: 40 },
+  { key: 'assignedToName', width: 22 },
+  { key: 'slaDays', width: 12 },
+  { key: 'overdueDays', width: 14 },
+  { key: 'correctiveAction', width: 40 },
+  { key: 'correctiveStatus', width: 22 },
+  { key: 'preventiveAction', width: 40 },
+  { key: 'verificationResult', width: 18 },
+  { key: 'createdAt', width: 20 },
+  { key: 'closedAt', width: 20 },
 ] as const;
 
 // ══════════════════════════════════════════════════════════════
@@ -116,33 +172,34 @@ interface ExportRow {
   closedAt: string;
 }
 
-function mapRow(c: CAPACase): ExportRow {
+function mapRow(c: CAPACase, lang: Locale): ExportRow {
+  const labels = LABELS[lang];
   return {
     capaId: c.capaId || '',
     title: c.title || '',
     department: c.department || '',
     employeeName: c.employeeName || '',
-    status: STATUS_MAP[c.status] || c.status,
-    priority: PRIORITY_MAP[c.priority] || c.priority,
+    status: labels.status[c.status] || c.status,
+    priority: labels.priority[c.priority] || c.priority,
     issueCategory: c.issueCategory || '',
-    source: SOURCE_MAP[c.source] || c.source,
+    source: labels.source[c.source] || c.source,
     problemDescription: c.problemDescription || '',
     assignedToName: c.assignedToName || '',
     slaDays: c.slaDays || SLA_DAYS[c.priority] || 7,
     // Dynamic overdue — recomputed at export time, never the stale stored value.
     overdueDays: capaOverdueDays(c),
     correctiveAction: c.correctiveAction || '',
-    correctiveStatus: CORRECTIVE_STATUS_MAP[c.correctiveStatus] || c.correctiveStatus,
+    correctiveStatus: labels.correctiveStatus[c.correctiveStatus] || c.correctiveStatus,
     preventiveAction: c.preventiveAction || '',
-    verificationResult: c.verificationResult ? (VERIFICATION_RESULT_MAP[c.verificationResult] || c.verificationResult) : '',
-    createdAt: c.createdAt ? formatDate(c.createdAt) : '',
-    closedAt: c.closedAt ? formatDate(c.closedAt) : '',
+    verificationResult: c.verificationResult ? (labels.verificationResult[c.verificationResult] || c.verificationResult) : '',
+    createdAt: c.createdAt ? formatDate(c.createdAt, lang) : '',
+    closedAt: c.closedAt ? formatDate(c.closedAt, lang) : '',
   };
 }
 
-function formatDate(iso: string): string {
+function formatDate(iso: string, lang: Locale): string {
   try {
-    return new Date(iso).toLocaleDateString('ar-EG', {
+    return sharedFormatDate(iso, lang, {
       year: 'numeric',
       month: '2-digit',
       day: '2-digit',
@@ -191,12 +248,13 @@ function applyFilters(records: CAPACase[], filters: Filters): CAPACase[] {
 //  Excel Generation
 // ══════════════════════════════════════════════════════════════
 
-async function generateExcel(rows: ExportRow[]): Promise<ArrayBuffer> {
+async function generateExcel(rows: ExportRow[], lang: Locale): Promise<ArrayBuffer> {
+  const labels = LABELS[lang];
   const workbook = new ExcelJS.Workbook();
   workbook.creator = 'Qnlys';
   workbook.created = new Date();
 
-  const sheet = workbook.addWorksheet('تقرير حالات كابا', {
+  const sheet = workbook.addWorksheet(labels.sheetTitle, {
     properties: { tabColor: { argb: '1F4E79' } },
     views: [{ state: 'frozen', ySplit: 1 }],
   });
@@ -207,7 +265,7 @@ async function generateExcel(rows: ExportRow[]): Promise<ArrayBuffer> {
 
   COLUMNS.forEach((col, idx) => {
     const cell = headerRow.getCell(idx + 1);
-    cell.value = col.header;
+    cell.value = labels.headers[idx];
     cell.font = { name: 'Arial', size: 11, bold: true, color: { argb: 'FFFFFF' } };
     cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: '1F4E79' } };
     cell.alignment = { horizontal: 'right', vertical: 'middle', wrapText: true };
@@ -268,8 +326,8 @@ function escapeCsvField(value: unknown): string {
   return str;
 }
 
-function generateCsv(rows: ExportRow[]): string {
-  const headers = COLUMNS.map((c) => c.header);
+function generateCsv(rows: ExportRow[], lang: Locale): string {
+  const headers = LABELS[lang].headers;
   const headerLine = headers.map(escapeCsvField).join(',');
 
   const dataLines = rows.map((row) =>
@@ -293,7 +351,8 @@ export async function POST(request: Request) {
 
     // ── Parse Body ──
     const body = await request.json();
-    const { format, filters = {} } = body;
+    const { format, filters = {}, lang: rawLang } = body;
+    const lang: Locale = rawLang === 'en' ? 'en' : 'ar';
 
     if (!format || !['xlsx', 'csv'].includes(format)) {
       return NextResponse.json({ error: 'format must be "xlsx" or "csv"' }, { status: 400 });
@@ -337,14 +396,14 @@ export async function POST(request: Request) {
     filtered.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
     // ── Map to export rows ──
-    const rows = filtered.map(mapRow);
+    const rows = filtered.map((c) => mapRow(c, lang));
 
     // ── Filename ──
     const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
 
     // ── Generate & Respond ──
     if (format === 'xlsx') {
-      const buffer = await generateExcel(rows);
+      const buffer = await generateExcel(rows, lang);
       return new NextResponse(buffer, {
         headers: {
           'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
@@ -354,7 +413,7 @@ export async function POST(request: Request) {
     }
 
     // CSV with BOM for proper Arabic encoding
-    const csv = '\uFEFF' + generateCsv(rows);
+    const csv = '\uFEFF' + generateCsv(rows, lang);
     return new NextResponse(csv, {
       headers: {
         'Content-Type': 'text/csv; charset=utf-8',

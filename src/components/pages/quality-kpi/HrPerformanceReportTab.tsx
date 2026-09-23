@@ -20,7 +20,7 @@
 //  printing this sanitized view can never leak technical detail.
 // ══════════════════════════════════════════════════════════════
 
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { Printer, ShieldCheck } from 'lucide-react';import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -33,6 +33,10 @@ import {
 } from '@/components/ui/table';
 import { useHrPerformanceReport } from '@/hooks/use-kpi-queries';
 import { usePageState } from '@/hooks/use-page-state';
+import { useLanguage } from '@/lib/i18n/language-context';
+import { T } from '@/lib/i18n/T';
+import { translateUIText } from '@/lib/i18n/ui-text';
+import { formatInteger } from '@/lib/i18n/format';
 import type { HrPerformanceReport } from '@/lib/report-audience';
 import {
   StatusBadge,
@@ -41,17 +45,19 @@ import {
 } from './kpi-reports-shared';
 import { hrPerformanceToPrintModel } from '@/components/print/print-adapters';
 import { openPrintReport } from '@/components/print/print-report-store';
+import HrDecisionView from './HrDecisionView';
 
 const STATUS_OPTIONS = [
   'AVAILABLE', 'PENDING', 'INCOMPLETE', 'ZERO', 'FINALIZED',
   'NO_SCHEME', 'AMBIGUOUS', 'OVERRIDE_NOT_RESOLVABLE',
 ] as const;
 
-const EMPLOYMENT_LABELS_AR: Record<string, string> = {
-  active: 'نشط',
-  inactive: 'غير نشط',
-  archived: 'مؤرشف',
-  unknown: '—',
+// Locale-aware employment-status labels (enum-code map: [ar, en]).
+const EMPLOYMENT_LABELS: Record<string, [string, string]> = {
+  active: ['نشط', 'Active'],
+  inactive: ['غير نشط', 'Inactive'],
+  archived: ['مؤرشف', 'Archived'],
+  unknown: ['—', '—'],
 };
 
 const TOTAL_LABELS_AR: Array<{ key: keyof HrPerformanceReport['totals']; label: string }> = [
@@ -64,6 +70,11 @@ const TOTAL_LABELS_AR: Array<{ key: keyof HrPerformanceReport['totals']; label: 
 ];
 
 export default function HrPerformanceReportTab({ month }: { month: string }) {
+  // Sub-view toggle: the sanitized RESULT table (original HR view)
+  // or the richer DECISION-SUPPORT projection. Local state — a view
+  // preference, not a filter; the persisted slot keeps only filters.
+  const [view, setView] = useState<'result' | 'decision'>('result');
+  const { locale } = useLanguage();
   // Phase 6.3: filter context persists per user (same convention as
   // the technical table tab — slot-scoped to this audience view).
   const [filters, setFilters] = usePageState<{
@@ -111,42 +122,75 @@ export default function HrPerformanceReportTab({ month }: { month: string }) {
       <div className="no-print flex items-center gap-2 rounded-xl border border-emerald-500/20 bg-emerald-500/5 px-3 py-2">
         <ShieldCheck className="size-4 text-emerald-400 shrink-0" />
         <p className="text-[11px] text-slate-300">
-          تقرير الموارد البشرية — نتيجة الأداء النهائية والسياق التنظيمي فقط.
-          <span className="text-slate-500"> التفاصيل الفنية (الأدلة، الخصومات، الملاحظات) لا تُرسل من الخادم لهذا التقرير أساساً.</span>
+          <T>تقرير الموارد البشرية — نتيجة الأداء النهائية والسياق التنظيمي فقط.</T>
+          <span className="text-slate-500"> <T>التفاصيل الفنية (الأدلة، الخصومات، الملاحظات) لا تُرسل من الخادم لهذا التقرير أساسا.</T></span>
         </p>
       </div>
 
-      {/* Filters (same design language as the technical table) */}
+      {/* Shared row: sub-view toggle + search (applies to both views) */}
       <div className="no-print flex items-center gap-2 flex-wrap">
+        <div className="flex rounded-lg border border-slate-700/60 overflow-hidden">
+          <button
+            type="button"
+            onClick={() => setView('result')}
+            className={`px-3 h-9 text-xs transition-colors ${view === 'result' ? 'bg-emerald-500/15 text-emerald-300' : 'bg-slate-900/60 text-slate-400 hover:bg-slate-800'}`}
+          >
+            <T>نتيجة الأداء</T>
+          </button>
+          <button
+            type="button"
+            onClick={() => setView('decision')}
+            className={`px-3 h-9 text-xs border-r border-slate-700/60 transition-colors ${view === 'decision' ? 'bg-emerald-500/15 text-emerald-300' : 'bg-slate-900/60 text-slate-400 hover:bg-slate-800'}`}
+          >
+            <T>قرار دعم</T>
+          </button>
+        </div>
         <Input
           value={filters.search}
           onChange={(e) => setFilters((s) => ({ ...s, search: e.target.value }))}
-          placeholder="بحث بالاسم أو الكود..."
+          placeholder={translateUIText('بحث بالاسم أو الكود...', locale)}
           className="h-9 w-56 bg-slate-900/60 border-slate-700/60"
         />
+      </div>
+
+      {view === 'decision' ? (
+        <HrDecisionView
+          month={month}
+          filters={{
+            search: filters.search,
+            department: filters.department,
+            team: filters.team,
+            onDepartmentChange: (v) => setFilters((s) => ({ ...s, department: v })),
+            onTeamChange: (v) => setFilters((s) => ({ ...s, team: v })),
+          }}
+        />
+      ) : (
+        <>
+      {/* Filters (same design language as the technical table) */}
+      <div className="no-print flex items-center gap-2 flex-wrap">
         <Select value={filters.department} onValueChange={(v) => setFilters((s) => ({ ...s, department: v }))}>
-          <SelectTrigger className="h-9 w-44 bg-slate-900/60 border-slate-700/60"><SelectValue placeholder="القسم" /></SelectTrigger>
+          <SelectTrigger className="h-9 w-44 bg-slate-900/60 border-slate-700/60"><SelectValue placeholder={translateUIText('القسم', locale)} /></SelectTrigger>
           <SelectContent className="max-h-56">
-            <SelectItem value="all">كل الأقسام</SelectItem>
+            <SelectItem value="all"><T>كل الأقسام</T></SelectItem>
             {departments.map((d) => <SelectItem key={d} value={d}>{d}</SelectItem>)}
           </SelectContent>
         </Select>
         <Select value={filters.team} onValueChange={(v) => setFilters((s) => ({ ...s, team: v }))}>
-          <SelectTrigger className="h-9 w-44 bg-slate-900/60 border-slate-700/60"><SelectValue placeholder="الفريق" /></SelectTrigger>
+          <SelectTrigger className="h-9 w-44 bg-slate-900/60 border-slate-700/60"><SelectValue placeholder={translateUIText('الفريق', locale)} /></SelectTrigger>
           <SelectContent className="max-h-56">
-            <SelectItem value="all">كل الفرق</SelectItem>
+            <SelectItem value="all"><T>كل الفرق</T></SelectItem>
             {teams.map((t) => <SelectItem key={t} value={t}>{t}</SelectItem>)}
           </SelectContent>
         </Select>
         <Select value={filters.status} onValueChange={(v) => setFilters((s) => ({ ...s, status: v }))}>
-          <SelectTrigger className="h-9 w-40 bg-slate-900/60 border-slate-700/60"><SelectValue placeholder="حالة النتيجة" /></SelectTrigger>
+          <SelectTrigger className="h-9 w-40 bg-slate-900/60 border-slate-700/60"><SelectValue placeholder={translateUIText('حالة النتيجة', locale)} /></SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">كل الحالات</SelectItem>
+            <SelectItem value="all"><T>كل الحالات</T></SelectItem>
             {STATUS_OPTIONS.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
           </SelectContent>
         </Select>
         <Button variant="outline" size="sm" className="h-9 border-slate-700/60 text-slate-300 hover:bg-slate-800 gap-1.5" onClick={openPrint} disabled={!report}>
-          <Printer className="size-3.5" /> طباعة
+          <Printer className="size-3.5" /> <T>طباعة</T>
         </Button>
       </div>
 
@@ -154,7 +198,7 @@ export default function HrPerformanceReportTab({ month }: { month: string }) {
       {report && (
         <div className="flex items-center gap-2 text-[11px] text-slate-500">
           <ValueBasisBadge basis={report.valueBasis} />
-          <span>{report.finalized ? 'شهر مغلق — نتائج مجمّدة' : 'شهر مفتوح — نتائج حية'}</span>
+          <span><T>{report.finalized ? 'شهر مغلق — نتائج مجمّدة' : 'شهر مفتوح — نتائج حية'}</T></span>
         </div>
       )}
 
@@ -164,8 +208,8 @@ export default function HrPerformanceReportTab({ month }: { month: string }) {
           {TOTAL_LABELS_AR.map(({ key, label }) => (
             <Card key={key} className="border-slate-700/40 bg-slate-800/30">
               <CardContent className="px-3 py-2.5">
-                <p className="text-[10px] text-slate-500">{label}</p>
-                <p className="text-lg font-bold text-slate-100 tabular-nums">{report.totals[key]}</p>
+                <p className="text-[10px] text-slate-500"><T>{label}</T></p>
+                <p className="text-lg font-bold text-slate-100 tabular-nums">{formatInteger(report.totals[key], locale)}</p>
               </CardContent>
             </Card>
           ))}
@@ -180,7 +224,7 @@ export default function HrPerformanceReportTab({ month }: { month: string }) {
       ) : !report || report.rows.length === 0 ? (
         <Card className="border-slate-700/40 bg-slate-800/30">
           <CardContent className="py-10 text-center text-sm text-slate-400">
-            لا توجد صفوف لعرضها — تحقق من الفلاتر أو الفترة المحددة
+            <T>لا توجد صفوف لعرضها — تحقق من الفلاتر أو الفترة المحددة</T>
           </CardContent>
         </Card>
       ) : (
@@ -189,14 +233,14 @@ export default function HrPerformanceReportTab({ month }: { month: string }) {
             <Table>
               <TableHeader>
                 <TableRow className="border-slate-700/60 hover:bg-transparent">
-                  <TableHead className="text-slate-400 text-xs">الموظف</TableHead>
-                  <TableHead className="text-slate-400 text-xs hidden md:table-cell">القسم</TableHead>
-                  <TableHead className="text-slate-400 text-xs hidden md:table-cell">الفريق</TableHead>
-                  <TableHead className="text-slate-400 text-xs hidden lg:table-cell">الوظيفة</TableHead>
-                  <TableHead className="text-slate-400 text-xs hidden xl:table-cell">حالة العمل</TableHead>
-                  <TableHead className="text-slate-400 text-xs hidden lg:table-cell">خطة الأداء</TableHead>
-                  <TableHead className="text-slate-400 text-xs">نتيجة الأداء</TableHead>
-                  <TableHead className="text-slate-400 text-xs">الحالة</TableHead>
+                  <TableHead className="text-slate-400 text-xs"><T>الموظف</T></TableHead>
+                  <TableHead className="text-slate-400 text-xs hidden md:table-cell"><T>القسم</T></TableHead>
+                  <TableHead className="text-slate-400 text-xs hidden md:table-cell"><T>الفريق</T></TableHead>
+                  <TableHead className="text-slate-400 text-xs hidden lg:table-cell"><T>الوظيفة</T></TableHead>
+                  <TableHead className="text-slate-400 text-xs hidden xl:table-cell"><T>حالة العمل</T></TableHead>
+                  <TableHead className="text-slate-400 text-xs hidden lg:table-cell"><T>خطة الأداء</T></TableHead>
+                  <TableHead className="text-slate-400 text-xs"><T>نتيجة الأداء</T></TableHead>
+                  <TableHead className="text-slate-400 text-xs"><T>الحالة</T></TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -207,14 +251,14 @@ export default function HrPerformanceReportTab({ month }: { month: string }) {
                         <span className="text-sm text-slate-100 truncate max-w-[180px]" title={row.employeeName}>{row.employeeName}</span>
                         {row.employeeCode && <span className="text-[10px] font-mono text-slate-500" dir="ltr">{row.employeeCode}</span>}
                         {row.archivedButEligible && (
-                          <span className="text-[9px] rounded border border-slate-600 text-slate-400 px-1">مؤرشف</span>
+                          <span className="text-[9px] rounded border border-slate-600 text-slate-400 px-1"><T>مؤرشف</T></span>
                         )}
                       </div>
                     </TableCell>
                     <TableCell className="text-slate-300 text-xs hidden md:table-cell">{row.department || '—'}</TableCell>
                     <TableCell className="text-slate-300 text-xs hidden md:table-cell">{row.team || '—'}</TableCell>
                     <TableCell className="text-slate-300 text-xs hidden lg:table-cell">{row.position || '—'}</TableCell>
-                    <TableCell className="text-slate-300 text-xs hidden xl:table-cell">{EMPLOYMENT_LABELS_AR[row.employmentStatus] ?? '—'}</TableCell>
+                    <TableCell className="text-slate-300 text-xs hidden xl:table-cell">{EMPLOYMENT_LABELS[row.employmentStatus]?.[locale === 'en' ? 1 : 0] ?? '—'}</TableCell>
                     <TableCell className="text-slate-400 text-xs hidden lg:table-cell truncate max-w-[160px]" title={row.schemeName ?? undefined}>{row.schemeName || '—'}</TableCell>
                     {/* KPI TRUTH: verbatim canonical result — missing = '—', never 0 */}
                     <TableCell className="text-slate-100 text-sm font-semibold tabular-nums">
@@ -227,6 +271,8 @@ export default function HrPerformanceReportTab({ month }: { month: string }) {
             </Table>
           </div>
         </Card>
+      )}
+        </>
       )}
     </div>
   );

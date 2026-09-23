@@ -50,6 +50,10 @@ import {
   formatContribution,
   formatScore,
 } from './kpi-reports-shared';
+import { T } from '@/lib/i18n/T';
+import { useLanguage } from '@/lib/i18n/language-context';
+import { translateUIText } from '@/lib/i18n/ui-text';
+import { formatDate, formatNumber, formatInteger } from '@/lib/i18n/format';
 
 export type TableTabKind = 'monthly' | 'mtd' | 'historical';
 
@@ -143,6 +147,7 @@ export default function KpiMonthlyTableTab({
 
   const query = useKpiReportTable(kind, month, params);
   const report = query.data as KpiMonthlyReport | undefined;
+  const { locale } = useLanguage();
 
   // §17 comparison dialog state (one dialog, opened from row ⋮)
   const [comparison, setComparison] = useState<{ id: string; name: string } | null>(null);
@@ -161,9 +166,9 @@ export default function KpiMonthlyTableTab({
         },
         `kpi_master_employee_${month}.xlsx`,
       );
-      toast.success('تم تصدير التقرير الشامل لكل الموظفين');
+      toast.success(translateUIText('تم تصدير التقرير الشامل لكل الموظفين', locale));
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'فشل التصدير');
+      toast.error(error instanceof Error ? error.message : translateUIText('فشل التصدير', locale));
     } finally {
       setExportingMaster(false);
     }
@@ -172,13 +177,13 @@ export default function KpiMonthlyTableTab({
   const rowMenu = (row: { employeeId: string; employeeName: string }): OverflowMenuItem[] => [
     {
       key: 'comparison',
-      label: 'مقارنة الأداء',
+      label: translateUIText('مقارنة الأداء', locale),
       icon: <ArrowLeftRight className="size-3.5" />,
       onSelect: () => setComparison({ id: row.employeeId, name: row.employeeName }),
     },
     {
       key: 'e360',
-      label: 'فتح ملف الموظف',
+      label: translateUIText('فتح ملف الموظف', locale),
       icon: <UserIcon className="size-3.5" />,
       onSelect: () => openEmployee360(row.employeeId),
     },
@@ -201,9 +206,9 @@ export default function KpiMonthlyTableTab({
         { monthKey: month, employeeScope: 'all' },
         `${REPORT_IDS[kind]}_${month}.xlsx`,
       );
-      toast.success('تم تصدير التقرير Excel بنجاح');
+      toast.success(translateUIText('تم تصدير التقرير Excel بنجاح', locale));
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'فشل التصدير');
+      toast.error(error instanceof Error ? error.message : translateUIText('فشل التصدير', locale));
     }
   };
 
@@ -216,20 +221,20 @@ export default function KpiMonthlyTableTab({
       <Card className="no-print bg-slate-800/30 border-slate-700/40">
         <CardContent className="p-4 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 items-end">
           <div className="space-y-1.5 col-span-2 md:col-span-1">
-            <Label className="text-xs">بحث بالموظف</Label>
+            <Label className="text-xs"><T>بحث بالموظف</T></Label>
             <Input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="اسم / رقم / معرّف..."
+              placeholder={translateUIText('اسم / رقم / معرّف...', locale)}
               className="h-9"
             />
           </div>
           <div className="space-y-1.5">
-            <Label className="text-xs">القسم</Label>
+            <Label className="text-xs"><T>القسم</T></Label>
             <Select value={department} onValueChange={setDepartment}>
               <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">كل الأقسام</SelectItem>
+                <SelectItem value="all"><T>كل الأقسام</T></SelectItem>
                 {departments.map((d) => (
                   <SelectItem key={d} value={d}>{d}</SelectItem>
                 ))}
@@ -237,11 +242,11 @@ export default function KpiMonthlyTableTab({
             </Select>
           </div>
           <div className="space-y-1.5">
-            <Label className="text-xs">الفريق</Label>
+            <Label className="text-xs"><T>الفريق</T></Label>
             <Select value={team} onValueChange={setTeam}>
               <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">كل الفرق</SelectItem>
+                <SelectItem value="all"><T>كل الفرق</T></SelectItem>
                 {teams.map((t) => (
                   <SelectItem key={t} value={t}>{t}</SelectItem>
                 ))}
@@ -249,11 +254,11 @@ export default function KpiMonthlyTableTab({
             </Select>
           </div>
           <div className="space-y-1.5">
-            <Label className="text-xs">الحالة</Label>
+            <Label className="text-xs"><T>الحالة</T></Label>
             <Select value={status} onValueChange={setStatus}>
               <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">كل الحالات</SelectItem>
+                <SelectItem value="all"><T>كل الحالات</T></SelectItem>
                 {['AVAILABLE', 'PENDING', 'INCOMPLETE', 'ZERO', 'FINALIZED', 'NO_SCHEME'].map((s) => (
                   <SelectItem key={s} value={s} className="font-mono text-xs">{s}</SelectItem>
                 ))}
@@ -261,19 +266,19 @@ export default function KpiMonthlyTableTab({
             </Select>
           </div>
           <div className="space-y-1.5">
-            <Label className="text-xs">نطاق الدرجة</Label>
+            <Label className="text-xs"><T>نطاق الدرجة</T></Label>
             <div className="flex gap-1.5">
               <Input
                 value={minScore}
                 onChange={(e) => setMinScore(e.target.value)}
-                placeholder="من"
+                placeholder={translateUIText('من', locale)}
                 inputMode="numeric"
                 className="h-9"
               />
               <Input
                 value={maxScore}
                 onChange={(e) => setMaxScore(e.target.value)}
-                placeholder="إلى"
+                placeholder={translateUIText('إلى', locale)}
                 inputMode="numeric"
                 className="h-9"
               />
@@ -284,17 +289,17 @@ export default function KpiMonthlyTableTab({
               <Switch
                 checked={includeArchived}
                 onCheckedChange={setIncludeArchived}
-                aria-label="تضمين الموظفين المؤرشفين"
+                aria-label={translateUIText('تضمين الموظفين المؤرشفين', locale)}
               />
-              <Label className="text-xs text-slate-400 whitespace-nowrap">تضمين المؤرشفين</Label>
+              <Label className="text-xs text-slate-400 whitespace-nowrap"><T>تضمين المؤرشفين</T></Label>
             </div>
             <Button variant="outline" size="sm" className="gap-1.5" onClick={() => void handleExportMaster()} disabled={query.isLoading || exportingMaster}>
               {exportingMaster ? <Skeleton className="size-4 rounded-full" /> : <FileSpreadsheet className="h-4 w-4" />}
-              التقرير الشامل
+              <T>التقرير الشامل</T>
             </Button>
             <Button variant="outline" size="sm" className="gap-1.5" onClick={handleExport} disabled={query.isLoading}>
               <FileSpreadsheet className="h-4 w-4" />
-              تصدير Excel
+              <T>تصدير Excel</T>
             </Button>
           </div>
         </CardContent>
@@ -304,26 +309,26 @@ export default function KpiMonthlyTableTab({
       {report && (
         <div className="no-print flex flex-wrap gap-2 text-[11px]">
           <Badge variant="outline" className="border-slate-600/50 text-slate-300">
-            مؤهلون: {report.totals.eligibleCount}
+            <T>مؤهلون: </T>{formatInteger(report.totals.eligibleCount, locale)}
           </Badge>
           <Badge variant="outline" className="border-emerald-500/40 text-emerald-300">
-            متاح: {report.totals.available}
+            <T>متاح: </T>{formatInteger(report.totals.available, locale)}
           </Badge>
           <Badge variant="outline" className="border-amber-500/40 text-amber-300">
-            غير مكتمل: {report.totals.incomplete}
+            <T>غير مكتمل: </T>{formatInteger(report.totals.incomplete, locale)}
           </Badge>
           <Badge variant="outline" className="border-slate-500/40 text-slate-300">
-            معلّق: {report.totals.pending}
+            <T>معلّق: </T>{formatInteger(report.totals.pending, locale)}
           </Badge>
           <Badge variant="outline" className="border-red-500/40 text-red-300">
-            صفر: {report.totals.zero}
+            <T>صفر: </T>{formatInteger(report.totals.zero, locale)}
           </Badge>
           <Badge variant="outline" className="border-sky-500/40 text-sky-300">
-            مجمّد: {report.totals.finalized}
+            <T>مجمّد: </T>{formatInteger(report.totals.finalized, locale)}
           </Badge>
           {report.totals.notEligibleCount > 0 && (
             <Badge variant="outline" className="border-slate-600/40 text-slate-500">
-              مستبعدون (غير موظفين بالفترة): {report.totals.notEligibleCount}
+              <T>مستبعدون (غير موظفين بالفترة): </T>{formatInteger(report.totals.notEligibleCount, locale)}
             </Badge>
           )}
         </div>
@@ -334,7 +339,7 @@ export default function KpiMonthlyTableTab({
 
       {query.isError && (
         <Card className="bg-red-950/20 border-red-800/40">
-          <CardContent className="p-6 text-red-300 text-sm">تعذر تحميل التقرير — أعد المحاولة.</CardContent>
+          <CardContent className="p-6 text-red-300 text-sm"><T>تعذر تحميل التقرير — أعد المحاولة.</T></CardContent>
         </Card>
       )}
 
@@ -348,20 +353,20 @@ export default function KpiMonthlyTableTab({
                   <SortableHead label="القسم" sortKey="department" sort={sort} onToggle={toggleSort} />
                   <SortableHead label="الفريق" sortKey="team" sort={sort} onToggle={toggleSort} />
                   <SortableHead label="درجة الجودة (خام)" sortKey="score" sort={sort} onToggle={toggleSort} />
-                  <TableHead className="text-right">الوزن</TableHead>
-                  <TableHead className="text-right">المساهمة</TableHead>
-                  <TableHead className="text-right">حالة الجودة</TableHead>
+                  <TableHead className="text-right"><T>الوزن</T></TableHead>
+                  <TableHead className="text-right"><T>المساهمة</T></TableHead>
+                  <TableHead className="text-right"><T>حالة الجودة</T></TableHead>
                   <SortableHead label="حالة KPI" sortKey="status" sort={sort} onToggle={toggleSort} />
-                  <TableHead className="text-right">الأساس</TableHead>
-                  <TableHead className="text-right">المخطط</TableHead>
-                  <TableHead className="text-right w-10"><span className="sr-only">إجراءات</span></TableHead>
+                  <TableHead className="text-right"><T>الأساس</T></TableHead>
+                  <TableHead className="text-right"><T>المخطط</T></TableHead>
+                  <TableHead className="text-right w-10"><span className="sr-only"><T>إجراءات</T></span></TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {report.rows.length === 0 && (
                   <TableRow>
                     <TableCell colSpan={11} className="text-center text-slate-500 py-8">
-                      لا توجد بيانات مطابقة
+                      <T>لا توجد بيانات مطابقة</T>
                     </TableCell>
                   </TableRow>
                 )}
@@ -372,8 +377,8 @@ export default function KpiMonthlyTableTab({
                         <span className="text-slate-100 flex items-center gap-1.5">
                           {row.employeeName}
                           {row.archivedButEligible && (
-                            <span className="inline-flex items-center gap-1 px-1.5 py-0 rounded-full bg-orange-500/10 border border-orange-500/25 text-orange-400 text-[9px] font-bold" title="مؤرشف — أهلية تاريخية">
-                              <Lock className="h-2.5 w-2.5" /> مؤرشف
+                            <span className="inline-flex items-center gap-1 px-1.5 py-0 rounded-full bg-orange-500/10 border border-orange-500/25 text-orange-400 text-[9px] font-bold" title={translateUIText('مؤرشف — أهلية تاريخية', locale)}>
+                              <Lock className="h-2.5 w-2.5" /> <T>مؤرشف</T>
                             </span>
                           )}
                         </span>
@@ -387,14 +392,14 @@ export default function KpiMonthlyTableTab({
                     <TableCell className="font-mono">
                       {row.quality?.rawScore === null || row.quality === null
                         ? <span className="text-slate-500">—</span>
-                        : <span className="text-slate-100">{formatScore(row.quality.rawScore)}</span>}
+                        : <span className="text-slate-100">{formatScore(row.quality.rawScore, locale)}</span>}
                     </TableCell>
                     <TableCell className="font-mono text-slate-400">
-                      {row.quality ? `${row.quality.weight}%` : '—'}
+                      {row.quality ? `${formatNumber(row.quality.weight, { locale })}%` : '—'}
                     </TableCell>
                     <TableCell className="font-mono">
                       {row.quality
-                        ? <span className="text-slate-100">{formatContribution(row.quality.weightedContribution, row.quality.maxContribution)}</span>
+                        ? <span className="text-slate-100">{formatContribution(row.quality.weightedContribution, row.quality.maxContribution, locale)}</span>
                         : <span className="text-slate-500">—</span>}
                     </TableCell>
                     <TableCell>
@@ -415,7 +420,7 @@ export default function KpiMonthlyTableTab({
                       ) : '—'}
                     </TableCell>
                     <TableCell className="text-right">
-                      <SmartActionMenu actions={rowMenu(row)} label={`إجراءات ${row.employeeName}`} />
+                      <SmartActionMenu actions={rowMenu(row)} label={`${translateUIText('إجراءات', locale)} ${row.employeeName}`} />
                     </TableCell>
                   </TableRow>
                 ))}
@@ -442,14 +447,18 @@ export default function KpiMonthlyTableTab({
 // ─────────────────────────────────────────────────────────────
 
 function BasisBanner({ report, kind }: { report: KpiMonthlyReport; kind: TableTabKind }) {
+  const { locale } = useLanguage();
   if (kind === 'mtd' && report.valueBasis !== 'FINALIZED') {
     return (
       <div className="flex items-start gap-2 rounded-lg border border-cyan-500/30 bg-cyan-500/10 p-3 text-sm text-cyan-200">
         <Info className="h-4 w-4 mt-0.5 shrink-0" />
         <div>
-          <p className="font-medium">MTD — بيانات حية حتى {report.asOfDate ?? 'الآن'}</p>
+          <p className="font-medium">
+            <T>MTD — بيانات حية حتى </T>
+            {report.asOfDate != null ? formatDate(new Date(`${report.asOfDate}T00:00:00`), locale) : <T>الآن</T>}
+          </p>
           <p className="text-cyan-300/80 text-xs">
-            هذه ليست النتيجة النهائية — لا تُوسم FINAL ما لم يُغلق الشهر عبر عملية إغلاق الشهر.
+            <T>هذه ليست النتيجة النهائية — لا تُوسم FINAL ما لم يُغلق الشهر عبر عملية إغلاق الشهر.</T>
           </p>
         </div>
       </div>
@@ -462,11 +471,11 @@ function BasisBanner({ report, kind }: { report: KpiMonthlyReport; kind: TableTa
         <Lock className="h-4 w-4 mt-0.5 shrink-0" />
         <div>
           <p className="font-medium">
-            قيم مجمّدة من إغلاق الشهر
-            {report.closedByName ? ` — بواسطة ${report.closedByName}` : ''}
+            <T>قيم مجمّدة من إغلاق الشهر</T>
+            {report.closedByName ? <> — <T>بواسطة</T> {report.closedByName}</> : ''}
           </p>
           <p className="text-sky-300/80 text-xs">
-            تُقرأ هذه النتائج من اللقطة غير القابلة للتغيير؛ تغيير المخطط الحالي أو بيانات الموظف لا يعدّلها.
+            <T>تُقرأ هذه النتائج من اللقطة غير القابلة للتغيير؛ تغيير المخطط الحالي أو بيانات الموظف لا يعدّلها.</T>
           </p>
         </div>
       </div>
@@ -478,9 +487,9 @@ function BasisBanner({ report, kind }: { report: KpiMonthlyReport; kind: TableTa
     <div className="flex items-start gap-2 rounded-lg border border-orange-500/30 bg-orange-500/10 p-3 text-sm text-orange-200">
       <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
       <div>
-        <p className="font-medium">قيم حية — الشهر لم يُغلق بعد</p>
+        <p className="font-medium"><T>قيم حية — الشهر لم يُغلق بعد</T></p>
         <p className="text-orange-300/80 text-xs">
-          هذه ليست نتيجة نهائية معتمدة؛ لا توجد لقطة مجمّدة لهذا الشهر.
+          <T>هذه ليست نتيجة نهائية معتمدة؛ لا توجد لقطة مجمّدة لهذا الشهر.</T>
         </p>
       </div>
     </div>
@@ -507,7 +516,7 @@ function SortableHead({
         onClick={() => onToggle(sortKey)}
         className={`inline-flex items-center gap-1 text-xs hover:text-slate-200 ${active ? 'text-slate-200' : 'text-slate-400'}`}
       >
-        {label}
+        <T>{label}</T>
         {active ? (
           sort.dir === 'asc' ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />
         ) : (

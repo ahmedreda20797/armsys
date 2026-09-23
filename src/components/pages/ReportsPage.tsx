@@ -4,8 +4,11 @@ import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion';
 import { usePermissions } from '@/hooks/usePermissions';
 import { useAuth } from '@/contexts/AuthContext';
+import { useLanguage } from '@/lib/i18n/language-context';
+import { T } from '@/lib/i18n/T';
+import { translateUIText } from '@/lib/i18n/ui-text';
+import { formatDateTime, formatInteger, formatNumber, formatPercentage, formatMonthKey } from '@/lib/i18n/format';
 import { generateMonthOptions } from '@/lib/date-utils';
-import { formatMonthLabelAr } from '@/lib/month-label';
 import { createId } from '@paralleldrive/cuid2';
 import {
   clearReportSnapshot,
@@ -236,7 +239,7 @@ function SortButton({ field, label, activeField, desc, onToggle }: {
       onClick={() => onToggle(field)}
       className="flex items-center justify-center gap-1 w-full text-slate-400 text-xs font-bold hover:text-brand-400 transition-colors cursor-pointer whitespace-nowrap"
     >
-      <span>{label}</span>
+      <span><T>{label}</T></span>
       <ArrowUpDown className={`size-3 transition-transform ${activeField === field ? (desc ? 'rotate-180' : '') : 'opacity-30'}`} />
     </button>
   );
@@ -248,6 +251,7 @@ function SortButton({ field, label, activeField, desc, onToggle }: {
 export default function ReportsPage() {
   const { canView, canEdit, canExport } = usePermissions('reports');
   const { user } = useAuth();
+  const { locale } = useLanguage();
   const [month, setMonth] = useState('');
   const [report, setReport] = useState<ReportRow[]>([]);
   const [meta, setMeta] = useState<ReportMeta | null>(null);
@@ -367,10 +371,10 @@ export default function ReportsPage() {
         }
       } else {
         const data = await res.json();
-        setError(data.error || 'فشل في إنشاء التقرير');
+        setError(data.error || translateUIText('فشل في إنشاء التقرير', locale));
       }
     } catch {
-      setError('خطأ في الاتصال بالخادم');
+      setError(translateUIText('خطأ في الاتصال بالخادم', locale));
     } finally {
       setGenerating(false);
     }
@@ -406,7 +410,7 @@ export default function ReportsPage() {
       const res = await authFetch('/api/reports/export', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ month, data: report, meta, summary }),
+        body: JSON.stringify({ month, data: report, meta, summary, lang: locale }),
       });
       if (res.ok) {
         const blob = await res.blob();
@@ -449,10 +453,10 @@ export default function ReportsPage() {
         setDetailData(data);
       } else {
         const data = await res.json();
-        setDetailError(data.error || 'فشل في تحميل بيانات الموظف');
+        setDetailError(data.error || translateUIText('فشل في تحميل بيانات الموظف', locale));
       }
     } catch {
-      setDetailError('خطأ في الاتصال بالخادم');
+      setDetailError(translateUIText('خطأ في الاتصال بالخادم', locale));
     } finally {
       setDetailLoading(false);
     }
@@ -570,18 +574,18 @@ export default function ReportsPage() {
   // ── Badge helpers ──
   const getDayStatusBadge = (status: string) => {
     switch (status) {
-      case 'present': return <Badge className="bg-brand-500/15 text-brand-400 border-brand-500/30 text-[11px]">حاضر</Badge>;
-      case 'late': return <Badge className="bg-amber-500/15 text-amber-400 border-amber-500/20 text-[11px]">متأخر</Badge>;
-      case 'absent': return <Badge className="bg-red-500/15 text-red-400 border-red-500/20 text-[11px]">غائب</Badge>;
-      case 'exempt': return <Badge className="bg-cyan-500/15 text-cyan-400 border-cyan-500/20 text-[11px]">معفى</Badge>;
-      default: return <Badge className="bg-slate-500/15 text-slate-400 border-slate-500/20 text-[11px]">غير مسجل</Badge>;
+      case 'present': return <Badge className="bg-brand-500/15 text-brand-400 border-brand-500/30 text-[11px]"><T>حاضر</T></Badge>;
+      case 'late': return <Badge className="bg-amber-500/15 text-amber-400 border-amber-500/20 text-[11px]"><T>متأخر</T></Badge>;
+      case 'absent': return <Badge className="bg-red-500/15 text-red-400 border-red-500/20 text-[11px]"><T>غائب</T></Badge>;
+      case 'exempt': return <Badge className="bg-cyan-500/15 text-cyan-400 border-cyan-500/20 text-[11px]"><T>معفى</T></Badge>;
+      default: return <Badge className="bg-slate-500/15 text-slate-400 border-slate-500/20 text-[11px]"><T>غير مسجل</T></Badge>;
     }
   };
   const getRequestStatusBadge = (status: string) => {
     switch (status) {
-      case 'approved': return <Badge className="bg-green-500/15 text-green-400 border-green-500/20 text-[11px]">مقبول</Badge>;
-      case 'rejected': return <Badge className="bg-red-500/15 text-red-400 border-red-500/20 text-[11px]">مرفوض</Badge>;
-      case 'pending': return <Badge className="bg-amber-500/15 text-amber-400 border-amber-500/20 text-[11px]">معلق</Badge>;
+      case 'approved': return <Badge className="bg-green-500/15 text-green-400 border-green-500/20 text-[11px]"><T>مقبول</T></Badge>;
+      case 'rejected': return <Badge className="bg-red-500/15 text-red-400 border-red-500/20 text-[11px]"><T>مرفوض</T></Badge>;
+      case 'pending': return <Badge className="bg-amber-500/15 text-amber-400 border-amber-500/20 text-[11px]"><T>معلق</T></Badge>;
       default: return <Badge variant="outline" className="text-[11px]">{status}</Badge>;
     }
   };
@@ -598,8 +602,8 @@ export default function ReportsPage() {
     return (
       <div className="flex flex-col items-center justify-center py-20">
         <ShieldCheck className="size-16 text-slate-600 mb-4" />
-        <h2 className="text-xl font-semibold text-slate-400">صلاحية غير كافية</h2>
-        <p className="text-slate-500 mt-2">هذه الصفحة غير متاحة لحسابك</p>
+        <h2 className="text-xl font-semibold text-slate-400"><T>صلاحية غير كافية</T></h2>
+        <p className="text-slate-500 mt-2"><T>هذه الصفحة غير متاحة لحسابك</T></p>
       </div>
     );
   }
@@ -611,48 +615,48 @@ export default function ReportsPage() {
         pageId="reports"
         icon={<BarChart3 className="size-5" />}
         iconClassName="bg-linear-to-br from-brand-500/20 to-brand-500/20 border border-brand-500/30 text-brand-400"
-        description="تقرير الخصومات والحضور الشهري"
+        description={translateUIText('تقرير الخصومات والحضور الشهري', locale)}
       />
 
       {/* ═══════════ Controls ═══════════ */}
       <motion.div initial={{ opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }} className="rounded-xl border border-slate-700/40 bg-slate-800/40 backdrop-blur-sm p-4">
         <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-end">
           <div className="space-y-1.5">
-            <label className="text-slate-400 text-xs font-medium">الشهر</label>
+            <label className="text-slate-400 text-xs font-medium"><T>الشهر</T></label>
             <Select value={month} onValueChange={setMonth}>
               <SelectTrigger className="bg-slate-900/60 border-slate-700/60 text-white w-full sm:w-44 h-9 text-sm">
-                <SelectValue placeholder="اختر شهراً" />
+                <SelectValue placeholder={translateUIText('اختر شهراً', locale)} />
               </SelectTrigger>
               <SelectContent>
                 {months.map((m) => (
-                  <SelectItem key={m} value={m} className="text-white">{m}</SelectItem>
+                  <SelectItem key={m} value={m} className="text-white">{formatMonthKey(m, locale)}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
           </div>
           <div className="space-y-1.5">
-            <label className="text-slate-400 text-xs font-medium flex items-center gap-1"><Filter className="size-3" />تصفية</label>
+            <label className="text-slate-400 text-xs font-medium flex items-center gap-1"><Filter className="size-3" /><T>تصفية</T></label>
             <Select value={filterMode} onValueChange={(v) => setFilterMode(v as FilterMode)}>
               <SelectTrigger className="bg-slate-900/60 border-slate-700/60 text-white w-full sm:w-48 h-9 text-sm">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all" className="text-white">جميع الموظفين</SelectItem>
-                <SelectItem value="committed" className="text-white">التزام عالي (90%+)</SelectItem>
-                <SelectItem value="delayed" className="text-white">لديهم تأخير</SelectItem>
-                <SelectItem value="absent" className="text-white">لديهم غياب</SelectItem>
-                <SelectItem value="quality" className="text-white">لديهم خصم جودة</SelectItem>
-                <SelectItem value="problematic" className="text-white">حالات مشكلة</SelectItem>
+                <SelectItem value="all" className="text-white"><T>جميع الموظفين</T></SelectItem>
+                <SelectItem value="committed" className="text-white"><T>التزام عالي (90%+)</T></SelectItem>
+                <SelectItem value="delayed" className="text-white"><T>لديهم تأخير</T></SelectItem>
+                <SelectItem value="absent" className="text-white"><T>لديهم غياب</T></SelectItem>
+                <SelectItem value="quality" className="text-white"><T>لديهم خصم جودة</T></SelectItem>
+                <SelectItem value="problematic" className="text-white"><T>حالات مشكلة</T></SelectItem>
               </SelectContent>
             </Select>
           </div>
           <div className="space-y-1.5 flex-1 max-w-xs">
-            <label className="text-slate-400 text-xs font-medium flex items-center gap-1"><Search className="size-3" />بحث بالاسم</label>
+            <label className="text-slate-400 text-xs font-medium flex items-center gap-1"><Search className="size-3" /><T>بحث بالاسم</T></label>
             <div className="relative">
               <Search className="absolute right-2.5 top-1/2 -translate-y-1/2 size-3.5 text-slate-500 pointer-events-none" />
               <input
                 type="text"
-                placeholder="اسم الموظف أو القسم..."
+                placeholder={translateUIText('اسم الموظف أو القسم...', locale)}
                 value={empSearch}
                 onChange={(e) => setEmpSearch(e.target.value)}
                 className="w-full bg-slate-900/60 border border-slate-700/60 text-white rounded-md h-9 px-9 text-sm placeholder:text-slate-600 focus:outline-none focus:ring-1 focus:ring-brand-500/50 focus:border-brand-500/50"
@@ -667,18 +671,18 @@ export default function ReportsPage() {
           <div className="flex gap-2 sm:mr-auto">
             <Button onClick={handleGenerate} disabled={!month || generating} size="sm" className="bg-linear-to-r from-brand-600 to-brand-700 hover:from-brand-700 hover:to-brand-800 text-white h-9 px-5 shadow-lg shadow-brand-500/20 transition-all">
               {generating ? (
-                <span className="flex items-center gap-1.5"><span className="size-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />جاري الإنشاء...</span>
+                <span className="flex items-center gap-1.5"><span className="size-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" /><T>جاري الإنشاء...</T></span>
               ) : (
-                <span className="flex items-center gap-1.5"><Play className="size-3.5" />إنشاء التقرير</span>
+                <span className="flex items-center gap-1.5"><Play className="size-3.5" /><T>إنشاء التقرير</T></span>
               )}
             </Button>
             {canExport && (
               <>
                 <Button variant="outline" onClick={handlePrint} disabled={report.length === 0} size="sm" className="border-slate-600 text-slate-300 hover:bg-slate-700 h-9 px-3">
-                  <Printer className="size-3.5 ml-1" />طباعة / PDF
+                  <Printer className="size-3.5 ml-1" /><T>طباعة / PDF</T>
                 </Button>
                 <Button variant="outline" onClick={handleExport} disabled={report.length === 0} size="sm" className="border-slate-600 text-slate-300 hover:bg-slate-700 h-9 px-3">
-                  <Download className="size-3.5 ml-1" />تصدير Excel
+                  <Download className="size-3.5 ml-1" /><T>تصدير Excel</T>
                 </Button>
               </>
             )}
@@ -689,35 +693,35 @@ export default function ReportsPage() {
           {month && (
             <Badge variant="outline" className="border-slate-600/50 text-slate-300 gap-1">
               <CalendarDays className="size-3" />
-              الفترة المختارة: {formatMonthLabelAr(month)}
+              <T>الفترة المختارة: </T>{formatMonthKey(month, locale)}
             </Badge>
           )}
           {hasReport && reportPeriod && (
             <Badge variant="outline" className="border-brand-500/40 text-brand-300 gap-1">
               <FileText className="size-3" />
-              التقرير المعروض: {formatMonthLabelAr(reportPeriod)}
+              <T>التقرير المعروض: </T>{formatMonthKey(reportPeriod, locale)}
             </Badge>
           )}
           {hasReport && reportStatus === 'restored' && (
             <Badge variant="outline" className="border-sky-500/40 text-sky-300">
-              تمت الاستعادة — لم يُعَ احتسابه
+              <T>تمت الاستعادة — لم يُعَ احتسابه</T>
             </Badge>
           )}
           {hasReport && reportStatus === 'generated' && (
             <Badge variant="outline" className="border-emerald-500/40 text-emerald-300">
-              تم التوليد الآن
+              <T>تم التوليد الآن</T>
             </Badge>
           )}
           {hasReport && reportGeneratedAt && (
             <span className="text-slate-500">
-              وُلّد في {new Date(reportGeneratedAt).toLocaleString('ar-EG', { dateStyle: 'medium', timeStyle: 'short' })}
+              <T>وُلّد في </T>{formatDateTime(reportGeneratedAt, locale, { dateStyle: 'medium', timeStyle: 'short' })}
             </span>
           )}
         </div>
         {hasReport && reportPeriod && month && reportPeriod !== month && (
           <div className="mt-2 p-2.5 rounded-lg bg-amber-500/10 border border-amber-500/25 text-amber-300 text-xs flex items-center gap-2">
             <AlertCircle className="size-3.5 shrink-0" />
-            التقرير المعروض من فترة {formatMonthLabelAr(reportPeriod)} — اضغط «إنشاء التقرير» لتوليد فترة {formatMonthLabelAr(month)}.
+            <span><T>التقرير المعروض من فترة </T>{formatMonthKey(reportPeriod, locale)}<T> — اضغط «إنشاء التقرير» لتوليد فترة </T>{formatMonthKey(month, locale)}<T>.</T></span>
           </div>
         )}
         {error && (
@@ -746,22 +750,22 @@ export default function ReportsPage() {
             <div className="flex flex-wrap items-center gap-3 text-xs">
               <div className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-slate-800/60 border border-slate-700/40">
                 <CalendarCheck className="size-3.5 text-brand-400" />
-                <span className="text-slate-400">أيام العمل:</span>
-                <span className="text-white font-bold">{meta.monthWorkingDays}</span>
+                <span className="text-slate-400"><T>أيام العمل:</T></span>
+                <span className="text-white font-bold">{formatInteger(meta.monthWorkingDays, locale)}</span>
               </div>
               <div className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-slate-800/60 border border-slate-700/40">
                 <Users className="size-3.5 text-brand-400" />
-                <span className="text-slate-400">إجمالي الموظفين:</span>
-                <span className="text-white font-bold">{meta.totalEmployees}</span>
+                <span className="text-slate-400"><T>إجمالي الموظفين:</T></span>
+                <span className="text-white font-bold">{formatInteger(meta.totalEmployees, locale)}</span>
               </div>
               {summary && (
                 <div className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-slate-800/60 border border-slate-700/40">
                   <UserCircle className="size-3.5 text-brand-400" />
-                  <span className="text-slate-400">موظفين ببيانات:</span>
-                  <span className="text-white font-bold">{summary.employeesWithData}</span>
+                  <span className="text-slate-400"><T>موظفين ببيانات:</T></span>
+                  <span className="text-white font-bold">{formatInteger(summary.employeesWithData, locale)}</span>
                 </div>
               )}
-              <Badge variant="outline" className="text-[11px] border-slate-600 text-slate-400 h-6 px-2.5">{month}</Badge>
+              <Badge variant="outline" className="text-[11px] border-slate-600 text-slate-400 h-6 px-2.5">{formatMonthKey(month, locale)}</Badge>
             </div>
           )}
 
@@ -769,39 +773,39 @@ export default function ReportsPage() {
           {summary && (
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5">
               <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.02 }} className="rounded-xl border border-brand-500/30 bg-linear-to-br from-emerald-500/10 to-emerald-500/5 px-3.5 py-3">
-                <div className="flex items-center gap-1.5 mb-1.5"><Target className="size-3.5 text-brand-400" /><span className="text-slate-400 text-[10px] font-medium">متوسط الالتزام</span></div>
-                <p className={`text-2xl font-bold leading-tight ${getComplianceColor(summary.avgCompliance)}`} dir="ltr">{summary.avgCompliance}%</p>
+                <div className="flex items-center gap-1.5 mb-1.5"><Target className="size-3.5 text-brand-400" /><span className="text-slate-400 text-[10px] font-medium"><T>متوسط الالتزام</T></span></div>
+                <p className={`text-2xl font-bold leading-tight ${getComplianceColor(summary.avgCompliance)}`} dir="ltr">{formatPercentage(summary.avgCompliance, { locale })}</p>
                 <div className="mt-2 h-1.5 rounded-full bg-slate-700/40 overflow-hidden">
                   <motion.div className={`h-full rounded-full ${getComplianceBg(summary.avgCompliance)}`} initial={{ width: 0 }} animate={{ width: `${Math.min(summary.avgCompliance, 100)}%` }} transition={{ duration: 0.8, ease: 'easeOut' }} />
                 </div>
               </motion.div>
               <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.06 }} className="rounded-xl border border-brand-500/30 bg-emerald-500/5 px-3.5 py-3">
-                <div className="flex items-center gap-1.5 mb-1.5"><CalendarCheck className="size-3.5 text-brand-400" /><span className="text-slate-400 text-[10px] font-medium">إجمالي الحضور</span></div>
-                <p className="text-2xl font-bold text-brand-400 leading-tight" dir="ltr">{summary.totalPresentDays}</p>
-                <p className="text-slate-500 text-[10px] mt-1">يوم حضور</p>
+                <div className="flex items-center gap-1.5 mb-1.5"><CalendarCheck className="size-3.5 text-brand-400" /><span className="text-slate-400 text-[10px] font-medium"><T>إجمالي الحضور</T></span></div>
+                <p className="text-2xl font-bold text-brand-400 leading-tight" dir="ltr">{formatInteger(summary.totalPresentDays, locale)}</p>
+                <p className="text-slate-500 text-[10px] mt-1"><T>يوم حضور</T></p>
               </motion.div>
               <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.10 }} className="rounded-xl border border-amber-500/20 bg-amber-500/5 px-3.5 py-3">
-                <div className="flex items-center gap-1.5 mb-1.5"><Clock className="size-3.5 text-amber-400" /><span className="text-slate-400 text-[10px] font-medium">التأخير</span></div>
-                <p className="text-2xl font-bold text-amber-400 leading-tight" dir="ltr">{summary.totalLateDays}</p>
-                <p className="text-slate-500 text-[10px] mt-1">{summary.totalMinutesLateFormatted} إجمالي</p>
+                <div className="flex items-center gap-1.5 mb-1.5"><Clock className="size-3.5 text-amber-400" /><span className="text-slate-400 text-[10px] font-medium"><T>التأخير</T></span></div>
+                <p className="text-2xl font-bold text-amber-400 leading-tight" dir="ltr">{formatInteger(summary.totalLateDays, locale)}</p>
+                <p className="text-slate-500 text-[10px] mt-1">{summary.totalMinutesLateFormatted} <T>إجمالي</T></p>
               </motion.div>
               <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.14 }} className="rounded-xl border border-red-500/20 bg-red-500/5 px-3.5 py-3">
-                <div className="flex items-center gap-1.5 mb-1.5"><FileWarning className="size-3.5 text-red-400" /><span className="text-slate-400 text-[10px] font-medium">الغياب</span></div>
-                <p className="text-2xl font-bold text-red-400 leading-tight" dir="ltr">{summary.totalAbsentDays}</p>
-                <p className="text-slate-500 text-[10px] mt-1">يوم غياب</p>
+                <div className="flex items-center gap-1.5 mb-1.5"><FileWarning className="size-3.5 text-red-400" /><span className="text-slate-400 text-[10px] font-medium"><T>الغياب</T></span></div>
+                <p className="text-2xl font-bold text-red-400 leading-tight" dir="ltr">{formatInteger(summary.totalAbsentDays, locale)}</p>
+                <p className="text-slate-500 text-[10px] mt-1"><T>يوم غياب</T></p>
               </motion.div>
               <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.18 }} className="rounded-xl border border-cyan-500/20 bg-cyan-500/5 px-3.5 py-3">
-                <div className="flex items-center gap-1.5 mb-1.5"><ShieldCheck className="size-3.5 text-cyan-400" /><span className="text-slate-400 text-[10px] font-medium">إجازات / معفى</span></div>
-                <p className="text-2xl font-bold text-cyan-400 leading-tight" dir="ltr">{summary.totalExemptDays}</p>
-                <p className="text-slate-500 text-[10px] mt-1">يوم معفى</p>
+                <div className="flex items-center gap-1.5 mb-1.5"><ShieldCheck className="size-3.5 text-cyan-400" /><span className="text-slate-400 text-[10px] font-medium"><T>إجازات / معفى</T></span></div>
+                <p className="text-2xl font-bold text-cyan-400 leading-tight" dir="ltr">{formatInteger(summary.totalExemptDays, locale)}</p>
+                <p className="text-slate-500 text-[10px] mt-1"><T>يوم معفى</T></p>
               </motion.div>
               <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.22 }} className="rounded-xl border border-rose-500/20 bg-rose-500/5 px-3.5 py-3">
-                <div className="flex items-center gap-1.5 mb-1.5"><Wallet className="size-3.5 text-rose-400" /><span className="text-slate-400 text-[10px] font-medium">إجمالي الخصم</span></div>
-                <p className="text-2xl font-bold text-rose-400 leading-tight" dir="ltr">{summary.totalDeductionDaysAll.toFixed(1)}</p>
+                <div className="flex items-center gap-1.5 mb-1.5"><Wallet className="size-3.5 text-rose-400" /><span className="text-slate-400 text-[10px] font-medium"><T>إجمالي الخصم</T></span></div>
+                <p className="text-2xl font-bold text-rose-400 leading-tight" dir="ltr">{formatNumber(summary.totalDeductionDaysAll, { locale, minimumFractionDigits: 1, maximumFractionDigits: 1 })}</p>
                 <div className="flex items-center gap-2 mt-1">
-                  <span className="text-slate-500 text-[10px]">يوم</span>
-                  {summary.totalQualityDaysAll > 0 && <span className="text-orange-400/70 text-[10px]">+{summary.totalQualityDaysAll.toFixed(1)}ج</span>}
-                  {summary.totalHrDeductionDaysAll > 0 && <span className="text-pink-400/70 text-[10px]">+{summary.totalHrDeductionDaysAll.toFixed(1)}HR</span>}
+                  <span className="text-slate-500 text-[10px]"><T>يوم</T></span>
+                  {summary.totalQualityDaysAll > 0 && <span className="text-orange-400/70 text-[10px]">+{formatNumber(summary.totalQualityDaysAll, { locale, minimumFractionDigits: 1, maximumFractionDigits: 1 })}<T>ج</T></span>}
+                  {summary.totalHrDeductionDaysAll > 0 && <span className="text-pink-400/70 text-[10px]">+{formatNumber(summary.totalHrDeductionDaysAll, { locale, minimumFractionDigits: 1, maximumFractionDigits: 1 })}HR</span>}
                 </div>
               </motion.div>
             </div>
@@ -811,10 +815,10 @@ export default function ReportsPage() {
           {summary && (
             <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.25 }} className="rounded-xl border border-slate-700/40 bg-slate-800/40 px-4 py-3">
               <div className="flex items-center justify-between mb-2">
-                <span className="text-slate-400 text-xs font-medium">توزيع الالتزام</span>
+                <span className="text-slate-400 text-xs font-medium"><T>توزيع الالتزام</T></span>
                 <div className="flex items-center gap-3 text-[10px]">
-                  <span className="flex items-center gap-1"><span className="size-2 rounded-full bg-emerald-500" /><span className="text-slate-500">ممتاز (90%+): {summary.highComplianceCount}</span></span>
-                  <span className="flex items-center gap-1"><span className="size-2 rounded-full bg-red-500" /><span className="text-slate-500">ضعيف: {summary.lowComplianceCount}</span></span>
+                  <span className="flex items-center gap-1"><span className="size-2 rounded-full bg-emerald-500" /><span className="text-slate-500"><T>ممتاز (90%+): </T>{formatInteger(summary.highComplianceCount, locale)}</span></span>
+                  <span className="flex items-center gap-1"><span className="size-2 rounded-full bg-red-500" /><span className="text-slate-500"><T>ضعيف: </T>{formatInteger(summary.lowComplianceCount, locale)}</span></span>
                 </div>
               </div>
               <div className="flex h-2 rounded-full bg-slate-700/40 overflow-hidden gap-0.5">
@@ -840,15 +844,15 @@ export default function ReportsPage() {
             <div className="flex items-center gap-2 text-xs">
               <Badge variant="outline" className="border-brand-500/30 bg-brand-500/10 text-brand-400 h-6 px-2.5">
                 <Filter className="size-3 ml-1" />
-                {filterMode === 'committed' && 'التزام عالي'}
-                {filterMode === 'delayed' && 'متأخرون'}
-                {filterMode === 'absent' && 'لديهم غياب'}
-                {filterMode === 'quality' && 'خصم جودة'}
-                {filterMode === 'problematic' && 'حالات مشكلة'}
+                {filterMode === 'committed' && <T>التزام عالي</T>}
+                {filterMode === 'delayed' && <T>متأخرون</T>}
+                {filterMode === 'absent' && <T>لديهم غياب</T>}
+                {filterMode === 'quality' && <T>خصم جودة</T>}
+                {filterMode === 'problematic' && <T>حالات مشكلة</T>}
               </Badge>
-              <span className="text-slate-500">عرض <span className="text-white font-bold">{processed.length}</span> من {report.length} موظف</span>
+              <span className="text-slate-500"><T>عرض </T><span className="text-white font-bold">{formatInteger(processed.length, locale)}</span> <T>من</T> {formatInteger(report.length, locale)} <T>موظف</T></span>
               <button onClick={() => setFilterMode('all')} className="text-slate-500 hover:text-brand-400 transition-colors flex items-center gap-0.5">
-                <RotateCcw className="size-3" />إعادة تعيين
+                <RotateCcw className="size-3" /><T>إعادة تعيين</T>
               </button>
             </div>
           )}
@@ -859,14 +863,14 @@ export default function ReportsPage() {
               <TableHeader>
                 <TableRow className="border-slate-700/50 hover:bg-transparent bg-slate-900/60">
                   <TableHead className="text-slate-400 text-xs font-bold py-3 px-3 w-50"><SortButton field="employeeName" label="الموظف" activeField={sortField} desc={sortDir === 'desc'} onToggle={toggleSort} /></TableHead>
-                  <TableHead className="text-slate-400 text-xs font-bold py-3 px-3 text-center w-20">القسم</TableHead>
+                  <TableHead className="text-slate-400 text-xs font-bold py-3 px-3 text-center w-20"><T>القسم</T></TableHead>
                   <TableHead className="text-slate-400 text-xs font-bold py-3 px-3 text-center w-16.25"><SortButton field="totalPresent" label="حضور" activeField={sortField} desc={sortDir === 'desc'} onToggle={toggleSort} /></TableHead>
                   <TableHead className="text-slate-400 text-xs font-bold py-3 px-3 text-center w-17.5"><SortButton field="totalLate" label="تأخير" activeField={sortField} desc={sortDir === 'desc'} onToggle={toggleSort} /></TableHead>
                   <TableHead className="text-slate-400 text-xs font-bold py-3 px-3 text-center w-16.25"><SortButton field="totalAbsent" label="غياب" activeField={sortField} desc={sortDir === 'desc'} onToggle={toggleSort} /></TableHead>
-                  <TableHead className="text-slate-400 text-xs font-bold py-3 px-3 text-center w-13.75">معفى</TableHead>
-                  <TableHead className="text-slate-400 text-xs font-bold py-3 px-3 text-center w-20">خصم حضور</TableHead>
-                  <TableHead className="text-slate-400 text-xs font-bold py-3 px-3 text-center w-20">خصم جودة</TableHead>
-                  <TableHead className="text-slate-400 text-xs font-bold py-3 px-3 text-center w-20">خصم HR</TableHead>
+                  <TableHead className="text-slate-400 text-xs font-bold py-3 px-3 text-center w-13.75"><T>معفى</T></TableHead>
+                  <TableHead className="text-slate-400 text-xs font-bold py-3 px-3 text-center w-20"><T>خصم حضور</T></TableHead>
+                  <TableHead className="text-slate-400 text-xs font-bold py-3 px-3 text-center w-20"><T>خصم جودة</T></TableHead>
+                  <TableHead className="text-slate-400 text-xs font-bold py-3 px-3 text-center w-20"><T>خصم HR</T></TableHead>
                   <TableHead className="text-slate-400 text-xs font-bold py-3 px-3 text-center w-20"><SortButton field="attendanceCompliance" label="الالتزام" activeField={sortField} desc={sortDir === 'desc'} onToggle={toggleSort} /></TableHead>
                   <TableHead className="text-slate-400 text-xs font-bold py-3 px-3 text-center w-18.75"><SortButton field="totalDeductionDays" label="الإجمالي" activeField={sortField} desc={sortDir === 'desc'} onToggle={toggleSort} /></TableHead>
                 </TableRow>
@@ -894,48 +898,48 @@ export default function ReportsPage() {
                           </div>
                         </TableCell>
                         <TableCell className="text-slate-400 text-xs text-center py-3 px-3">{row.department}</TableCell>
-                        <TableCell className="text-center py-3 px-3"><span className="text-brand-400 font-bold text-sm">{row.totalPresent}</span></TableCell>
+                        <TableCell className="text-center py-3 px-3"><span className="text-brand-400 font-bold text-sm">{formatInteger(row.totalPresent, locale)}</span></TableCell>
                         <TableCell className="text-center py-3 px-3">
                           <div className="flex flex-col items-center leading-tight">
-                            <span className={`text-sm font-bold ${row.totalLate > 3 ? 'text-red-400' : row.totalLate > 0 ? 'text-amber-400' : 'text-slate-600'}`}>{row.totalLate}</span>
+                            <span className={`text-sm font-bold ${row.totalLate > 3 ? 'text-red-400' : row.totalLate > 0 ? 'text-amber-400' : 'text-slate-600'}`}>{formatInteger(row.totalLate, locale)}</span>
                             {row.totalMinutesLate > 0 && <span className="text-[10px] text-slate-500" dir="ltr">{row.totalMinutesLateFormatted}</span>}
                           </div>
                         </TableCell>
                         <TableCell className="text-center py-3 px-3">
-                          <span className={`text-sm font-bold ${row.totalAbsent > 2 ? 'text-red-400' : row.totalAbsent > 0 ? 'text-amber-400' : 'text-slate-600'}`}>{row.totalAbsent}</span>
+                          <span className={`text-sm font-bold ${row.totalAbsent > 2 ? 'text-red-400' : row.totalAbsent > 0 ? 'text-amber-400' : 'text-slate-600'}`}>{formatInteger(row.totalAbsent, locale)}</span>
                         </TableCell>
                         <TableCell className="text-center py-3 px-3">
-                          <span className={`text-sm ${row.totalExempt > 0 ? 'text-cyan-400 font-medium' : 'text-slate-600'}`}>{row.totalExempt > 0 ? row.totalExempt : '—'}</span>
+                          <span className={`text-sm ${row.totalExempt > 0 ? 'text-cyan-400 font-medium' : 'text-slate-600'}`}>{row.totalExempt > 0 ? formatInteger(row.totalExempt, locale) : '—'}</span>
                         </TableCell>
                         <TableCell className="text-center py-3 px-3">
-                          <span className={`text-xs font-medium ${row.totalAttendanceDeductionDays > 0 ? 'text-amber-400' : 'text-slate-600'}`} dir="ltr">{row.totalAttendanceDeductionDays > 0 ? row.totalAttendanceDeductionDays.toFixed(2) : '—'}</span>
+                          <span className={`text-xs font-medium ${row.totalAttendanceDeductionDays > 0 ? 'text-amber-400' : 'text-slate-600'}`} dir="ltr">{row.totalAttendanceDeductionDays > 0 ? formatNumber(row.totalAttendanceDeductionDays, { locale, minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—'}</span>
                         </TableCell>
                         <TableCell className="text-center py-3 px-3">
                           {row.totalQualityDays > 0 ? (
                             <div className="flex flex-col items-center leading-tight">
-                              <span className="text-orange-400 font-medium text-xs" dir="ltr">{row.totalQualityDays.toFixed(1)} يوم</span>
-                              {row.totalQualityAmount > 0 && <span className="text-[10px] text-slate-500" dir="ltr">{row.totalQualityAmount} جنيه</span>}
+                              <span className="text-orange-400 font-medium text-xs" dir="ltr">{formatNumber(row.totalQualityDays, { locale, minimumFractionDigits: 1, maximumFractionDigits: 1 })} <T>يوم</T></span>
+                              {row.totalQualityAmount > 0 && <span className="text-[10px] text-slate-500" dir="ltr">{formatNumber(row.totalQualityAmount, { locale })} <T>جنيه</T></span>}
                             </div>
                           ) : <span className="text-slate-600 text-xs">—</span>}
                         </TableCell>
                         <TableCell className="text-center py-3 px-3">
                           {(row.totalHrDeductionDays || 0) > 0 || (row.totalHrDeductionAmount || 0) > 0 ? (
                             <div className="flex flex-col items-center leading-tight">
-                              {(row.totalHrDeductionDays || 0) > 0 && <span className="text-pink-400 font-medium text-xs" dir="ltr">{row.totalHrDeductionDays.toFixed(1)} يوم</span>}
-                              {(row.totalHrDeductionAmount || 0) > 0 && <span className="text-[10px] text-slate-500" dir="ltr">{row.totalHrDeductionAmount} جنيه</span>}
+                              {(row.totalHrDeductionDays || 0) > 0 && <span className="text-pink-400 font-medium text-xs" dir="ltr">{formatNumber(row.totalHrDeductionDays, { locale, minimumFractionDigits: 1, maximumFractionDigits: 1 })} <T>يوم</T></span>}
+                              {(row.totalHrDeductionAmount || 0) > 0 && <span className="text-[10px] text-slate-500" dir="ltr">{formatNumber(row.totalHrDeductionAmount, { locale })} <T>جنيه</T></span>}
                             </div>
                           ) : <span className="text-slate-600 text-xs">—</span>}
                         </TableCell>
                         <TableCell className="text-center py-3 px-3">
                           <div className="flex flex-col items-center gap-1">
-                            <span className={`text-xs font-bold px-2.5 py-0.5 rounded-md border ${getComplianceBadgeBg(row.attendanceCompliance)} ${getComplianceColor(row.attendanceCompliance)}`}>{row.attendanceCompliance}%</span>
+                            <span className={`text-xs font-bold px-2.5 py-0.5 rounded-md border ${getComplianceBadgeBg(row.attendanceCompliance)} ${getComplianceColor(row.attendanceCompliance)}`}>{formatPercentage(row.attendanceCompliance, { locale })}</span>
                             <div className="w-14 h-1.5 rounded-full bg-slate-700/40 overflow-hidden">
                               <motion.div className={`h-full rounded-full ${getComplianceBg(row.attendanceCompliance)}`} initial={{ width: 0 }} animate={{ width: `${Math.min(row.attendanceCompliance, 100)}%` }} transition={{ duration: 0.5, delay: idx * 0.02 }} />
                             </div>
                           </div>
                         </TableCell>
                         <TableCell className="text-center py-3 px-3">
-                          <span className={`text-sm font-bold ${row.totalDeductionDays > 1 ? 'text-rose-400' : row.totalDeductionDays > 0 ? 'text-amber-400' : 'text-slate-600'}`} dir="ltr">{row.totalDeductionDays > 0 ? row.totalDeductionDays.toFixed(2) : '—'}</span>
+                          <span className={`text-sm font-bold ${row.totalDeductionDays > 1 ? 'text-rose-400' : row.totalDeductionDays > 0 ? 'text-amber-400' : 'text-slate-600'}`} dir="ltr">{row.totalDeductionDays > 0 ? formatNumber(row.totalDeductionDays, { locale, minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—'}</span>
                         </TableCell>
                       </TableRow>
 
@@ -954,7 +958,7 @@ export default function ReportsPage() {
                                 {detailLoading && (
                                   <div className="flex items-center justify-center gap-2 py-10">
                                     <Loader2 className="size-5 text-brand-400 animate-spin" />
-                                    <span className="text-slate-400 text-sm">جاري تحميل التفاصيل...</span>
+                                    <span className="text-slate-400 text-sm"><T>جاري تحميل التفاصيل...</T></span>
                                   </div>
                                 )}
 
@@ -977,67 +981,67 @@ export default function ReportsPage() {
                                     {/* ── Employee Profile ── */}
                                     <div className="rounded-xl border border-slate-700/40 bg-slate-800/60 p-5">
                                       <h3 className="text-brand-400 text-sm font-bold mb-4 flex items-center gap-2">
-                                        <Briefcase className="size-4" />بيانات الموظف
+                                        <Briefcase className="size-4" /><T>بيانات الموظف</T>
                                       </h3>
                                       <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-4">
-                                        <div><p className="text-slate-500 text-xs mb-1">الاسم</p><p className="text-white text-sm font-bold">{detailData.employee.name}</p></div>
-                                        <div><p className="text-slate-500 text-xs mb-1">الكود</p><p className="text-slate-300 text-sm">{detailData.employee.code || '—'}</p></div>
-                                        <div><p className="text-slate-500 text-xs mb-1">القسم</p><p className="text-slate-300 text-sm">{detailData.employee.department || '—'}</p></div>
-                                        <div><p className="text-slate-500 text-xs mb-1">المسمى الوظيفي</p><p className="text-slate-300 text-sm">{detailData.employee.position || '—'}</p></div>
-                                        <div><p className="text-slate-500 text-xs mb-1">الوردية</p><p className="text-slate-300 text-sm" dir="ltr">{detailData.employee.shiftStart || '—'} {detailData.employee.shiftEnd ? `- ${detailData.employee.shiftEnd}` : ''}</p></div>
-                                        <div><p className="text-slate-500 text-xs mb-1">تاريخ التعيين</p><p className="text-slate-300 text-sm" dir="ltr">{detailData.employee.hireDate || '—'}</p></div>
-                                        <div><p className="text-slate-500 text-xs mb-1">رقم الهاتف</p><p className="text-slate-300 text-sm flex items-center gap-1" dir="ltr"><Phone className="size-3" />{detailData.employee.mobile || '—'}</p></div>
-                                        <div><p className="text-slate-500 text-xs mb-1">نسبة الالتزام</p><p className={`text-lg font-bold ${getComplianceColor(detailData.reportSummary.attendanceCompliance)}`} dir="ltr">{detailData.reportSummary.attendanceCompliance}%</p></div>
+                                        <div><p className="text-slate-500 text-xs mb-1"><T>الاسم</T></p><p className="text-white text-sm font-bold">{detailData.employee.name}</p></div>
+                                        <div><p className="text-slate-500 text-xs mb-1"><T>الكود</T></p><p className="text-slate-300 text-sm">{detailData.employee.code || '—'}</p></div>
+                                        <div><p className="text-slate-500 text-xs mb-1"><T>القسم</T></p><p className="text-slate-300 text-sm">{detailData.employee.department || '—'}</p></div>
+                                        <div><p className="text-slate-500 text-xs mb-1"><T>المسمى الوظيفي</T></p><p className="text-slate-300 text-sm">{detailData.employee.position || '—'}</p></div>
+                                        <div><p className="text-slate-500 text-xs mb-1"><T>الوردية</T></p><p className="text-slate-300 text-sm" dir="ltr">{detailData.employee.shiftStart || '—'} {detailData.employee.shiftEnd ? `- ${detailData.employee.shiftEnd}` : ''}</p></div>
+                                        <div><p className="text-slate-500 text-xs mb-1"><T>تاريخ التعيين</T></p><p className="text-slate-300 text-sm" dir="ltr">{detailData.employee.hireDate || '—'}</p></div>
+                                        <div><p className="text-slate-500 text-xs mb-1"><T>رقم الهاتف</T></p><p className="text-slate-300 text-sm flex items-center gap-1" dir="ltr"><Phone className="size-3" />{detailData.employee.mobile || '—'}</p></div>
+                                        <div><p className="text-slate-500 text-xs mb-1"><T>نسبة الالتزام</T></p><p className={`text-lg font-bold ${getComplianceColor(detailData.reportSummary.attendanceCompliance)}`} dir="ltr">{formatPercentage(detailData.reportSummary.attendanceCompliance, { locale })}</p></div>
                                       </div>
                                     </div>
 
                                     {/* ── Monthly Summary Stats ── */}
                                     <div className="rounded-xl border border-slate-700/40 bg-slate-800/60 p-5">
                                       <h3 className="text-brand-400 text-sm font-bold mb-4 flex items-center gap-2">
-                                        <BarChart3 className="size-4" />ملخص الشهر
+                                        <BarChart3 className="size-4" /><T>ملخص الشهر</T>
                                       </h3>
                                       <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-7 gap-3">
-                                        <StatBox label="أيام العمل" value={`${detailData.reportSummary.monthWorkingDays}`} color="text-slate-300" />
-                                        <StatBox label="أيام فعلي" value={`${detailData.reportSummary.effectiveWorkingDays}`} color="text-slate-300" />
-                                        <StatBox label="حضور" value={`${detailData.reportSummary.totalPresent}`} color="text-brand-400" />
-                                        <StatBox label="تأخير" value={`${detailData.reportSummary.totalLate}`} color="text-amber-400" sub={detailData.reportSummary.totalMinutesLateFormatted} />
-                                        <StatBox label="غياب" value={`${detailData.reportSummary.totalAbsent}`} color="text-red-400" />
-                                        <StatBox label="معفى" value={`${detailData.reportSummary.totalExempt}`} color="text-cyan-400" />
-                                        <StatBox label="أيام إعفاء تلقائي" value={`${detailData.reportSummary.autoExemptDays}/4`} color="text-blue-400" />
-                                        <StatBox label="أيام بونص" value={`${detailData.reportSummary.bonusDays}`} color="text-brand-400" unit="يوم" />
-                                        <StatBox label="خصم تأخير" value={`${detailData.reportSummary.lateDeductionDays.toFixed(2)}`} color="text-amber-400" unit="يوم" />
-                                        <StatBox label="خصم غياب" value={`${detailData.reportSummary.absenceDeductionDays.toFixed(2)}`} color="text-red-400" unit="يوم" />
-                                        <StatBox label="خصم جودة" value={`${detailData.reportSummary.totalQualityDays.toFixed(1)}`} color="text-orange-400" unit="يوم" />
-                                        <StatBox label="إجمالي الخصم" value={`${detailData.reportSummary.totalDeductionDays.toFixed(2)}`} color="text-rose-400" unit="يوم" />
-                                        <StatBox label="غير مسجل" value={`${detailData.reportSummary.unaccountedDays}`} color="text-orange-400" />
-                                        <StatBox label="التزام" value={`${detailData.reportSummary.attendanceCompliance}%`} color={getComplianceColor(detailData.reportSummary.attendanceCompliance)} />
+                                        <StatBox label="أيام العمل" value={formatInteger(detailData.reportSummary.monthWorkingDays, locale)} color="text-slate-300" />
+                                        <StatBox label="أيام فعلي" value={formatInteger(detailData.reportSummary.effectiveWorkingDays, locale)} color="text-slate-300" />
+                                        <StatBox label="حضور" value={formatInteger(detailData.reportSummary.totalPresent, locale)} color="text-brand-400" />
+                                        <StatBox label="تأخير" value={formatInteger(detailData.reportSummary.totalLate, locale)} color="text-amber-400" sub={detailData.reportSummary.totalMinutesLateFormatted} />
+                                        <StatBox label="غياب" value={formatInteger(detailData.reportSummary.totalAbsent, locale)} color="text-red-400" />
+                                        <StatBox label="معفى" value={formatInteger(detailData.reportSummary.totalExempt, locale)} color="text-cyan-400" />
+                                        <StatBox label="أيام إعفاء تلقائي" value={`${formatInteger(detailData.reportSummary.autoExemptDays, locale)}/4`} color="text-blue-400" />
+                                        <StatBox label="أيام بونص" value={formatInteger(detailData.reportSummary.bonusDays, locale)} color="text-brand-400" unit="يوم" />
+                                        <StatBox label="خصم تأخير" value={formatNumber(detailData.reportSummary.lateDeductionDays, { locale, minimumFractionDigits: 2, maximumFractionDigits: 2 })} color="text-amber-400" unit="يوم" />
+                                        <StatBox label="خصم غياب" value={formatNumber(detailData.reportSummary.absenceDeductionDays, { locale, minimumFractionDigits: 2, maximumFractionDigits: 2 })} color="text-red-400" unit="يوم" />
+                                        <StatBox label="خصم جودة" value={formatNumber(detailData.reportSummary.totalQualityDays, { locale, minimumFractionDigits: 1, maximumFractionDigits: 1 })} color="text-orange-400" unit="يوم" />
+                                        <StatBox label="إجمالي الخصم" value={formatNumber(detailData.reportSummary.totalDeductionDays, { locale, minimumFractionDigits: 2, maximumFractionDigits: 2 })} color="text-rose-400" unit="يوم" />
+                                        <StatBox label="غير مسجل" value={formatInteger(detailData.reportSummary.unaccountedDays, locale)} color="text-orange-400" />
+                                        <StatBox label="التزام" value={formatPercentage(detailData.reportSummary.attendanceCompliance, { locale })} color={getComplianceColor(detailData.reportSummary.attendanceCompliance)} />
                                       </div>
                                     </div>
 
                                     {/* ── Actual Attendance Summary Card ── */}
                                     <div className="rounded-xl border border-brand-500/30 bg-linear-to-br from-emerald-500/10 to-emerald-500/5 p-5">
                                       <h3 className="text-brand-400 text-sm font-bold mb-4 flex items-center gap-2">
-                                        <UserCheck className="size-4" />ملخص الحضور الفعلي
+                                        <UserCheck className="size-4" /><T>ملخص الحضور الفعلي</T>
                                       </h3>
                                       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
                                         <div className="rounded-lg bg-slate-900/60 border border-slate-700/30 px-4 py-3 text-center">
-                                          <p className="text-slate-500 text-xs mb-1">إجمالي أيام الحضور</p>
-                                          <p className="text-2xl font-bold text-brand-400" dir="ltr">{detailData.reportSummary.totalPresent + detailData.reportSummary.totalLate}</p>
-                                          <p className="text-slate-600 text-[10px]">من {detailData.reportSummary.monthWorkingDays} يوم</p>
+                                          <p className="text-slate-500 text-xs mb-1"><T>إجمالي أيام الحضور</T></p>
+                                          <p className="text-2xl font-bold text-brand-400" dir="ltr">{formatInteger(detailData.reportSummary.totalPresent + detailData.reportSummary.totalLate, locale)}</p>
+                                          <p className="text-slate-600 text-[10px]"><T>من </T>{formatInteger(detailData.reportSummary.monthWorkingDays, locale)} <T>يوم</T></p>
                                         </div>
                                         <div className="rounded-lg bg-slate-900/60 border border-slate-700/30 px-4 py-3 text-center">
-                                          <p className="text-slate-500 text-xs mb-1">حضور منتظم</p>
-                                          <p className="text-2xl font-bold text-brand-400" dir="ltr">{detailData.reportSummary.totalPresent}</p>
-                                          <p className="text-slate-600 text-[10px]">بدون تأخير</p>
+                                          <p className="text-slate-500 text-xs mb-1"><T>حضور منتظم</T></p>
+                                          <p className="text-2xl font-bold text-brand-400" dir="ltr">{formatInteger(detailData.reportSummary.totalPresent, locale)}</p>
+                                          <p className="text-slate-600 text-[10px]"><T>بدون تأخير</T></p>
                                         </div>
                                         <div className="rounded-lg bg-slate-900/60 border border-slate-700/30 px-4 py-3 text-center">
-                                          <p className="text-slate-500 text-xs mb-1">حضور بتأخير</p>
-                                          <p className="text-2xl font-bold text-amber-400" dir="ltr">{detailData.reportSummary.totalLate}</p>
+                                          <p className="text-slate-500 text-xs mb-1"><T>حضور بتأخير</T></p>
+                                          <p className="text-2xl font-bold text-amber-400" dir="ltr">{formatInteger(detailData.reportSummary.totalLate, locale)}</p>
                                           <p className="text-slate-600 text-[10px]">{detailData.reportSummary.totalMinutesLateFormatted}</p>
                                         </div>
                                         <div className="rounded-lg bg-slate-900/60 border border-slate-700/30 px-4 py-3 text-center">
-                                          <p className="text-slate-500 text-xs mb-1">نسبة الحضور الفعلية</p>
-                                          <p className={`text-2xl font-bold ${getComplianceColor(detailData.reportSummary.attendanceCompliance)}`} dir="ltr">{detailData.reportSummary.attendanceCompliance}%</p>
+                                          <p className="text-slate-500 text-xs mb-1"><T>نسبة الحضور الفعلية</T></p>
+                                          <p className={`text-2xl font-bold ${getComplianceColor(detailData.reportSummary.attendanceCompliance)}`} dir="ltr">{formatPercentage(detailData.reportSummary.attendanceCompliance, { locale })}</p>
                                           <div className="mt-1.5 h-1.5 rounded-full bg-slate-700/40 overflow-hidden">
                                             <div className={`h-full rounded-full ${getComplianceBg(detailData.reportSummary.attendanceCompliance)}`} style={{ width: `${Math.min(detailData.reportSummary.attendanceCompliance, 100)}%` }} />
                                           </div>
@@ -1048,24 +1052,24 @@ export default function ReportsPage() {
                                     {/* ── Daily Breakdown Table ── */}
                                     <div className="rounded-xl border border-slate-700/40 bg-slate-800/60 p-5">
                                       <h3 className="text-brand-400 text-sm font-bold mb-4 flex items-center gap-2">
-                                        <CalendarDays className="size-4" />التفاصيل اليومية ({detailData.dailyBreakdown.length} يوم)
+                                        <CalendarDays className="size-4" /><T>التفاصيل اليومية (</T>{formatInteger(detailData.dailyBreakdown.length, locale)}<T> يوم)</T>
                                       </h3>
                                       <div className="overflow-x-auto">
                                         <Table>
                                           <TableHeader>
                                             <TableRow className="border-slate-700/50 hover:bg-transparent bg-slate-900/60">
-                                              <TableHead className="text-slate-400 text-xs font-bold py-2.5 px-3">التاريخ</TableHead>
-                                              <TableHead className="text-slate-400 text-xs font-bold py-2.5 px-3">اليوم</TableHead>
-                                              <TableHead className="text-slate-400 text-xs font-bold py-2.5 px-3">الحالة</TableHead>
-                                              <TableHead className="text-slate-400 text-xs font-bold py-2.5 px-3 text-center">بصمة دخول</TableHead>
-                                              <TableHead className="text-slate-400 text-xs font-bold py-2.5 px-3 text-center">بصمة خروج</TableHead>
-                                              <TableHead className="text-slate-400 text-xs font-bold py-2.5 px-3 text-center">تسجيل حضور</TableHead>
-                                              <TableHead className="text-slate-400 text-xs font-bold py-2.5 px-3 text-center">تأخير (د)</TableHead>
-                                              <TableHead className="text-slate-400 text-xs font-bold py-2.5 px-3 text-center">الطلب</TableHead>
-                                              <TableHead className="text-slate-400 text-xs font-bold py-2.5 px-3 text-center">خصم غياب</TableHead>
-                                              <TableHead className="text-slate-400 text-xs font-bold py-2.5 px-3 text-center">خصم تأخير</TableHead>
-                                              <TableHead className="text-slate-400 text-xs font-bold py-2.5 px-3">المصدر</TableHead>
-                                              <TableHead className="text-slate-400 text-xs font-bold py-2.5 px-3 text-center w-15">إجراء</TableHead>
+                                              <TableHead className="text-slate-400 text-xs font-bold py-2.5 px-3"><T>التاريخ</T></TableHead>
+                                              <TableHead className="text-slate-400 text-xs font-bold py-2.5 px-3"><T>اليوم</T></TableHead>
+                                              <TableHead className="text-slate-400 text-xs font-bold py-2.5 px-3"><T>الحالة</T></TableHead>
+                                              <TableHead className="text-slate-400 text-xs font-bold py-2.5 px-3 text-center"><T>بصمة دخول</T></TableHead>
+                                              <TableHead className="text-slate-400 text-xs font-bold py-2.5 px-3 text-center"><T>بصمة خروج</T></TableHead>
+                                              <TableHead className="text-slate-400 text-xs font-bold py-2.5 px-3 text-center"><T>تسجيل حضور</T></TableHead>
+                                              <TableHead className="text-slate-400 text-xs font-bold py-2.5 px-3 text-center"><T>تأخير (د)</T></TableHead>
+                                              <TableHead className="text-slate-400 text-xs font-bold py-2.5 px-3 text-center"><T>الطلب</T></TableHead>
+                                              <TableHead className="text-slate-400 text-xs font-bold py-2.5 px-3 text-center"><T>خصم غياب</T></TableHead>
+                                              <TableHead className="text-slate-400 text-xs font-bold py-2.5 px-3 text-center"><T>خصم تأخير</T></TableHead>
+                                              <TableHead className="text-slate-400 text-xs font-bold py-2.5 px-3"><T>المصدر</T></TableHead>
+                                              <TableHead className="text-slate-400 text-xs font-bold py-2.5 px-3 text-center w-15"><T>إجراء</T></TableHead>
                                             </TableRow>
                                           </TableHeader>
                                           <TableBody>
@@ -1076,24 +1080,24 @@ export default function ReportsPage() {
                                                 <TableCell className="py-2 px-3">
                                                   <div className="flex items-center gap-1.5">
                                                     {getDayStatusBadge(day.status)}
-                                                    {day.autoFree && <Badge className="bg-blue-500/10 text-blue-400 border-blue-500/20 text-[10px]">إعفاء تلقائي</Badge>}
-                                                    {day.waived && !day.autoFree && <Badge className="bg-brand-500/10 text-brand-400 border-brand-500/30 text-[10px]">ملغى يدوياً</Badge>}
+                                                    {day.autoFree && <Badge className="bg-blue-500/10 text-blue-400 border-blue-500/20 text-[10px]"><T>إعفاء تلقائي</T></Badge>}
+                                                    {day.waived && !day.autoFree && <Badge className="bg-brand-500/10 text-brand-400 border-brand-500/30 text-[10px]"><T>ملغى يدوياً</T></Badge>}
                                                   </div>
                                                 </TableCell>
                                                 <TableCell className="text-center py-2 px-3 text-xs text-slate-400" dir="ltr">{day.biometricCheckIn || '—'}</TableCell>
                                                 <TableCell className="text-center py-2 px-3 text-xs text-slate-400" dir="ltr">{day.biometricCheckOut || '—'}</TableCell>
                                                 <TableCell className="text-center py-2 px-3 text-xs text-slate-400" dir="ltr">{day.attendanceCheckIn || '—'}</TableCell>
                                                 <TableCell className="text-center py-2 px-3 text-xs">
-                                                  {day.minutesLate > 0 ? <span className="text-amber-400 font-medium" dir="ltr">{day.minutesLate}</span> : <span className="text-slate-600">—</span>}
+                                                  {day.minutesLate > 0 ? <span className="text-amber-400 font-medium" dir="ltr">{formatInteger(day.minutesLate, locale)}</span> : <span className="text-slate-600">—</span>}
                                                 </TableCell>
                                                 <TableCell className="text-center py-2 px-3">
                                                   {day.requestStatus ? getRequestStatusBadge(day.requestStatus) : <span className="text-slate-600 text-xs">—</span>}
                                                 </TableCell>
                                                 <TableCell className="text-center py-2 px-3 text-xs">
-                                                  {day.absenceDeduction > 0 ? <span className="text-red-400 font-medium" dir="ltr">{day.absenceDeduction}</span> : day.waived && day.waivedType === 'absence' ? <span className="text-brand-400 text-[10px]">0 (ملغى)</span> : day.autoFree ? <span className="text-blue-400 text-[10px]">0 (إعفاء تلقائي)</span> : <span className="text-slate-600">—</span>}
+                                                  {day.absenceDeduction > 0 ? <span className="text-red-400 font-medium" dir="ltr">{formatNumber(day.absenceDeduction, { locale })}</span> : day.waived && day.waivedType === 'absence' ? <span className="text-brand-400 text-[10px]"><T>0 (ملغى)</T></span> : day.autoFree ? <span className="text-blue-400 text-[10px]"><T>0 (إعفاء تلقائي)</T></span> : <span className="text-slate-600">—</span>}
                                                 </TableCell>
                                                 <TableCell className="text-center py-2 px-3 text-xs">
-                                                  {(day.lateDeduction || 0) > 0 && !day.waived ? <span className="text-amber-400 font-medium" dir="ltr">{day.lateDeduction}</span> : day.waived && day.waivedType === 'late' ? <span className="text-brand-400 text-[10px]">0 (ملغى)</span> : <span className="text-slate-600">—</span>}
+                                                  {(day.lateDeduction || 0) > 0 && !day.waived ? <span className="text-amber-400 font-medium" dir="ltr">{formatNumber(day.lateDeduction, { locale })}</span> : day.waived && day.waivedType === 'late' ? <span className="text-brand-400 text-[10px]"><T>0 (ملغى)</T></span> : <span className="text-slate-600">—</span>}
                                                 </TableCell>
                                                 <TableCell className="py-2 px-3 text-xs text-slate-500 max-w-55 truncate">{day.source}</TableCell>
                                                 <TableCell className="text-center py-2 px-2">
@@ -1103,7 +1107,7 @@ export default function ReportsPage() {
                                                       onClick={(e) => { e.stopPropagation(); handleWaiveDeduction(detailData.employee.id, day.date, 'absence', day.absenceDeduction); }}
                                                       disabled={waivingDate === day.date}
                                                       className="p-1 rounded-md bg-red-500/10 hover:bg-red-500/20 text-red-400 hover:text-red-300 transition-colors disabled:opacity-50"
-                                                      title="إلغاء خصم الغياب"
+                                                      title={translateUIText('إلغاء خصم الغياب', locale)}
                                                     >
                                                       {waivingDate === day.date ? <Loader2 className="size-3.5 animate-spin" /> : <Ban className="size-3.5" />}
                                                     </button>
@@ -1114,7 +1118,7 @@ export default function ReportsPage() {
                                                       onClick={(e) => { e.stopPropagation(); handleWaiveDeduction(detailData.employee.id, day.date, 'late', day.lateDeduction); }}
                                                       disabled={waivingDate === day.date}
                                                       className="p-1 rounded-md bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 hover:text-amber-300 transition-colors disabled:opacity-50 mr-1"
-                                                      title="إلغاء خصم التأخير"
+                                                      title={translateUIText('إلغاء خصم التأخير', locale)}
                                                     >
                                                       {waivingDate === day.date ? <Loader2 className="size-3.5 animate-spin" /> : <Ban className="size-3.5" />}
                                                     </button>
@@ -1125,7 +1129,7 @@ export default function ReportsPage() {
                                                       onClick={(e) => { e.stopPropagation(); handleRestoreDeduction(detailData.employee.id, day.date); }}
                                                       disabled={waivingDate === day.date}
                                                       className="p-1 rounded-md bg-brand-500/10 hover:bg-brand-500/20 text-brand-400 hover:text-brand-300 transition-colors disabled:opacity-50"
-                                                      title="استعادة الخصم"
+                                                      title={translateUIText('استعادة الخصم', locale)}
                                                     >
                                                       <CheckCircle2 className="size-3.5" />
                                                     </button>
@@ -1142,7 +1146,7 @@ export default function ReportsPage() {
                                     {detailData.requests.length > 0 && (
                                       <div className="rounded-xl border border-slate-700/40 bg-slate-800/60 p-5">
                                         <h3 className="text-brand-400 text-sm font-bold mb-4 flex items-center gap-2">
-                                          <FileText className="size-4" />الطلبات ({detailData.requests.length})
+                                          <FileText className="size-4" /><T>الطلبات (</T>{formatInteger(detailData.requests.length, locale)}<T>)</T>
                                         </h3>
                                         <div className="space-y-2">
                                           {detailData.requests.map((req) => (
@@ -1165,19 +1169,19 @@ export default function ReportsPage() {
                                     {detailData.qualityDeductions.length > 0 && (
                                       <div className="rounded-xl border border-slate-700/40 bg-slate-800/60 p-5">
                                         <h3 className="text-brand-400 text-sm font-bold mb-4 flex items-center gap-2">
-                                          <Award className="size-4" />خصومات الجودة ({detailData.qualityDeductions.length})
+                                          <Award className="size-4" /><T>خصومات الجودة (</T>{formatInteger(detailData.qualityDeductions.length, locale)}<T>)</T>
                                         </h3>
                                         <div className="space-y-2">
                                           {detailData.qualityDeductions.map((q) => (
                                             <div key={q.id} className="rounded-lg bg-slate-900/60 border border-slate-700/30 p-4">
                                               <div className="flex items-center justify-between mb-1.5">
                                                 <div className="flex items-center gap-2">
-                                                  <Badge className="bg-orange-500/15 text-orange-400 border-orange-500/20 text-xs">{q.type}</Badge>
+                                                  <Badge className="bg-orange-500/15 text-orange-400 border-orange-500/20 text-xs"><T>{q.type}</T></Badge>
                                                   <span className="text-slate-400 text-xs" dir="ltr">{q.date}</span>
                                                 </div>
                                                 <div className="flex items-center gap-3 text-sm">
-                                                  {q.deductionDays > 0 && <span className="text-orange-400" dir="ltr">{q.deductionDays} يوم</span>}
-                                                  {q.deductionAmount > 0 && <span className="text-rose-400" dir="ltr">{q.deductionAmount} جنيه</span>}
+                                                  {q.deductionDays > 0 && <span className="text-orange-400" dir="ltr">{formatNumber(q.deductionDays, { locale })} <T>يوم</T></span>}
+                                                  {q.deductionAmount > 0 && <span className="text-rose-400" dir="ltr">{formatNumber(q.deductionAmount, { locale })} <T>جنيه</T></span>}
                                                 </div>
                                               </div>
                                               {q.description && <p className="text-slate-400 text-sm">{q.description}</p>}
@@ -1202,20 +1206,20 @@ export default function ReportsPage() {
                   <TableCell className="py-3 px-3">
                     <div className="flex items-center gap-1.5">
                       <TrendingUp className="size-3.5 text-brand-400" />
-                      <span className="text-brand-400 font-bold text-sm">الإجمالي</span>
-                      <span className="text-slate-600 text-[10px]">({processed.length} موظف)</span>
+                      <span className="text-brand-400 font-bold text-sm"><T>الإجمالي</T></span>
+                      <span className="text-slate-600 text-[10px]">({formatInteger(processed.length, locale)} <T>موظف</T>)</span>
                     </div>
                   </TableCell>
                   <TableCell />
-                  <TableCell className="text-center py-3 px-3"><span className="text-brand-400 text-sm font-bold">{totalPresent}</span></TableCell>
-                  <TableCell className="text-center py-3 px-3"><span className="text-amber-400 text-sm font-bold">{totalLate}</span></TableCell>
-                  <TableCell className="text-center py-3 px-3"><span className="text-red-400 text-sm font-bold">{totalAbsent}</span></TableCell>
-                  <TableCell className="text-center py-3 px-3"><span className="text-cyan-400 text-sm">{totalExempt > 0 ? totalExempt : '—'}</span></TableCell>
+                  <TableCell className="text-center py-3 px-3"><span className="text-brand-400 text-sm font-bold">{formatInteger(totalPresent, locale)}</span></TableCell>
+                  <TableCell className="text-center py-3 px-3"><span className="text-amber-400 text-sm font-bold">{formatInteger(totalLate, locale)}</span></TableCell>
+                  <TableCell className="text-center py-3 px-3"><span className="text-red-400 text-sm font-bold">{formatInteger(totalAbsent, locale)}</span></TableCell>
+                  <TableCell className="text-center py-3 px-3"><span className="text-cyan-400 text-sm">{totalExempt > 0 ? formatInteger(totalExempt, locale) : '—'}</span></TableCell>
                   <TableCell />
-                  <TableCell className="text-center py-3 px-3"><span className="text-orange-400 text-sm">{totalQualDays > 0 ? totalQualDays.toFixed(1) : '—'}</span></TableCell>
-                  <TableCell className="text-center py-3 px-3"><span className="text-pink-400 text-sm">{totalHrDedDays > 0 ? totalHrDedDays.toFixed(1) : '—'}</span></TableCell>
+                  <TableCell className="text-center py-3 px-3"><span className="text-orange-400 text-sm">{totalQualDays > 0 ? formatNumber(totalQualDays, { locale, minimumFractionDigits: 1, maximumFractionDigits: 1 }) : '—'}</span></TableCell>
+                  <TableCell className="text-center py-3 px-3"><span className="text-pink-400 text-sm">{totalHrDedDays > 0 ? formatNumber(totalHrDedDays, { locale, minimumFractionDigits: 1, maximumFractionDigits: 1 }) : '—'}</span></TableCell>
                   <TableCell />
-                  <TableCell className="text-center py-3 px-3"><span className="text-rose-400 text-sm font-bold" dir="ltr">{totalDed > 0 ? totalDed.toFixed(2) : '—'}</span></TableCell>
+                  <TableCell className="text-center py-3 px-3"><span className="text-rose-400 text-sm font-bold" dir="ltr">{totalDed > 0 ? formatNumber(totalDed, { locale, minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—'}</span></TableCell>
                 </TableRow>
               </TableBody>
             </Table>
@@ -1232,10 +1236,10 @@ export default function ReportsPage() {
 function StatBox({ label, value, color, sub, unit }: { label: string; value: string; color: string; sub?: string; unit?: string }) {
   return (
     <div className="rounded-lg bg-slate-900/60 border border-slate-700/30 px-3 py-3 text-center">
-      <p className="text-slate-500 text-xs mb-1">{label}</p>
+      <p className="text-slate-500 text-xs mb-1"><T>{label}</T></p>
       <p className={`font-bold text-base ${color}`} dir="ltr">{value}</p>
       {sub && <p className="text-slate-600 text-[10px]" dir="ltr">{sub}</p>}
-      {unit && <p className="text-slate-600 text-[10px]">{unit}</p>}
+      {unit && <p className="text-slate-600 text-[10px]"><T>{unit}</T></p>}
     </div>
   );
 }

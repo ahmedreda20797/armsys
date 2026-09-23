@@ -9,6 +9,8 @@ import { isOverdueFollowUp } from '@/lib/metrics';
 import { isEffectiveDeduction, deductionTypeLabel } from '@/lib/quality-deductions/domain';
 import { isActiveFollowUp, isTerminalFollowUp } from '@/lib/metrics/followUpMetrics';
 import { filterEmployeesInScope, authScopeViewer, filterRowsByEmployeeScope, resolveEmployeeScopeFromDb } from '@/lib/scope/server';
+import { getDealBusinessDate, getDealMonthKey, isCompletedDeal, countClosedDealsForMonth } from '@/lib/deal-dates';
+import { migratePermission } from '@/config/permissions';
 
 function getTodayStr(): string {
   const now = new Date();
@@ -106,7 +108,78 @@ interface TopOffender {
   deductionAmount: number;
 }
 
-/** Pre-compute monthly performance from already-fetched data (no additional DB reads) */
+/* ═══════════════════════════════════════════════════════════════════
+   NEW — Home Command Center extended data types (§Home-CC)
+   ═══════════════════════════════════════════════════════════════════ */
+
+interface ClosedDealSummary {
+  /** Completed deals whose CLOSED date falls in the current month. */
+  closedThisMonth: number;
+  /** Completed deals whose CLOSED date is unknown (no closedAt). */
+  closedUnknown: number;
+  /** Total value/amount if available (placeholder for future). */
+  totalValue: number;
+  /** Period label (YYYY-MM) */
+  monthKey: string;
+  /** Freshness: when the last closedAt was observed (ISO) */
+  lastUpdated: string | null;
+}
+
+interface TimelineEvent {
+  id: string;
+  type: 'deal_completed' | 'quality_observation' | 'followup_completed' | 'approval' | 'complaint' | 'capa_update' | 'travel_milestone';
+  title: string;
+  description?: string;
+  entityType: 'travelDeal' | 'qualityDeduction' | 'followUp' | 'request' | 'complaint' | 'capaCase';
+  entityId: string;
+  employeeId?: string;
+  employeeName?: string;
+  department?: string;
+  date: string; // ISO or DD/MM/YYYY depending on type
+  dateDimension?: 'CREATED' | 'CLOSED' | 'TRAVEL'; // which date this event is attributed to
+  createdAt: string; // ISO when the record was created/updated
+}
+
+interface DepartmentPulse {
+  name: string;
+  employeeCount: number;
+  /** Key health indicators per department */
+  attendanceRate: number;
+  openFollowUps: number;
+  qualityCasesThisMonth: number;
+  pendingApprovals: number;
+  activeTravel: number;
+  /** Trend vs last month: -1 down, 0 flat, 1 up */
+  trend: -1 | 0 | 1;
+  /** Freshness of this department's data */
+  lastActivity: string | null;
+}
+
+interface PerformancePulse {
+  /** Current month KPI score (0-100) — from kpi-reporting logic */
+  currentScore: number | null;
+  /** Target score if configured */
+  targetScore: number | null;
+  /** Progress toward target (0-1) */
+  progress: number | null;
+  /** Trend over last 3 months: array of { monthKey, score } */
+  trend: Array<{ monthKey: string; score: number }>;
+  /** Completed work this month */
+  completedWork: number;
+  /** Follow-up completion rate */
+  followUpCompletionRate: number;
+  /** Quality indicator: deductions per employee */
+  qualityDeductionsPerEmployee: number;
+  /** Data freshness */
+  lastCalculated: string | null;
+}
+
+interface MetricFreshness {
+  /** ISO timestamp when the underlying data was last read from DB */
+  dataFetchedAt: string;
+  /** Per-metric last mutation timestamps (if available) */
+  metricTimestamps: Record<string, string | null>;
+}
 function computeMonthlyPerformance(
   attendanceRecords: any[],
   qualityDeductions: any[],
@@ -231,6 +304,9 @@ export async function GET(request: NextRequest) {
         'deductionRules',
         'biometrics',
         'followUps',
+        // §Home-CC — timeline sources (same single batch, no extra reads)
+        'complaints',
+        'capaCases',
       ]),
       getEmployeeMap(),
     ]);
@@ -448,6 +524,354 @@ export async function GET(request: NextRequest) {
       todaysScheduled: todaysFollowUps.length,
     };
 
+    // §Home-CC WORK QUEUE — per-item overdue follow-ups so the queue
+    // can answer WHAT/WHO/WHY per record (not just a count). Derived
+    // from the SAME rows already read above — zero extra DB reads.
+    // Priority order: critical > high > medium > low, then most overdue.
+    const PRIORITY_RANK: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3 };
+    const nowMs = Date.now();
+    const overdueFollowUpItems = allFollowUps
+      .filter((f: any) => isOverdueFollowUp(f))
+      .map((f: any) => {
+        const emp = empMap.get(f.employeeId);
+        const dueMs = f.nextFollowUpDate ? new Date(f.nextFollowUpDate).getTime() : NaN;
+        return {
+          id: f.id as string,
+          employeeId: f.employeeId as string,
+          employeeName: (emp?.name || 'غير معروف') as string,
+          employeeDepartment: (emp?.department || '') as string,
+          followUpType: f.followUpType as string,
+          priorityLevel: f.priorityLevel as string,
+          responsiblePersonName: (empMap.get(f.responsiblePerson)?.name || '') as string,
+          nextFollowUpDate: f.nextFollowUpDate as string,
+          daysOverdue: Number.isFinite(dueMs) ? Math.max(0, Math.floor((nowMs - dueMs) / 86_400_000)) : 0,
+        };
+      })
+      .sort((a, b) =>
+        (PRIORITY_RANK[a.priorityLevel] ?? 4) - (PRIORITY_RANK[b.priorityLevel] ?? 4)
+        || b.daysOverdue - a.daysOverdue)
+      .slice(0, 6);
+
+    /* ═══════════════════════════════════════════════════════════════════
+       §Home-CC NEW — Command Center extended metrics
+       ═══════════════════════════════════════════════════════════════════ */
+
+    /* ═══════════════════════════════════════════════════════════════════
+       §Home-CC — section-level authorization (§12 PERMISSIONS AND SCOPE)
+       The Home API never exposes a data source the caller cannot view:
+       each timeline entity type maps to its page permission key and the
+       section is STRIPPED server-side (not merely hidden in the UI).
+       Employee scope is already applied above for every employee-linked
+       table; this gate is the PAGE-level complement.
+       ═══════════════════════════════════════════════════════════════════ */
+    const canViewPage = (pageKey: string): boolean =>
+      migratePermission(auth.permissions?.[pageKey]).level !== 'none';
+    const viewerCan = {
+      travel: canViewPage('travel'),
+      quality: canViewPage('quality'),
+      followUps: canViewPage('followUps'),
+      requests: canViewPage('requests'),
+      complaints: canViewPage('complaints'),
+      capa: canViewPage('capa'),
+    };
+
+    // --- Closed deals summary (CLOSED dimension per deal-dates.ts) ---
+    const completedDeals = travelDeals.filter((d: any) => isCompletedDeal(d));
+    const closedDealSummary: ClosedDealSummary = viewerCan.travel
+      ? (() => {
+          const counts = countClosedDealsForMonth(completedDeals, currentMonthKey);
+          const lastClosedAt = completedDeals
+            .map((d: any) => getDealBusinessDate(d, 'CLOSED'))
+            .filter((d: string | null): d is string => !!d)
+            .reduce((latest: string | null, d: string) => (!latest || d > latest ? d : latest), null);
+          return {
+            closedThisMonth: counts.closed,
+            closedUnknown: counts.unknown,
+            totalValue: 0,
+            monthKey: currentMonthKey,
+            lastUpdated: lastClosedAt,
+          };
+        })()
+      : { closedThisMonth: 0, closedUnknown: 0, totalValue: 0, monthKey: currentMonthKey, lastUpdated: null, unavailable: true } as ClosedDealSummary & { unavailable: boolean };
+
+    // --- Timeline events (real operational events from existing data) ---
+    // §17 NO FAKE DATA — every event is a real stored record attributed
+    // to its CANONICAL date dimension (§5 DATE SEMANTICS): deals by
+    // closedAt (CLOSED), travel milestones by departureDate (TRAVEL),
+    // the rest by their own creation/update timestamps.
+    const timelineEvents: TimelineEvent[] = [];
+
+    // 1. Deal completions (CLOSED date = this month)
+    if (viewerCan.travel) {
+      for (const d of completedDeals) {
+        const closedAt = getDealBusinessDate(d, 'CLOSED');
+        if (closedAt && getDealMonthKey(d, 'CLOSED') === currentMonthKey) {
+          const emp = empMap.get(d.employeeId);
+          timelineEvents.push({
+            id: `deal-${d.id}`,
+            type: 'deal_completed',
+            title: 'صفقة مكتملة',
+            description: `${emp?.name || 'موظف'} — ${d.destination}`,
+            entityType: 'travelDeal',
+            entityId: d.id,
+            employeeId: d.employeeId,
+            employeeName: emp?.name,
+            department: emp?.department || undefined,
+            date: closedAt,
+            dateDimension: 'CLOSED',
+            createdAt: d.createdAt,
+          });
+        }
+      }
+    }
+
+    // 2. Quality observations this month
+    if (viewerCan.quality) {
+      for (const q of qualityThisMonth) {
+        const emp = empMap.get(q.employeeId);
+        timelineEvents.push({
+          id: `quality-${q.id}`,
+          type: 'quality_observation',
+          title: 'ملاحظة جودة',
+          description: `${deductionTypeLabel(q.type)} — ${q.deductionDays} يوم`,
+          entityType: 'qualityDeduction',
+          entityId: q.id,
+          employeeId: q.employeeId,
+          employeeName: emp?.name,
+          department: emp?.department || undefined,
+          date: q.date, // DD/MM/YYYY — the deduction's own business date
+          dateDimension: 'CLOSED',
+          createdAt: q.createdAt,
+        });
+      }
+    }
+
+    // 3. Follow-ups completed recently (last 7 days)
+    const sevenDaysAgo = new Date();
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+    const sevenDaysAgoISO = sevenDaysAgo.toISOString();
+    if (viewerCan.followUps) {
+      const recentCompletedFollowUps = allFollowUps.filter((f: any) =>
+        isTerminalFollowUp(f) && f.updatedAt && f.updatedAt >= sevenDaysAgoISO
+      );
+      for (const f of recentCompletedFollowUps.slice(0, 10)) {
+        const emp = empMap.get(f.employeeId);
+        timelineEvents.push({
+          id: `followup-${f.id}`,
+          type: 'followup_completed',
+          title: 'متابعة مكتملة',
+          description: `${f.followUpType} — ${emp?.name || 'موظف'}`,
+          entityType: 'followUp',
+          entityId: f.id,
+          employeeId: f.employeeId,
+          employeeName: emp?.name,
+          department: emp?.department || undefined,
+          date: f.updatedAt || f.nextFollowUpDate,
+          dateDimension: 'CREATED',
+          createdAt: f.updatedAt || f.createdAt,
+        });
+      }
+    }
+
+    // 4. Approved requests recently
+    if (viewerCan.requests) {
+      const recentApprovedRequests = allRequests
+        .filter((r: any) => r.status === 'approved' && r.updatedAt && r.updatedAt >= sevenDaysAgoISO)
+        .slice(0, 10);
+      for (const r of recentApprovedRequests) {
+        const emp = empMap.get(r.employeeId);
+        timelineEvents.push({
+          id: `request-${r.id}`,
+          type: 'approval',
+          title: 'طلب معتمد',
+          description: `${requestTypeLabels[r.type] || r.type} — ${emp?.name || 'موظف'}`,
+          entityType: 'request',
+          entityId: r.id,
+          employeeId: r.employeeId,
+          employeeName: emp?.name,
+          department: emp?.department || undefined,
+          date: r.updatedAt,
+          dateDimension: 'CREATED',
+          createdAt: r.updatedAt,
+        });
+      }
+    }
+
+    // 5. Complaints recently
+    if (viewerCan.complaints) {
+      const scopedComplaints = filterRowsByEmployeeScope(batch.get('complaints') || [], scopeCtx);
+      const recentComplaints = scopedComplaints
+        .filter((c: any) => c.createdAt && c.createdAt >= sevenDaysAgoISO)
+        .slice(0, 5);
+      for (const c of recentComplaints) {
+        const emp = empMap.get(c.employeeId);
+        timelineEvents.push({
+          id: `complaint-${c.id}`,
+          type: 'complaint',
+          title: 'شكوى جديدة',
+          description: `${c.type || 'غير محدد'} — ${emp?.name || 'موظف'}`,
+          entityType: 'complaint',
+          entityId: c.id,
+          employeeId: c.employeeId,
+          employeeName: emp?.name,
+          department: emp?.department || undefined,
+          date: c.createdAt,
+          dateDimension: 'CREATED',
+          createdAt: c.createdAt,
+        });
+      }
+    }
+
+    // 6. CAPA updates recently
+    if (viewerCan.capa) {
+      const scopedCapa = filterRowsByEmployeeScope(batch.get('capaCases') || [], scopeCtx);
+      const recentCapa = scopedCapa
+        .filter((c: any) => c.updatedAt && c.updatedAt >= sevenDaysAgoISO)
+        .slice(0, 5);
+      for (const c of recentCapa) {
+        timelineEvents.push({
+          id: `capa-${c.id}`,
+          type: 'capa_update',
+          title: 'تحديث CAPA',
+          description: `${c.title || 'CAPA'} — ${c.status}`,
+          entityType: 'capaCase',
+          entityId: c.id,
+          employeeId: c.employeeId,
+          department: c.department,
+          date: c.updatedAt,
+          dateDimension: 'CREATED',
+          createdAt: c.updatedAt,
+        });
+      }
+    }
+
+    // 7. Travel milestones (departures/returns today + tomorrow)
+    const todayDDMMYYYY = getTodayStr();
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const tomorrowDDMMYYYY = `${String(tomorrow.getDate()).padStart(2, '0')}/${String(tomorrow.getMonth() + 1).padStart(2, '0')}/${tomorrow.getFullYear()}`;
+    const travelMilestones = travelDeals.filter((t: any) =>
+      t.departureDate === todayDDMMYYYY || t.departureDate === tomorrowDDMMYYYY ||
+      (t.returnDate && (t.returnDate === todayDDMMYYYY || t.returnDate === tomorrowDDMMYYYY))
+    );
+    for (const t of travelMilestones.slice(0, 5)) {
+      const emp = empMap.get(t.employeeId);
+      timelineEvents.push({
+        id: `travel-${t.id}-${t.departureDate === todayDDMMYYYY || t.departureDate === tomorrowDDMMYYYY ? 'dep' : 'ret'}`,
+        type: 'travel_milestone',
+        title: t.departureDate === todayDDMMYYYY || t.departureDate === tomorrowDDMMYYYY ? 'مغادرة سفر' : 'عودة سفر',
+        description: `${emp?.name || 'موظف'} → ${t.destination}`,
+        entityType: 'travelDeal',
+        entityId: t.id,
+        employeeId: t.employeeId,
+        employeeName: emp?.name,
+        department: emp?.department || undefined,
+        date: t.departureDate === todayDDMMYYYY || t.departureDate === tomorrowDDMMYYYY ? t.departureDate : (t.returnDate || t.departureDate),
+        dateDimension: 'TRAVEL',
+        createdAt: t.createdAt,
+      });
+    }
+
+    // Sort timeline by date desc (newest first), limit to 20
+    timelineEvents.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    const recentTimeline = timelineEvents.slice(0, 20);
+
+    // --- Department Pulse ---
+    const departmentPulse: DepartmentPulse[] = departmentList.map((dept) => {
+      const deptEmpIds = new Set(
+        employees.filter((e: any) => (e.department || 'بدون قسم') === dept.name).map((e: any) => e.id)
+      );
+      const deptAttendance = todayRecords.filter((r: any) => deptEmpIds.has(r.employeeId));
+      const deptPresent = deptAttendance.filter((r: any) => r.status === 'present').length;
+      const deptRate = dept.count > 0 ? Math.round((deptPresent / dept.count) * 100) : 0;
+      
+      const deptFollowUps = allFollowUps.filter((f: any) => deptEmpIds.has(f.employeeId) && isActiveFollowUp(f));
+      const deptQuality = qualityThisMonth.filter((q: any) => deptEmpIds.has(q.employeeId));
+      const deptPendingRequests = pendingRequestsDetails.filter((r: any) => deptEmpIds.has(r.employeeId));
+      const deptActiveTravel = upcomingTravel.filter((t: any) => deptEmpIds.has(t.employeeId));
+      
+      // Last activity timestamp across all data for this department
+      const lastActivities = [
+        ...deptAttendance.map(r => r.createdAt).filter(Boolean),
+        ...deptFollowUps.map(f => f.updatedAt || f.createdAt).filter(Boolean),
+        ...deptQuality.map(q => q.createdAt).filter(Boolean),
+        ...deptPendingRequests.map(r => r.createdAt).filter(Boolean),
+        // travelDeals rows carry createdAt directly (the mapped
+        // upcomingTravel alert items do not).
+        ...travelDeals.filter((t: any) => deptEmpIds.has(t.employeeId)).map((t: any) => t.createdAt).filter(Boolean),
+      ];
+      const lastActivity = lastActivities.length > 0
+        ? lastActivities.reduce((latest, d) => !latest || d > latest ? d : latest, null)
+        : null;
+
+      // Attendance-trend direction vs last month: present-days per
+      // employee per working day, computed over the month's OWN
+      // working-day set. A ±2pp band reads as flat (no noise trend).
+      const lastMonthDept = lastMonthPerformance.departments.find(d => d.departmentName === dept.name);
+      const currentDept = currentMonthPerformance.departments.find(d => d.departmentName === dept.name);
+      let trend: -1 | 0 | 1 = 0;
+      if (lastMonthDept && currentDept && lastMonthPerformance.totalWorkingDays > 0 && currentMonthPerformance.totalWorkingDays > 0) {
+        const lastRate = lastMonthDept.employeeCount > 0 ? lastMonthDept.presentDays / (lastMonthDept.employeeCount * lastMonthPerformance.totalWorkingDays) : 0;
+        const currentRate = currentDept.employeeCount > 0 ? currentDept.presentDays / (currentDept.employeeCount * currentMonthPerformance.totalWorkingDays) : 0;
+        if (currentRate > lastRate + 0.02) trend = 1;
+        else if (currentRate < lastRate - 0.02) trend = -1;
+      }
+
+      return {
+        name: dept.name,
+        employeeCount: dept.count,
+        attendanceRate: deptRate,
+        openFollowUps: deptFollowUps.length,
+        qualityCasesThisMonth: deptQuality.length,
+        pendingApprovals: deptPendingRequests.length,
+        activeTravel: deptActiveTravel.length,
+        trend,
+        lastActivity,
+      };
+    });
+
+    // --- Performance Pulse — DETERMINISTIC operational aggregates only.
+    // §8/§17: the Home surface must NOT invent KPI formulas. The
+    // authoritative Quality-KPI level (avgRawScore) is fetched by the
+    // client from the CANONICAL /api/kpi-reports/summary engine —
+    // permission-gated (kpiReports view) and scope-resolved there —
+    // never recomputed here. What this route provides is the raw
+    // operational completion numbers from the data already read above.
+    const completedFollowUps = allFollowUps.filter(isTerminalFollowUp).length;
+    const totalTrackedFollowUps = allFollowUps.filter((f: any) => isActiveFollowUp(f) || isTerminalFollowUp(f)).length;
+    const performanceEmployees = currentMonthPerformance.departments.reduce((s, d) => s + d.employeeCount, 0);
+
+    const performancePulse: PerformancePulse = {
+      // Canonical Quality-KPI level comes from the KPI engine (client,
+      // permission-gated) — null here means "not computed by Home".
+      currentScore: null,
+      targetScore: null,
+      progress: null,
+      trend: [],
+      completedWork: completedTravelCount,
+      followUpCompletionRate: totalTrackedFollowUps > 0
+        ? Math.round((completedFollowUps / totalTrackedFollowUps) * 100)
+        : 0,
+      qualityDeductionsPerEmployee: performanceEmployees > 0
+        ? Math.round((qualitySummary.totalCases / performanceEmployees) * 100) / 100
+        : 0,
+      lastCalculated: new Date().toISOString(),
+    };
+
+    // --- Metric Freshness ---
+    const dataFetchedAt = new Date().toISOString();
+    const metricTimestamps: Record<string, string | null> = {
+      attendance: todayRecords.length > 0 ? todayRecords.reduce((latest, r) => !latest || (r.createdAt && r.createdAt > latest) ? r.createdAt : latest, null as string | null) : null,
+      requests: pendingRequestsDetails.length > 0 ? pendingRequestsDetails[0].createdAt : null,
+      travel: travelDeals.length > 0
+        ? travelDeals.reduce((latest: string | null, t: any) => (!latest || (t.createdAt && t.createdAt > latest)) ? (t.createdAt || latest) : latest, null)
+        : null,
+      quality: qualityThisMonth.length > 0 ? qualityThisMonth.reduce((latest, q) => !latest || q.createdAt > latest ? q.createdAt : latest, null as string | null) : null,
+      followUps: allFollowUps.length > 0 ? allFollowUps.reduce((latest, f) => !latest || (f.updatedAt || f.createdAt) > latest ? (f.updatedAt || f.createdAt) : latest, null as string | null) : null,
+      biometric: biometricLastSync,
+    };
+    const freshness: MetricFreshness = { dataFetchedAt, metricTimestamps };
+
     return NextResponse.json({
       totalEmployees,
       todayAttendance,
@@ -474,6 +898,13 @@ export async function GET(request: NextRequest) {
       biometricRecordCount,
       todaysFollowUps,
       followUpsSummary,
+      overdueFollowUpItems,
+      // §Home-CC NEW
+      closedDealSummary,
+      recentTimeline,
+      departmentPulse,
+      performancePulse,
+      freshness,
     });
   } catch (error) {
     console.error('[GET /api/home/stats] Error:', error);

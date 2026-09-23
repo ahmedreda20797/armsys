@@ -30,6 +30,8 @@ import { Separator } from '@/components/ui/separator';
 import { Button } from '@/components/ui/button';
 import { useAppStore } from '@/lib/store';
 import { useAuth } from '@/contexts/AuthContext';
+import { useLanguage } from '@/lib/i18n/language-context';
+import { formatDateTime } from '@/lib/i18n/format';
 import { useDecisionStore } from '@/lib/aocc/decision-store';
 import { getPriorityVisual } from '@/lib/aocc/priority-engine';
 import type { Decision, DecisionStatus } from '@/lib/aocc/decision-types';
@@ -116,6 +118,7 @@ export const DecisionDetailDialog = memo(function DecisionDetailDialog({
   const user = useAuth().user;
   const navigateTo = useAppStore((s) => s.navigateTo);
   const openEmployee360 = useAppStore((s) => s.openEmployee360);
+  const { locale } = useLanguage();
 
   // Store actions
   const transitionStatus = useDecisionStore((s) => s.transitionStatus);
@@ -346,7 +349,7 @@ export const DecisionDetailDialog = memo(function DecisionDetailDialog({
                       {t.note || ''}
                     </span>
                     <span className="text-slate-600 shrink-0">
-                      {new Date(t.at).toLocaleString('ar-SA', {
+                      {formatDateTime(t.at, locale, {
                         month: 'short',
                         day: 'numeric',
                         hour: '2-digit',

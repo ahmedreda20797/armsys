@@ -242,13 +242,15 @@ function makeDataset(overrides?: {
     },
     deals: {
       relationship: 'CONFIRMED',
-      total: 22,
+      travelTotal: 22,
       byStatus: { upcoming: 5, in_progress: 3, completed: 12, canceled: 2 },
-      completed: 12,
       canceled: 2,
       active: 8,
       completionRate: 54.55,
       monthly: [{ month: '2026-08', count: 22 }],
+      closedTotal: 7,
+      closedMonthly: [{ month: '2026-08', count: 7 }],
+      closedUnknownMonth: 5,
     },
     attendance:
       overrides?.attendance ?? {
@@ -585,8 +587,7 @@ describe('smart report §32.13 — follow-ups', () => {
 describe('smart report §32.14 — deals', () => {
   it('uses the stored status vocabulary and engine completion rate', () => {
     const view = buildDeals(makeDataset());
-    assert.equal(view.total, 22);
-    assert.equal(view.completed, 12);
+    assert.equal(view.travelTotal, 22);
     assert.equal(view.canceled, 2);
     assert.equal(view.active, 8);
     assert.equal(view.completionRateDisplay, '54.55%');
@@ -594,6 +595,15 @@ describe('smart report §32.14 — deals', () => {
     assert.equal(upcoming?.count, 5);
     const canceled = view.statusChips.find((c) => c.label === 'ملغاة');
     assert.equal(canceled?.count, 2);
+  });
+
+  it('§DEAL-DATES — keeps the CLOSED dimension separate from the TRAVEL snapshot', () => {
+    const view = buildDeals(makeDataset());
+    // Closed deals are counted by closedAt (7), NOT from the
+    // byStatus.completed status snapshot (12) — the difference is the
+    // completed deals whose closure month is unknown (5).
+    assert.equal(view.closedTotal, 7);
+    assert.equal(view.closedUnknownMonth, 5);
   });
 });
 

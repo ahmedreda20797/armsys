@@ -128,11 +128,13 @@ function baseDataset(windowMonths: string[]): AnyRec {
     },
     deals: {
       relationship: 'CONFIRMED',
-      total: 0,
+      travelTotal: 0,
       byStatus: {},
-      completed: 0,
       canceled: 0,
       active: 0,
+      closedTotal: 0,
+      closedMonthly: [],
+      closedUnknownMonth: 0,
       completionRate: null,
       monthly: [],
     },
@@ -309,10 +311,12 @@ export function makeFullNineMonthDataset(): AnyRec {
 
   ds.deals = {
     relationship: 'CONFIRMED',
-    total: 16,
+    travelTotal: 16,
     byStatus: { completed: 10, canceled: 3, in_progress: 3 },
-    completed: 10,
     canceled: 3,
+    closedTotal: 10,
+    closedMonthly: [],
+    closedUnknownMonth: 0,
     active: 3,
     completionRate: 62.5,
     monthly: [1, 2, 2, 2, 2, 3, 1, 1, 2].map((count, i) => ({ month: MONTHS_9[i], count })),
@@ -406,7 +410,8 @@ export function makePartialMtdDataset(): AnyRec {
   };
   ds.deals = {
     ...(ds.deals as AnyRec),
-    total: 3,
+    travelTotal: 3,
+    closedTotal: null,
     canceled: 0,
     monthly: [{ month: '2026-08', count: 3 }],
   };
@@ -558,7 +563,7 @@ export function makeRoundingEdgeDataset(): AnyRec {
   };
   ds.deals = {
     ...(ds.deals as AnyRec),
-    total: 18,
+    travelTotal: 18,
     monthly: window.map((m, i) => ({ month: m, count: [1, 2, 1, 2, 1, 2, 1, 2, 1, 2, 1, 2][i] })),
   };
   return ds;

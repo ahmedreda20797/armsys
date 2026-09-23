@@ -16,6 +16,9 @@ import { PageIdentity } from '@/components/shared/PageIdentity';
 import { AuditTrailList } from '@/components/shared/audit';
 import { useQualityAuditLog, type AuditLogParams } from '@/hooks/use-kpi-queries';
 import type { QualityAuditLogEntry, QualityAuditEntityType } from '@/types/quality-kpi';
+import { T } from '@/lib/i18n/T';
+import { translateUIText } from '@/lib/i18n/ui-text';
+import { useLanguage } from '@/lib/i18n/language-context';
 
 // ─── Constants ────────────────────────────────────────────────
 const ENTITY_TYPE_OPTIONS: { value: string; label: string }[] = [
@@ -42,6 +45,7 @@ const LIMIT_OPTIONS = [25, 50, 100, 200];
 
 // ─── Page ─────────────────────────────────────────────────────
 export default function QualityAuditLogPage() {
+  const { locale } = useLanguage();
   const { canView } = usePermissions('qualityAuditLog');
 
   // Filters
@@ -77,7 +81,7 @@ export default function QualityAuditLogPage() {
   if (!canView) {
     return (
       <div className="flex flex-col items-center justify-center py-24 text-slate-400">
-        <p>ليس لديك صلاحية للوصول إلى هذه الصفحة</p>
+        <p><T>ليس لديك صلاحية للوصول إلى هذه الصفحة</T></p>
       </div>
     );
   }
@@ -89,15 +93,15 @@ export default function QualityAuditLogPage() {
         pageId="qualityAuditLog"
         icon={<History className="size-5" />}
         iconClassName="bg-blue-500/15 border-blue-500/30 text-blue-400"
-        title="سجل المراجعة"
-        description="سجل كامل بجميع التغييرات والعمليات في نظام جودة المؤشرات"
+        title={translateUIText('سجل المراجعة', locale)}
+        description={translateUIText('سجل كامل بجميع التغييرات والعمليات في نظام جودة المؤشرات', locale)}
         actions={
           <Button
             variant="outline"
             size="icon"
             onClick={() => refetch()}
             disabled={isFetching}
-            title="تحديث"
+            title={translateUIText('تحديث', locale)}
           >
             <RefreshCw className={`size-4 ${isFetching ? 'animate-spin' : ''}`} />
           </Button>
@@ -108,7 +112,7 @@ export default function QualityAuditLogPage() {
       <Card className="border-slate-700/40 bg-slate-800/30">
         <CardContent className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 pt-4">
           <div className="space-y-1">
-            <Label className="text-xs text-slate-400">نوع الكيان</Label>
+            <Label className="text-xs text-slate-400"><T>نوع الكيان</T></Label>
             <Select value={entityType} onValueChange={setEntityType}>
               <SelectTrigger className="bg-slate-800/50 border-slate-700"><SelectValue /></SelectTrigger>
               <SelectContent>
@@ -119,7 +123,7 @@ export default function QualityAuditLogPage() {
             </Select>
           </div>
           <div className="space-y-1">
-            <Label className="text-xs text-slate-400">الإجراء</Label>
+            <Label className="text-xs text-slate-400"><T>الإجراء</T></Label>
             <Select value={action} onValueChange={setAction}>
               <SelectTrigger className="bg-slate-800/50 border-slate-700"><SelectValue /></SelectTrigger>
               <SelectContent>
@@ -130,7 +134,7 @@ export default function QualityAuditLogPage() {
             </Select>
           </div>
           <div className="space-y-1">
-            <Label className="text-xs text-slate-400">الشهر</Label>
+            <Label className="text-xs text-slate-400"><T>الشهر</T></Label>
             <Input
               type="month"
               value={monthKey}
@@ -140,7 +144,7 @@ export default function QualityAuditLogPage() {
             />
           </div>
           <div className="space-y-1">
-            <Label className="text-xs text-slate-400">معرّف المنفّذ</Label>
+            <Label className="text-xs text-slate-400"><T>معرّف المنفّذ</T></Label>
             <Input
               value={actorId}
               onChange={(e) => setActorId(e.target.value)}
@@ -149,7 +153,7 @@ export default function QualityAuditLogPage() {
             />
           </div>
           <div className="space-y-1">
-            <Label className="text-xs text-slate-400">عدد النتائج</Label>
+            <Label className="text-xs text-slate-400"><T>عدد النتائج</T></Label>
             <Select value={String(limit)} onValueChange={(v) => setLimit(Number(v))}>
               <SelectTrigger className="bg-slate-800/50 border-slate-700"><SelectValue /></SelectTrigger>
               <SelectContent>
@@ -162,7 +166,7 @@ export default function QualityAuditLogPage() {
           {hasFilters && (
             <div className="flex items-end">
               <Button variant="ghost" size="sm" onClick={clearFilters} className="text-xs text-slate-400">
-                مسح الفلاتر
+                <T>مسح الفلاتر</T>
               </Button>
             </div>
           )}
@@ -182,7 +186,7 @@ export default function QualityAuditLogPage() {
             <div className="size-12 rounded-full bg-slate-800 flex items-center justify-center mb-3">
               <History className="size-6 text-slate-600" />
             </div>
-            <p className="text-slate-400 text-sm font-medium">لا توجد سجلات</p>
+            <p className="text-slate-400 text-sm font-medium"><T>لا توجد سجلات</T></p>
             <p className="text-slate-600 text-xs mt-1">
               {hasFilters ? 'لم يتم العثور على سجلات مع الفلاتر المحددة' : 'لم يتم تسجيل أي عمليات بعد'}
             </p>
@@ -197,7 +201,7 @@ export default function QualityAuditLogPage() {
         >
           <AuditTrailList entries={entries} />
           <p className="text-xs text-slate-500 text-center py-2">
-            عرض {entries.length} سجل{entries.length !== 1 ? '' : ''}
+            <T>عرض </T>{entries.length} <T>سجل</T>
             {limit < Infinity && entries.length >= limit ? ' (محدود)' : ''}
           </p>
         </motion.div>

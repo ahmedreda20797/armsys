@@ -1,0 +1,235 @@
+QNALYS FEATURE — HR EMPLOYEE PERFORMANCE & RETENTION DECISION-SUPPORT REPORT
+Delivery Note — 2026-09-21
+======================================================================
+
+SCOPE
+-----
+The HR reporting surface is extended from the "final KPI result" view
+into a RICHER, deterministic DECISION-SUPPORT projection: each
+employee's overall performance is combined with operational behavior
+(follow-up discipline, quality/complaint/CAPA signals, stored
+attendance, linked deals output, HR deduction aggregates) and the
+KPI trend to produce a status WITH the structured measurable factors
+that explain it, and a recommended management action.
+
+The report answers: How is this employee performing overall? Is the
+problem isolated or repeated? Improving or declining? What measurable
+factors explain the status? What management action should be
+considered? — NOT merely "what is the KPI percentage?".
+
+CRITICAL SAFETY RULE (PINNED BY TESTS)
+--------------------------------------
+Decision support, NEVER an automatic employment-decision engine.
+- The status vocabulary contains NO termination/fire state:
+  STABLE / IMPROVING / NEEDS_COACHING /
+  PERFORMANCE_IMPROVEMENT_REVIEW / MANAGEMENT_REVIEW.
+- The recommended action is always REVIEW wording ("مراجعة أداء
+  رسمية…"), and EVERY status/report/printout carries the fixed
+  disclaimer: any final employment decision remains a HUMAN decision
+  outside the automated scoring system.
+- Tests assert the disclaimer is always attached and that
+  termination vocabulary never appears in any payload.
+
+SOURCE-OF-TRUTH DISCIPLINE (nothing modified, nothing duplicated)
+-----------------------------------------------------------------
+- KPI engine / eligibility / scheme resolution / scores / snapshots /
+  reporting loaders / authz engine / scope engine: UNTOUCHED.
+- The engine consumes the CANONICAL Phase-3 dataset
+  (lib/performance-intelligence — which itself runs the canonical
+  KPI report pipeline), the stored HR deduction summaries
+  (lib/employee-performance), the canonical risk engine
+  (lib/metrics/riskMetrics — computeRisk, weights, bands), the
+  canonical follow-up helpers (lib/metrics/followUpMetrics), the
+  canonical CAPA helpers (lib/metrics/capaMetrics), the canonical
+  repetition detector (lib/repetition-detection), and the configured
+  baseline kpiSettings.defaultScore. NO second KPI engine, no
+  recalculated scores.
+
+THRESHOLD HONESTY (no invented numbers)
+---------------------------------------
+- KPI below/above-target judgments use kpiSettings.defaultScore —
+  the CONFIGURED baseline the kpi-dashboard already reuses
+  (thresholdBasis: 'CONFIGURED').
+- Severity gradation reuses the canonical risk bands (11/26/51)
+  (thresholdBasis: 'CANONICAL_RISK').
+- Signals with NO configured Qnalys threshold (attendance compliance
+  minimum, follow-up overdue/completion cutoffs, productivity
+  targets) are REPORTED as measured values with
+  thresholdBasis: 'CONFIGURATION_REQUIRED' — they never judge and
+  never escalate a status. Data-quality notes state this explicitly.
+
+STATUS ENGINE (deterministic, matched-rule, test-pinned)
+--------------------------------------------------------
+1. No judged negative factors → STABLE (IMPROVING with an upward
+   trend).
+2. Canonical risk level 'critical' (≥51) → MANAGEMENT_REVIEW.
+3. PERFORMANCE_IMPROVEMENT_REVIEW when: MEDIUM+ weakness in ≥2
+   DISTINCT dimensions, OR ≥3 consecutive months below the
+   configured target, OR ≥3 consecutive declining monthly steps,
+   OR canonical risk level 'high' (≥26).
+4. NEEDS_COACHING when: exactly ONE weak dimension, or a repeated
+   2-step declining trend.
+5. LOW-severity concerns are always RECORDED but never escalate;
+   reported-only dimensions (attendance/productivity) never count;
+   TREND is the KPI dimension's direction, not a separate dimension.
+One isolated weak month can therefore never produce a severe status;
+escalation requires REPEATED or MULTI-DIMENSION evidence.
+
+HR-SAFE BY SHAPE (server-side, structural)
+------------------------------------------
+The view models have NO fields for observation text/details,
+deduction reasons, complaint/CAPA details, deal customer data,
+evidence ids or component math — nothing is sent to HR and hidden
+with CSS. Tests assert JSON-level exclusion on the pure reports AND
+on the live route responses. HR receives aggregated counts/signals
+only. The existing technical reports remain the technical surface;
+report-audience profiles are unchanged.
+
+PIPELINE
+--------
+requireAuth → verifyPermission('reports','view') → audience resolved
+(existing report-audience resolver, audit only — the projection is
+identical for every admitted caller) → AUTHORIZED employee scope
+(resolveEmployeeScopeFromDb, M0.5 — client scope is never trusted)
+→ per-employee canonical dataset → decision projection → team
+aggregate → JSON. Lifecycle parity with the monthly report: archived
+employees appear only on includeArchived, and post-archive
+ineligibility remains an engine verdict.
+
+FILES
+-----
+New:
+  src/lib/hr-decision/types.ts
+      Status/action vocabulary (safety-bounded), factor model
+      (category/kind/severity/signal/thresholdBasis), scorecard,
+      trend, data-quality, employee + team report contracts, and the
+      thresholds interface documenting CONFIGURED vs
+      CONFIGURATION_REQUIRED vs CANONICAL_RISK bases.
+  src/lib/hr-decision/signals.ts
+      Pure signal extraction: KPI trend counters (consecutive
+      below-target months / declining steps — missing scores never
+      0-filled and never break a run dishonestly), follow-up window
+      stats (canonical isActiveFollowUp/isOverdueFollowUp +
+      monthOfFollowUp + the canonical 30-day repetition rule),
+      CAPA risk stats (canonical helpers), and the canonical
+      RiskInput for computeRisk.
+  src/lib/hr-decision/status-engine.ts
+      Factor builders per dimension + the deterministic matched-rule
+      status evaluation + the recommended-action builder (review
+      wording + fixed disclaimer).
+  src/lib/hr-decision/report.ts
+      Pure assembly: employee decision report (header, executive
+      summary, six-dimension scorecard, trend, factors, strengths/
+      concerns, action, data quality) + team/department aggregate
+      (status DISTRIBUTIONS, HR-safe operational averages, rows
+      ordered by status severity then name — a grouping, never a
+      leaderboard; no rank/score/percentile fields).
+  src/lib/hr-decision/service.ts
+      READ-ONLY orchestrator over getEmployeePerformanceDataset +
+      the same loaders' raw follow-ups/CAPA + the hrDeductions
+      collection + kpiSettings.defaultScore (all injectable for
+      tests). Null ONLY when the employee does not exist.
+  src/lib/hr-decision/format.ts / index.ts
+      Arabic formatting helpers (null → '—', never 0) + barrel.
+  src/app/api/reports/hr-performance/decision/route.ts
+      GET team/department decision report (filters: month, department,
+      team, employeeQuery, decisionStatus, includeArchived, sortBy
+      status|employeeName|kpiScore, sortDir).
+  src/app/api/reports/hr-performance/decision/employee/route.ts
+      GET one employee's decision report; out-of-scope → 404
+      (fail-closed, parity with the analytics route).
+  src/components/pages/quality-kpi/HrDecisionView.tsx
+      Decision sub-view: status distribution cards, aggregate
+      operational indicators, HR-safe table (status/action/KPI/trend/
+      top concern), data-quality notes, print.
+  src/components/pages/quality-kpi/HrDecisionEmployeeDialog.tsx
+      Drill-down: executive summary, six-dimension scorecard,
+      trend chips, strengths/concerns with severities and
+      comparisons, action + disclaimer, data quality, print.
+  src/lib/hr-decision/__tests__/hr-decision.test.ts   (17 tests)
+  src/lib/__tests__/hr-decision-routes.test.ts        (10 tests)
+
+Modified:
+  src/components/pages/quality-kpi/HrPerformanceReportTab.tsx
+      Sub-view toggle (نتيجة الأداء | قرار دعم) over the SAME
+      persisted filters; the original sanitized table is unchanged.
+  src/components/print/print-adapters.ts
+      hrDecisionToPrintModel + hrDecisionEmployeeToPrintModel — pure
+      projections of the ALREADY-sanitized payloads (the print can
+      never leak what the server never sent); the safety disclaimer
+      is printed on every page footer.
+  src/hooks/use-kpi-queries.ts
+      useHrDecisionReport / useHrDecisionEmployeeReport.
+
+UI NOTES
+--------
+- Decision status filter, department/team filters reuse the
+  persisted filter slot (shared with the result view); search and
+  department/team selections apply to both views.
+- Row click opens the drill-down; both views print through the
+  existing PrintReportHost (no new print plumbing).
+- Status vocabulary, labels, and colors are presentation-only; the
+  server contract carries the deterministic semantics.
+
+TESTS (focused, deterministic — pure builders + in-memory db harness)
+----------------------------------------------------------------------
+1. KPI + follow-up combination → multi-dimension → PIR. ✔
+2. KPI + attendance combination → attendance REPORTED-only never
+   escalates (NEEDS_COACHING stays). ✔
+3. Improving trend → IMPROVING + recognize action. ✔
+4. Declining trend (3 sustained steps above target) → PIR. ✔
+5. Repeated weak signals (3 months below target) → PIR; 2 months
+   stay at coaching (ladder respected). ✔
+6. Isolated bad metric (single overdue month; 2-step dip) → never
+   severe; concerns still recorded. ✔
+7. Missing data never becomes zero (explicit NOT_AVAILABLE states,
+   null preserved, notes name the gaps). ✔
+8. HR projection excludes technical fields (JSON-level, data-rich
+   fixture + live route responses). ✔
+9. Authorization/scope: 401/403/400 + real-handler 200s + scope-narrow
+   guard pins + fail-closed 404 drill-down + static route contract. ✔
+10. Stable employee → STABLE / continue monitoring. ✔
+11. Coaching signal (single below-target month) → NEEDS_COACHING. ✔
+12. PIR action wording = formal review recommendation. ✔
+13. Management-review signal (canonical risk critical) →
+    MANAGEMENT_REVIEW + HR/management action. ✔
+Plus: threshold-honesty pins (CONFIGURED vs CONFIGURATION_REQUIRED),
+safety-disclaimer presence, team distribution/average semantics
+(nulls never averaged as zero), no-leaderboard shape.
+
+VERIFICATION
+------------
+- hr-decision suites: 27/27 pass (17 pure + 10 route).
+- Full test suite: 2163/2167 pass + 45/47 — the 6 failures are
+  VERIFIED IDENTICAL on the clean tree (pre-existing, unrelated:
+  sidebar-state ×2, travel-status, quality-ai-ui-contract,
+  download-opt-route-contracts, find-user-by-email).
+- tsc clean; eslint clean on all changed files.
+- Production next build succeeds (both new routes present in the
+  manifest). Built from a nested verify copy because the running
+  :3000 production server locks .next/standalone — the running
+  server was NOT touched.
+
+LIMITATIONS
+-----------
+- No live GUI pass (the running :3000 server points at the real
+  production Firebase database — no test credentials); verification
+  is code-level plus pure/route tests, same as prior deliveries.
+- Team/department grouping uses the employee's stored department
+  string + org-tree team label resolved by the canonical dataset;
+  the org-assignment feature remains the canonical structure.
+- Per-employee KPI "target" is the single configured defaultScore
+  baseline (no per-employee/per-department targets exist in Qnalys);
+  the trend section states the target it compares against.
+- Attendance/productivity/follow-up thresholds remain unjudged until
+  business configures them (surfaced as CONFIGURATION_REQUIRED —
+  the same pending-business-configuration precedent as the HR
+  PerformanceFactor score).
+
+NOT TOUCHED
+-----------
+KPI calculation engine, employment eligibility, scheme resolution,
+month snapshots, existing reporting loaders, authorization engine,
+scope engine, report-audience profiles, Firebase schema/Rules,
+authentication, notifications, background polling, existing KPI
+tests, RTL/LTR, dark/light theme, Qnalys branding.

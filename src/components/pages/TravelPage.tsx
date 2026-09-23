@@ -93,6 +93,11 @@ import type { TravelDeal, Employee } from '@/types';
 import { logCreate, logUpdate, logDelete } from '@/lib/activity-logger';
 import { EmployeeSearchInput } from '@/components/shared/EmployeeSearchInput';
 import { authFetch } from '@/lib/api-fetch';
+import { T } from '@/lib/i18n/T';
+import { translateUIText } from '@/lib/i18n/ui-text';
+import { useLanguage } from '@/lib/i18n/language-context';
+import type { Locale } from '@/lib/i18n/dictionary';
+import { formatInteger, formatMonthKey } from '@/lib/i18n/format';
 
 // ═══════════════════════════════════════════════════════════════
 //  TYPES
@@ -231,11 +236,12 @@ function getMonthLabel(dateStr: string): string {
   return `${arabicMonths[p[1]] || p[1]} ${p[2]}`;
 }
 
-function getMonthLabelFromKey(key: string): string {
-  if (key === 'غير محدد') return key;
-  const parts = key.split('-');
-  if (parts.length !== 2) return key;
-  return `${arabicMonths[parts[1]] || parts[1]} ${parts[0]}`;
+function getMonthLabelFromKey(key: string, locale?: Locale): string {
+  // §I18N-BOUNDARY — month labels are app-generated display text, so the
+  // canonical formatter renders them for the active locale; the «غير محدد»
+  // sentinel is claimed UI (fallback alone passes through the claim).
+  if (key === 'غير محدد') return translateUIText(key, locale);
+  return formatMonthKey(key, locale);
 }
 
 // §TRAVEL-THRESHOLD — urgency derives from the ONE canonical rule
@@ -252,18 +258,18 @@ function getUrgencyLevel(daysLeft: number): UrgencyLevel {
 // days never surfaced, so a trip returning in 2 days looked fine
 // while the person had already left). The `urgentType` flag from
 // /api/travel decides the wording.
-function getUrgencyLabel(daysLeft: number, urgentType: 'departure' | 'return' = 'departure'): string {
+function getUrgencyLabel(daysLeft: number, urgentType: 'departure' | 'return' = 'departure', locale?: Locale): string {
   const today = urgentType === 'return' ? 'العودة اليوم!' : 'السفر اليوم!';
   const tomorrow = urgentType === 'return' ? 'العودة غداً' : 'السفر غداً';
-  if (daysLeft === 0) return today;
-  if (daysLeft === 1) return tomorrow;
-  if (daysLeft === 2) return `بعد يومين`;
-  if (daysLeft > 2 && daysLeft <= 7) return `بعد ${daysLeft} أيام`;
-  if (daysLeft > 7) return `بعد ${daysLeft} يوم`;
-  if (daysLeft === -1) return `منذ يوم!`;
-  if (daysLeft === -2) return `منذ يومين`;
-  if (daysLeft >= -7) return `منذ ${Math.abs(daysLeft)} أيام`;
-  return `منذ ${Math.abs(daysLeft)} يوم`;
+  if (daysLeft === 0) return translateUIText(today, locale);
+  if (daysLeft === 1) return translateUIText(tomorrow, locale);
+  if (daysLeft === 2) return locale === 'en' ? 'in 2 days' : `بعد يومين`;
+  if (daysLeft > 2 && daysLeft <= 7) return locale === 'en' ? `in ${formatInteger(daysLeft, locale)} days` : `بعد ${daysLeft} أيام`;
+  if (daysLeft > 7) return locale === 'en' ? `in ${formatInteger(daysLeft, locale)} days` : `بعد ${daysLeft} يوم`;
+  if (daysLeft === -1) return locale === 'en' ? '1 day ago!' : `منذ يوم!`;
+  if (daysLeft === -2) return locale === 'en' ? '2 days ago' : `منذ يومين`;
+  if (daysLeft >= -7) return locale === 'en' ? `${formatInteger(Math.abs(daysLeft), locale)} days ago` : `منذ ${Math.abs(daysLeft)} أيام`;
+  return locale === 'en' ? `${formatInteger(Math.abs(daysLeft), locale)} days ago` : `منذ ${Math.abs(daysLeft)} يوم`;
 }
 
 function getTripCategory(depDate: string, retDate: string | null): 'upcoming' | 'in_progress' | 'returned' {
@@ -303,10 +309,10 @@ function useDebounce<T>(value: T, delay: number): T {
 /** Stable status badge — no re-render unless status changes */
 const StatusBadge = memo(function StatusBadge({ status }: { status: string }) {
   switch (status) {
-    case 'upcoming': return <Badge className="bg-blue-500/15 text-blue-400 border-blue-500/20">قادمة</Badge>;
-    case 'in_progress': return <Badge className="bg-amber-500/15 text-amber-400 border-amber-500/20">جاري</Badge>;
-    case 'completed': return <Badge className="bg-green-500/15 text-green-400 border-green-500/20">مكتمل</Badge>;
-    case 'canceled': return <Badge className="bg-red-500/15 text-red-400 border-red-500/20">ملغي</Badge>;
+    case 'upcoming': return <Badge className="bg-blue-500/15 text-blue-400 border-blue-500/20"><T>قادمة</T></Badge>;
+    case 'in_progress': return <Badge className="bg-amber-500/15 text-amber-400 border-amber-500/20"><T>جاري</T></Badge>;
+    case 'completed': return <Badge className="bg-green-500/15 text-green-400 border-green-500/20"><T>مكتمل</T></Badge>;
+    case 'canceled': return <Badge className="bg-red-500/15 text-red-400 border-red-500/20"><T>ملغي</T></Badge>;
     default: return <Badge variant="outline">{status}</Badge>;
   }
 });
@@ -314,12 +320,12 @@ const StatusBadge = memo(function StatusBadge({ status }: { status: string }) {
 /** Stable category badge — §TRAVEL-THRESHOLD: "قريب" ONLY inside the
     10-day window; a further-out future trip is "مجدولة" (scheduled). */
 const CategoryBadge = memo(function CategoryBadge({ category, daysLeft }: { category: 'upcoming' | 'in_progress' | 'returned'; daysLeft?: number }) {
-  if (category === 'in_progress') return <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-500/15 text-amber-400 font-medium">🌍 في الرحلة</span>;
-  if (category === 'returned') return <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-500/15 text-slate-400 font-medium">✅ رجع</span>;
+  if (category === 'in_progress') return <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-500/15 text-amber-400 font-medium">🌍 <T>في الرحلة</T></span>;
+  if (category === 'returned') return <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-500/15 text-slate-400 font-medium">✅ <T>رجع</T></span>;
   if (daysLeft !== undefined && !isNearDeparture(daysLeft)) {
-    return <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-500/15 text-slate-400 font-medium">📅 مجدولة</span>;
+    return <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-500/15 text-slate-400 font-medium">📅 <T>مجدولة</T></span>;
   }
-  return <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-brand-500/15 text-brand-400 font-medium">✈ قريب</span>;
+  return <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-brand-500/15 text-brand-400 font-medium">✈ <T>قريب</T></span>;
 });
 
 /** Service toggle button inside expanded card */
@@ -329,6 +335,7 @@ const ServiceToggle = memo(function ServiceToggle({
   trip: TravelWithEmployee; service: string; label: string;
   canEdit: boolean; onToggle: (tripId: string, service: string) => void;
 }) {
+  const { locale } = useLanguage();
   const hasField = `has${service.charAt(0).toUpperCase() + service.slice(1)}` as keyof TravelDeal;
   const statusField = `${service}Status` as keyof TravelDeal;
   const has = trip[hasField] as boolean;
@@ -341,7 +348,6 @@ const ServiceToggle = memo(function ServiceToggle({
   // Hide missing services entirely on the card
   if (isMissing) return null;
 
-  const statusLabel = isBooked ? 'مكتمل' : 'معلق';
   const titleText = isBooked ? `تحويل إلى معلق` : `تحويل إلى مكتمل`;
 
   if (!canEdit) {
@@ -350,8 +356,8 @@ const ServiceToggle = memo(function ServiceToggle({
         isBooked ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30'
           : 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
       }`}>
-        <Icon className="size-3.5" /> {isBooked ? <CheckCircle2 className="size-3.5" /> : <Clock className="size-3.5" />} <span>{label}</span>
-        <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full ${isBooked ? 'bg-emerald-500/20 text-emerald-300' : 'bg-amber-500/20 text-amber-300'}`}>{statusLabel}</span>
+        <Icon className="size-3.5" /> {isBooked ? <CheckCircle2 className="size-3.5" /> : <Clock className="size-3.5" />} <span><T>{label}</T></span>
+        <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full ${isBooked ? 'bg-emerald-500/20 text-emerald-300' : 'bg-amber-500/20 text-amber-300'}`}>{isBooked ? <T>مكتمل</T> : <T>معلق</T>}</span>
       </div>
     );
   }
@@ -362,10 +368,10 @@ const ServiceToggle = memo(function ServiceToggle({
         isBooked ? 'bg-emerald-500/15 text-emerald-400 hover:bg-amber-500/20 ring-1 ring-emerald-500/50 hover:ring-amber-500/50'
           : 'bg-amber-500/15 text-amber-400 hover:bg-emerald-500/20 ring-1 ring-amber-500/30 hover:ring-emerald-500/30'
       }`}
-      title={titleText}
+      title={translateUIText(titleText, locale)}
     >
-      <Icon className="size-3.5" /> {isBooked ? <CheckCircle2 className="size-3.5" /> : <Clock className="size-3.5" />} <span>{label}</span>
-      <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full ${isBooked ? 'bg-emerald-500/25 text-emerald-300' : 'bg-amber-500/25 text-amber-300'}`}>{statusLabel}</span>
+      <Icon className="size-3.5" /> {isBooked ? <CheckCircle2 className="size-3.5" /> : <Clock className="size-3.5" />} <span><T>{label}</T></span>
+      <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full ${isBooked ? 'bg-emerald-500/25 text-emerald-300' : 'bg-amber-500/25 text-amber-300'}`}>{isBooked ? <T>مكتمل</T> : <T>معلق</T>}</span>
     </button>
   );
 });
@@ -380,12 +386,12 @@ const QuickStatusBtns = memo(function QuickStatusBtns({
     <div className="flex flex-wrap gap-1.5">
       {statusConfig.map((s) => {
         if (trip.status === s.key) {
-          return <span key={s.key} className={`text-[10px] px-2 py-0.5 rounded-full ring-1 font-medium ${s.activeClass}`}>{s.label}</span>;
+          return <span key={s.key} className={`text-[10px] px-2 py-0.5 rounded-full ring-1 font-medium ${s.activeClass}`}><T>{s.label}</T></span>;
         }
         return (
           <button key={s.key} onClick={() => onStatusChange(trip.id, s.key)}
             className="text-[10px] px-2 py-0.5 rounded-full bg-slate-700/30 text-slate-500 hover:text-slate-300 hover:bg-slate-700/50 transition-colors cursor-pointer">
-            {s.label}
+            <T>{s.label}</T>
           </button>
         );
       })}
@@ -416,6 +422,7 @@ const TripCard = memo(function TripCard({
   onToggleExpand, onEdit, onDelete, onQuickChangeStatus, onQuickToggleService,
   onReportComplaint,
 }: TripCardProps) {
+  const { locale } = useLanguage();
   const daysLeft = useMemo(() => getDaysRemaining(trip.departureDate), [trip.departureDate]);
   const retDays = useMemo(() => trip.returnDate ? getDaysRemaining(trip.returnDate) : null, [trip.returnDate]);
   const category = useMemo(() => getTripCategory(trip.departureDate, trip.returnDate), [trip.departureDate, trip.returnDate]);
@@ -497,7 +504,7 @@ const TripCard = memo(function TripCard({
                 <div className="flex items-center gap-2 mt-1 flex-wrap">
                   {dealerName && (
                     <span className="text-[11px] text-slate-500 truncate max-w-36">
-                      <span className="text-emerald-500/70">المسئول:</span> {trip.employeeName}
+                      <span className="text-emerald-500/70"><T>المسئول:</T></span> {trip.employeeName}
                     </span>
                   )}
                   <span className="text-sm text-slate-300">🌍 {trip.destination}</span>
@@ -506,17 +513,17 @@ const TripCard = memo(function TripCard({
                       urgency === 'critical' ? 'text-red-400 bg-red-500/15'
                         : urgency === 'urgent' ? 'text-amber-400 bg-amber-500/15' : 'text-yellow-400 bg-yellow-500/15'
                     }`}>
-                      {getUrgencyLabel(daysLeft)}
+                      {getUrgencyLabel(daysLeft, 'departure', locale)}
                     </span>
                   )}
                   {category === 'in_progress' && retDays !== null && retDays >= 0 && (
                     <span className="text-[10px] font-medium text-amber-400 bg-amber-500/15 px-1.5 py-0.5 rounded-full">
-                      العودة {trip.returnDate}
+                      <T>العودة</T> {trip.returnDate}
                     </span>
                   )}
                   {!trip.returnDate && (
                     <span className="text-[10px] font-medium text-amber-400 bg-amber-500/15 px-1.5 py-0.5 rounded-full inline-flex items-center gap-0.5">
-                      <AlertTriangle className="size-2.5" /> بدون عودة
+                      <AlertTriangle className="size-2.5" /> <T>بدون عودة</T>
                     </span>
                   )}
                 </div>
@@ -524,17 +531,17 @@ const TripCard = memo(function TripCard({
             </div>
             <div className="flex items-center gap-2.5 shrink-0">
               <div className="text-center min-w-12">
-                <div className={`text-xl font-bold tabular-nums ${countdownInfo.color}`}>{countdownInfo.value}</div>
-                <span className="text-slate-500 text-[10px]">{countdownInfo.label}</span>
+                <div className={`text-xl font-bold tabular-nums ${countdownInfo.color}`}>{formatInteger(countdownInfo.value, locale)}</div>
+                <span className="text-slate-500 text-[10px]"><T>{countdownInfo.label}</T></span>
               </div>
               {canEdit && (
                 <div onClick={(e) => e.stopPropagation()}>
                   <SmartActionMenu
                     actions={[
-                      { key: 'edit', label: 'تعديل', icon: <Pencil className="size-3.5" />, onSelect: () => onEdit(trip) },
-                      { key: 'delete', label: 'حذف', icon: <Trash2 className="size-3.5" />, destructive: true, separatorBefore: true, onSelect: () => onDelete(trip.id) },
+                      { key: 'edit', label: translateUIText('تعديل', locale), icon: <Pencil className="size-3.5" />, onSelect: () => onEdit(trip) },
+                      { key: 'delete', label: translateUIText('حذف', locale), icon: <Trash2 className="size-3.5" />, destructive: true, separatorBefore: true, onSelect: () => onDelete(trip.id) },
                     ]}
-                    label="إجراءات الرحلة"
+                    label={translateUIText('إجراءات الرحلة', locale)}
                   />
                 </div>
               )}
@@ -561,31 +568,31 @@ const TripCard = memo(function TripCard({
                   <div className="flex flex-wrap gap-4 text-sm">
                     <div className="flex items-center gap-2 text-slate-300">
                       <span className="text-xs">📅</span>
-                      <span className="text-slate-500">السفر:</span>
+                      <span className="text-slate-500"><T>السفر:</T></span>
                       <span className="text-white font-medium" dir="ltr">{trip.departureDate}</span>
                       <Badge variant="outline" className={`text-[10px] px-1.5 ${
                         daysLeft < 0 ? 'text-amber-400 border-amber-500/30' : 'text-cyan-400 border-cyan-500/30'
                       }`}>
-                        {daysLeft < 0 ? 'تم السفر' : `${daysLeft} يوم`}
+                        {daysLeft < 0 ? <T>تم السفر</T> : <>{formatInteger(daysLeft, locale)} <T>يوم</T></>}
                       </Badge>
                     </div>
                     {trip.returnDate ? (
                       <div className="flex items-center gap-2 text-slate-300">
                         <span className="text-xs">↩️</span>
-                        <span className="text-slate-500">العودة:</span>
+                        <span className="text-slate-500"><T>العودة:</T></span>
                         <span className="text-white font-medium" dir="ltr">{trip.returnDate}</span>
                         {retDays !== null && (
                           <Badge variant="outline" className={`text-[10px] px-1.5 ${
                             retDays < 0 ? 'text-brand-400 border-brand-500/30' : 'text-cyan-400 border-cyan-500/30'
                           }`}>
-                            {retDays < 0 ? 'رجعوا' : `${retDays} يوم`}
+                            {retDays < 0 ? <T>رجعوا</T> : <>{formatInteger(retDays, locale)} <T>يوم</T></>}
                           </Badge>
                         )}
                       </div>
                     ) : (
                       <div className="flex items-center gap-2 text-amber-400 bg-amber-500/10 border border-amber-500/20 rounded-lg px-3 py-2">
                         <AlertTriangle className="size-3.5 shrink-0" />
-                        <span className="text-xs font-medium">تاريخ العودة غير محدد — يرجى إكمال البيانات</span>
+                        <span className="text-xs font-medium"><T>تاريخ العودة غير محدد — يرجى إكمال البيانات</T></span>
                       </div>
                     )}
                   </div>
@@ -596,14 +603,14 @@ const TripCard = memo(function TripCard({
                       {trip.dealerName && (
                         <div className="flex items-center gap-2 text-sm bg-slate-800/50 rounded-lg p-2.5 border border-slate-700/20">
                           <span className="text-cyan-400 text-xs">👤</span>
-                          <span className="text-slate-500">اسم الديل:</span>
+                          <span className="text-slate-500"><T>اسم الديل:</T></span>
                           <span className="text-white font-medium">{trip.dealerName}</span>
                         </div>
                       )}
                       {trip.customerNames && (
                         <div className="flex items-start gap-2 text-sm bg-slate-800/50 rounded-lg p-2.5 border border-slate-700/20">
                           <span className="text-brand-400 text-xs shrink-0">👥</span>
-                          <span className="text-slate-500 shrink-0">المسافرين:</span>
+                          <span className="text-slate-500 shrink-0"><T>المسافرين:</T></span>
                           <span className="text-white text-right">{trip.customerNames}</span>
                         </div>
                       )}
@@ -612,7 +619,7 @@ const TripCard = memo(function TripCard({
 
                   {/* Service Statuses */}
                   <div>
-                    <p className="text-xs text-slate-500 mb-2 font-medium">حالة الخدمات</p>
+                    <p className="text-xs text-slate-500 mb-2 font-medium"><T>حالة الخدمات</T></p>
                     <div className="flex flex-wrap gap-2">
                       <ServiceToggle trip={trip} service="internationalFlight" label="طيران دولي" canEdit={canEdit} onToggle={onQuickToggleService} />
                       <ServiceToggle trip={trip} service="domesticFlight" label="طيران داخلي" canEdit={canEdit} onToggle={onQuickToggleService} />
@@ -628,7 +635,7 @@ const TripCard = memo(function TripCard({
                     <div className="flex flex-wrap gap-2">
                       {missingItems.map((item) => (
                         <Badge key={item.label} variant="outline" className="border-red-500/25 text-red-400/80 text-[11px] gap-1">
-                          <AlertTriangle className="size-3" />{item.label}
+                          <AlertTriangle className="size-3" /><T>{item.label}</T>
                         </Badge>
                       ))}
                     </div>
@@ -637,7 +644,7 @@ const TripCard = memo(function TripCard({
                   {/* Notes */}
                   {trip.notes && (
                     <div className="text-sm bg-slate-800/30 rounded-lg p-3 border border-slate-700/20">
-                      <p className="text-slate-500 text-xs mb-2 px-1">📝 ملاحظات</p>
+                      <p className="text-slate-500 text-xs mb-2 px-1"><T>📝 ملاحظات</T></p>
                       <p className="text-slate-300 text-xs px-2" style={{ direction: 'rtl' }}>{trip.notes}</p>
                     </div>
                   )}
@@ -645,7 +652,7 @@ const TripCard = memo(function TripCard({
                   {/* Quick Status */}
                   {canEdit && (
                     <div>
-                      <p className="text-xs text-slate-500 mb-2 font-medium">تغيير الحالة</p>
+                      <p className="text-xs text-slate-500 mb-2 font-medium"><T>تغيير الحالة</T></p>
                       <QuickStatusBtns trip={trip} onStatusChange={onQuickChangeStatus} />
                     </div>
                   )}
@@ -657,10 +664,10 @@ const TripCard = memo(function TripCard({
                   <button
                     onClick={() => onReportComplaint(trip)}
                     className="flex items-center justify-center gap-1.5 w-full px-3 py-2 rounded-lg border border-rose-500/30 bg-rose-500/10 text-rose-300 text-xs font-medium hover:bg-rose-500/20 hover:text-rose-200 transition-colors"
-                    title="فتح نموذج شكوى معبأ ببيانات هذه الرحلة"
+                    title={translateUIText('فتح نموذج شكوى معبأ ببيانات هذه الرحلة', locale)}
                   >
                     <MessageSquareWarning className="size-3.5" />
-                    تبليغ عن مشكلة / شكوى بخصوص هذه الرحلة
+                    <T>تبليغ عن مشكلة / شكوى بخصوص هذه الرحلة</T>
                   </button>
                 </div>
               </div>
@@ -680,6 +687,7 @@ const TripFormDialog = memo(function TripFormDialog({
   form: TravelFormData; setForm: React.Dispatch<React.SetStateAction<TravelFormData>>;
   employees: Employee[]; saving: boolean; onSave: () => void;
 }) {
+  const { locale } = useLanguage();
   const updateForm = useCallback((field: keyof TravelFormData, value: string | boolean) => {
     setForm((prev) => ({ ...prev, [field]: value }));
   }, [setForm]);
@@ -689,7 +697,7 @@ const TripFormDialog = memo(function TripFormDialog({
       <DialogContent className="backdrop-blur-xl bg-slate-900 border-slate-700 max-w-lg max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="text-white">{title}</DialogTitle>
-          <DialogDescription className="text-slate-400">أدخل تفاصيل رحلة السفر</DialogDescription>
+          <DialogDescription className="text-slate-400"><T>أدخل تفاصيل رحلة السفر</T></DialogDescription>
         </DialogHeader>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className="sm:col-span-2">
@@ -697,63 +705,63 @@ const TripFormDialog = memo(function TripFormDialog({
               employees={employees}
               value={form.employeeId}
               onChange={(id) => updateForm('employeeId', id)}
-              label="الموظف"
-              placeholder="ابحث عن اسم الموظف..."
+              label={translateUIText('الموظف', locale)}
+              placeholder={translateUIText('ابحث عن اسم الموظف...', locale)}
             />
           </div>
           <div className="space-y-2">
-            <Label className="text-slate-300">الوجهة</Label>
+            <Label className="text-slate-300"><T>الوجهة</T></Label>
             <Input value={form.destination} onChange={(e) => updateForm('destination', e.target.value)} className="bg-slate-800 border-slate-600 text-white" />
           </div>
           <div className="space-y-2">
-            <Label className="text-slate-300">الحالة</Label>
+            <Label className="text-slate-300"><T>الحالة</T></Label>
             <Select value={form.status} onValueChange={(v) => updateForm('status', v)}>
               <SelectTrigger className="bg-slate-800 border-slate-600 text-white"><SelectValue /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="upcoming" className="text-white">تعديل</SelectItem>
-                <SelectItem value="in_progress" className="text-white">جاري</SelectItem>
-                <SelectItem value="completed" className="text-white">مكتمل</SelectItem>
-                <SelectItem value="canceled" className="text-white">ملغي</SelectItem>
+                <SelectItem value="upcoming" className="text-white"><T>تعديل</T></SelectItem>
+                <SelectItem value="in_progress" className="text-white"><T>جاري</T></SelectItem>
+                <SelectItem value="completed" className="text-white"><T>مكتمل</T></SelectItem>
+                <SelectItem value="canceled" className="text-white"><T>ملغي</T></SelectItem>
               </SelectContent>
             </Select>
           </div>
           <div className="space-y-2">
-            <Label className="text-slate-300">تاريخ السفر</Label>
+            <Label className="text-slate-300"><T>تاريخ السفر</T></Label>
             <Input value={form.departureDate} onChange={(e) => updateForm('departureDate', e.target.value)} className="bg-slate-800 border-slate-600 text-white" placeholder="DD/MM/YYYY" dir="ltr" />
           </div>
           <div className="space-y-2">
-            <Label className="text-slate-300">تاريخ العودة</Label>
+            <Label className="text-slate-300"><T>تاريخ العودة</T></Label>
             <Input value={form.returnDate} onChange={(e) => updateForm('returnDate', e.target.value)} className="bg-slate-800 border-slate-600 text-white" placeholder="DD/MM/YYYY" dir="ltr" />
           </div>
           <div className="space-y-2 sm:col-span-2">
-            <Label className="text-slate-300">اسم الديل</Label>
-            <Input value={form.dealerName} onChange={(e) => updateForm('dealerName', e.target.value)} className="bg-slate-800 border-slate-600 text-white" placeholder="أدخل اسم الديل..." />
+            <Label className="text-slate-300"><T>اسم الديل</T></Label>
+            <Input value={form.dealerName} onChange={(e) => updateForm('dealerName', e.target.value)} className="bg-slate-800 border-slate-600 text-white" placeholder={translateUIText('أدخل اسم الديل...', locale)} />
           </div>
           <div className="space-y-2 sm:col-span-2">
-            <Label className="text-slate-300">أسماء العملاء المسافرين</Label>
-            <Textarea value={form.customerNames} onChange={(e) => updateForm('customerNames', e.target.value)} className="bg-slate-800 border-slate-600 text-white" placeholder="أدخل أسماء العملاء..." rows={2} />
+            <Label className="text-slate-300"><T>أسماء العملاء المسافرين</T></Label>
+            <Textarea value={form.customerNames} onChange={(e) => updateForm('customerNames', e.target.value)} className="bg-slate-800 border-slate-600 text-white" placeholder={translateUIText('أدخل أسماء العملاء...', locale)} rows={2} />
           </div>
           {(['internationalFlight', 'domesticFlight', 'hotel', 'visa', 'tours', 'transportation'] as const).map((svc) => (
             <div key={svc} className="space-y-2">
-              <Label className="text-slate-300">حالة {serviceLabels[svc]}</Label>
+              <Label className="text-slate-300"><T>حالة </T>{translateUIText(serviceLabels[svc], locale)}</Label>
               <Select value={form[`${svc}Status` as keyof TravelFormData] as string} onValueChange={(v) => { updateForm(`${svc}Status` as keyof TravelFormData, v); updateForm(`has${svc.charAt(0).toUpperCase() + svc.slice(1)}` as keyof TravelFormData, v === 'booked'); }}>
                 <SelectTrigger className="bg-slate-800 border-slate-600 text-white"><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="booked" className="text-white">محجوز</SelectItem>
-                  <SelectItem value="pending" className="text-white">معلق</SelectItem>
-                  <SelectItem value="missing" className="text-white">غير موجود</SelectItem>
+                  <SelectItem value="booked" className="text-white"><T>محجوز</T></SelectItem>
+                  <SelectItem value="pending" className="text-white"><T>معلق</T></SelectItem>
+                  <SelectItem value="missing" className="text-white"><T>غير موجود</T></SelectItem>
                 </SelectContent>
               </Select>
             </div>
           ))}
           <div className="space-y-2 sm:col-span-2">
-            <Label className="text-slate-300">ملاحظات</Label>
-            <Textarea value={form.notes} onChange={(e) => updateForm('notes', e.target.value)} className="bg-slate-800 border-slate-600 text-white" placeholder="ملاحظات إضافية..." />
+            <Label className="text-slate-300"><T>ملاحظات</T></Label>
+            <Textarea value={form.notes} onChange={(e) => updateForm('notes', e.target.value)} className="bg-slate-800 border-slate-600 text-white" placeholder={translateUIText('ملاحظات إضافية...', locale)} />
           </div>
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={() => { onOpenChange(false); setForm(emptyForm); }} className="border-slate-600 text-slate-300">إلغاء</Button>
-          <Button onClick={onSave} disabled={saving || !form.employeeId || !form.destination || !form.departureDate} className="bg-linear-to-r from-brand-600 to-brand-700 hover:from-brand-700 hover:to-brand-800 text-white">{saving ? 'جاري الحفظ...' : 'حفظ'}</Button>
+          <Button variant="outline" onClick={() => { onOpenChange(false); setForm(emptyForm); }} className="border-slate-600 text-slate-300"><T>إلغاء</T></Button>
+          <Button onClick={onSave} disabled={saving || !form.employeeId || !form.destination || !form.departureDate} className="bg-linear-to-r from-brand-600 to-brand-700 hover:from-brand-700 hover:to-brand-800 text-white">{saving ? <T>جاري الحفظ...</T> : <T>حفظ</T>}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -767,11 +775,12 @@ const DeleteConfirmDialog = memo(function DeleteConfirmDialog({
   open: boolean; onOpenChange: (v: boolean) => void; onConfirm: () => void;
   itemName?: string; loading?: boolean;
 }) {
+  const { locale } = useLanguage();
   return (
     <ConfirmDialog
       open={open}
       onOpenChange={onOpenChange}
-      description="هل أنت متأكد من حذف هذه الرحلة؟ لا يمكن التراجع عن هذا الإجراء."
+      description={translateUIText('هل أنت متأكد من حذف هذه الرحلة؟ لا يمكن التراجع عن هذا الإجراء.', locale)}
       itemName={itemName}
       loading={loading}
       onConfirm={onConfirm}
@@ -790,6 +799,7 @@ const UploadDialog = memo(function UploadDialog({
   const [uploadResult, setUploadResult] = useState<{ message: string; success: number; skipped: number; errors: string[] } | null>(null);
   const uploadInputRef = useRef<HTMLInputElement>(null);
   const qc = useQueryClient();
+  const { locale } = useLanguage();
 
   const handleUpload = async () => {
     if (!uploadFile) return;
@@ -804,10 +814,10 @@ const UploadDialog = memo(function UploadDialog({
         setUploadResult(data);
         qc.invalidateQueries({ queryKey: ['travel'] });
       } else {
-        setUploadResult({ message: data.error || 'فشل في الرفع', success: 0, skipped: 0, errors: [] });
+        setUploadResult({ message: data.error || translateUIText('فشل في الرفع', locale), success: 0, skipped: 0, errors: [] });
       }
     } catch {
-      setUploadResult({ message: 'خطأ في الاتصال', success: 0, skipped: 0, errors: [] });
+      setUploadResult({ message: translateUIText('خطأ في الاتصال', locale), success: 0, skipped: 0, errors: [] });
     } finally { setUploading(false); }
   };
 
@@ -822,12 +832,12 @@ const UploadDialog = memo(function UploadDialog({
     <Dialog open={open} onOpenChange={(v) => { if (!v) closeUpload(); }}>
       <DialogContent className="backdrop-blur-xl bg-slate-900 border-slate-700 max-w-md">
         <DialogHeader>
-          <DialogTitle className="text-white flex items-center gap-2"><FileSpreadsheet className="size-5 text-amber-400" /> رفع شيت حجوزات</DialogTitle>
-          <DialogDescription className="text-slate-400">ارفع ملف Excel (.xlsx) وسيتم استخراج البيانات تلقائياً</DialogDescription>
+          <DialogTitle className="text-white flex items-center gap-2"><FileSpreadsheet className="size-5 text-amber-400" /> <T>رفع شيت حجوزات</T></DialogTitle>
+          <DialogDescription className="text-slate-400"><T>ارفع ملف Excel (.xlsx) وسيتم استخراج البيانات تلقائياً</T></DialogDescription>
         </DialogHeader>
         <div className="space-y-4">
           <div className="space-y-2">
-            <Label className="text-slate-300">ملف الإكسل</Label>
+            <Label className="text-slate-300"><T>ملف الإكسل</T></Label>
             <div onClick={() => uploadInputRef.current?.click()} className={`border-2 border-dashed rounded-lg p-6 text-center cursor-pointer transition-colors ${uploadFile ? 'border-brand-500/30 bg-emerald-500/5' : 'border-slate-600 hover:border-amber-500/50 hover:bg-amber-500/5'}`}>
               <input ref={uploadInputRef} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={(e) => { setUploadFile(e.target.files?.[0] || null); setUploadResult(null); }} />
               {uploadFile ? (
@@ -835,14 +845,14 @@ const UploadDialog = memo(function UploadDialog({
                   <Check className="size-5 text-brand-400" /><span className="text-brand-400 font-medium text-sm">{uploadFile.name}</span><span className="text-slate-500 text-xs">({(uploadFile.size / 1024).toFixed(0)} KB)</span>
                 </div>
               ) : (
-                <div className="space-y-2"><Upload className="size-8 text-slate-500 mx-auto" /><p className="text-slate-400 text-sm">اضغط لاختيار ملف</p><p className="text-slate-600 text-xs">.xlsx أو .xls أو .csv</p></div>
+                <div className="space-y-2"><Upload className="size-8 text-slate-500 mx-auto" /><p className="text-slate-400 text-sm"><T>اضغط لاختيار ملف</T></p><p className="text-slate-600 text-xs"><T>.xlsx أو .xls أو .csv</T></p></div>
               )}
             </div>
           </div>
           <div className="rounded-lg bg-slate-800/50 border border-slate-700/50 p-3">
-            <p className="text-slate-400 text-xs font-medium mb-1">📋 شكل عمود DEAL:</p>
+            <p className="text-slate-400 text-xs font-medium mb-1"><T>📋 شكل عمود DEAL:</T></p>
             <p className="text-slate-500 text-[11px] leading-relaxed">
-              <span className="text-brand-400">اسم العميل</span> / <span className="text-cyan-400">اسم الموظف</span> / <span className="text-brand-400">الوجهة</span> / <span className="text-amber-400">التاريخ</span>
+              <span className="text-brand-400"><T>اسم العميل</T></span> / <span className="text-cyan-400"><T>اسم الموظف</T></span> / <span className="text-brand-400"><T>الوجهة</T></span> / <span className="text-amber-400"><T>التاريخ</T></span>
             </p>
           </div>
           {uploadResult && (
@@ -851,13 +861,13 @@ const UploadDialog = memo(function UploadDialog({
               {uploadResult.errors.length > 0 && (
                 <div className="mt-2 max-h-24 overflow-y-auto">
                   {uploadResult.errors.slice(0, 5).map((err, i) => <p key={i} className="text-red-400/70 text-[11px]">• {err}</p>)}
-                  {uploadResult.errors.length > 5 && <p className="text-slate-500 text-[11px]">+ {uploadResult.errors.length - 5} أخطاء أخرى...</p>}
+                  {uploadResult.errors.length > 5 && <p className="text-slate-500 text-[11px]">+ {formatInteger(uploadResult.errors.length - 5, locale)} <T>أخطاء أخرى...</T></p>}
                 </div>
               )}
             </motion.div>
           )}
           <Button onClick={handleUpload} disabled={uploading || !uploadFile} className="w-full bg-amber-600 hover:bg-amber-700 text-white disabled:opacity-50">
-            {uploading ? (<><motion.div animate={{ rotate: 360 }} transition={{ duration: 1, repeat: Infinity, ease: 'linear' }} className="size-4 border-2 border-white/30 border-t-white rounded-full" /> جاري الرفع...</>) : (<><Upload className="size-4" /> رفع الشيت ({uploadFile ? '1 ملف' : '0'})</>)}
+            {uploading ? (<><motion.div animate={{ rotate: 360 }} transition={{ duration: 1, repeat: Infinity, ease: 'linear' }} className="size-4 border-2 border-white/30 border-t-white rounded-full" /> <T>جاري الرفع...</T></>) : (<><Upload className="size-4" /> <T>رفع الشيت (</T>{uploadFile ? <T>1 ملف</T> : '0'}<T>)</T></>)}
           </Button>
         </div>
       </DialogContent>
@@ -887,16 +897,17 @@ const UrgentAlertBanner = memo(function UrgentAlertBanner({
   urgentTrips: UrgentTripRow[];
   onScrollToTrip: (tripId: string) => void;
 }) {
+  const { locale } = useLanguage();
   if (urgentTrips.length === 0) return null;
   return (
     <AttentionPanel
-      title="رحلات تحتاج متابعة"
+      title={translateUIText('رحلات تحتاج متابعة', locale)}
       icon={<BellRing className="size-3.5 text-red-400" />}
-      subtitle={`${urgentTrips.length} رحلة قريبة من السفر أو العودة`}
+      subtitle={`${formatInteger(urgentTrips.length, locale)} ${translateUIText('رحلة قريبة من السفر أو العودة', locale)}`}
       persistKey="travelUrgentAttention"
       groups={[
-        { key: 'departure', label: 'سفر قادم', count: urgentTrips.filter((t) => t.urgentType === 'departure').length },
-        { key: 'return', label: 'عودة قادمة', count: urgentTrips.filter((t) => t.urgentType === 'return').length },
+        { key: 'departure', label: translateUIText('سفر قادم', locale), count: urgentTrips.filter((t) => t.urgentType === 'departure').length },
+        { key: 'return', label: translateUIText('عودة قادمة', locale), count: urgentTrips.filter((t) => t.urgentType === 'return').length },
       ]}
       items={urgentTrips.map((trip) => {
         const dateStr = trip.urgentType === 'return' ? trip.returnDate || trip.departureDate : trip.departureDate;
@@ -912,7 +923,7 @@ const UrgentAlertBanner = memo(function UrgentAlertBanner({
           groupKey: trip.urgentType,
           primary: trip.dealerName || trip.employeeName,
           secondary: `🌍 ${trip.destination}`,
-          trailing: <span className="flex items-center gap-1.5"><span dir="ltr">{dateStr}</span><span className="font-bold">{getUrgencyLabel(daysLeft, trip.urgentType)}</span></span>,
+          trailing: <span className="flex items-center gap-1.5"><span dir="ltr">{dateStr}</span><span className="font-bold">{getUrgencyLabel(daysLeft, trip.urgentType, locale)}</span></span>,
           onClick: () => onScrollToTrip(trip.id),
         };
       })}
@@ -927,6 +938,7 @@ const PaginationBar = memo(function PaginationBar({
   page: number; totalPages: number; total: number; pageSize: number;
   onPageChange: (p: number) => void; onPageSizeChange: (s: number) => void;
 }) {
+  const { locale } = useLanguage();
   if (totalPages <= 1) return null;
 
   const startItem = (page - 1) * pageSize + 1;
@@ -948,14 +960,14 @@ const PaginationBar = memo(function PaginationBar({
   return (
     <div className="flex items-center justify-between gap-3 px-1">
       <div className="flex items-center gap-2 text-xs text-slate-400">
-        <span>{startItem}-{endItem} من {total}</span>
+        <span>{formatInteger(startItem, locale)}-{formatInteger(endItem, locale)} <T>من</T> {formatInteger(total, locale)}</span>
         <Select value={String(pageSize)} onValueChange={(v) => onPageSizeChange(Number(v))}>
           <SelectTrigger className="bg-slate-800/50 border-slate-700/50 text-white h-7 w-20 text-[11px]">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
             {PAGE_SIZE_OPTIONS.map((s) => (
-              <SelectItem key={s} value={String(s)} className="text-white text-xs">{s} / صفحة</SelectItem>
+              <SelectItem key={s} value={String(s)} className="text-white text-xs">{formatInteger(s, locale)} <T>/ صفحة</T></SelectItem>
             ))}
           </SelectContent>
         </Select>
@@ -977,7 +989,7 @@ const PaginationBar = memo(function PaginationBar({
             onClick={() => onPageChange(p)}
             className={`size-7 text-xs ${page === p ? 'bg-brand-600 text-white hover:bg-brand-700' : 'text-slate-500 hover:text-white'}`}
           >
-            {p}
+            {formatInteger(p, locale)}
           </Button>
         ))}
         <Button variant="ghost" size="icon" onClick={() => onPageChange(page + 1)} disabled={page === totalPages} className="size-7 text-slate-500 hover:text-white">
@@ -997,6 +1009,7 @@ const PaginationBar = memo(function PaginationBar({
 
 export default function TravelPage() {
   const { canEdit, canCreate, canUpdate, canDelete, canExport } = usePermissions('travel');
+  const { locale } = useLanguage();
   const highlightId = useAppStore((s) => s.highlightId);
   const setHighlightId = useAppStore((s) => s.setHighlightId);
 
@@ -1235,7 +1248,7 @@ export default function TravelPage() {
   const groupedByMonth = useMemo(() => {
     if (trips.length === 0) return [];
     if (activeTab !== 'all') {
-      return [{ key: activeTab, label: categoryConfig[activeTab].label, trips }];
+      return [{ key: activeTab, label: translateUIText(categoryConfig[activeTab].label, locale), trips }];
     }
     const map = new Map<string, TravelWithEmployee[]>();
     for (const trip of trips) {
@@ -1245,10 +1258,10 @@ export default function TravelPage() {
     }
     return Array.from(map, ([key, monthTrips]) => ({
       key,
-      label: getMonthLabelFromKey(key),
+      label: getMonthLabelFromKey(key, locale),
       trips: monthTrips,
     }));
-  }, [trips, activeTab]);
+  }, [trips, activeTab, locale]);
 
   // ── Derived ──
   const activeFiltersCount = (filterEmployee !== 'all' ? 1 : 0) + (filterMonth !== 'all' ? 1 : 0) + (tomorrowDeparture ? 1 : 0) + (tomorrowReturn ? 1 : 0);
@@ -1267,12 +1280,12 @@ export default function TravelPage() {
             <span className="text-white font-semibold text-sm">{group.label}</span>
           </div>
           <div className="flex gap-1.5">
-            {cardTrips.length > 0 && <span className="text-[11px] px-2 py-0.5 rounded-full bg-brand-500/10 text-brand-400 border border-brand-500/30">{cardTrips.length} نشط</span>}
-            {returnedTrips.length > 0 && <span className="text-[11px] px-2 py-0.5 rounded-full bg-slate-500/10 text-slate-400 border border-slate-500/20">{returnedTrips.length} رجع</span>}
-            {canceledTrips.length > 0 && <span className="text-[11px] px-2 py-0.5 rounded-full bg-red-500/10 text-red-400 border border-red-500/20">{canceledTrips.length} ملغاة</span>}
+            {cardTrips.length > 0 && <span className="text-[11px] px-2 py-0.5 rounded-full bg-brand-500/10 text-brand-400 border border-brand-500/30">{formatInteger(cardTrips.length, locale)} <T>نشط</T></span>}
+            {returnedTrips.length > 0 && <span className="text-[11px] px-2 py-0.5 rounded-full bg-slate-500/10 text-slate-400 border border-slate-500/20">{formatInteger(returnedTrips.length, locale)} <T>رجع</T></span>}
+            {canceledTrips.length > 0 && <span className="text-[11px] px-2 py-0.5 rounded-full bg-red-500/10 text-red-400 border border-red-500/20">{formatInteger(canceledTrips.length, locale)} <T>ملغاة</T></span>}
           </div>
           <div className="flex-1 h-px bg-slate-700/50" />
-          <span className="text-slate-500 text-xs">{group.trips.length} رحلة</span>
+          <span className="text-slate-500 text-xs">{formatInteger(group.trips.length, locale)} <T>رحلة</T></span>
         </div>
 
         {cardTrips.length > 0 && (
@@ -1297,11 +1310,11 @@ export default function TravelPage() {
               <Table>
                 <TableHeader>
                   <TableRow className="border-slate-700/50 hover:bg-transparent">
-                    <TableHead className="text-slate-500 text-xs font-medium">الديل</TableHead>
-                    <TableHead className="text-slate-500 text-xs font-medium">الوجهة</TableHead>
-                    <TableHead className="text-slate-500 text-xs font-medium hidden sm:table-cell">التاريخ</TableHead>
-                    <TableHead className="text-slate-500 text-xs font-medium hidden md:table-cell">العملاء</TableHead>
-                    <TableHead className="text-slate-500 text-xs font-medium">الحالة</TableHead>
+                    <TableHead className="text-slate-500 text-xs font-medium"><T>الديل</T></TableHead>
+                    <TableHead className="text-slate-500 text-xs font-medium"><T>الوجهة</T></TableHead>
+                    <TableHead className="text-slate-500 text-xs font-medium hidden sm:table-cell"><T>التاريخ</T></TableHead>
+                    <TableHead className="text-slate-500 text-xs font-medium hidden md:table-cell"><T>العملاء</T></TableHead>
+                    <TableHead className="text-slate-500 text-xs font-medium"><T>الحالة</T></TableHead>
                     {(canUpdate || canDelete) && <TableHead className="w-16" />}
                   </TableRow>
                 </TableHeader>
@@ -1317,10 +1330,10 @@ export default function TravelPage() {
                         <TableCell>
                           <SmartActionMenu
   actions={[
-    ...(canUpdate ? [{ key: 'edit', label: 'تعديل', icon: <Pencil className="size-3.5" />, onSelect: () => openEdit(trip) }] : []),
-    ...(canDelete ? [{ key: 'delete', label: 'حذف', icon: <Trash2 className="size-3.5" />, destructive: true, separatorBefore: true, onSelect: () => setDeletingId(trip.id) }] : []),
+    ...(canUpdate ? [{ key: 'edit', label: translateUIText('تعديل', locale), icon: <Pencil className="size-3.5" />, onSelect: () => openEdit(trip) }] : []),
+    ...(canDelete ? [{ key: 'delete', label: translateUIText('حذف', locale), icon: <Trash2 className="size-3.5" />, destructive: true, separatorBefore: true, onSelect: () => setDeletingId(trip.id) }] : []),
   ]}
-  label="إجراءات الرحلة"
+  label={translateUIText('إجراءات الرحلة', locale)}
 />
                         </TableCell>
                       )}
@@ -1341,7 +1354,7 @@ export default function TravelPage() {
               className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-xs font-medium hover:bg-red-500/15 transition-colors w-full cursor-pointer"
             >
               <XCircle className="size-3.5" />
-              <span>الرحلات الملغاة ({canceledTrips.length})</span>
+              <span><T>الرحلات الملغاة (</T>{formatInteger(canceledTrips.length, locale)}<T>)</T></span>
               <svg className={`size-3.5 mr-auto transition-transform duration-200 ${cancelledExpanded[group.key] ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
               </svg>
@@ -1360,10 +1373,10 @@ export default function TravelPage() {
                       <Table>
                         <TableHeader>
                           <TableRow className="border-red-500/20 hover:bg-transparent">
-                            <TableHead className="text-red-400/60 text-xs font-medium">الديل</TableHead>
-                            <TableHead className="text-red-400/60 text-xs font-medium">الوجهة</TableHead>
-                            <TableHead className="text-red-400/60 text-xs font-medium hidden sm:table-cell">السفر</TableHead>
-                            <TableHead className="text-red-400/60 text-xs font-medium">الحالة</TableHead>
+                            <TableHead className="text-red-400/60 text-xs font-medium"><T>الديل</T></TableHead>
+                            <TableHead className="text-red-400/60 text-xs font-medium"><T>الوجهة</T></TableHead>
+                            <TableHead className="text-red-400/60 text-xs font-medium hidden sm:table-cell"><T>السفر</T></TableHead>
+                            <TableHead className="text-red-400/60 text-xs font-medium"><T>الحالة</T></TableHead>
                             {(canUpdate || canDelete) && <TableHead className="w-16" />}
                           </TableRow>
                         </TableHeader>
@@ -1378,10 +1391,10 @@ export default function TravelPage() {
                                 <TableCell>
                                   <SmartActionMenu
                                         actions={[
-                                          ...(canUpdate ? [{ key: 'edit', label: 'تعديل', icon: <Pencil className="size-3.5" />, onSelect: () => openEdit(trip) }] : []),
-                                          ...(canDelete ? [{ key: 'delete', label: 'حذف', icon: <Trash2 className="size-3.5" />, destructive: true, separatorBefore: true, onSelect: () => setDeletingId(trip.id) }] : []),
+                                          ...(canUpdate ? [{ key: 'edit', label: translateUIText('تعديل', locale), icon: <Pencil className="size-3.5" />, onSelect: () => openEdit(trip) }] : []),
+                                          ...(canDelete ? [{ key: 'delete', label: translateUIText('حذف', locale), icon: <Trash2 className="size-3.5" />, destructive: true, separatorBefore: true, onSelect: () => setDeletingId(trip.id) }] : []),
                                         ]}
-                                        label="إجراءات الرحلة"
+                                        label={translateUIText('إجراءات الرحلة', locale)}
                                       />
                                 </TableCell>
                               )}
@@ -1409,9 +1422,9 @@ export default function TravelPage() {
             <CalendarDays className={`size-4 ${isInProgress ? 'text-amber-400' : 'text-brand-400'}`} />
             <span className="text-white font-semibold text-sm">{group.label}</span>
           </div>
-          <span className={`text-[11px] px-2 py-0.5 rounded-full border ${isInProgress ? 'bg-amber-500/10 text-amber-400 border-amber-500/20' : 'bg-brand-500/10 text-brand-400 border-brand-500/30'}`}>{group.trips.length} {isInProgress ? 'في الرحلة' : 'رحلات مجدولة'}</span>
+          <span className={`text-[11px] px-2 py-0.5 rounded-full border ${isInProgress ? 'bg-amber-500/10 text-amber-400 border-amber-500/20' : 'bg-brand-500/10 text-brand-400 border-brand-500/30'}`}>{formatInteger(group.trips.length, locale)} {isInProgress ? <T>في الرحلة</T> : <T>رحلات مجدولة</T>}</span>
           <div className="flex-1 h-px bg-slate-700/50" />
-          <span className="text-slate-500 text-xs">{group.trips.length} رحلة</span>
+          <span className="text-slate-500 text-xs">{formatInteger(group.trips.length, locale)} <T>رحلة</T></span>
         </div>
         <div className="space-y-2">
           <AnimatePresence>
@@ -1438,18 +1451,18 @@ export default function TravelPage() {
           <span className="text-white font-semibold text-sm">{group.label}</span>
         </div>
         <div className="flex-1 h-px bg-slate-700/50" />
-        <span className="text-slate-500 text-xs">{group.trips.length} رحلة</span>
+        <span className="text-slate-500 text-xs">{formatInteger(group.trips.length, locale)} <T>رحلة</T></span>
       </div>
       <div className="rounded-xl border border-slate-700/30 bg-slate-800/20 overflow-hidden">
         <div className="overflow-x-auto">
           <Table>
             <TableHeader>
               <TableRow className="border-slate-700/50 hover:bg-transparent">
-                <TableHead className="text-slate-500 text-xs font-medium">الديل</TableHead>
-                <TableHead className="text-slate-500 text-xs font-medium">الوجهة</TableHead>
-                <TableHead className="text-slate-500 text-xs font-medium hidden sm:table-cell">السفر</TableHead>
-                <TableHead className="text-slate-500 text-xs font-medium">العودة</TableHead>
-                <TableHead className="text-slate-500 text-xs font-medium">الحالة</TableHead>
+                <TableHead className="text-slate-500 text-xs font-medium"><T>الديل</T></TableHead>
+                <TableHead className="text-slate-500 text-xs font-medium"><T>الوجهة</T></TableHead>
+                <TableHead className="text-slate-500 text-xs font-medium hidden sm:table-cell"><T>السفر</T></TableHead>
+                <TableHead className="text-slate-500 text-xs font-medium"><T>العودة</T></TableHead>
+                <TableHead className="text-slate-500 text-xs font-medium"><T>الحالة</T></TableHead>
                 {(canUpdate || canDelete) && <TableHead className="w-16" />}
               </TableRow>
             </TableHeader>
@@ -1465,10 +1478,10 @@ export default function TravelPage() {
                     <TableCell>
                       <SmartActionMenu
   actions={[
-    ...(canUpdate ? [{ key: 'edit', label: 'تعديل', icon: <Pencil className="size-3.5" />, onSelect: () => openEdit(trip) }] : []),
-    ...(canDelete ? [{ key: 'delete', label: 'حذف', icon: <Trash2 className="size-3.5" />, destructive: true, separatorBefore: true, onSelect: () => setDeletingId(trip.id) }] : []),
+    ...(canUpdate ? [{ key: 'edit', label: translateUIText('تعديل', locale), icon: <Pencil className="size-3.5" />, onSelect: () => openEdit(trip) }] : []),
+    ...(canDelete ? [{ key: 'delete', label: translateUIText('حذف', locale), icon: <Trash2 className="size-3.5" />, destructive: true, separatorBefore: true, onSelect: () => setDeletingId(trip.id) }] : []),
   ]}
-  label="إجراءات الرحلة"
+  label={translateUIText('إجراءات الرحلة', locale)}
 />
                     </TableCell>
                   )}
@@ -1496,21 +1509,21 @@ export default function TravelPage() {
           <XCircle className="size-4 text-red-400" />
           <span className="text-red-300 font-semibold text-sm">{group.label}</span>
         </div>
-        <span className="text-[11px] px-2 py-0.5 rounded-full bg-red-500/10 text-red-400 border border-red-500/20">{group.trips.length} ملغاة</span>
+        <span className="text-[11px] px-2 py-0.5 rounded-full bg-red-500/10 text-red-400 border border-red-500/20">{formatInteger(group.trips.length, locale)} <T>ملغاة</T></span>
         <div className="flex-1 h-px bg-red-500/20" />
-        <span className="text-slate-500 text-xs">{group.trips.length} رحلة</span>
+        <span className="text-slate-500 text-xs">{formatInteger(group.trips.length, locale)} <T>رحلة</T></span>
       </div>
       <div className="rounded-xl border border-red-500/20 bg-red-500/5 overflow-hidden">
         <div className="overflow-x-auto">
           <Table>
             <TableHeader>
               <TableRow className="border-red-500/20 hover:bg-transparent">
-                <TableHead className="text-red-400/60 text-xs font-medium">الديل</TableHead>
-                <TableHead className="text-red-400/60 text-xs font-medium">الوجهة</TableHead>
-                <TableHead className="text-red-400/60 text-xs font-medium hidden sm:table-cell">السفر</TableHead>
-                <TableHead className="text-red-400/60 text-xs font-medium">العودة</TableHead>
-                <TableHead className="text-red-400/60 text-xs font-medium">الحالة</TableHead>
-                <TableHead className="text-red-400/60 text-xs font-medium hidden sm:table-cell">ملاحظات</TableHead>
+                <TableHead className="text-red-400/60 text-xs font-medium"><T>الديل</T></TableHead>
+                <TableHead className="text-red-400/60 text-xs font-medium"><T>الوجهة</T></TableHead>
+                <TableHead className="text-red-400/60 text-xs font-medium hidden sm:table-cell"><T>السفر</T></TableHead>
+                <TableHead className="text-red-400/60 text-xs font-medium"><T>العودة</T></TableHead>
+                <TableHead className="text-red-400/60 text-xs font-medium"><T>الحالة</T></TableHead>
+                <TableHead className="text-red-400/60 text-xs font-medium hidden sm:table-cell"><T>ملاحظات</T></TableHead>
                 {(canUpdate || canDelete) && <TableHead className="w-16" />}
               </TableRow>
             </TableHeader>
@@ -1524,7 +1537,7 @@ export default function TravelPage() {
                     {trip.returnDate ? (
                       trip.returnDate
                     ) : (
-                      <span className="inline-flex items-center gap-1 text-amber-400"><AlertTriangle className="size-3" /> غير محدد</span>
+                      <span className="inline-flex items-center gap-1 text-amber-400"><AlertTriangle className="size-3" /> <T>غير محدد</T></span>
                     )}
                   </TableCell>
                   <TableCell><StatusBadge status={trip.status} /></TableCell>
@@ -1533,10 +1546,10 @@ export default function TravelPage() {
                     <TableCell>
                       <SmartActionMenu
   actions={[
-    ...(canUpdate ? [{ key: 'edit', label: 'تعديل', icon: <Pencil className="size-3.5" />, onSelect: () => openEdit(trip) }] : []),
-    ...(canDelete ? [{ key: 'delete', label: 'حذف', icon: <Trash2 className="size-3.5" />, destructive: true, separatorBefore: true, onSelect: () => setDeletingId(trip.id) }] : []),
+    ...(canUpdate ? [{ key: 'edit', label: translateUIText('تعديل', locale), icon: <Pencil className="size-3.5" />, onSelect: () => openEdit(trip) }] : []),
+    ...(canDelete ? [{ key: 'delete', label: translateUIText('حذف', locale), icon: <Trash2 className="size-3.5" />, destructive: true, separatorBefore: true, onSelect: () => setDeletingId(trip.id) }] : []),
   ]}
-  label="إجراءات الرحلة"
+  label={translateUIText('إجراءات الرحلة', locale)}
 />
                     </TableCell>
                   )}
@@ -1559,20 +1572,20 @@ export default function TravelPage() {
       <PageHeaderBar
         icon={<Plane className="size-5" />}
         iconClassName="bg-brand-500/15 border-brand-500/30 text-brand-400"
-        title="إدارة السفر"
+        title={translateUIText('إدارة السفر', locale)}
         description={
           <>
-            {tabCounts.upcoming + tabCounts.in_progress} رحلة نشطة • {tabCounts.all} إجمالي
+            {formatInteger(tabCounts.upcoming + tabCounts.in_progress, locale)} <T>رحلة نشطة</T> • {formatInteger(tabCounts.all, locale)} <T>إجمالي</T>
             {isFetching && <span className="inline-block size-3 border-2 border-brand-400 border-t-transparent rounded-full animate-spin mr-2 align-middle" />}
           </>
         }
         primaryAction={canCreate ? {
-          label: 'إضافة رحلة',
+          label: translateUIText('إضافة رحلة', locale),
           onClick: () => { setForm(emptyForm); setEditingTrip(null); setIsAddOpen(true); },
         } : undefined}
         actions={canCreate ? (
           <Button onClick={() => setIsUploadOpen(true)} variant="outline" className="border-amber-500/30 text-amber-400 hover:bg-amber-500/10">
-            <Upload className="size-4" /> رفع شيت
+            <Upload className="size-4" /> <T>رفع شيت</T>
           </Button>
         ) : undefined}
       />
@@ -1591,7 +1604,7 @@ export default function TravelPage() {
             id="travel-inline-complaint"
             tone="rose"
             icon={<MessageSquareWarning className="size-3.5 text-rose-400" />}
-            title={`شكوى من صفقة — ${complaintDeal.dealerName || complaintDeal.employeeName}`}
+            title={`${translateUIText('شكوى من صفقة', locale)} — ${complaintDeal.dealerName || complaintDeal.employeeName}`}
             onClose={() => setComplaintDeal(null)}
           >
             <ComplaintInlineForm
@@ -1629,9 +1642,9 @@ export default function TravelPage() {
                 }`}
               >
                 <TabIcon className="size-4 sm:size-5 shrink-0" />
-                <span className="text-xs sm:text-sm font-semibold">{config.label}</span>
+                <span className="text-xs sm:text-sm font-semibold"><T>{config.label}</T></span>
                 <span className={`text-[10px] sm:text-xs font-bold min-w-[22px] text-center px-1.5 py-0.5 rounded-full transition-colors duration-300 ${isActive ? config.badgeClass : 'bg-slate-700/50 text-slate-500'}`}>
-                  {tabCounts[tabKey as keyof typeof tabCounts]}
+                  {formatInteger(tabCounts[tabKey as keyof typeof tabCounts], locale)}
                 </span>
               </button>
             );
@@ -1643,11 +1656,11 @@ export default function TravelPage() {
       <motion.div initial={{ opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }} className="space-y-3">
         <div className="relative">
           <Search className="absolute right-3 top-1/2 -translate-y-1/2 size-4 text-slate-400" />
-          <Input value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} placeholder="ابحث في الرحلات (اسم ديل، وجهة، موظف، عملاء...)" className="bg-slate-800/50 border-slate-700/50 text-white placeholder:text-slate-500 pr-10" />
+          <Input value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} placeholder={translateUIText('ابحث في الرحلات (اسم ديل، وجهة، موظف، عملاء...)', locale)} className="bg-slate-800/50 border-slate-700/50 text-white placeholder:text-slate-500 pr-10" />
         </div>
         <div className="flex flex-wrap gap-2 items-center">
           <div className="flex items-center gap-1.5 text-slate-400 text-sm">
-            <Filter className="size-3.5" /><span>فلتر:</span>
+            <Filter className="size-3.5" /><span><T>فلتر:</T></span>
           </div>
           <EmployeeSearchInput
             employees={employees}
@@ -1655,8 +1668,8 @@ export default function TravelPage() {
             onChange={(id) => setFilterEmployee(id)}
             showAllOption
             allOptionValue="all"
-            allOptionLabel="كل الموظفين"
-            placeholder="فلتر حسب الموظف"
+            allOptionLabel={translateUIText('كل الموظفين', locale)}
+            placeholder={translateUIText('فلتر حسب الموظف', locale)}
             variant="filter"
           />
           <Select value={filterMonth} onValueChange={setFilterMonth}>
@@ -1665,8 +1678,8 @@ export default function TravelPage() {
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all" className="text-white text-xs">كل الأشهر</SelectItem>
-              {availableMonths.map((m) => <SelectItem key={m} value={m} className="text-white text-xs">{getMonthLabelFromKey(m)}</SelectItem>)}
+              <SelectItem value="all" className="text-white text-xs"><T>كل الأشهر</T></SelectItem>
+              {availableMonths.map((m) => <SelectItem key={m} value={m} className="text-white text-xs">{getMonthLabelFromKey(m, locale)}</SelectItem>)}
             </SelectContent>
           </Select>
           {/* §TRAVEL-TOMORROW — real, combinable, persisted filters with
@@ -1675,7 +1688,7 @@ export default function TravelPage() {
             type="button"
             onClick={() => setTomorrowDeparture(!tomorrowDeparture)}
             aria-pressed={tomorrowDeparture}
-            title="رحلات يبدأ سفرها غدًا"
+            title={translateUIText('رحلات يبدأ سفرها غدًا', locale)}
             className={`flex items-center gap-1.5 h-8 px-2.5 rounded-lg border text-xs font-semibold transition-colors ${
               tomorrowDeparture
                 ? 'bg-brand-500/20 border-brand-500/50 text-brand-200'
@@ -1683,13 +1696,13 @@ export default function TravelPage() {
             }`}
           >
             <PlaneTakeoff className="size-3.5" />
-            العملاء المسافرون غدًا
+            <T>العملاء المسافرون غدًا</T>
           </button>
           <button
             type="button"
             onClick={() => setTomorrowReturn(!tomorrowReturn)}
             aria-pressed={tomorrowReturn}
-            title="رحلات يعود عملاؤها غدًا"
+            title={translateUIText('رحلات يعود عملاؤها غدًا', locale)}
             className={`flex items-center gap-1.5 h-8 px-2.5 rounded-lg border text-xs font-semibold transition-colors ${
               tomorrowReturn
                 ? 'bg-cyan-500/20 border-cyan-500/50 text-cyan-200'
@@ -1697,14 +1710,14 @@ export default function TravelPage() {
             }`}
           >
             <PlaneLanding className="size-3.5" />
-            العملاء العائدون غدًا
+            <T>العملاء العائدون غدًا</T>
           </button>
           {activeFiltersCount > 0 && (
             <Button variant="ghost" onClick={clearFilters} className="text-slate-500 hover:text-red-400 text-xs h-8 px-2">
-              <XCircle className="size-3" /> مسح الفلاتر
+              <XCircle className="size-3" /> <T>مسح الفلاتر</T>
             </Button>
           )}
-          <span className="text-slate-500 text-xs mr-auto">{pagination.total} نتيجة</span>
+          <span className="text-slate-500 text-xs mr-auto">{formatInteger(pagination.total, locale)} <T>نتيجة</T></span>
         </div>
       </motion.div>
 
@@ -1715,17 +1728,17 @@ export default function TravelPage() {
         <Card className="border-slate-700/50 bg-slate-800/50">
           <CardContent className="flex flex-col items-center justify-center py-16">
             <Plane className="size-12 text-slate-600 mb-4" />
-            <p className="text-slate-400 text-lg font-medium">لا توجد رحلات</p>
-            <p className="text-slate-500 text-sm mt-1">أضف رحلات السفر الجديدة أو ارفع شيت حجوزات</p>
+            <p className="text-slate-400 text-lg font-medium"><T>لا توجد رحلات</T></p>
+            <p className="text-slate-500 text-sm mt-1"><T>أضف رحلات السفر الجديدة أو ارفع شيت حجوزات</T></p>
           </CardContent>
         </Card>
       ) : trips.length === 0 ? (
         <Card className="border-slate-700/50 bg-slate-800/50">
           <CardContent className="flex flex-col items-center justify-center py-12">
             {(() => { const EmptyIcon = categoryConfig[activeTab].icon; return <EmptyIcon className="size-10 text-slate-600 mb-3" />; })()}
-            <p className="text-slate-400">{categoryConfig[activeTab].emptyTitle}</p>
-            <p className="text-slate-500 text-sm mt-1">{categoryConfig[activeTab].emptySubtitle}</p>
-            {activeFiltersCount > 0 && <Button variant="ghost" onClick={clearFilters} className="text-slate-500 mt-3 text-sm">مسح الفلاتر</Button>}
+            <p className="text-slate-400"><T>{categoryConfig[activeTab].emptyTitle}</T></p>
+            <p className="text-slate-500 text-sm mt-1"><T>{categoryConfig[activeTab].emptySubtitle}</T></p>
+            {activeFiltersCount > 0 && <Button variant="ghost" onClick={clearFilters} className="text-slate-500 mt-3 text-sm"><T>مسح الفلاتر</T></Button>}
           </CardContent>
         </Card>
       ) : (
@@ -1748,7 +1761,7 @@ export default function TravelPage() {
 
       {/* ── Dialogs ── */}
       <TripFormDialog
-        title="إضافة رحلة سفر جديدة"
+        title={translateUIText('إضافة رحلة سفر جديدة', locale)}
         open={isAddOpen && !editingTrip}
         onOpenChange={setIsAddOpen}
         form={form} setForm={setForm}
@@ -1756,7 +1769,7 @@ export default function TravelPage() {
         onSave={handleSave}
       />
       <TripFormDialog
-        title={`تعديل: ${editingTrip?.destination}`}
+        title={`${translateUIText('تعديل', locale)}: ${editingTrip?.destination ?? ''}`}
         open={!!editingTrip}
         onOpenChange={(v) => { if (!v) setEditingTrip(null); }}
         form={form} setForm={setForm}

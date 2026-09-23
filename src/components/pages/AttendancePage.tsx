@@ -4,7 +4,10 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { usePermissions } from '@/hooks/usePermissions';
 import { usePageState } from '@/hooks/use-page-state';
-import { formatMonthLabelAr } from '@/lib/month-label';
+import { T } from '@/lib/i18n/T';
+import { translateUIText } from '@/lib/i18n/ui-text';
+import { useLanguage } from '@/lib/i18n/language-context';
+import { formatInteger, formatMonthKey } from '@/lib/i18n/format';
 import { useRecordHighlight } from '@/hooks/use-record-highlight';
 import { useAppStore } from '@/lib/store';
 import { todayDisplayDate } from '@/lib/date-utils';
@@ -120,6 +123,7 @@ function isLate(minutesLate: number): boolean {
 
 export default function AttendancePage() {
   const { canEdit, canCreate, canUpdate, canDelete, canExport } = usePermissions('attendance');
+  const { locale } = useLanguage();
   const [records, setRecords] = useState<AttendanceRecord[]>([]);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [loading, setLoading] = useState(true);
@@ -239,13 +243,13 @@ export default function AttendancePage() {
       if (res.ok && data.success) {
         setUploadResult({ created: data.created, skipped: data.skipped, errors: data.errors || [] });
         logCreate('attendance', 'رفع شيت اكسيل', `تم رفع ${data.created} سجل حضور من ملف ${file.name}`);
-        toast.success(`تم رفع ${data.created} سجل حضور بنجاح${data.skipped > 0 ? ` — ${data.skipped} تم تخطيها` : ''}`);
+        toast.success(`${translateUIText('تم رفع', locale)} ${formatInteger(data.created, locale)} ${translateUIText('سجل حضور بنجاح', locale)}${data.skipped > 0 ? ` — ${formatInteger(data.skipped, locale)} ${translateUIText('تم تخطيها', locale)}` : ''}`);
         await fetchData();
       } else {
-        toast.error(data.error || 'فشل رفع الملف');
+        toast.error(data.error || translateUIText('فشل رفع الملف', locale));
       }
     } catch {
-      toast.error('حدث خطأ أثناء رفع الملف');
+      toast.error(translateUIText('حدث خطأ أثناء رفع الملف', locale));
     } finally {
       setUploading(false);
       if (fileInputRef.current) fileInputRef.current.value = '';
@@ -356,12 +360,12 @@ export default function AttendancePage() {
       if (res.ok) {
         const empName = editingRecord.employee?.name || '';
         logUpdate('attendance', 'تعديل سجل حضور', `${empName} - ${editAttendanceForm.date}`);
-        toast.success('تم تعديل سجل الحضور بنجاح');
+        toast.success(translateUIText('تم تعديل سجل الحضور بنجاح', locale));
         await fetchData();
         setEditingRecord(null);
       }
     } catch {
-      toast.error('حدث خطأ أثناء تعديل السجل');
+      toast.error(translateUIText('حدث خطأ أثناء تعديل السجل', locale));
     } finally {
       setSaving(false);
     }
@@ -394,10 +398,10 @@ export default function AttendancePage() {
 
   const getStatusBadge = (status: string, minutesLate: number) => {
     if (status === 'approved') {
-      return <Badge className="bg-green-500/15 text-green-400 border-green-500/20">مؤيد</Badge>;
+      return <Badge className="bg-green-500/15 text-green-400 border-green-500/20"><T>مؤيد</T></Badge>;
     }
     if (status === 'absent') {
-      return <Badge className="bg-red-500/15 text-red-400 border-red-500/20">غائب</Badge>;
+      return <Badge className="bg-red-500/15 text-red-400 border-red-500/20"><T>غائب</T></Badge>;
     }
     if (status === 'late' || minutesLate > 0) {
       let colorClass = 'bg-amber-500/15 text-amber-400 border-amber-500/20';
@@ -408,11 +412,11 @@ export default function AttendancePage() {
       }
       return (
         <Badge className={colorClass}>
-          متأخر ({minutesLate} د)
+          <T>متأخر (</T>{formatInteger(minutesLate, locale)}<T> د)</T>
         </Badge>
       );
     }
-    return <Badge className="bg-brand-500/15 text-brand-400 border-brand-500/30">حاضر</Badge>;
+    return <Badge className="bg-brand-500/15 text-brand-400 border-brand-500/30"><T>حاضر</T></Badge>;
   };
 
   const filtered = records.filter((rec) => {
@@ -470,18 +474,18 @@ export default function AttendancePage() {
       <PageHeaderBar
         icon={<Clock className="size-5" />}
         iconClassName="bg-blue-500/15 border-blue-500/30 text-blue-400"
-        title="سجل الحضور والانصراف"
-        description={`${filtered.length} سجل حضور`}
+        title={translateUIText('سجل الحضور والانصراف', locale)}
+        description={<>{formatInteger(filtered.length, locale)} <T>سجل حضور</T></>}
         extras={
           <div className="flex items-center gap-2 flex-wrap">
             <PagePeriodIndicator
               testId="attendance-period-indicator"
               label={
                 monthFilter === 'all'
-                  ? 'كل السجلات'
+                  ? translateUIText('كل السجلات', locale)
                   : monthFilter.startsWith('d:')
-                    ? `يوم ${monthFilter.slice(2)}`
-                    : `شهر ${monthFilter}`
+                    ? `${translateUIText('يوم', locale)} ${monthFilter.slice(2)}`
+                    : `${translateUIText('شهر', locale)} ${monthFilter}`
               }
               filtered={monthFilter !== 'all'}
               onShowAll={() => setMonthFilter('all')}
@@ -494,8 +498,8 @@ export default function AttendancePage() {
                 <button
                   onClick={() => setDeptDismissed(true)}
                   className="text-brand-400 hover:text-white"
-                  title="إزالة تركيز القسم"
-                  aria-label="إزالة تركيز القسم"
+                  title={translateUIText('إزالة تركيز القسم', locale)}
+                  aria-label={translateUIText('إزالة تركيز القسم', locale)}
                 >
                   <X className="size-3" />
                 </button>
@@ -504,12 +508,12 @@ export default function AttendancePage() {
             {/* §17 — status focus from the dashboard deep-link */}
             {statusFocus && (
               <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-500/15 border border-amber-500/30 text-amber-300 text-[11px] font-medium">
-                {statusFocus === 'late' ? 'متأخر' : 'غائب'}
+                <T>{statusFocus === 'late' ? 'متأخر' : 'غائب'}</T>
                 <button
                   onClick={() => setStatusDismissed(true)}
                   className="text-amber-300 hover:text-white"
-                  title="إزالة تصفية الحالة"
-                  aria-label="إزالة تصفية الحالة"
+                  title={translateUIText('إزالة تصفية الحالة', locale)}
+                  aria-label={translateUIText('إزالة تصفية الحالة', locale)}
                 >
                   <X className="size-3" />
                 </button>
@@ -518,7 +522,7 @@ export default function AttendancePage() {
           </div>
         }
         primaryAction={canCreate ? {
-          label: 'تسجيل حضور',
+          label: translateUIText('تسجيل حضور', locale),
           onClick: () => {
             setAddForm({
               employeeId: '',
@@ -552,12 +556,12 @@ export default function AttendancePage() {
                     animate={{ rotate: 360 }}
                     transition={{ duration: 0.8, repeat: Infinity, ease: 'linear' }}
                   />
-                  جاري الرفع...
+                  <T>جاري الرفع...</T>
                 </>
               ) : (
                 <>
                   <FileSpreadsheet className="size-4 ml-1" />
-                  رفع شيت إكسيل
+                  <T>رفع شيت إكسيل</T>
                 </>
               )}
             </Button>
@@ -569,26 +573,26 @@ export default function AttendancePage() {
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <Card className="border-slate-700/50 bg-slate-800/50">
           <CardContent className="p-4 text-center">
-            <p className="text-slate-400 text-xs mb-1">إجمالي السجلات</p>
-            <p className="text-white text-2xl font-bold">{filtered.length}</p>
+            <p className="text-slate-400 text-xs mb-1"><T>إجمالي السجلات</T></p>
+            <p className="text-white text-2xl font-bold">{formatInteger(filtered.length, locale)}</p>
           </CardContent>
         </Card>
         <Card className="border-slate-700/50 bg-slate-800/50">
           <CardContent className="p-4 text-center">
-            <p className="text-slate-400 text-xs mb-1">حاضر</p>
-            <p className="text-brand-400 text-2xl font-bold">{totalPresent}</p>
+            <p className="text-slate-400 text-xs mb-1"><T>حاضر</T></p>
+            <p className="text-brand-400 text-2xl font-bold">{formatInteger(totalPresent, locale)}</p>
           </CardContent>
         </Card>
         <Card className="border-slate-700/50 bg-slate-800/50">
           <CardContent className="p-4 text-center">
-            <p className="text-slate-400 text-xs mb-1">متأخر</p>
-            <p className="text-amber-400 text-2xl font-bold">{totalLate}</p>
+            <p className="text-slate-400 text-xs mb-1"><T>متأخر</T></p>
+            <p className="text-amber-400 text-2xl font-bold">{formatInteger(totalLate, locale)}</p>
           </CardContent>
         </Card>
         <Card className="border-slate-700/50 bg-slate-800/50">
           <CardContent className="p-4 text-center">
-            <p className="text-slate-400 text-xs mb-1">غائب</p>
-            <p className="text-red-400 text-2xl font-bold">{totalAbsent}</p>
+            <p className="text-slate-400 text-xs mb-1"><T>غائب</T></p>
+            <p className="text-red-400 text-2xl font-bold">{formatInteger(totalAbsent, locale)}</p>
           </CardContent>
         </Card>
       </div>
@@ -598,7 +602,7 @@ export default function AttendancePage() {
         <div className="relative flex-1 max-w-md">
           <Search className="absolute right-3 top-1/2 -translate-y-1/2 size-4 text-slate-400" />
           <Input
-            placeholder="بحث باسم الموظف أو التاريخ..."
+            placeholder={translateUIText('بحث باسم الموظف أو التاريخ...', locale)}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="bg-slate-800 border-slate-600 text-white pr-10 placeholder:text-slate-500"
@@ -619,8 +623,8 @@ export default function AttendancePage() {
             onClick={() => setMonthFilter(`d:${shiftDisplayDate(dayFilterValue, -1)}`)}
             disabled={monthFilter === 'all'}
             className="px-2.5 py-2 rounded-lg border border-slate-600 text-slate-300 hover:bg-slate-700/60 disabled:opacity-40 text-sm"
-            title="اليوم السابق"
-            aria-label="اليوم السابق"
+            title={translateUIText('اليوم السابق', locale)}
+            aria-label={translateUIText('اليوم السابق', locale)}
           >
             ›
           </button>
@@ -635,15 +639,15 @@ export default function AttendancePage() {
             disabled={monthFilter === 'all'}
             className="bg-slate-800 border border-slate-600 text-white rounded-lg h-10 px-2 text-sm disabled:opacity-40"
             dir="ltr"
-            aria-label="اختيار اليوم"
+            aria-label={translateUIText('اختيار اليوم', locale)}
           />
           <button
             type="button"
             onClick={() => setMonthFilter(`d:${shiftDisplayDate(dayFilterValue, 1)}`)}
             disabled={monthFilter === 'all'}
             className="px-2.5 py-2 rounded-lg border border-slate-600 text-slate-300 hover:bg-slate-700/60 disabled:opacity-40 text-sm"
-            title="اليوم التالي"
-            aria-label="اليوم التالي"
+            title={translateUIText('اليوم التالي', locale)}
+            aria-label={translateUIText('اليوم التالي', locale)}
           >
             ‹
           </button>
@@ -653,18 +657,18 @@ export default function AttendancePage() {
             onClick={() => setMonthFilter(`d:${todayDisplayDate()}`)}
             className="border-slate-600 text-slate-300 hover:bg-slate-800 h-9"
           >
-            اليوم
+            <T>اليوم</T>
           </Button>
         </div>
         <Select value={monthFilter} onValueChange={setMonthFilter}>
           <SelectTrigger className="bg-slate-800 border-slate-600 text-white w-full sm:w-48">
-            <SelectValue placeholder="تصفية بالشهر" />
+            <SelectValue placeholder={translateUIText('تصفية بالشهر', locale)} />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all" className="text-white">كل السجلات</SelectItem>
-            <SelectItem value={`d:${todayDisplayDate()}`} className="text-white">اليوم</SelectItem>
+            <SelectItem value="all" className="text-white"><T>كل السجلات</T></SelectItem>
+            <SelectItem value={`d:${todayDisplayDate()}`} className="text-white"><T>اليوم</T></SelectItem>
             {months.map((m) => (
-              <SelectItem key={m} value={m} className="text-white">شهر {m}</SelectItem>
+              <SelectItem key={m} value={m} className="text-white"><T>شهر</T> {m}</SelectItem>
             ))}
           </SelectContent>
         </Select>
@@ -681,16 +685,16 @@ export default function AttendancePage() {
         <Card className="border-slate-700/50 bg-slate-800/50">
           <CardContent className="flex flex-col items-center justify-center py-16">
             <Clock className="size-12 text-slate-600 mb-4" />
-            <p className="text-slate-400 text-lg font-medium">لا توجد سجلات</p>
+            <p className="text-slate-400 text-lg font-medium"><T>لا توجد سجلات</T></p>
             <p className="text-slate-500 text-sm mt-1">
               {/* §10/§56: the active period is NAMED in the empty state. */}
               {search
-                ? 'لم يتم العثور على نتائج'
+                ? <T>لم يتم العثور على نتائج</T>
                 : monthFilter && monthFilter !== 'all'
                   ? monthFilter.startsWith('d:')
-                    ? `لا توجد سجلات حضور في يوم ${monthFilter.slice(2)}.`
-                    : `لا توجد سجلات حضور في ${formatMonthLabelAr(monthFilter)}.`
-                  : 'ابدأ بتسجيل الحضور'}
+                    ? <><T>لا توجد سجلات حضور في يوم </T>{monthFilter.slice(2)}<T>.</T></>
+                    : <><T>لا توجد سجلات حضور في </T>{formatMonthKey(`${monthFilter.slice(3)}-${monthFilter.slice(0, 2)}`, locale)}<T>.</T></>
+                  : <T>ابدأ بتسجيل الحضور</T>}
             </p>
           </CardContent>
         </Card>
@@ -704,14 +708,14 @@ export default function AttendancePage() {
             <Table>
               <TableHeader>
                 <TableRow className="border-slate-700 hover:bg-transparent">
-                  <TableHead className="text-slate-400 text-sm font-medium">الموظف</TableHead>
-                  <TableHead className="text-slate-400 text-sm font-medium">التاريخ</TableHead>
-                  <TableHead className="text-slate-400 text-sm font-medium">الحضور</TableHead>
-                  <TableHead className="text-slate-400 text-sm font-medium">الانصراف</TableHead>
-                  <TableHead className="text-slate-400 text-sm font-medium">الحالة</TableHead>
-                  <TableHead className="text-slate-400 text-sm font-medium hidden md:table-cell">ملاحظات</TableHead>
+                  <TableHead className="text-slate-400 text-sm font-medium"><T>الموظف</T></TableHead>
+                  <TableHead className="text-slate-400 text-sm font-medium"><T>التاريخ</T></TableHead>
+                  <TableHead className="text-slate-400 text-sm font-medium"><T>الحضور</T></TableHead>
+                  <TableHead className="text-slate-400 text-sm font-medium"><T>الانصراف</T></TableHead>
+                  <TableHead className="text-slate-400 text-sm font-medium"><T>الحالة</T></TableHead>
+                  <TableHead className="text-slate-400 text-sm font-medium hidden md:table-cell"><T>ملاحظات</T></TableHead>
                   {(canUpdate || canDelete) && (
-                    <TableHead className="text-slate-400 text-sm font-medium">إجراءات</TableHead>
+                    <TableHead className="text-slate-400 text-sm font-medium"><T>إجراءات</T></TableHead>
                   )}
                 </TableRow>
               </TableHeader>
@@ -748,7 +752,7 @@ export default function AttendancePage() {
                             className="text-cyan-400 hover:text-cyan-300 hover:bg-cyan-500/10 text-xs gap-1 h-7"
                           >
                             <LogOut className="size-3" />
-                            تسجيل
+                            <T>تسجيل</T>
                           </Button>
                         ) : (
                           <span className="text-slate-500">—</span>
@@ -766,8 +770,8 @@ export default function AttendancePage() {
                         {/* §2 — SmartActionMenu: icon fan with tooltips */}
                         <SmartActionMenu
                           actions={[
-                            { key: 'edit', label: 'تعديل', icon: <Pencil className="size-3.5" />, onSelect: () => openEditDialog(rec), hidden: !canUpdate },
-                            { key: 'delete', label: 'حذف', icon: <Trash2 className="size-3.5" />, destructive: true, onSelect: () => setDeletingId(rec.id), hidden: !canDelete },
+                            { key: 'edit', label: translateUIText('تعديل', locale), icon: <Pencil className="size-3.5" />, onSelect: () => openEditDialog(rec), hidden: !canUpdate },
+                            { key: 'delete', label: translateUIText('حذف', locale), icon: <Trash2 className="size-3.5" />, destructive: true, onSelect: () => setDeletingId(rec.id), hidden: !canDelete },
                           ]}
                         />
                       </TableCell>
@@ -784,8 +788,8 @@ export default function AttendancePage() {
       <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
         <DialogContent className="backdrop-blur-xl bg-slate-900 border-slate-700 max-w-lg">
           <DialogHeader>
-            <DialogTitle className="text-white">تسجيل حضور</DialogTitle>
-            <DialogDescription className="text-slate-400">أدخل بيانات تسجيل الحضور - يتم حساب التأخير تلقائياً</DialogDescription>
+            <DialogTitle className="text-white"><T>تسجيل حضور</T></DialogTitle>
+            <DialogDescription className="text-slate-400"><T>أدخل بيانات تسجيل الحضور - يتم حساب التأخير تلقائياً</T></DialogDescription>
           </DialogHeader>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="sm:col-span-2">
@@ -793,12 +797,12 @@ export default function AttendancePage() {
                 employees={employees}
                 value={addForm.employeeId}
                 onChange={(id) => setAddForm((p) => ({ ...p, employeeId: id }))}
-                label="الموظف"
-                placeholder="ابحث عن اسم الموظف..."
+                label={translateUIText('الموظف', locale)}
+                placeholder={translateUIText('ابحث عن اسم الموظف...', locale)}
               />
             </div>
             <div className="space-y-2">
-              <Label className="text-slate-300">التاريخ</Label>
+              <Label className="text-slate-300"><T>التاريخ</T></Label>
               <Input
                 value={addForm.date}
                 onChange={(e) => setAddForm((p) => ({ ...p, date: e.target.value }))}
@@ -808,7 +812,7 @@ export default function AttendancePage() {
               />
             </div>
             <div className="space-y-2">
-              <Label className="text-slate-300">وقت الحضور</Label>
+              <Label className="text-slate-300"><T>وقت الحضور</T></Label>
               <Input
                 value={addForm.checkIn}
                 onChange={(e) => setAddForm((p) => ({ ...p, checkIn: e.target.value }))}
@@ -818,19 +822,19 @@ export default function AttendancePage() {
               />
             </div>
             <div className="space-y-2 sm:col-span-2">
-              <Label className="text-slate-300">ملاحظات</Label>
+              <Label className="text-slate-300"><T>ملاحظات</T></Label>
               <Textarea
                 value={addForm.notes}
                 onChange={(e) => setAddForm((p) => ({ ...p, notes: e.target.value }))}
                 className="bg-slate-800 border-slate-600 text-white"
-                placeholder="ملاحظات إضافية (اختياري)..."
+                placeholder={translateUIText('ملاحظات إضافية (اختياري)...', locale)}
                 rows={2}
               />
             </div>
             {/* Auto-calculation preview */}
             {addForm.employeeId && addForm.checkIn && (
               <div className="sm:col-span-2 rounded-lg bg-slate-800 border border-slate-700 p-3">
-                <p className="text-xs text-slate-400 mb-1">📊 معاينة تلقائية:</p>
+                <p className="text-xs text-slate-400 mb-1"><T>📊 معاينة تلقائية:</T></p>
                 {(() => {
                   const emp = employees.find((e) => e.id === addForm.employeeId);
                   const ws = emp?.shiftStart || null;
@@ -838,15 +842,15 @@ export default function AttendancePage() {
                   return (
                     <div className="flex items-center gap-3 text-sm">
                       <span className="text-slate-300">
-                        وقت العمل: <span className="text-cyan-400" dir="ltr">{ws || 'غير محدد'}</span>
+                        <T>وقت العمل: </T><span className="text-cyan-400" dir="ltr">{ws || translateUIText('غير محدد', locale)}</span>
                       </span>
                       <span className="text-slate-500">|</span>
                       <span className="text-slate-300">
-                        وقت الحضور: <span className="text-white" dir="ltr">{addForm.checkIn}</span>
+                        <T>وقت الحضور: </T><span className="text-white" dir="ltr">{addForm.checkIn}</span>
                       </span>
                       <span className="text-slate-500">|</span>
                       <span className={late > 0 ? 'text-amber-400' : 'text-brand-400'}>
-                        {late > 0 ? `متأخر ${late} دقيقة` : 'في الوقت'}
+                        {late > 0 ? <><T>متأخر </T>{formatInteger(late, locale)} <T>دقيقة</T></> : <T>في الوقت</T>}
                       </span>
                     </div>
                   );
@@ -860,14 +864,14 @@ export default function AttendancePage() {
               onClick={() => setIsAddOpen(false)}
               className="border-slate-600 text-slate-300"
             >
-              إلغاء
+              <T>إلغاء</T>
             </Button>
             <Button
               onClick={handleAdd}
               disabled={saving || !addForm.employeeId || !addForm.date}
               className="bg-linear-to-r from-brand-600 to-brand-700 hover:from-brand-700 hover:to-brand-800 text-white h-9 px-5 shadow-lg shadow-brand-500/20 transition-all"
             >
-              {saving ? 'جاري الحفظ...' : 'حفظ'}
+              {saving ? <T>جاري الحفظ...</T> : <T>حفظ</T>}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -877,14 +881,14 @@ export default function AttendancePage() {
       <Dialog open={!!checkoutRecord} onOpenChange={() => setCheckoutRecord(null)}>
         <DialogContent className="backdrop-blur-xl bg-slate-900 border-slate-700 max-w-sm">
           <DialogHeader>
-            <DialogTitle className="text-white">تسجيل وقت الانصراف</DialogTitle>
+            <DialogTitle className="text-white"><T>تسجيل وقت الانصراف</T></DialogTitle>
             <DialogDescription className="text-slate-400">
-              الموظف: {checkoutRecord?.employee?.name || 'غير معروف'} — {checkoutRecord?.date}
+              <T>الموظف: </T>{checkoutRecord?.employee?.name || translateUIText('غير معروف', locale)} — {checkoutRecord?.date}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div className="space-y-2">
-              <Label className="text-slate-300">وقت الانصراف</Label>
+              <Label className="text-slate-300"><T>وقت الانصراف</T></Label>
               <Input
                 value={editForm.checkOut}
                 onChange={(e) => setEditForm({ checkOut: e.target.value })}
@@ -896,7 +900,7 @@ export default function AttendancePage() {
             </div>
             {checkoutRecord && (
               <div className="rounded-lg bg-slate-800 border border-slate-700 p-3">
-                <p className="text-xs text-slate-400">وقت الحضور المسجل</p>
+                <p className="text-xs text-slate-400"><T>وقت الحضور المسجل</T></p>
                 <p className="text-white text-lg font-medium" dir="ltr">{checkoutRecord.checkIn || '—'}</p>
               </div>
             )}
@@ -907,14 +911,14 @@ export default function AttendancePage() {
               onClick={() => setCheckoutRecord(null)}
               className="border-slate-600 text-slate-300"
             >
-              إلغاء
+              <T>إلغاء</T>
             </Button>
             <Button
               onClick={handleCheckout}
               disabled={saving || !editForm.checkOut.trim()}
               className="bg-linear-to-r from-brand-600 to-brand-700 hover:from-brand-700 hover:to-brand-800 text-white"
             >
-              {saving ? 'جاري الحفظ...' : 'تسجيل الانصراف'}
+              {saving ? <T>جاري الحفظ...</T> : <T>تسجيل الانصراف</T>}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -926,15 +930,15 @@ export default function AttendancePage() {
           <DialogHeader>
             <DialogTitle className="text-white flex items-center gap-2">
               <Pencil className="size-5 text-emerald-400" />
-              تعديل سجل الحضور
+              <T>تعديل سجل الحضور</T>
             </DialogTitle>
             <DialogDescription className="text-slate-400">
-              تعديل بيانات سجل الحضور — الموظف: {editingRecord?.employee?.name || 'غير معروف'}
+              <T>تعديل بيانات سجل الحضور — الموظف: </T>{editingRecord?.employee?.name || translateUIText('غير معروف', locale)}
             </DialogDescription>
           </DialogHeader>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label className="text-slate-300">التاريخ</Label>
+              <Label className="text-slate-300"><T>التاريخ</T></Label>
               <Input
                 value={editAttendanceForm.date}
                 onChange={(e) => setEditAttendanceForm((p) => ({ ...p, date: e.target.value }))}
@@ -944,24 +948,24 @@ export default function AttendancePage() {
               />
             </div>
             <div className="space-y-2">
-              <Label className="text-slate-300">الحالة</Label>
+              <Label className="text-slate-300"><T>الحالة</T></Label>
               <Select
                 value={editAttendanceForm.status}
                 onValueChange={(v) => setEditAttendanceForm((p) => ({ ...p, status: v }))}
               >
                 <SelectTrigger className="bg-slate-800 border-slate-600 text-white">
-                  <SelectValue placeholder="اختر الحالة" />
+                  <SelectValue placeholder={translateUIText('اختر الحالة', locale)} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="present" className="text-white">حاضر</SelectItem>
-                  <SelectItem value="late" className="text-white">متأخر</SelectItem>
-                  <SelectItem value="absent" className="text-white">غائب</SelectItem>
-                  <SelectItem value="approved" className="text-white">مؤيد</SelectItem>
+                  <SelectItem value="present" className="text-white"><T>حاضر</T></SelectItem>
+                  <SelectItem value="late" className="text-white"><T>متأخر</T></SelectItem>
+                  <SelectItem value="absent" className="text-white"><T>غائب</T></SelectItem>
+                  <SelectItem value="approved" className="text-white"><T>مؤيد</T></SelectItem>
                 </SelectContent>
               </Select>
             </div>
             <div className="space-y-2">
-              <Label className="text-slate-300">وقت الحضور</Label>
+              <Label className="text-slate-300"><T>وقت الحضور</T></Label>
               <Input
                 value={editAttendanceForm.checkIn}
                 onChange={(e) => setEditAttendanceForm((p) => ({ ...p, checkIn: e.target.value }))}
@@ -971,7 +975,7 @@ export default function AttendancePage() {
               />
             </div>
             <div className="space-y-2">
-              <Label className="text-slate-300">وقت الانصراف</Label>
+              <Label className="text-slate-300"><T>وقت الانصراف</T></Label>
               <Input
                 value={editAttendanceForm.checkOut}
                 onChange={(e) => setEditAttendanceForm((p) => ({ ...p, checkOut: e.target.value }))}
@@ -981,19 +985,19 @@ export default function AttendancePage() {
               />
             </div>
             <div className="space-y-2 sm:col-span-2">
-              <Label className="text-slate-300">ملاحظات</Label>
+              <Label className="text-slate-300"><T>ملاحظات</T></Label>
               <Textarea
                 value={editAttendanceForm.notes}
                 onChange={(e) => setEditAttendanceForm((p) => ({ ...p, notes: e.target.value }))}
                 className="bg-slate-800 border-slate-600 text-white"
-                placeholder="ملاحظات إضافية (اختياري)..."
+                placeholder={translateUIText('ملاحظات إضافية (اختياري)...', locale)}
                 rows={2}
               />
             </div>
             {/* Auto-calculation preview */}
             {editingRecord && editAttendanceForm.checkIn && (
               <div className="sm:col-span-2 rounded-lg bg-slate-800 border border-slate-700 p-3">
-                <p className="text-xs text-slate-400 mb-1">📊 معاينة التأخير:</p>
+                <p className="text-xs text-slate-400 mb-1"><T>📊 معاينة التأخير:</T></p>
                 {(() => {
                   const emp = employees.find((e) => e.id === editingRecord.employeeId);
                   const ws = emp?.shiftStart || null;
@@ -1001,15 +1005,15 @@ export default function AttendancePage() {
                   return (
                     <div className="flex items-center gap-3 text-sm">
                       <span className="text-slate-300">
-                        وقت العمل: <span className="text-cyan-400" dir="ltr">{ws || 'غير محدد'}</span>
+                        <T>وقت العمل: </T><span className="text-cyan-400" dir="ltr">{ws || translateUIText('غير محدد', locale)}</span>
                       </span>
                       <span className="text-slate-500">|</span>
                       <span className="text-slate-300">
-                        وقت الحضور: <span className="text-white" dir="ltr">{editAttendanceForm.checkIn}</span>
+                        <T>وقت الحضور: </T><span className="text-white" dir="ltr">{editAttendanceForm.checkIn}</span>
                       </span>
                       <span className="text-slate-500">|</span>
                       <span className={late > 0 ? 'text-amber-400' : 'text-emerald-400'}>
-                        {late > 0 ? `متأخر ${late} دقيقة` : 'في الوقت'}
+                        {late > 0 ? <><T>متأخر </T>{formatInteger(late, locale)} <T>دقيقة</T></> : <T>في الوقت</T>}
                       </span>
                     </div>
                   );
@@ -1023,14 +1027,14 @@ export default function AttendancePage() {
               onClick={() => setEditingRecord(null)}
               className="border-slate-600 text-slate-300"
             >
-              إلغاء
+              <T>إلغاء</T>
             </Button>
             <Button
               onClick={handleEditAttendance}
               disabled={saving || !editAttendanceForm.date || !editAttendanceForm.status}
               className="bg-gradient-to-l from-emerald-600 to-cyan-600 hover:from-emerald-700 hover:to-cyan-700 text-white h-9 px-5 shadow-lg shadow-emerald-500/20 transition-all"
             >
-              {saving ? 'جاري الحفظ...' : 'حفظ التعديلات'}
+              {saving ? <T>جاري الحفظ...</T> : <T>حفظ التعديلات</T>}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1044,10 +1048,10 @@ export default function AttendancePage() {
               <div className="flex items-center justify-center size-9 rounded-lg bg-red-500/15 border border-red-500/25">
                 <Trash2 className="size-4 text-red-400" />
               </div>
-              تأكيد حذف سجل الحضور
+              <T>تأكيد حذف سجل الحضور</T>
             </DialogTitle>
             <DialogDescription className="text-slate-400">
-              هل أنت متأكد من حذف هذا السجل؟ لا يمكن التراجع عن هذا الإجراء.
+              <T>هل أنت متأكد من حذف هذا السجل؟ لا يمكن التراجع عن هذا الإجراء.</T>
             </DialogDescription>
           </DialogHeader>
           {/* Record details preview */}
@@ -1057,19 +1061,19 @@ export default function AttendancePage() {
             return (
               <div className="rounded-lg bg-slate-800 border border-slate-700 p-3 space-y-2">
                 <div className="flex items-center justify-between text-sm">
-                  <span className="text-slate-400">الموظف</span>
-                  <span className="text-white font-medium">{rec.employee?.name || 'غير معروف'}</span>
+                  <span className="text-slate-400"><T>الموظف</T></span>
+                  <span className="text-white font-medium">{rec.employee?.name || translateUIText('غير معروف', locale)}</span>
                 </div>
                 <div className="flex items-center justify-between text-sm">
-                  <span className="text-slate-400">التاريخ</span>
+                  <span className="text-slate-400"><T>التاريخ</T></span>
                   <span className="text-white" dir="ltr">{rec.date}</span>
                 </div>
                 <div className="flex items-center justify-between text-sm">
-                  <span className="text-slate-400">الحضور</span>
+                  <span className="text-slate-400"><T>الحضور</T></span>
                   <span className="text-white" dir="ltr">{rec.checkIn || '—'}</span>
                 </div>
                 <div className="flex items-center justify-between text-sm">
-                  <span className="text-slate-400">الانصراف</span>
+                  <span className="text-slate-400"><T>الانصراف</T></span>
                   <span className="text-white" dir="ltr">{rec.checkOut || '—'}</span>
                 </div>
               </div>
@@ -1081,7 +1085,7 @@ export default function AttendancePage() {
               onClick={() => setDeletingId(null)}
               className="flex-1 border-slate-600 text-slate-300 hover:bg-slate-800 hover:text-white"
             >
-              إلغاء
+              <T>إلغاء</T>
             </Button>
             <Button
               variant="destructive"
@@ -1091,7 +1095,7 @@ export default function AttendancePage() {
               className="flex-1 bg-red-600 hover:bg-red-700 text-white"
             >
               <Trash2 className="size-4 ml-1" />
-              حذف السجل
+              <T>حذف السجل</T>
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1103,24 +1107,24 @@ export default function AttendancePage() {
           <DialogHeader>
             <DialogTitle className="text-white flex items-center gap-2">
               <FileSpreadsheet className="size-5 text-emerald-400" />
-              نتيجة رفع الشيت
+              <T>نتيجة رفع الشيت</T>
             </DialogTitle>
-            <DialogDescription className="text-slate-400">تفاصيل عملية رفع بيانات الحضور</DialogDescription>
+            <DialogDescription className="text-slate-400"><T>تفاصيل عملية رفع بيانات الحضور</T></DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-3">
               <div className="p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-center">
-                <p className="text-2xl font-bold text-emerald-400">{uploadResult?.created || 0}</p>
-                <p className="text-slate-400 text-xs mt-1">تم رفعها بنجاح</p>
+                <p className="text-2xl font-bold text-emerald-400">{formatInteger(uploadResult?.created || 0, locale)}</p>
+                <p className="text-slate-400 text-xs mt-1"><T>تم رفعها بنجاح</T></p>
               </div>
               <div className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/20 text-center">
-                <p className="text-2xl font-bold text-amber-400">{uploadResult?.skipped || 0}</p>
-                <p className="text-slate-400 text-xs mt-1">تم تخطيها</p>
+                <p className="text-2xl font-bold text-amber-400">{formatInteger(uploadResult?.skipped || 0, locale)}</p>
+                <p className="text-slate-400 text-xs mt-1"><T>تم تخطيها</T></p>
               </div>
             </div>
             {uploadResult && uploadResult.errors.length > 0 && (
               <div className="space-y-1.5">
-                <p className="text-slate-400 text-xs font-medium">الأخطاء:</p>
+                <p className="text-slate-400 text-xs font-medium"><T>الأخطاء:</T></p>
                 <div className="max-h-40 overflow-y-auto rounded-lg bg-slate-800/60 border border-slate-700/50 p-3">
                   {uploadResult.errors.map((err, i) => (
                     <p key={i} className="text-red-400 text-xs leading-relaxed">{err}</p>
@@ -1134,7 +1138,7 @@ export default function AttendancePage() {
               onClick={() => setUploadResult(null)}
               className="bg-linear-to-r from-brand-600 to-brand-700 hover:from-brand-700 hover:to-brand-800 text-white h-9 px-5 shadow-lg shadow-brand-500/20"
             >
-              تم
+              <T>تم</T>
             </Button>
           </DialogFooter>
         </DialogContent>

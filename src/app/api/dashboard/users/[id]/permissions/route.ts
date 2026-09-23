@@ -35,7 +35,9 @@ import {
   type PermissionsMap,
 } from '@/config/permissions';
 import { parsePositionTemplate, POSITIONS_TABLE, ORG_NODES_TABLE, type OrgNode } from '@/lib/organization';
+import { orgNodeTypeLabel } from '@/lib/organization';
 import { buildEmployeeOrgIndex, resolveEmployeeOrgLabels } from '@/lib/reports/employee-org';
+import { explainOrgBoundary } from '@/lib/scope/boundary';
 import type { Employee } from '@/types';
 import { resolveActor } from '@/lib/auth/actor-resolver';
 import { writeConfigAudit } from '@/lib/audit/config-audit';
@@ -78,10 +80,15 @@ export async function GET(
       id: string; name?: string | null; email?: string | null; role: string; rank?: string | null;
       isSuspended?: boolean; suspendedAt?: string | null; photoURL?: string | null;
       permissions?: unknown; positionId?: string | null; linkedEmployeeId?: string | null;
+      orgBoundaryNodeIds?: unknown;
     }>('users', id);
     if (!user) {
       return NextResponse.json({ error: 'User not found' }, { status: 404 });
     }
+    // §ORG-BOUNDARY — shape-sanitize the stored override (null = inherit).
+    const overrideBoundaryIds = Array.isArray(user.orgBoundaryNodeIds)
+      ? user.orgBoundaryNodeIds.filter((v): v is string => typeof v === 'string' && v.length > 0)
+      : null;
 
     // 4+5. The three tiers + the canonical effective resolver.
     const storedOverrides = safeParsePerms(user.permissions) as PermissionsMap;
@@ -139,6 +146,27 @@ export async function GET(
       ? orgNodes.find((n) => n.id === linkedEmployee.orgNodeId) ?? null
       : null;
 
+    // §ORG-BOUNDARY — the SAME resolution the scope engine enforces
+    // (override > assignment > admin > unresolved), with display
+    // facts. The UI renders this; it never re-derives the boundary.
+    const boundary = explainOrgBoundary(
+      {
+        userId: user.id,
+        role: user.role,
+        linkedEmployeeId: user.linkedEmployeeId ?? null,
+        orgBoundaryNodeIds: overrideBoundaryIds,
+      },
+      { orgNodes, employees },
+    );
+    // Node picker facts for the boundary EDITOR (id/name/type only —
+    // the admin already controls this user; no secrets here).
+    const availableNodes = orgNodes.map((n) => ({
+      id: n.id,
+      name: n.name,
+      type: n.type,
+      status: n.status,
+    }));
+
     return NextResponse.json({
       identity: {
         id: user.id,
@@ -154,6 +182,7 @@ export async function GET(
         linkedEmployeeId: user.linkedEmployeeId ?? null,
         linkedEmployeeName: linkedEmployee?.name ?? null,
         linkedEmployeeCode: linkedEmployee?.code ?? null,
+        orgBoundaryNodeIds: overrideBoundaryIds,
       },
       authorization: {
         roleBaseline,
@@ -172,6 +201,13 @@ export async function GET(
         // scope without a node placement or managed branches cannot
         // resolve — shown as restricted, never faked as ALL.
         resolvable: Boolean(ownNode || managedBranches.length > 0),
+        // §ORG-BOUNDARY — effective boundary + source + the editor
+        // facts. `boundary` is the ENFORCED boundary (identical to
+        // what the scope engine resolves); `overrideNodeIds` is the
+        // raw stored override (null = تلقائي/inherit).
+        boundary,
+        overrideNodeIds: overrideBoundaryIds,
+        availableNodes,
       },
     });
   } catch (error) {
@@ -198,7 +234,7 @@ export async function PUT(
 
     const { id } = await params;
     const body = await request.json();
-    const { permissions } = body;
+    const { permissions, orgBoundaryNodeIds } = body ?? {};
 
     if (!permissions || typeof permissions !== 'object' || Array.isArray(permissions)) {
       return NextResponse.json({ error: 'Invalid permissions payload' }, { status: 400 });
@@ -258,14 +294,60 @@ export async function PUT(
       }
     }
 
-    await updateRecord('users', id, {
+    // §ORG-BOUNDARY — validate the optional boundary override against
+    // the CANONICAL Organization Tree (canonical ids only; names are
+    // never accepted). undefined = leave unchanged; null/[] = clear
+    // the override (تلقائي — من التعيين التنظيمي); array = replace.
+    const orgNodesForValidation = orgBoundaryNodeIds !== undefined
+      ? await getAll<OrgNode>(ORG_NODES_TABLE)
+      : [];
+    let boundaryUpdate: string[] | null | undefined;
+    if (orgBoundaryNodeIds !== undefined) {
+      if (orgBoundaryNodeIds === null) {
+        boundaryUpdate = null;
+      } else if (Array.isArray(orgBoundaryNodeIds) && orgBoundaryNodeIds.length === 0) {
+        boundaryUpdate = null;
+      } else if (Array.isArray(orgBoundaryNodeIds)) {
+        const requested = [...new Set(orgBoundaryNodeIds)];
+        const unknown = requested.filter(
+          (v) => typeof v !== 'string' || !orgNodesForValidation.some((n) => n.id === v),
+        );
+        if (unknown.length > 0) {
+          return NextResponse.json(
+            { error: `الحد التنظيمي يحتوي عقداً غير موجودة في الشجرة: ${unknown.slice(0, 3).join('، ')}` },
+            { status: 400 },
+          );
+        }
+        boundaryUpdate = requested;
+      } else {
+        return NextResponse.json(
+          { error: 'الحد التنظيمي يجب أن يكون قائمة معرفات عقد أو null' },
+          { status: 400 },
+        );
+      }
+    }
+
+    const userUpdate: Record<string, unknown> = {
       permissions: JSON.stringify(permissions),
-    });
+    };
+    if (boundaryUpdate !== undefined) {
+      userUpdate.orgBoundaryNodeIds = boundaryUpdate;
+    }
+
+    await updateRecord('users', id, userUpdate);
 
     // Configuration audit with the exact diff (existing mechanism —
-    // no second audit system).
+    // no second audit system). §ORG-BOUNDARY: a boundary change is
+    // recorded in the same audited entry (id lists are canonical org
+    // node ids, safe to log).
     const diff = diffPermissionMaps(before, permissions as PermissionsMap);
     const actor = await resolveActor(check.user?.id);
+    const beforeBoundary = Array.isArray((user as { orgBoundaryNodeIds?: unknown }).orgBoundaryNodeIds)
+      ? (user as { orgBoundaryNodeIds: string[] }).orgBoundaryNodeIds
+      : null;
+    const boundaryNote = boundaryUpdate !== undefined
+      ? ` — الحد التنظيمي: [${beforeBoundary?.join('، ') ?? 'تلقائي'}] → [${boundaryUpdate?.join('، ') ?? 'تلقائي'}]`
+      : '';
     await writeConfigAudit({
       actorId: actor.id,
       actorName: actor.name,
@@ -275,7 +357,7 @@ export async function PUT(
       monthKey: null,
       before,
       after: permissions as PermissionsMap,
-      details: `تعديل صلاحيات المستخدم ${user.name ?? id} (تجاوز مباشر) — ${diff.length} تغيير${diff.length > 0 ? `: ${diff.slice(0, 10).map((d) => `${d.pageKey} ${d.before}→${d.after}`).join('، ')}` : ''}`,
+      details: `تعديل صلاحيات المستخدم ${user.name ?? id} (تجاوز مباشر) — ${diff.length} تغيير${diff.length > 0 ? `: ${diff.slice(0, 10).map((d) => `${d.pageKey} ${d.before}→${d.after}`).join('، ')}` : ''}${boundaryNote}`,
     });
 
     return NextResponse.json({ success: true, changed: diff.length, diff });

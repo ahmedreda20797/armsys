@@ -34,7 +34,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { getEmployeePerformanceDataset } from '@/lib/performance-intelligence';
+import { getEmployeePerformanceDataset, aggregateTravelDeals } from '@/lib/performance-intelligence';
 import type { PerformanceIntelligenceLoaders } from '@/lib/performance-intelligence';
 import { buildEmployeeKpiReport, toFrameworkEmployee } from '@/lib/kpi-reporting';
 import { buildEmployeeKpiResult, withFinalizedAt } from '@/lib/kpi-framework';
@@ -910,20 +910,107 @@ describe('deal analysis (spec §12)', () => {
     });
     const deals = dataset!.deals;
     assert.equal(deals.relationship, 'CONFIRMED');
-    assert.equal(deals.total, 3); // August departures only
+    assert.equal(deals.travelTotal, 3); // August departures only (TRAVEL dimension)
     assert.equal(deals.byStatus.completed, 1);
     assert.equal(deals.byStatus.canceled, 1);
     assert.equal(deals.byStatus.in_progress, 1);
-    assert.equal(deals.completed, 1);
     assert.equal(deals.canceled, 1);
     assert.equal(deals.active, 1);
     assert.equal(deals.completionRate, 33.33);
+    // §DEAL-DATES — the fixture's completed deals carry no closedAt,
+    // so the CLOSED dimension stays UNKNOWN (never attributed, never
+    // derived from the departure month).
+    assert.equal(deals.closedTotal, 0);
+    assert.equal(deals.closedUnknownMonth, 2); // d_1 + d_4 (completed, no closedAt)
+    assert.deepEqual(deals.closedMonthly, []);
     // Window monthly series includes July (actual data, not fabricated).
     assert.deepEqual(deals.monthly, [
       { month: '2026-07', count: 1 },
       { month: '2026-08', count: 3 },
     ]);
     assert.deepEqual(dataset!.evidence.deals.recordIds, ['d_1', 'd_2', 'd_3']);
+  });
+});
+
+describe('§DEAL-DATES — dimension separation in deal aggregation', () => {
+  // The three non-negotiable examples: one deal, several truthful
+  // periods depending on the metric's canonical date dimension.
+  const closedAugTravelsSep = makeDeal({
+    id: 'd_sep1',
+    status: 'completed',
+    departureDate: '15/09/2026',
+    createdAt: '2026-08-20T10:00:00.000Z',
+    closedAt: '2026-08-28T14:00:00.000Z',
+  });
+  const closedSepTravelsOct = makeDeal({
+    id: 'd_sep2',
+    status: 'completed',
+    departureDate: '10/10/2026',
+    createdAt: '2026-08-20T10:00:00.000Z',
+    closedAt: '2026-09-05T11:30:00.000Z',
+  });
+  const completedNoClosure = makeDeal({
+    id: 'd_unknown',
+    status: 'completed',
+    departureDate: '15/09/2026',
+    createdAt: '2026-08-20T10:00:00.000Z',
+    closedAt: null,
+  });
+  const WINDOW = ['2026-08', '2026-09', '2026-10'];
+
+  function aggregate(deals: TravelDeal[], period: string) {
+    return aggregateTravelDeals({
+      deals: deals.filter((d) => monthKey(d) === period),
+      windowDeals: deals.filter((d) => monthKey(d) !== null),
+      monthByDealId: new Map(deals.map((d) => [d.id, monthKey(d)])),
+      allDeals: deals,
+      closedMonthByDealId: new Map(deals.map((d) => [d.id, closedKey(d)])),
+      windowMonths: WINDOW,
+      periodMonthKey: period,
+    });
+  }
+  const monthKey = (d: TravelDeal) => {
+    const m = Number(d.departureDate.split('/')[1]);
+    return m >= 8 && m <= 10 ? `2026-${String(m).padStart(2, '0')}` : null;
+  };
+  const closedKey = (d: TravelDeal) => (d.closedAt ? d.closedAt.slice(0, 7) : null);
+
+  it('§17.14 — the same deal counts in August for closures and September for travel', () => {
+    const august = aggregate([closedAugTravelsSep], '2026-08');
+    assert.equal(august.closedTotal, 1); // CLOSED dimension (closedAt)
+    assert.equal(august.travelTotal, 0); // TRAVEL dimension (departureDate)
+    const september = aggregate([closedAugTravelsSep], '2026-09');
+    assert.equal(september.closedTotal, 0);
+    assert.equal(september.travelTotal, 1);
+  });
+
+  it('§17.2 — closed September, travels October: each period answers independently', () => {
+    const september = aggregate([closedSepTravelsOct], '2026-09');
+    const october = aggregate([closedSepTravelsOct], '2026-10');
+    assert.equal(september.closedTotal, 1);
+    assert.equal(september.travelTotal, 0);
+    assert.equal(october.closedTotal, 0);
+    assert.equal(october.travelTotal, 1);
+  });
+
+  it('§17.15 — a completed deal without closedAt stays UNKNOWN and is never attributed by its departure month', () => {
+    const facts = aggregate([completedNoClosure], '2026-09');
+    // The deal departs in September; a departure fallback would count
+    // it as a September closure — that is exactly what must NOT happen.
+    assert.equal(facts.closedTotal, 0);
+    assert.equal(facts.closedUnknownMonth, 1);
+    assert.deepEqual(facts.closedMonthly, []);
+    // It still counts as September TRAVEL volume (its own dimension).
+    assert.equal(facts.travelTotal, 1);
+  });
+
+  it('§17.12 — historical closure months surface in closedMonthly (months with data only)', () => {
+    const facts = aggregate([closedAugTravelsSep, closedSepTravelsOct, completedNoClosure], '2026-10');
+    assert.deepEqual(facts.closedMonthly, [
+      { month: '2026-08', count: 1 },
+      { month: '2026-09', count: 1 },
+    ]);
+    assert.equal(facts.closedUnknownMonth, 1);
   });
 });
 
@@ -1089,7 +1176,7 @@ describe('evidence traceability (spec §17)', () => {
     assert.equal(evidence.complaints.recordIds.length, dataset!.complaints.total);
     assert.equal(evidence.capa.recordIds.length, dataset!.capa.total);
     assert.equal(evidence.followUps.recordIds.length, dataset!.followUps.total);
-    assert.equal(evidence.deals.recordIds.length, dataset!.deals.total);
+    assert.equal(evidence.deals.recordIds.length, dataset!.deals.travelTotal);
   });
 });
 

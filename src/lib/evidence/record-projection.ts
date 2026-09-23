@@ -17,6 +17,7 @@
 // ══════════════════════════════════════════════════════════════
 
 import type { EvidenceCollection } from './evidence-collections';
+import { getDealMonthKey, type DealDateSource } from '@/lib/deal-dates';
 
 export interface ProjectedField {
   label: string;
@@ -298,6 +299,10 @@ const PROJECTORS: Record<EvidenceCollection, (r: Rec) => ProjectedRecord> = {
  * the collections whose target pages are month-filtered (Phase 5.3).
  * Returns null when the collection or the stored date does not carry
  * a deterministically parseable month — never guesses.
+ *
+ * §DEAL-DATES — travelDeals evidence is grouped by the TRAVEL
+ * dimension (departureDate), resolved through the canonical
+ * deal-date layer so no consumer privately re-parses "deal month".
  */
 export function evidenceRecordMonth(
   collection: EvidenceCollection,
@@ -312,6 +317,12 @@ export function evidenceRecordMonth(
         ? r.departureDate
         : null;
   if (typeof raw !== 'string') return null;
+  if (collection === 'travelDeals') {
+    return getDealMonthKey(
+      { createdAt: '', departureDate: raw, closedAt: null } satisfies DealDateSource,
+      'TRAVEL',
+    );
+  }
   const parts = raw.trim().split('/');
   if (parts.length !== 3) return null;
   const day = Number(parts[0]);

@@ -59,18 +59,32 @@ function mapWithScope(scope: string): PermissionsMap {
 }
 
 describe('data scope — resolution per scope kind', () => {
-  it('all: quality preset grants employees scope "all" (M0.3 activation) — unrestricted', () => {
+  it('all: quality preset carries scope "all" — resolved WITHIN the organizational boundary', () => {
     const { orgNodes, employees } = fixture();
-    // M0.3: the quality preset now carries an EXPLICIT 'all' scope on
-    // employees (org-wide monitoring function) — still the unchanged
-    // fast path, but configured rather than an inert default.
+    // §ORG-BOUNDARY: a NON-ADMIN 'all' is no longer a global bypass —
+    // it means "no narrowing inside the boundary". The quality preset
+    // still carries the explicit 'all' (configured tier), but the
+    // reachable set is the boundary's subtree union. A quality user
+    // assigned to the company node (linked empSara is in 'quality'
+    // department under company) resolves company-wide, and an
+    // unplaced quality user fails closed.
     const permissions = getPermissionsForRole('quality');
     assert.equal(permissions.employees && typeof permissions.employees === 'object' ? permissions.employees.scope : undefined, 'all');
-    const ctx = resolveEmployeeScope(
-      { userId: 'u1', role: 'quality' }, 'employees', permissions, { orgNodes, employees },
+
+    const placed = resolveEmployeeScope(
+      { userId: 'u1', role: 'quality', linkedEmployeeId: 'empSara' }, 'employees', permissions, { orgNodes, employees },
     );
-    assert.equal(ctx.isUnrestricted, true);
-    assert.equal(ctx.includes('empFree'), true);
+    assert.equal(placed.isUnrestricted, false);
+    // empSara sits in the quality department under company → the
+    // assignment boundary is that department node; ALL spans it.
+    assert.equal(placed.includes('empSara'), true);
+    assert.equal(placed.includes('empAhmed'), false, 'sales is outside the quality-department boundary');
+
+    const unplaced = resolveEmployeeScope(
+      { userId: 'u2', role: 'quality' }, 'employees', permissions, { orgNodes, employees },
+    );
+    assert.equal(unplaced.isUnrestricted, false);
+    assert.equal(unplaced.employeeIds.size, 0, 'unresolvable boundary fails closed');
   });
 
   it('admin always resolves all regardless of configured scope', () => {
@@ -106,17 +120,29 @@ describe('data scope — resolution per scope kind', () => {
     assert.equal(ctx.includes('empSara'), false);
   });
 
-  it('department: the linked employee\'s whole department subtree', () => {
+  it('department: the boundary department node\'s full membership per the tree', () => {
+    const { orgNodes, employees } = fixture();
+    // §ORG-BOUNDARY: empAhmed's own node is teamA — the department
+    // anchor is NOT climbed to. With the sales department granted as
+    // the boundary, DEPARTMENT resolves its whole membership.
+    const ctx = resolveEmployeeScope(
+      { userId: 'uAhmed', role: 'quality', linkedEmployeeId: 'empAhmed', orgBoundaryNodeIds: ['sales'] },
+      'employees', mapWithScope('department'), { orgNodes, employees },
+    );
+    for (const id of ['empAhmed', 'empMohamed', 'empAli', 'empOmar']) {
+      assert.equal(ctx.includes(id), true, `${id} should be in the sales department membership`);
+    }
+    assert.equal(ctx.includes('empSara'), false); // quality department
+    assert.equal(ctx.includes('empFree'), false);
+  });
+
+  it('department: a team-level assignment boundary contributes NO department anchor (fail-closed)', () => {
     const { orgNodes, employees } = fixture();
     const ctx = resolveEmployeeScope(
       { userId: 'uAhmed', role: 'quality', linkedEmployeeId: 'empAhmed' },
       'employees', mapWithScope('department'), { orgNodes, employees },
     );
-    for (const id of ['empAhmed', 'empMohamed', 'empAli', 'empOmar']) {
-      assert.equal(ctx.includes(id), true, `${id} should be in the sales department subtree`);
-    }
-    assert.equal(ctx.includes('empSara'), false); // quality department
-    assert.equal(ctx.includes('empFree'), false);
+    assert.deepEqual([...ctx.employeeIds], ['empAhmed'], 'no ancestor climb — own record only');
   });
 
   it('subtree: union of MANAGED node subtrees ∪ own', () => {

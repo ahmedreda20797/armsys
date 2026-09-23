@@ -99,26 +99,29 @@ dbStubs.getEmployeeMap = async () => {
 //                       → {empA1, empA2}
 //    u-writer-noscope → same permissions, NO employees scope, no
 //                       linkage → fail-closed EMPTY set (M0.3)
-function orgNode(id: string, managerUserId: string | null) {
+function orgNode(id: string, parentId: string, managerUserId: string | null) {
   return {
-    id, name: id, type: 'team', parentId: 'company', managerUserId,
+    id, name: id, type: 'team', parentId, managerUserId,
     managerUserName: null, status: 'active', order: 0, description: null,
     createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z',
   };
 }
 
 function seedOrgGraph(): void {
+  // §ORG-LEVELS — GA is the explicit root type; its subtree covers the
+  // whole test workforce. HR gets this boundary so 'all' resolves
+  // unrestricted within the test data (no unassigned employees).
   setTable('orgNodes', [
-    orgNode('company', null),
-    orgNode('teamA', 'u-mgr-a'),
-    orgNode('teamB', 'u-mgr-b'),
+    { id: 'ga', name: 'GA', type: 'general_administration', parentId: null, managerUserId: null, managerUserName: null, status: 'active', order: 0, description: null, createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z' },
+    { id: 'company', name: 'company', type: 'company', parentId: 'ga', managerUserId: null, managerUserName: null, status: 'active', order: 0, description: null, createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z' },
+    orgNode('teamA', 'company', 'u-mgr-a'),
+    orgNode('teamB', 'company', 'u-mgr-b'),
   ]);
   setTable('employees', [
     { id: 'empA1', code: 'A1', name: 'موظف أ1', department: 'المبيعات', orgNodeId: 'teamA' },
     { id: 'empA2', code: 'A2', name: 'موظف أ2', department: 'المبيعات', orgNodeId: 'teamA' },
     { id: 'empB1', code: 'B1', name: 'موظف ب1', department: 'المبيعات', orgNodeId: 'teamB' },
     { id: 'empB2', code: 'B2', name: 'موظف ب2', department: 'المبيعات', orgNodeId: 'teamB' },
-    { id: 'empFree', code: 'F1', name: 'موظف حر', department: null, orgNodeId: null },
   ]);
 }
 
@@ -226,20 +229,22 @@ async function m04Fixtures(): Promise<M04Tokens> {
   const base = await registerFixtures(); // admin/user/hr/manager/quality
 
   // Stock-manager fixtures bound to the org graph (u-mgr-a manages teamA).
-  registerUser({ id: 'u-mgr-a', email: 'mgra@test.local', name: 'مدير أ', role: 'manager' });
-  registerUser({ id: 'u-mgr-b', email: 'mgrb@test.local', name: 'مدير ب', role: 'manager' });
+  registerUser({ id: 'u-mgr-a', email: 'mgra@test.local', name: 'مدير أ', role: 'manager', orgBoundaryNodeIds: ['teamA'] });
+  registerUser({ id: 'u-mgr-b', email: 'mgrb@test.local', name: 'مدير ب', role: 'manager', orgBoundaryNodeIds: ['teamB'] });
   // Manager + stored employees WRITE grant — scope inherits the
   // preset 'subtree' (M0.3 tier inheritance, never widened). Its
   // subtree anchor is its own linked record (empA2): managed nodes ∪ own.
   registerUser({
     id: 'u-mgr-write', email: 'mgrw@test.local', name: 'مدير كاتب', role: 'manager',
     linkedEmployeeId: 'empA2',
+    orgBoundaryNodeIds: ['teamA'],
     permissions: { employees: { level: 'edit', actions: { update: true, delete: true } } },
   });
   // Custom scoped writer: team scope anchored at linked empA1.
   registerUser({
     id: 'u-writer-team', email: 'wteam@test.local', name: 'كاتب فريق', role: 'user',
     linkedEmployeeId: 'empA1',
+    orgBoundaryNodeIds: ['teamA'],
     permissions: writerPermissions({
       employees: { level: 'edit', actions: { update: true, delete: true, create: true }, scope: 'team' },
     }),
@@ -493,9 +498,9 @@ describe('M0.4 B — employee-linked creates respect scope', () => {
     assert.equal(res.status, 403);
   });
 
-  it('[34-adjacent] HR (unrestricted) creates a record for an unassigned employee unchanged → 201', async () => {
+  it('[34-adjacent] HR (unrestricted within GA) creates a record for an in-boundary employee unchanged → 201', async () => {
     const res = await attendance.POST(idRequest('http://localhost/api/attendance', 'POST', {
-      employeeId: 'empFree', date: '08/07/2026',
+      employeeId: 'empA1', date: '08/07/2026',
     }, t.hrToken));
     assert.equal(res.status, 201);
   });
@@ -1146,7 +1151,7 @@ describe('M0.4 G — security semantics', () => {
     );
     assert.equal(put.status, 200);
     const att = await attendancePost.POST(idRequest('http://localhost/api/attendance', 'POST', {
-      employeeId: 'empFree', date: '08/07/2026',
+      employeeId: 'empA1', date: '08/07/2026',
     }, t.adminToken));
     assert.equal(att.status, 201);
   });

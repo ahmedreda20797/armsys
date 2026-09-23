@@ -65,6 +65,8 @@ import {
   Flame,
   TrendingUp as TrendUp,
 } from 'lucide-react';
+import { useLanguage } from '@/lib/i18n/language-context';
+import { formatDate, formatTime, formatInteger } from '@/lib/i18n/format';
 
 /* ═══════════════════════════════════════════════════════════════
    PROPS INTERFACES — consumed by the upgraded widgets
@@ -248,17 +250,18 @@ function NoActionsEmpty({ message }: { message?: string }) {
 function LiveClock() {
   const [time, setTime] = useState('--:--');
   const [date, setDate] = useState('');
+  const { locale } = useLanguage();
 
   useEffect(() => {
     const update = () => {
       const now = new Date();
-      setTime(now.toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
-      setDate(now.toLocaleDateString('ar-SA', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }));
+      setTime(formatTime(now, locale, { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
+      setDate(formatDate(now, locale, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }));
     };
     update();
     const interval = setInterval(update, 1000);
     return () => clearInterval(interval);
-  }, []);
+  }, [locale]);
 
   return (
     <div className="flex flex-col items-end">
@@ -582,6 +585,7 @@ export const AoccActionQueue = memo(function AoccActionQueue({
 }: AoccActionQueueProps) {
   const navigateTo = useAppStore((s) => s.navigateTo);
   const { canViewPage } = usePermissions();
+  const { locale } = useLanguage();
 
   // Permission filter + in-place expansion (the overflow link grows the
   // list; it never navigated to a meaningful page even when it existed).
@@ -665,7 +669,7 @@ export const AoccActionQueue = memo(function AoccActionQueue({
               <div className="flex flex-col items-end gap-1.5 shrink-0">
                 {item.dueDate && (
                   <span className="text-[10px] text-slate-500" dir="ltr">
-                    {new Date(item.dueDate).toLocaleDateString('ar-SA', { month: 'short', day: 'numeric' })}
+                    {formatDate(item.dueDate, locale, { month: 'short', day: 'numeric' })}
                   </span>
                 )}
                 <button
@@ -1176,6 +1180,7 @@ export const AoccSystemStatus = memo(function AoccSystemStatus({
   data,
   loading,
 }: AoccSystemStatusProps) {
+  const { locale } = useLanguage();
   return (
     <DashboardCard
       title="حالة النظام"
@@ -1301,7 +1306,7 @@ export const AoccSystemStatus = memo(function AoccSystemStatus({
             <span className="text-sm text-slate-200">سجلات البصمة</span>
           </div>
           <span className="text-sm font-semibold text-sky-400 tabular-nums">
-            {data.biometricRecordCount.toLocaleString('ar-SA')}
+            {formatInteger(data.biometricRecordCount, locale)}
           </span>
         </div>
       </div>

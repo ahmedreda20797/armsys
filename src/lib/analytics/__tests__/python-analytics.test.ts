@@ -213,10 +213,12 @@ function makeDataset(options: FixtureOptions = {}): EmployeePerformanceDataset {
       monthly: monthly.followUps,
     },
     deals: {
-      relationship: 'CONFIRMED', total: 15,
+      relationship: 'CONFIRMED', travelTotal: 15, closedTotal: 8,
       byStatus: { upcoming: 2, in_progress: 3, completed: 8, canceled: 2 },
-      completed: 8, canceled: 2, active: 5, completionRate: 53.3,
+      canceled: 2, active: 5, completionRate: 53.3,
       monthly: monthly.deals,
+      closedMonthly: [{ month: window[window.length - 1], count: 8 }],
+      closedUnknownMonth: 0,
     },
     attendance: {
       status: 'AVAILABLE',

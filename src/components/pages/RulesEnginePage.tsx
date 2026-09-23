@@ -22,6 +22,9 @@ import { PageIdentity } from '@/components/shared/PageIdentity';
 import type { AutomationRule, RuleConditionGroup, RuleCondition, RuleAction, EscalationStep, RuleExecutionLog } from '@/types';
 import { authFetch } from '@/lib/api-fetch';
 import { toast } from 'sonner';
+import { useLanguage } from '@/lib/i18n/language-context';
+import { formatDate as localeDate, displayLocale } from '@/lib/i18n/format';
+import type { Locale } from '@/lib/i18n/dictionary';
 
 // ═══════════════════════════════════════════════════
 //  CONSTANTS
@@ -186,10 +189,10 @@ const itemVariants = {
 let uid = Date.now();
 function genId() { return `id_${++uid}`; }
 
-function formatDate(iso: string | null): string {
+function formatDate(iso: string | null, locale: Locale = displayLocale()): string {
   if (!iso) return 'لم يتم تشغيله';
   try {
-    return new Date(iso).toLocaleDateString('ar-EG', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+    return localeDate(iso, locale, { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
   } catch {
     return iso;
   }
@@ -222,6 +225,7 @@ function cloneConditions(g: RuleConditionGroup): RuleConditionGroup {
 
 export default function RulesEnginePage() {
   const { canView, canEdit, canCreate, canUpdate, canDelete } = usePermissions('rulesEngine');
+  const { locale } = useLanguage();
 
   // ── State ──
   const [rules, setRules] = useState<AutomationRule[]>([]);
@@ -1046,7 +1050,7 @@ export default function RulesEnginePage() {
                     {/* Last Run */}
                     <div className="text-slate-500 text-[11px] flex items-center gap-1">
                       <Clock className="size-3 flex-shrink-0" />
-                      <span className="truncate">{formatDate(rule.lastRunAt)}</span>
+                      <span className="truncate">{formatDate(rule.lastRunAt, locale)}</span>
                     </div>
 
                     {/* Executions + Success Rate */}
@@ -1643,7 +1647,7 @@ export default function RulesEnginePage() {
                           </div>
                           <div className="sm:col-span-1">
                             <p className="text-slate-500 text-[10px]">التاريخ</p>
-                            <p className="text-slate-300 text-xs">{formatDate(log.executionDate)}</p>
+                            <p className="text-slate-300 text-xs">{formatDate(log.executionDate, locale)}</p>
                           </div>
                           <div className="sm:col-span-1">
                             <p className="text-slate-500 text-[10px]">التشغيل بواسطة</p>

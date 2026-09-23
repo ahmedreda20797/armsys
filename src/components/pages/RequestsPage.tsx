@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { usePermissions } from '@/hooks/usePermissions';
 import { usePageState } from '@/hooks/use-page-state';
-import { formatMonthLabelAr } from '@/lib/month-label';
+import { useRecordHighlight } from '@/hooks/use-record-highlight';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -55,6 +55,10 @@ import { EmployeeSearchInput } from '@/components/shared/EmployeeSearchInput';
 import type { RequestRecord, Employee } from '@/types';
 import { useAppStore } from '@/lib/store';
 import { useAuth } from '@/contexts/AuthContext';
+import { useLanguage } from '@/lib/i18n/language-context';
+import { T } from '@/lib/i18n/T';
+import { translateUIText } from '@/lib/i18n/ui-text';
+import { formatInteger, formatMonthKey } from '@/lib/i18n/format';
 import { getRequestTypeLabel, getRequestTypeColor, todayDayKey } from '@/lib/date-utils';
 import { PageHeaderBar } from '@/components/shared/PageHeaderBar';
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
@@ -70,14 +74,15 @@ interface RequestWithEmployee extends RequestRecord {
 export default function RequestsPage() {
   const { canEdit, canCreate, canUpdate, canDelete, canApprove } = usePermissions('requests');
   const { user } = useAuth();
+  const { locale } = useLanguage();
   // Field selectors — a selectorless useAppStore() re-renders the page
   // on EVERY store write (same loop hazard as EmployeesPage §loop).
-  const highlightId = useAppStore((s) => s.highlightId);
-  const setHighlightId = useAppStore((s) => s.setHighlightId);
-  const highlightRef = useRef<HTMLDivElement>(null);
   const [requests, setRequests] = useState<RequestWithEmployee[]>([]);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [loading, setLoading] = useState(true);
+  // §QNALYS-HIGHLIGHT — the ONE canonical deep-link receiver (exact
+  // [data-record-id] resolution, shared Qnalys highlight, no local timers).
+  useRecordHighlight({ ready: !loading });
   // §17 EXACT DEEP-LINKING — the dashboard "N طلب بانتظار الموافقة"
   // navigates here with navParams.status='pending' and the list shows
   // EXACTLY those pending requests. The chosen status persists as
@@ -127,17 +132,6 @@ export default function RequestsPage() {
     reason: '',
   });
 
-  // Auto-scroll to highlighted card and clear highlight after 3 seconds
-  useEffect(() => {
-    if (highlightId && highlightRef.current) {
-      highlightRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      const timer = setTimeout(() => {
-        setHighlightId(null);
-      }, 3000);
-      return () => clearTimeout(timer);
-    }
-  }, [highlightId, setHighlightId]);
-
   useEffect(() => {
     fetchData();
   }, []);
@@ -186,13 +180,13 @@ export default function RequestsPage() {
       if (res.ok && data.success) {
         setUploadResult({ created: data.created, skipped: data.skipped, errors: data.errors || [] });
         logCreate('requests', 'رفع شيت اكسيل', `تم رفع ${data.created} طلب من ملف ${file.name}`);
-        toast.success(`تم رفع ${data.created} طلب بنجاح${data.skipped > 0 ? ` — ${data.skipped} تم تخطيها` : ''}`);
+        toast.success(`${translateUIText('تم رفع', locale)} ${formatInteger(data.created, locale)} ${translateUIText('طلب بنجاح', locale)}${data.skipped > 0 ? ` — ${formatInteger(data.skipped, locale)} ${translateUIText('تم تخطيها', locale)}` : ''}`);
         await fetchData();
       } else {
-        toast.error(data.error || 'فشل رفع الملف');
+        toast.error(data.error || translateUIText('فشل رفع الملف', locale));
       }
     } catch {
-      toast.error('حدث خطأ أثناء رفع الملف');
+      toast.error(translateUIText('حدث خطأ أثناء رفع الملف', locale));
     } finally {
       setUploading(false);
       if (fileInputRef.current) fileInputRef.current.value = '';
@@ -299,11 +293,11 @@ export default function RequestsPage() {
   const getStatusBadge = (status: string) => {
     switch (status) {
       case 'pending':
-        return <Badge className="bg-amber-500/15 text-amber-400 border-amber-500/20">معلق</Badge>;
+        return <Badge className="bg-amber-500/15 text-amber-400 border-amber-500/20"><T>معلق</T></Badge>;
       case 'approved':
-        return <Badge className="bg-green-500/15 text-green-400 border-green-500/20">مقبول</Badge>;
+        return <Badge className="bg-green-500/15 text-green-400 border-green-500/20"><T>مقبول</T></Badge>;
       case 'rejected':
-        return <Badge className="bg-red-500/15 text-red-400 border-red-500/20">مرفوض</Badge>;
+        return <Badge className="bg-red-500/15 text-red-400 border-red-500/20"><T>مرفوض</T></Badge>;
       default:
         return <Badge variant="outline">{status}</Badge>;
     }
@@ -367,10 +361,10 @@ export default function RequestsPage() {
       <PageHeaderBar
         icon={<FileText className="size-5" />}
         iconClassName="bg-brand-500/15 border-brand-500/30 text-brand-400"
-        title="إدارة الطلبات"
-        description={`${requests.length} طلب — ${pending.length} معلق`}
+        title={translateUIText('إدارة الطلبات', locale)}
+        description={<>{formatInteger(requests.length, locale)} <T>طلب</T> — {formatInteger(pending.length, locale)} <T>معلق</T></>}
         primaryAction={canCreate ? {
-          label: 'تقديم طلب',
+          label: translateUIText('تقديم طلب', locale),
           onClick: () => { setAddForm({ employeeId: '', type: 'leave', date: todayDayKey(), reason: '' }); setIsAddOpen(true); },
         } : undefined}
         actions={
@@ -398,12 +392,12 @@ export default function RequestsPage() {
                         animate={{ rotate: 360 }}
                         transition={{ duration: 0.8, repeat: Infinity, ease: 'linear' }}
                       />
-                      جاري الرفع...
+                      <T>جاري الرفع...</T>
                     </>
                   ) : (
                     <>
                       <FileSpreadsheet className="size-4 ml-1" />
-                      رفع شيت إكسيل
+                      <T>رفع شيت إكسيل</T>
                     </>
                   )}
                 </Button>
@@ -418,7 +412,7 @@ export default function RequestsPage() {
         <div className="relative flex-1 max-w-sm">
           <Search className="absolute right-3 top-1/2 -translate-y-1/2 size-4 text-slate-500" />
           <Input
-            placeholder="بحث باسم الموظف أو التاريخ أو النوع..."
+            placeholder={translateUIText('بحث باسم الموظف أو التاريخ أو النوع...', locale)}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="bg-slate-800/70 border-slate-700/70 text-white pr-10 placeholder:text-slate-500 h-9 text-sm"
@@ -435,12 +429,12 @@ export default function RequestsPage() {
         <Select value={monthFilter} onValueChange={setMonthFilter}>
           <SelectTrigger className="bg-slate-800/70 border-slate-700/70 text-white w-full sm:w-40 h-9 text-sm">
             <CalendarDays className="size-3.5 ml-1.5 text-slate-500" />
-            <SelectValue placeholder="الشهر" />
+            <SelectValue placeholder={translateUIText('الشهر', locale)} />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all" className="text-white">الكل</SelectItem>
+            <SelectItem value="all" className="text-white"><T>الكل</T></SelectItem>
             {monthOptions.map((m) => (
-              <SelectItem key={m} value={m} className="text-white">{m}</SelectItem>
+              <SelectItem key={m} value={m} className="text-white">{formatMonthKey(m, locale)}</SelectItem>
             ))}
           </SelectContent>
         </Select>
@@ -459,12 +453,12 @@ export default function RequestsPage() {
             <div className="size-12 rounded-full bg-slate-800 flex items-center justify-center mb-3">
               <FileText className="size-6 text-slate-600" />
             </div>
-            <p className="text-slate-400 text-sm font-medium">لا توجد طلبات</p>
+            <p className="text-slate-400 text-sm font-medium"><T>لا توجد طلبات</T></p>
             <p className="text-slate-600 text-xs mt-1">
               {/* §10/§56: the active period is NAMED in the empty state. */}
               {monthFilter && monthFilter !== 'all'
-                ? `لا توجد طلبات في ${formatMonthLabelAr(monthFilter)}.`
-                : 'ابدأ بتقديم طلب جديد'}
+                ? <><T>لا توجد طلبات في </T>{formatMonthKey(monthFilter, locale)}.</>
+                : <T>ابدأ بتقديم طلب جديد</T>}
             </p>
           </CardContent>
         </Card>
@@ -478,24 +472,20 @@ export default function RequestsPage() {
             >
               <h2 className="text-sm font-semibold text-amber-400 mb-3 flex items-center gap-2">
                 <Clock className="size-4" />
-                الطلبات المعلقة ({filteredPending.length})
+                <T>الطلبات المعلقة</T> ({formatInteger(filteredPending.length, locale)})
               </h2>
               <div className="space-y-2.5">
                 <AnimatePresence>
                   {filteredPending.map((req) => {
-                    const isHighlighted = req.id === highlightId;
                     return (
                       <motion.div
                         key={req.id}
-                        ref={isHighlighted ? highlightRef : undefined}
+                        data-record-id={req.id}
+                        data-record-variant="card"
                         initial={{ opacity: 0, x: 20 }}
                         animate={{ opacity: 1, x: 0 }}
                         exit={{ opacity: 0, x: -20 }}
-                        className={`rounded-xl border p-4 hover:bg-slate-800/80 transition-all ${
-                          isHighlighted
-                            ? 'border-amber-500 ring-2 ring-amber-500 shadow-lg shadow-amber-500/20 bg-slate-800/80'
-                            : 'border-amber-500/20 bg-slate-800/50'
-                        }`}
+                        className="rounded-xl border border-amber-500/20 bg-slate-800/50 p-4 hover:bg-slate-800/80 transition-all"
                       >
                         <div className="flex flex-col gap-3">
                           {/* Row 1: Employee + Type + Date */}
@@ -503,7 +493,7 @@ export default function RequestsPage() {
                             <div className="flex items-center gap-3 flex-wrap">
                               <EmployeeLink employeeId={req.employeeId} name={req.employeeName} />
                               <Badge className={`${getRequestTypeColor(req.type)} text-[11px] px-2 py-0`}>
-                                {getRequestTypeLabel(req.type)}
+                                <T>{getRequestTypeLabel(req.type)}</T>
                               </Badge>
                               <span className="text-slate-500 text-xs" dir="ltr">{req.date}</span>
                             </div>
@@ -512,8 +502,8 @@ export default function RequestsPage() {
                               {/* §2 — SmartActionMenu (approve/reject stay primary) */}
                               <SmartActionMenu
                                 actions={[
-                                  { key: 'edit', label: 'تعديل', icon: <Pencil className="size-3.5" />, onSelect: () => openEditDialog(req), hidden: !canUpdate },
-                                  { key: 'delete', label: 'حذف', icon: <Trash2 className="size-3.5" />, destructive: true, onSelect: () => setDeletingId(req.id), hidden: !canDelete },
+                                  { key: 'edit', label: translateUIText('تعديل', locale), icon: <Pencil className="size-3.5" />, onSelect: () => openEditDialog(req), hidden: !canUpdate },
+                                  { key: 'delete', label: translateUIText('حذف', locale), icon: <Trash2 className="size-3.5" />, destructive: true, onSelect: () => setDeletingId(req.id), hidden: !canDelete },
                                 ]}
                               />
                               {canApprove && (
@@ -525,7 +515,7 @@ export default function RequestsPage() {
                                     className="bg-green-600 hover:bg-green-700 text-white h-8 px-3"
                                   >
                                     <Check className="size-3.5 ml-1" />
-                                    قبول
+                                    <T>قبول</T>
                                   </Button>
                                   <Button
                                     size="sm"
@@ -535,7 +525,7 @@ export default function RequestsPage() {
                                     className="border-red-500/30 text-red-400 hover:bg-red-500/10 h-8 px-3"
                                   >
                                     <X className="size-3.5 ml-1" />
-                                    رفض
+                                    <T>رفض</T>
                                   </Button>
                                 </>
                               )}
@@ -566,13 +556,13 @@ export default function RequestsPage() {
                 <Table>
                   <TableHeader>
                     <TableRow className="border-slate-700/50 hover:bg-transparent">
-                      <TableHead className="text-slate-400 text-xs font-semibold py-3 px-4">الموظف</TableHead>
-                      <TableHead className="text-slate-400 text-xs font-semibold py-3 px-3">النوع</TableHead>
-                      <TableHead className="text-slate-400 text-xs font-semibold py-3 px-3">التاريخ</TableHead>
-                      <TableHead className="text-slate-400 text-xs font-semibold py-3 px-3">السبب</TableHead>
-                      <TableHead className="text-slate-400 text-xs font-semibold py-3 px-3">الحالة</TableHead>
+                      <TableHead className="text-slate-400 text-xs font-semibold py-3 px-4"><T>الموظف</T></TableHead>
+                      <TableHead className="text-slate-400 text-xs font-semibold py-3 px-3"><T>النوع</T></TableHead>
+                      <TableHead className="text-slate-400 text-xs font-semibold py-3 px-3"><T>التاريخ</T></TableHead>
+                      <TableHead className="text-slate-400 text-xs font-semibold py-3 px-3"><T>السبب</T></TableHead>
+                      <TableHead className="text-slate-400 text-xs font-semibold py-3 px-3"><T>الحالة</T></TableHead>
                       {(canUpdate || canDelete) && (
-                        <TableHead className="text-slate-400 text-xs font-semibold py-3 px-3 text-center">إجراءات</TableHead>
+                        <TableHead className="text-slate-400 text-xs font-semibold py-3 px-3 text-center"><T>إجراءات</T></TableHead>
                       )}
                     </TableRow>
                   </TableHeader>
@@ -591,7 +581,7 @@ export default function RequestsPage() {
                         </TableCell>
                         <TableCell className="py-3 px-3">
                           <Badge className={`${getRequestTypeColor(req.type)} text-[10px] px-1.5 py-0`}>
-                            {getRequestTypeLabel(req.type)}
+                            <T>{getRequestTypeLabel(req.type)}</T>
                           </Badge>
                         </TableCell>
                         <TableCell className="py-3 px-3 text-slate-400 text-xs" dir="ltr">{req.date}</TableCell>
@@ -610,8 +600,8 @@ export default function RequestsPage() {
                               <SmartActionMenu
                                 size="sm"
                                 actions={[
-                                  { key: 'edit', label: 'تعديل', icon: <Pencil className="size-3" />, onSelect: () => openEditDialog(req), hidden: !canUpdate },
-                                  { key: 'delete', label: 'حذف', icon: <Trash2 className="size-3" />, destructive: true, onSelect: () => setDeletingId(req.id), hidden: !canDelete },
+                                  { key: 'edit', label: translateUIText('تعديل', locale), icon: <Pencil className="size-3" />, onSelect: () => openEditDialog(req), hidden: !canUpdate },
+                                  { key: 'delete', label: translateUIText('حذف', locale), icon: <Trash2 className="size-3" />, destructive: true, onSelect: () => setDeletingId(req.id), hidden: !canDelete },
                                 ]}
                               />
                             </div>
@@ -631,8 +621,8 @@ export default function RequestsPage() {
       <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
         <DialogContent className="backdrop-blur-xl bg-slate-900 border-slate-700 max-w-lg">
           <DialogHeader>
-            <DialogTitle className="text-white">تقديم طلب جديد</DialogTitle>
-            <DialogDescription className="text-slate-400">أدخل تفاصيل الطلب</DialogDescription>
+            <DialogTitle className="text-white"><T>تقديم طلب جديد</T></DialogTitle>
+            <DialogDescription className="text-slate-400"><T>أدخل تفاصيل الطلب</T></DialogDescription>
           </DialogHeader>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="sm:col-span-2">
@@ -640,12 +630,12 @@ export default function RequestsPage() {
                 employees={employees}
                 value={addForm.employeeId}
                 onChange={(id) => setAddForm((p) => ({ ...p, employeeId: id }))}
-                label="الموظف"
-                placeholder="ابحث عن اسم الموظف..."
+                label={translateUIText('الموظف', locale)}
+                placeholder={translateUIText('ابحث عن اسم الموظف...', locale)}
               />
             </div>
             <div className="space-y-2">
-              <Label className="text-slate-300 text-sm">نوع الطلب</Label>
+              <Label className="text-slate-300 text-sm"><T>نوع الطلب</T></Label>
               <Select
                 value={addForm.type}
                 onValueChange={(v) => setAddForm((p) => ({ ...p, type: v }))}
@@ -654,16 +644,16 @@ export default function RequestsPage() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="leave" className="text-white">إجازة</SelectItem>
-                  <SelectItem value="permission" className="text-white">استئذان</SelectItem>
-                  <SelectItem value="excuse" className="text-white">غياب</SelectItem>
-                  <SelectItem value="tardiness" className="text-white">تأخير</SelectItem>
-                  <SelectItem value="remote" className="text-white">ريموتلي</SelectItem>
+                  <SelectItem value="leave" className="text-white"><T>إجازة</T></SelectItem>
+                  <SelectItem value="permission" className="text-white"><T>استئذان</T></SelectItem>
+                  <SelectItem value="excuse" className="text-white"><T>غياب</T></SelectItem>
+                  <SelectItem value="tardiness" className="text-white"><T>تأخير</T></SelectItem>
+                  <SelectItem value="remote" className="text-white"><T>ريموتلي</T></SelectItem>
                 </SelectContent>
               </Select>
             </div>
             <div className="space-y-2">
-              <Label className="text-slate-300 text-sm">التاريخ</Label>
+              <Label className="text-slate-300 text-sm"><T>التاريخ</T></Label>
               <Input
                 value={addForm.date}
                 onChange={(e) => setAddForm((p) => ({ ...p, date: e.target.value }))}
@@ -673,12 +663,12 @@ export default function RequestsPage() {
               />
             </div>
             <div className="space-y-2 sm:col-span-2">
-              <Label className="text-slate-300 text-sm">السبب</Label>
+              <Label className="text-slate-300 text-sm"><T>السبب</T></Label>
               <Textarea
                 value={addForm.reason}
                 onChange={(e) => setAddForm((p) => ({ ...p, reason: e.target.value }))}
                 className="bg-slate-800 border-slate-600 text-white resize-none"
-                placeholder="اكتب سبب الطلب..."
+                placeholder={translateUIText('اكتب سبب الطلب...', locale)}
                 required
                 rows={3}
               />
@@ -690,14 +680,14 @@ export default function RequestsPage() {
               onClick={() => setIsAddOpen(false)}
               className="border-slate-600 text-slate-300"
             >
-              إلغاء
+              <T>إلغاء</T>
             </Button>
             <Button
               onClick={handleAdd}
               disabled={saving || !addForm.employeeId || !addForm.date || !addForm.reason}
               className="bg-linear-to-r from-brand-600 to-brand-700 hover:from-brand-700 hover:to-brand-800 text-white h-9 px-5 shadow-lg shadow-brand-500/20 transition-all"
             >
-              {saving ? 'جاري التقديم...' : 'تقديم'}
+              <T>{saving ? 'جاري التقديم...' : 'تقديم'}</T>
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -707,8 +697,8 @@ export default function RequestsPage() {
       <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>
         <DialogContent className="backdrop-blur-xl bg-slate-900 border-slate-700 max-w-lg">
           <DialogHeader>
-            <DialogTitle className="text-white">تعديل الطلب</DialogTitle>
-            <DialogDescription className="text-slate-400">تعديل تفاصيل الطلب</DialogDescription>
+            <DialogTitle className="text-white"><T>تعديل الطلب</T></DialogTitle>
+            <DialogDescription className="text-slate-400"><T>تعديل تفاصيل الطلب</T></DialogDescription>
           </DialogHeader>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="sm:col-span-2">
@@ -716,12 +706,12 @@ export default function RequestsPage() {
                 employees={employees}
                 value={editForm.employeeId}
                 onChange={(id) => setEditForm((p) => ({ ...p, employeeId: id }))}
-                label="الموظف"
-                placeholder="ابحث عن اسم الموظف..."
+                label={translateUIText('الموظف', locale)}
+                placeholder={translateUIText('ابحث عن اسم الموظف...', locale)}
               />
             </div>
             <div className="space-y-2">
-              <Label className="text-slate-300 text-sm">نوع الطلب</Label>
+              <Label className="text-slate-300 text-sm"><T>نوع الطلب</T></Label>
               <Select
                 value={editForm.type}
                 onValueChange={(v) => setEditForm((p) => ({ ...p, type: v }))}
@@ -730,16 +720,16 @@ export default function RequestsPage() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="leave" className="text-white">إجازة</SelectItem>
-                  <SelectItem value="permission" className="text-white">استئذان</SelectItem>
-                  <SelectItem value="excuse" className="text-white">غياب</SelectItem>
-                  <SelectItem value="tardiness" className="text-white">تأخير</SelectItem>
-                  <SelectItem value="remote" className="text-white">ريموتلي</SelectItem>
+                  <SelectItem value="leave" className="text-white"><T>إجازة</T></SelectItem>
+                  <SelectItem value="permission" className="text-white"><T>استئذان</T></SelectItem>
+                  <SelectItem value="excuse" className="text-white"><T>غياب</T></SelectItem>
+                  <SelectItem value="tardiness" className="text-white"><T>تأخير</T></SelectItem>
+                  <SelectItem value="remote" className="text-white"><T>ريموتلي</T></SelectItem>
                 </SelectContent>
               </Select>
             </div>
             <div className="space-y-2">
-              <Label className="text-slate-300 text-sm">التاريخ</Label>
+              <Label className="text-slate-300 text-sm"><T>التاريخ</T></Label>
               <Input
                 value={editForm.date}
                 onChange={(e) => setEditForm((p) => ({ ...p, date: e.target.value }))}
@@ -749,12 +739,12 @@ export default function RequestsPage() {
               />
             </div>
             <div className="space-y-2 sm:col-span-2">
-              <Label className="text-slate-300 text-sm">السبب</Label>
+              <Label className="text-slate-300 text-sm"><T>السبب</T></Label>
               <Textarea
                 value={editForm.reason}
                 onChange={(e) => setEditForm((p) => ({ ...p, reason: e.target.value }))}
                 className="bg-slate-800 border-slate-600 text-white resize-none"
-                placeholder="اكتب سبب الطلب..."
+                placeholder={translateUIText('اكتب سبب الطلب...', locale)}
                 rows={3}
               />
             </div>
@@ -765,14 +755,14 @@ export default function RequestsPage() {
               onClick={() => setIsEditOpen(false)}
               className="border-slate-600 text-slate-300"
             >
-              إلغاء
+              <T>إلغاء</T>
             </Button>
             <Button
               onClick={handleEdit}
               disabled={saving || !editForm.employeeId || !editForm.date || !editForm.reason}
               className="bg-linear-to-r from-brand-600 to-brand-700 hover:from-brand-700 hover:to-brand-800 text-white h-9 px-5 shadow-lg shadow-brand-500/20 transition-all"
             >
-              {saving ? 'جاري الحفظ...' : 'حفظ التعديلات'}
+              <T>{saving ? 'جاري الحفظ...' : 'حفظ التعديلات'}</T>
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -782,7 +772,7 @@ export default function RequestsPage() {
       <ConfirmDialog
         open={!!deletingId}
         onOpenChange={(open) => { if (!open) setDeletingId(null); }}
-        description="هل أنت متأكد من حذف هذا الطلب؟ لا يمكن التراجع عن هذا الإجراء."
+        description={translateUIText('هل أنت متأكد من حذف هذا الطلب؟ لا يمكن التراجع عن هذا الإجراء.', locale)}
         itemName={deletingId ? requests.find((r: { id: string; employeeName?: string }) => r.id === deletingId)?.employeeName : undefined}
         loading={deleteLoading}
         onConfirm={async () => { if (deletingId) await handleDelete(deletingId); }}
@@ -794,24 +784,24 @@ export default function RequestsPage() {
           <DialogHeader>
             <DialogTitle className="text-white flex items-center gap-2">
               <FileSpreadsheet className="size-5 text-emerald-400" />
-              نتيجة رفع الشيت
+              <T>نتيجة رفع الشيت</T>
             </DialogTitle>
-            <DialogDescription className="text-slate-400">تفاصيل عملية رفع البيانات</DialogDescription>
+            <DialogDescription className="text-slate-400"><T>تفاصيل عملية رفع البيانات</T></DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-3">
               <div className="p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-center">
-                <p className="text-2xl font-bold text-emerald-400">{uploadResult?.created || 0}</p>
-                <p className="text-slate-400 text-xs mt-1">تم رفعها بنجاح</p>
+                <p className="text-2xl font-bold text-emerald-400">{formatInteger(uploadResult?.created || 0, locale)}</p>
+                <p className="text-slate-400 text-xs mt-1"><T>تم رفعها بنجاح</T></p>
               </div>
               <div className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/20 text-center">
-                <p className="text-2xl font-bold text-amber-400">{uploadResult?.skipped || 0}</p>
-                <p className="text-slate-400 text-xs mt-1">تم تخطيها</p>
+                <p className="text-2xl font-bold text-amber-400">{formatInteger(uploadResult?.skipped || 0, locale)}</p>
+                <p className="text-slate-400 text-xs mt-1"><T>تم تخطيها</T></p>
               </div>
             </div>
             {uploadResult && uploadResult.errors.length > 0 && (
               <div className="space-y-1.5">
-                <p className="text-slate-400 text-xs font-medium">الأخطاء:</p>
+                <p className="text-slate-400 text-xs font-medium"><T>الأخطاء:</T></p>
                 <div className="max-h-40 overflow-y-auto rounded-lg bg-slate-800/60 border border-slate-700/50 p-3">
                   {uploadResult.errors.map((err, i) => (
                     <p key={i} className="text-red-400 text-xs leading-relaxed">{err}</p>
@@ -825,7 +815,7 @@ export default function RequestsPage() {
               onClick={() => setUploadResult(null)}
               className="bg-linear-to-r from-brand-600 to-brand-700 hover:from-brand-700 hover:to-brand-800 text-white h-9 px-5 shadow-lg shadow-brand-500/20"
             >
-              تم
+              <T>تم</T>
             </Button>
           </DialogFooter>
         </DialogContent>

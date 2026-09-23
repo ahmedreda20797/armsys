@@ -34,15 +34,18 @@ import type { EmployeePerformanceDataset } from '@/lib/performance-intelligence'
 import {
   StatusBadge,
   ValueBasisBadge,
-  formatMonth,
   formatScore,
   formatContribution,
 } from './kpi-reports-shared';
+import { T } from '@/lib/i18n/T';
+import { useLanguage } from '@/lib/i18n/language-context';
+import { translateUIText } from '@/lib/i18n/ui-text';
+import { formatMonthKey, formatNumber, formatInteger, formatDateTime } from '@/lib/i18n/format';
 
-const TREND_LABELS: Record<string, string> = {
-  UP: '▲ اتجاه صاعد',
-  DOWN: '▼ اتجاه هابط',
-  STABLE: '─ مستقر',
+const TREND_LABELS: Record<string, [string, string]> = {
+  UP: ['▲ اتجاه صاعد', '▲ Upward trend'],
+  DOWN: ['▼ اتجاه هابط', '▼ Downward trend'],
+  STABLE: ['─ مستقر', '─ Stable'],
 };
 
 const TREND_STYLES: Record<string, string> = {
@@ -51,7 +54,7 @@ const TREND_STYLES: Record<string, string> = {
   STABLE: 'bg-slate-500/15 text-slate-300 border-slate-500/30',
 };
 
-function Fact({ label, value }: { label: string; value: React.ReactNode }) {
+function Fact({ label, value }: { label: React.ReactNode; value: React.ReactNode }) {
   return (
     <div className="space-y-1">
       <div className="text-[11px] text-slate-500">{label}</div>
@@ -60,15 +63,17 @@ function Fact({ label, value }: { label: string; value: React.ReactNode }) {
   );
 }
 
-function CountChip({ label, count }: { label: string; count: number }) {
+function CountChip({ label, count }: { label: React.ReactNode; count: number }) {
+  const { locale } = useLanguage();
   return (
     <Badge variant="outline" className="bg-slate-800/40 text-slate-300 border-slate-700/50 font-normal">
-      {label}: <span className="font-mono mx-1">{count}</span>
+      {label}: <span className="font-mono mx-1">{formatInteger(count, locale)}</span>
     </Badge>
   );
 }
 
 export default function PerformanceAnalysisTab({ month }: { month: string }) {
+  const { locale } = useLanguage();
   const [employeeId, setEmployeeId] = useState<string>('');
   const employeesQuery = useEmployees();
   const datasetQuery = usePerformanceIntelligence(employeeId || null, month);
@@ -81,18 +86,18 @@ export default function PerformanceAnalysisTab({ month }: { month: string }) {
       <Card className="no-print bg-slate-800/30 border-slate-700/40">
         <CardContent className="p-4 flex flex-col gap-3">
           <div className="space-y-1.5">
-            <Label>الموظف</Label>
+            <Label><T>الموظف</T></Label>
             <EmployeeSearchInput
               employees={employeesQuery.data ?? []}
               value={employeeId}
               onChange={(id) => setEmployeeId(id)}
-              placeholder="ابحث بالاسم أو الرقم الوظيفي..."
+              placeholder={translateUIText('ابحث بالاسم أو الرقم الوظيفي...', locale)}
               showDepartment
             />
           </div>
           <p className="text-[11px] text-slate-500 flex items-center gap-1.5">
             <Info className="h-3.5 w-3.5" />
-            عرض تحقّق للبيانات التحليلية المتحقق منها (حقائق منظمة فقط — بلا أي سرد أو تفسير). ستستهلكها لاحقًا طبقة التقارير الذكية.
+            <T>عرض تحقّق للبيانات التحليلية المتحقق منها (حقائق منظمة فقط — بلا أي سرد أو تفسير). ستستهلكها لاحقًا طبقة التقارير الذكية.</T>
           </p>
           {datasetQuery.data ? (
             <Button
@@ -102,7 +107,7 @@ export default function PerformanceAnalysisTab({ month }: { month: string }) {
               onClick={() => openPrintReport(performanceDatasetToPrintModel(datasetQuery.data as EmployeePerformanceDataset))}
             >
               <Printer className="size-3.5" />
-              طباعة / PDF
+              <T>طباعة / PDF</T>
             </Button>
           ) : null}
         </CardContent>
@@ -112,7 +117,7 @@ export default function PerformanceAnalysisTab({ month }: { month: string }) {
         <Card className="bg-slate-800/30 border-slate-700/40">
           <CardContent className="p-10 text-center text-slate-400 space-y-2">
             <Search className="h-8 w-8 mx-auto opacity-50" />
-            <p>ابحث عن موظف لعرض تحليل أدائه للفترة المختارة</p>
+            <p><T>ابحث عن موظف لعرض تحليل أدائه للفترة المختارة</T></p>
           </CardContent>
         </Card>
       )}
@@ -127,7 +132,7 @@ export default function PerformanceAnalysisTab({ month }: { month: string }) {
       {employeeId !== '' && datasetQuery.isError ? (
         <Card className="bg-red-950/20 border-red-800/40">
           <CardContent className="p-6 text-red-300 text-sm">
-            تعذر تحميل التحليل — أعد المحاولة لاحقًا.
+            <T>تعذر تحميل التحليل — أعد المحاولة لاحقًا.</T>
           </CardContent>
         </Card>
       ) : null}
@@ -144,6 +149,7 @@ export default function PerformanceAnalysisTab({ month }: { month: string }) {
 // ─────────────────────────────────────────────────────────────
 
 function DatasetBody({ dataset }: { dataset: EmployeePerformanceDataset }) {
+  const { locale } = useLanguage();
   const { employee, period, kpi, trend, quality, complaints, capa, followUps, deals, attendance, dataQuality, evidence } = dataset;
   const mom = trend.mom;
 
@@ -160,47 +166,50 @@ function DatasetBody({ dataset }: { dataset: EmployeePerformanceDataset }) {
             </span>
             {employee.archivedButEligible && (
               <Badge variant="outline" className="bg-amber-500/15 text-amber-300 border-amber-500/30 text-[10px]">
-                مؤرشف — فترة تاريخية
+                <T>مؤرشف — فترة تاريخية</T>
               </Badge>
             )}
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-4">
-            <Fact label="الفترة" value={`${formatMonth(period.monthKey)}`} />
-            <Fact label="أساس القيمة" value={<ValueBasisBadge basis={period.valueBasis} />} />
+            <Fact label={<T>الفترة</T>} value={`${formatMonthKey(period.monthKey, locale)}`} />
+            <Fact label={<T>أساس القيمة</T>} value={<ValueBasisBadge basis={period.valueBasis} />} />
             <Fact
-              label="درجة الجودة (خام)"
-              value={<span className="text-lg">{formatScore(kpi.quality?.rawScore ?? null)}</span>}
+              label={<T>درجة الجودة (خام)</T>}
+              value={<span className="text-lg">{formatScore(kpi.quality?.rawScore ?? null, locale)}</span>}
             />
             <Fact
-              label={`المساهمة الموزونة (وزن ${kpi.quality?.weight ?? '—'}%)`}
-              value={formatContribution(kpi.quality?.weightedContribution ?? null, kpi.quality?.maxContribution ?? null)}
+              label={<><T>المساهمة الموزونة (وزن </T>{kpi.quality?.weight != null ? formatNumber(kpi.quality.weight, { locale }) : '—'}%)</>}
+              value={formatContribution(kpi.quality?.weightedContribution ?? null, kpi.quality?.maxContribution ?? null, locale)}
             />
-            <Fact label="حالة المكون" value={<StatusBadge status={kpi.quality?.status ?? null} />} />
-            <Fact label="حالة صف KPI" value={<StatusBadge status={kpi.rowStatus} />} />
+            <Fact label={<T>حالة المكون</T>} value={<StatusBadge status={kpi.quality?.status ?? null} />} />
+            <Fact label={<T>حالة صف KPI</T>} value={<StatusBadge status={kpi.rowStatus} />} />
           </div>
 
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-xs text-slate-400">
-            <Fact label="المخطط" value={kpi.scheme ? `${kpi.scheme.schemeName} — إصدار ${kpi.scheme.schemeVersion}` : '—'} />
-            <Fact label="نتيجة المحرك" value={<span className="font-mono">{kpi.outcomeStatus}</span>} />
             <Fact
-              label="مقارنة بالشهر السابق"
+              label={<T>المخطط</T>}
+              value={kpi.scheme ? <>{kpi.scheme.schemeName} — <T>إصدار</T> {kpi.scheme.schemeVersion}</> : '—'}
+            />
+            <Fact label={<T>نتيجة المحرك</T>} value={<span className="font-mono">{kpi.outcomeStatus}</span>} />
+            <Fact
+              label={<T>مقارنة بالشهر السابق</T>}
               value={
                 mom ? (
                   <span className={mom.deltaPoints > 0 ? 'text-emerald-300' : mom.deltaPoints < 0 ? 'text-red-300' : 'text-slate-300'}>
-                    {mom.deltaPoints > 0 ? '+' : ''}{mom.deltaPoints} نقطة مئوية
-                    <span className="text-slate-500"> (نمو {mom.growthPercent ?? '—'}%)</span>
+                    {mom.deltaPoints > 0 ? '+' : ''}{formatNumber(mom.deltaPoints, { locale })} <T>نقطة مئوية</T>
+                    <span className="text-slate-500"> (<T>نمو </T>{mom.growthPercent != null ? formatNumber(mom.growthPercent, { locale }) : '—'}%)</span>
                   </span>
                 ) : '—'
               }
             />
             <Fact
-              label="الاتجاه"
+              label={<T>الاتجاه</T>}
               value={
                 trend.direction ? (
                   <Badge variant="outline" className={`text-[11px] ${TREND_STYLES[trend.direction]}`}>
-                    {TREND_LABELS[trend.direction]}
+                    {TREND_LABELS[trend.direction]?.[locale === 'en' ? 1 : 0]}
                   </Badge>
                 ) : '—'
               }
@@ -215,7 +224,7 @@ function DatasetBody({ dataset }: { dataset: EmployeePerformanceDataset }) {
                 variant="outline"
                 className={p.available ? 'bg-slate-800/50 text-slate-200 border-slate-700/60' : 'bg-slate-900/40 text-slate-600 border-slate-800'}
               >
-                {formatMonth(p.monthKey)}: {p.available ? formatScore(p.rawScore) : 'غير متاح'}{p.finalized ? ' 🔒' : ''}
+                {formatMonthKey(p.monthKey, locale)}: {p.available ? formatScore(p.rawScore, locale) : translateUIText('غير متاح', locale)}{p.finalized ? ' 🔒' : ''}
               </Badge>
             ))}
           </div>
@@ -225,26 +234,26 @@ function DatasetBody({ dataset }: { dataset: EmployeePerformanceDataset }) {
       {/* ── Quality evidence ── */}
       <Card className="bg-slate-800/30 border-slate-700/40">
         <CardHeader className="pb-2">
-          <CardTitle className="text-sm text-slate-200">تحليل الملاحظات — {formatMonth(period.monthKey)}</CardTitle>
+          <CardTitle className="text-sm text-slate-200"><T>تحليل الملاحظات — </T>{formatMonthKey(period.monthKey, locale)}</CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
           <div className="flex flex-wrap gap-2">
-            <CountChip label="الإجمالي" count={quality.observations.total} />
-            <CountChip label="معتمدة" count={quality.observations.approved} />
-            <CountChip label="معلّقة" count={quality.observations.pending} />
-            <CountChip label="مرفوضة" count={quality.observations.rejected} />
+            <CountChip label={<T>الإجمالي</T>} count={quality.observations.total} />
+            <CountChip label={<T>معتمدة</T>} count={quality.observations.approved} />
+            <CountChip label={<T>معلّقة</T>} count={quality.observations.pending} />
+            <CountChip label={<T>مرفوضة</T>} count={quality.observations.rejected} />
           </div>
           <div className="flex flex-wrap gap-2">
             {Object.entries(quality.observations.bySeverity).map(([severity, count]) => (
-              <CountChip key={severity} label={`شدة: ${severity}`} count={count} />
+              <CountChip key={severity} label={<><T>شدة</T>: {severity}</>} count={count} />
             ))}
           </div>
           <Table>
             <TableHeader>
               <TableRow className="border-slate-700/50">
-                <TableHead className="text-right">الفئة (مفتاح مخزّن)</TableHead>
-                <TableHead className="text-right">الاسم المخزّن</TableHead>
-                <TableHead className="text-right">العدد</TableHead>
+                <TableHead className="text-right"><T>الفئة (مفتاح مخزّن)</T></TableHead>
+                <TableHead className="text-right"><T>الاسم المخزّن</T></TableHead>
+                <TableHead className="text-right"><T>العدد</T></TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -252,11 +261,11 @@ function DatasetBody({ dataset }: { dataset: EmployeePerformanceDataset }) {
                 <TableRow key={cat.categoryId ?? '_unclassified'} className="border-slate-800/60">
                   <TableCell className="font-mono text-xs text-slate-400">{cat.categoryId ?? '_unclassified'}</TableCell>
                   <TableCell className="text-slate-200">{cat.categoryName}</TableCell>
-                  <TableCell className="font-mono">{cat.count}</TableCell>
+                  <TableCell className="font-mono">{formatInteger(cat.count, locale)}</TableCell>
                 </TableRow>
               ))}
               {quality.observations.byCategory.length === 0 && (
-                <TableRow><TableCell colSpan={3} className="text-slate-500 text-sm">لا توجد ملاحظات في هذه الفترة</TableCell></TableRow>
+                <TableRow><TableCell colSpan={3} className="text-slate-500 text-sm"><T>لا توجد ملاحظات في هذه الفترة</T></TableCell></TableRow>
               )}
             </TableBody>
           </Table>
@@ -264,16 +273,16 @@ function DatasetBody({ dataset }: { dataset: EmployeePerformanceDataset }) {
           {/* Repeated issues — deterministic keys only */}
           <div className="space-y-2">
             <div className="text-xs font-semibold text-slate-300">
-              مشكلات متكررة (حد أدنى {quality.repeatedIssues.minOccurrences} تكرارات — تجميع حتمي حسب categoryId)
+              <T>مشكلات متكررة (حد أدنى </T>{formatInteger(quality.repeatedIssues.minOccurrences, locale)} <T>تكرارات — تجميع حتمي حسب categoryId)</T>
             </div>
             <Table>
               <TableHeader>
                 <TableRow className="border-slate-700/50">
-                  <TableHead className="text-right">المفتاح</TableHead>
-                  <TableHead className="text-right">التسمية</TableHead>
-                  <TableHead className="text-right">التكرار</TableHead>
-                  <TableHead className="text-right">أول / آخر ظهور</TableHead>
-                  <TableHead className="text-right">تكرار عبر النافذة</TableHead>
+                  <TableHead className="text-right"><T>المفتاح</T></TableHead>
+                  <TableHead className="text-right"><T>التسمية</T></TableHead>
+                  <TableHead className="text-right"><T>التكرار</T></TableHead>
+                  <TableHead className="text-right"><T>أول / آخر ظهور</T></TableHead>
+                  <TableHead className="text-right"><T>تكرار عبر النافذة</T></TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -283,16 +292,16 @@ function DatasetBody({ dataset }: { dataset: EmployeePerformanceDataset }) {
                     <TableRow key={group.issueKey} className="border-slate-800/60">
                       <TableCell className="font-mono text-xs text-slate-400">{group.issueKey}</TableCell>
                       <TableCell className="text-slate-200">{group.label}</TableCell>
-                      <TableCell className="font-mono">{group.occurrenceCount}</TableCell>
+                      <TableCell className="font-mono">{formatInteger(group.occurrenceCount, locale)}</TableCell>
                       <TableCell className="text-xs text-slate-400 font-mono">{group.firstOccurrence} → {group.lastOccurrence}</TableCell>
                       <TableCell className="text-xs text-slate-400">
-                        {window ? `${window.occurrenceCount} مرات عبر ${window.monthsPresent} أشهر` : '—'}
+                        {window ? <>{formatInteger(window.occurrenceCount, locale)} <T>مرات عبر </T>{formatInteger(window.monthsPresent, locale)} <T>أشهر</T></> : '—'}
                       </TableCell>
                     </TableRow>
                   );
                 })}
                 {quality.repeatedIssues.byCategory.length === 0 && (
-                  <TableRow><TableCell colSpan={5} className="text-slate-500 text-sm">لا توجد فئات متكررة</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={5} className="text-slate-500 text-sm"><T>لا توجد فئات متكررة</T></TableCell></TableRow>
                 )}
               </TableBody>
             </Table>
@@ -300,11 +309,11 @@ function DatasetBody({ dataset }: { dataset: EmployeePerformanceDataset }) {
 
           {/* Payroll deductions — separate units */}
           <div className="space-y-2">
-            <div className="text-xs font-semibold text-slate-300">خصومات الجودة (رواتب — وحدات منفصلة)</div>
+            <div className="text-xs font-semibold text-slate-300"><T>خصومات الجودة (رواتب — وحدات منفصلة)</T></div>
             <div className="flex flex-wrap gap-2">
-              <CountChip label="عدد" count={quality.deductions.count} />
-              <CountChip label="إجمالي الأيام" count={quality.deductions.totalDays} />
-              <CountChip label="إجمالي المبلغ" count={quality.deductions.totalAmount} />
+              <CountChip label={<T>عدد</T>} count={quality.deductions.count} />
+              <CountChip label={<T>إجمالي الأيام</T>} count={quality.deductions.totalDays} />
+              <CountChip label={<T>إجمالي المبلغ</T>} count={quality.deductions.totalAmount} />
             </div>
           </div>
         </CardContent>
@@ -313,57 +322,58 @@ function DatasetBody({ dataset }: { dataset: EmployeePerformanceDataset }) {
       {/* ── Operational facts ── */}
       <Card className="bg-slate-800/30 border-slate-700/40">
         <CardHeader className="pb-2">
-          <CardTitle className="text-sm text-slate-200">حقائق تشغيلية — {formatMonth(period.monthKey)}</CardTitle>
+          <CardTitle className="text-sm text-slate-200"><T>حقائق تشغيلية — </T>{formatMonthKey(period.monthKey, locale)}</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <div className="space-y-2">
-              <div className="text-xs font-semibold text-slate-300">الشكاوى (ربط مباشر مؤكد)</div>
+              <div className="text-xs font-semibold text-slate-300"><T>الشكاوى (ربط مباشر مؤكد)</T></div>
               <div className="flex flex-wrap gap-2">
-                <CountChip label="الإجمالي" count={complaints.total} />
-                <CountChip label="محلولة/مغلقة" count={complaints.resolvedOrClosed} />
-                <CountChip label="مفتوحة" count={complaints.stillOpen} />
-                <CountChip label="عبر صفقة" count={complaints.viaDealCount} />
+                <CountChip label={<T>الإجمالي</T>} count={complaints.total} />
+                <CountChip label={<T>محلولة/مغلقة</T>} count={complaints.resolvedOrClosed} />
+                <CountChip label={<T>مفتوحة</T>} count={complaints.stillOpen} />
+                <CountChip label={<T>عبر صفقة</T>} count={complaints.viaDealCount} />
               </div>
               {complaints.repeatedTypes.length > 0 && (
                 <div className="text-xs text-slate-400">
-                  أنواع متكررة: {complaints.repeatedTypes.map((t) => `${t.issueKey} (${t.occurrenceCount})`).join('، ')}
+                  <T>أنواع متكررة: </T>{complaints.repeatedTypes.map((t) => `${t.issueKey} (${formatInteger(t.occurrenceCount, locale)})`).join('، ')}
                 </div>
               )}
-              <div className="text-xs font-semibold text-slate-300 pt-2">المتابعات</div>
+              <div className="text-xs font-semibold text-slate-300 pt-2"><T>المتابعات</T></div>
               <div className="flex flex-wrap gap-2">
-                <CountChip label="الإجمالي" count={followUps.total} />
-                <CountChip label="متأخرة (قاعدة النظام)" count={followUps.overdue} />
-                <CountChip label="مستحقة اليوم" count={followUps.dueToday} />
-                <CountChip label="مكتملة" count={followUps.completed} />
-                <CountChip label="نسبة الإكمال %" count={followUps.completionRate ?? 0} />
+                <CountChip label={<T>الإجمالي</T>} count={followUps.total} />
+                <CountChip label={<T>متأخرة (قاعدة النظام)</T>} count={followUps.overdue} />
+                <CountChip label={<T>مستحقة اليوم</T>} count={followUps.dueToday} />
+                <CountChip label={<T>مكتملة</T>} count={followUps.completed} />
+                <CountChip label={<T>نسبة الإكمال %</T>} count={followUps.completionRate ?? 0} />
               </div>
             </div>
             <div className="space-y-2">
-              <div className="text-xs font-semibold text-slate-300">إجراءات CAPA (ربط مباشر + غير مباشر)</div>
+              <div className="text-xs font-semibold text-slate-300"><T>إجراءات CAPA (ربط مباشر + غير مباشر)</T></div>
               <div className="flex flex-wrap gap-2">
-                <CountChip label="الإجمالي" count={capa.total} />
-                <CountChip label="نشطة" count={capa.active} />
-                <CountChip label="متأخرة (SLA النظام)" count={capa.overdue} />
-                <CountChip label="مغلقة" count={capa.closedCount} />
-                <CountChip label="ارتباط غير مباشر" count={capa.indirectCount} />
+                <CountChip label={<T>الإجمالي</T>} count={capa.total} />
+                <CountChip label={<T>نشطة</T>} count={capa.active} />
+                <CountChip label={<T>متأخرة (SLA النظام)</T>} count={capa.overdue} />
+                <CountChip label={<T>مغلقة</T>} count={capa.closedCount} />
+                <CountChip label={<T>ارتباط غير مباشر</T>} count={capa.indirectCount} />
               </div>
-              <div className="text-xs font-semibold text-slate-300 pt-2">صفقات السفر (حقائق تشغيلية فقط)</div>
+              <div className="text-xs font-semibold text-slate-300 pt-2"><T>صفقات السفر (مصنّفة بتاريخها المرجعي)</T></div>
               <div className="flex flex-wrap gap-2">
-                <CountChip label="الإجمالي" count={deals.total} />
-                <CountChip label="مكتملة" count={deals.completed} />
-                <CountChip label="ملغاة" count={deals.canceled} />
-                <CountChip label="نشطة" count={deals.active} />
+                <CountChip label={<T>مكتملة (تاريخ الإغلاق)</T>} count={deals.closedTotal} />
+                <CountChip label={<T>حجم السفر (تاريخ المغادرة)</T>} count={deals.travelTotal} />
+                <CountChip label={<T>ملغاة</T>} count={deals.canceled} />
+                <CountChip label={<T>نشطة</T>} count={deals.active} />
+                {deals.closedUnknownMonth > 0 && <CountChip label={<T>بتاريخ إغلاق غير محدد</T>} count={deals.closedUnknownMonth} />}
               </div>
-              <div className="text-xs font-semibold text-slate-300 pt-2">الحضور (سياق فقط — خارج KPI الجودة)</div>
+              <div className="text-xs font-semibold text-slate-300 pt-2"><T>الحضور (سياق فقط — خارج KPI الجودة)</T></div>
               {attendance.result ? (
                 <div className="flex flex-wrap gap-2">
-                  <CountChip label="أيام التأخير" count={attendance.result.lateDays} />
-                  <CountChip label="أيام الغياب" count={attendance.result.absentDays} />
-                  <CountChip label="الالتزام %" count={attendance.result.compliance} />
+                  <CountChip label={<T>أيام التأخير</T>} count={attendance.result.lateDays} />
+                  <CountChip label={<T>أيام الغياب</T>} count={attendance.result.absentDays} />
+                  <CountChip label={<T>الالتزام %</T>} count={attendance.result.compliance} />
                 </div>
               ) : (
-                <div className="text-xs text-slate-500">لا توجد نتيجة شهرية مخزّنة (NOT_AVAILABLE)</div>
+                <div className="text-xs text-slate-500"><T>لا توجد نتيجة شهرية مخزّنة (NOT_AVAILABLE)</T></div>
               )}
             </div>
           </div>
@@ -373,7 +383,7 @@ function DatasetBody({ dataset }: { dataset: EmployeePerformanceDataset }) {
       {/* ── Data quality + evidence ── */}
       <Card className="bg-slate-800/30 border-slate-700/40">
         <CardHeader className="pb-2">
-          <CardTitle className="text-sm text-slate-200">جودة البيانات والمراجع (Evidence)</CardTitle>
+          <CardTitle className="text-sm text-slate-200"><T>جودة البيانات والمراجع (Evidence)</T></CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
           <div className="flex flex-wrap gap-2 text-xs">
@@ -386,19 +396,19 @@ function DatasetBody({ dataset }: { dataset: EmployeePerformanceDataset }) {
               ['travelDeals', evidence.deals.recordIds.length],
             ].map(([collection, count]) => (
               <Badge key={String(collection)} variant="outline" className="bg-slate-900/40 text-slate-400 border-slate-800 font-mono text-[10px]">
-                {collection}: {String(count)}
+                {collection}: {formatInteger(Number(count), locale)}
               </Badge>
             ))}
             {evidence.attendance && (
               <Badge variant="outline" className="bg-slate-900/40 text-slate-400 border-slate-800 font-mono text-[10px]">
-                attendanceResults: {evidence.attendance.recordIds.length}
+                attendanceResults: {formatInteger(evidence.attendance.recordIds.length, locale)}
               </Badge>
             )}
           </div>
           {dataQuality.unattributedRecords.length > 0 && (
             <div className="text-xs text-amber-300/90">
-              سجلات بلا شهر قابل للإسناد (استُثنت دون تخمين):{' '}
-              {dataQuality.unattributedRecords.map((u) => `${u.collection} (${u.count})`).join('، ')}
+              <T>سجلات بلا شهر قابل للإسناد (استُثنت دون تخمين): </T>
+              {dataQuality.unattributedRecords.map((u) => `${u.collection} (${formatInteger(u.count, locale)})`).join('، ')}
             </div>
           )}
           <ul className="text-[11px] text-slate-500 space-y-1">
@@ -406,7 +416,7 @@ function DatasetBody({ dataset }: { dataset: EmployeePerformanceDataset }) {
               <li key={note}>• {note}</li>
             ))}
           </ul>
-          <div className="text-[10px] text-slate-600 font-mono">generatedAt: {dataset.generatedAt}</div>
+          <div className="text-[10px] text-slate-600 font-mono">generatedAt: {formatDateTime(dataset.generatedAt, locale)}</div>
         </CardContent>
       </Card>
     </div>

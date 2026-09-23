@@ -97,6 +97,8 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useEmployees } from '@/hooks/use-queries';
+import { useLanguage } from '@/lib/i18n/language-context';
+import { formatDate, formatDateTime, formatTime } from '@/lib/i18n/format';
 import { UserAvatar } from '@/components/shared/UserAvatar';
 import { APP_PAGES, type PermissionsMap } from '@/config/permissions';
 import { PermissionManagerConsole } from '@/components/permissions/PermissionManagerConsole';
@@ -225,6 +227,7 @@ function getRoleBadge(role: string) {
 export default function ControlPanelPage() {
   const { isAdmin } = usePermissions('controlPanel');
   const { user: currentUser } = useAuth();
+  const { locale } = useLanguage();
 
   // ═══ TAB 1: Users state ═══
   const [users, setUsers] = useState<UserRecord[]>([]);
@@ -708,10 +711,10 @@ export default function ControlPanelPage() {
                           )}
                         </TableCell>
                         <TableCell className="text-slate-500 text-xs hidden xl:table-cell">
-                          {u.lastActivity ? new Date(u.lastActivity).toLocaleDateString('ar-EG') : '—'}
+                          {u.lastActivity ? formatDate(u.lastActivity, locale) : '—'}
                         </TableCell>
                         <TableCell className="text-slate-500 text-xs hidden xl:table-cell" dir="ltr">
-                          {new Date(u.createdAt).toLocaleDateString('ar-EG')}
+                          {formatDate(u.createdAt, locale)}
                         </TableCell>
                         <TableCell>
                           {/* §2 — SmartActionMenu: all user-row actions as an
@@ -864,7 +867,7 @@ export default function ControlPanelPage() {
                             {log.ipAddress || '—'}
                           </TableCell>
                           <TableCell className="text-slate-500 text-[10px]" dir="ltr">
-                            {ts ? new Date(ts).toLocaleString('ar-EG', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—'}
+                            {ts ? formatDateTime(ts, locale, { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—'}
                           </TableCell>
                         </TableRow>
                       );
@@ -945,7 +948,7 @@ export default function ControlPanelPage() {
                           {s.currentPage || '—'}
                         </TableCell>
                         <TableCell className="text-slate-500 text-[10px] hidden lg:table-cell" dir="ltr">
-                          {s.lastActivity ? new Date(s.lastActivity).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' }) : '—'}
+                          {s.lastActivity ? formatTime(s.lastActivity, locale, { hour: '2-digit', minute: '2-digit' }) : '—'}
                         </TableCell>
                         <TableCell className="text-slate-500 text-[10px] hidden xl:table-cell">
                           {s.browser || '—'}

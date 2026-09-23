@@ -2,6 +2,10 @@
 
 import { CheckCircle2, XCircle, Clock, History } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { useLanguage } from '@/lib/i18n/language-context';
+import { translateUIText } from '@/lib/i18n/ui-text';
+import { formatDateTime as localeDateTime, displayLocale } from '@/lib/i18n/format';
+import type { Locale } from '@/lib/i18n/dictionary';
 import type { TimelinePoint, TimelineTone } from '@/types/quality-kpi';
 
 // ─────────────────────────────────────────────────────────────
@@ -12,6 +16,10 @@ import type { TimelinePoint, TimelineTone } from '@/types/quality-kpi';
 //  record's audit + approval histories) and renders them newest-first
 //  with tone-coded icons. The component NEVER reconstructs business
 //  history itself — it only displays the points it is given.
+//
+//  §I18N-BOUNDARY: only the empty-state label is claimed UI. Point
+//  labels, actor names and details carry record identifiers and user
+//  text — business data, rendered raw.
 // ─────────────────────────────────────────────────────────────
 
 const TONE_STYLE: Record<TimelineTone, { icon: typeof CheckCircle2; accent: string; dot: string }> = {
@@ -21,10 +29,10 @@ const TONE_STYLE: Record<TimelineTone, { icon: typeof CheckCircle2; accent: stri
   neutral: { icon: History, accent: 'text-slate-300', dot: 'bg-slate-500' },
 };
 
-function formatTimestamp(iso: string): string {
+function formatTimestamp(iso: string, locale: Locale = displayLocale()): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return iso;
-  return d.toLocaleString('ar-EG', {
+  return localeDateTime(d, locale, {
     year: 'numeric', month: '2-digit', day: '2-digit',
     hour: '2-digit', minute: '2-digit',
   });
@@ -41,11 +49,12 @@ export function TimelineView({
   emptyLabel = 'لا يوجد سجل أحداث',
   className,
 }: TimelineViewProps) {
+  const { locale } = useLanguage();
   if (!points || points.length === 0) {
     return (
       <div className={cn('flex flex-col items-center justify-center py-6 text-center', className)}>
         <History className="size-7 text-slate-600 mb-2" />
-        <p className="text-xs text-slate-500">{emptyLabel}</p>
+        <p className="text-xs text-slate-500">{translateUIText(emptyLabel, locale)}</p>
       </div>
     );
   }
@@ -77,7 +86,7 @@ export function TimelineView({
             <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-slate-400">
               {p.actorName && <span>{p.actorName}</span>}
               {p.actorName && <span>·</span>}
-              <span className="tabular-nums">{formatTimestamp(p.timestamp)}</span>
+              <span className="tabular-nums">{formatTimestamp(p.timestamp, locale)}</span>
             </div>
             {p.details && (
               <p className="mt-1 text-xs text-slate-300 bg-slate-800/40 rounded-md px-2 py-1 border border-slate-700/40">

@@ -3,6 +3,10 @@
 import { useState } from 'react';
 import { toast } from 'sonner';
 import { usePermissions } from '@/hooks/usePermissions';
+import { useLanguage } from '@/lib/i18n/language-context';
+import { formatDateTime } from '@/lib/i18n/format';
+import { T } from '@/lib/i18n/T';
+import { translateUIText } from '@/lib/i18n/ui-text';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -62,6 +66,7 @@ function SettingRow({
   description: string;
   children: React.ReactNode;
 }) {
+  const { locale } = useLanguage();
   return (
     <div className="flex items-center justify-between gap-4 py-3 border-b border-slate-800/60 last:border-0">
       <div className="flex items-start gap-3 min-w-0">
@@ -69,8 +74,8 @@ function SettingRow({
           <Icon className="size-4 text-blue-400" />
         </div>
         <div className="min-w-0">
-          <p className="text-sm font-medium text-slate-100">{title}</p>
-          <p className="text-xs text-slate-500">{description}</p>
+          <p className="text-sm font-medium text-slate-100">{translateUIText(title, locale)}</p>
+          <p className="text-xs text-slate-500">{translateUIText(description, locale)}</p>
         </div>
       </div>
       <div className="shrink-0">{children}</div>
@@ -81,6 +86,7 @@ function SettingRow({
 // ─── Page ─────────────────────────────────────────────────────
 export default function KpiSettingsPage() {
   const { canView, canUpdate } = usePermissions('kpiSettings');
+  const { locale } = useLanguage();
   const { data, isLoading } = useKpiSettings();
   const updateMut = useUpdateKpiSettings();
 
@@ -97,7 +103,7 @@ export default function KpiSettingsPage() {
   if (!canView) {
     return (
       <div className="flex flex-col items-center justify-center py-24 text-slate-400">
-        <p>ليس لديك صلاحية للوصول إلى هذه الصفحة</p>
+        <p><T>ليس لديك صلاحية للوصول إلى هذه الصفحة</T></p>
       </div>
     );
   }
@@ -108,18 +114,18 @@ export default function KpiSettingsPage() {
 
   async function handleSave() {
     // Validate
-    if (form.defaultScore < 0) { toast.error('الدرجة الافتراضية غير صحيحة'); return; }
-    if (form.minimumScore < 0) { toast.error('الحد الأدنى غير صحيح'); return; }
-    if (form.maximumBonus < 0) { toast.error('حد المكافأة غير صحيح'); return; }
+    if (form.defaultScore < 0) { toast.error(translateUIText('الدرجة الافتراضية غير صحيحة', locale)); return; }
+    if (form.minimumScore < 0) { toast.error(translateUIText('الحد الأدنى غير صحيح', locale)); return; }
+    if (form.maximumBonus < 0) { toast.error(translateUIText('حد المكافأة غير صحيح', locale)); return; }
     if (form.allowBonus && form.maximumBonus === 0) {
-      toast.warning('المكافآت مفعّلة لكن حدّها الأقصى صفر');
+      toast.warning(translateUIText('المكافآت مفعّلة لكن حدّها الأقصى صفر', locale));
     }
 
     try {
       await updateMut.mutateAsync(form as unknown as Record<string, unknown>);
-      toast.success('تم حفظ الإعدادات');
+      toast.success(translateUIText('تم حفظ الإعدادات', locale));
     } catch (e) {
-      toast.error('فشل الحفظ', { description: e instanceof Error ? e.message : undefined });
+      toast.error(translateUIText('فشل الحفظ', locale), { description: e instanceof Error ? e.message : undefined });
     }
   }
 
@@ -132,16 +138,16 @@ export default function KpiSettingsPage() {
         <div>
           <h1 className="text-2xl font-bold text-slate-100 flex items-center gap-2">
             <Settings2 className="size-6 text-blue-400" />
-            إعدادات محرك المؤشرات
+            <T>إعدادات محرك المؤشرات</T>
           </h1>
           <p className="text-sm text-slate-400 mt-1">
-            تكوين مركزي لكل سلوكيات محرك الأداء — التغييرات تنطبق على الحسابات اللاحقة
+            <T>تكوين مركزي لكل سلوكيات محرك الأداء — التغييرات تنطبق على الحسابات اللاحقة</T>
           </p>
         </div>
         {canUpdate && (
           <Button onClick={handleSave} disabled={!dirty || updateMut.isPending} className="gap-2">
             <Save className="size-4" />
-            {updateMut.isPending ? 'جارٍ الحفظ...' : 'حفظ التغييرات'}
+            <T>{updateMut.isPending ? 'جارٍ الحفظ...' : 'حفظ التغييرات'}</T>
           </Button>
         )}
       </div>
@@ -157,38 +163,38 @@ export default function KpiSettingsPage() {
             <CardContent className="p-4 space-y-1">
               <div className="flex items-center gap-2 pb-2">
                 <BarChart3 className="size-4 text-blue-400" />
-                <h3 className="text-sm font-semibold text-slate-200">معادلة الدرجات</h3>
+                <h3 className="text-sm font-semibold text-slate-200"><T>معادلة الدرجات</T></h3>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 py-2">
                 <div className="space-y-1">
-                  <Label>الدرجة الابتدائية</Label>
+                  <Label><T>الدرجة الابتدائية</T></Label>
                   <Input
                     type="number" min={0} disabled={!canUpdate}
                     value={form.defaultScore}
                     onChange={(e) => update('defaultScore', parseInt(e.target.value, 10) || 0)}
                     className="bg-slate-800/50 border-slate-700"
                   />
-                  <p className="text-[11px] text-slate-500">النقطة التي يبدأ منها كل موظف</p>
+                  <p className="text-[11px] text-slate-500"><T>النقطة التي يبدأ منها كل موظف</T></p>
                 </div>
                 <div className="space-y-1">
-                  <Label>الحد الأدنى للدرجة</Label>
+                  <Label><T>الحد الأدنى للدرجة</T></Label>
                   <Input
                     type="number" min={0} disabled={!canUpdate}
                     value={form.minimumScore}
                     onChange={(e) => update('minimumScore', parseInt(e.target.value, 10) || 0)}
                     className="bg-slate-800/50 border-slate-700"
                   />
-                  <p className="text-[11px] text-slate-500">لا تنزل الدرجة beneath هذا الحد</p>
+                  <p className="text-[11px] text-slate-500"><T>لا تنزل الدرجة beneath هذا الحد</T></p>
                 </div>
                 <div className="space-y-1">
-                  <Label>حد المكافأة الأقصى</Label>
+                  <Label><T>حد المكافأة الأقصى</T></Label>
                   <Input
                     type="number" min={0} disabled={!canUpdate || !form.allowBonus}
                     value={form.maximumBonus}
                     onChange={(e) => update('maximumBonus', parseInt(e.target.value, 10) || 0)}
                     className="bg-slate-800/50 border-slate-700"
                   />
-                  <p className="text-[11px] text-slate-500">سقف النقاط الإضافية المضافة</p>
+                  <p className="text-[11px] text-slate-500"><T>سقف النقاط الإضافية المضافة</T></p>
                 </div>
               </div>
             </CardContent>
@@ -199,7 +205,7 @@ export default function KpiSettingsPage() {
             <CardContent className="p-4">
               <div className="flex items-center gap-2 pb-1">
                 <Shield className="size-4 text-blue-400" />
-                <h3 className="text-sm font-semibold text-slate-200">السلوكيات</h3>
+                <h3 className="text-sm font-semibold text-slate-200"><T>السلوكيات</T></h3>
               </div>
 
               <SettingRow
@@ -257,7 +263,7 @@ export default function KpiSettingsPage() {
             <CardContent className="p-4 space-y-2">
               <div className="flex items-center gap-2">
                 <TrendingUp className="size-4 text-blue-400" />
-                <h3 className="text-sm font-semibold text-slate-200">طريقة حساب الاتجاه</h3>
+                <h3 className="text-sm font-semibold text-slate-200"><T>طريقة حساب الاتجاه</T></h3>
               </div>
               <Select
                 value={form.trendCalculation}
@@ -270,13 +276,13 @@ export default function KpiSettingsPage() {
                 <SelectContent>
                   {TREND_OPTIONS.map((opt) => (
                     <SelectItem key={opt.value} value={opt.value}>
-                      {opt.label}
+                      <T>{opt.label}</T>
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
               <p className="text-xs text-slate-500">
-                {TREND_OPTIONS.find((o) => o.value === form.trendCalculation)?.hint}
+                <T>{TREND_OPTIONS.find((o) => o.value === form.trendCalculation)?.hint ?? ''}</T>
               </p>
             </CardContent>
           </Card>
@@ -284,21 +290,21 @@ export default function KpiSettingsPage() {
           {/* Last updated */}
           {settings.updatedAt && (
             <p className="text-xs text-slate-500 text-center">
-              آخر تحديث: {new Date(settings.updatedAt).toLocaleString('ar-EG')}
+              <T>آخر تحديث: </T>{formatDateTime(settings.updatedAt, locale)}
             </p>
           )}
 
           {!canUpdate && (
             <div className="flex items-center justify-center gap-2 text-xs text-amber-400">
               <Shield className="size-3.5" />
-              <span>عرض فقط — تعديل الإعدادات يتطلب صلاحية المدير</span>
+              <span><T>عرض فقط — تعديل الإعدادات يتطلب صلاحية المدير</T></span>
             </div>
           )}
 
           {/* Status badge */}
           {dirty && canUpdate && (
             <Badge variant="outline" className="text-amber-400 border-amber-500/30 bg-amber-500/10 block text-center py-1.5">
-              لديك تغييرات غير محفوظة
+              <T>لديك تغييرات غير محفوظة</T>
             </Badge>
           )}
         </>

@@ -708,23 +708,203 @@ html.light {
 }
 
 /* ═══════════════════════════════════════════════════════════
-   EVIDENCE HIGHLIGHT (Phase 5.2, spec §35)
-   Temporary deep-link highlight applied by useRecordHighlight():
-   visually clear (emerald ring + soft pulse), non-destructive
-   (never mutates layout or content), self-removing after ~4s.
-   Prints nothing (excluded below).
+   QNALYS GLOBAL RECORD HIGHLIGHT — the ONE canonical deep-link
+   highlight system (applied by useRecordHighlight() and
+   <GlobalRecordHighlight>).
+
+   Visual identity: the Qnalys brand scale ONLY (crimson
+   #db4a58 / burgundy #c22334 / deep red #a01a2b on charcoal) —
+   never green, never blue/purple for navigation highlights.
+   Semantic green/red elsewhere (success, healthy, completed) is
+   untouched — this section styles ONLY the record highlight.
+
+   Layered treatment (no layout shift — opacity / box-shadow /
+   border-color / background tints only):
+     1. --qnalys-highlight-surface  subtle surface tint
+     2. --qnalys-highlight-border   burgundy accent border
+     3. ::after — controlled top-edge gradient (block-axis, so the
+        gradient is direction-independent in RTL and LTR)
+     4. --qnalys-highlight-glow    very soft outer glow
+     5. --qnalys-highlight-accent  inline-start accent indicator
+     6. one controlled pulse + one weaker echo, then settle
+
+   Lifecycle contract (spec): REVEAL → accent appears → glow
+   expands → controlled pulse → weaker echo → settle → fades with
+   the class/attribute removal by the hook. Reduced motion gets a
+   clear static highlight with no pulse and no smooth scrolling.
+   Prints nothing.
    ═══════════════════════════════════════════════════════════ */
 
-@keyframes evidence-highlight-pulse {
-  0%, 100% { box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.75), 0 0 14px rgba(16, 185, 129, 0.25); }
-  50% { box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.95), 0 0 22px rgba(16, 185, 129, 0.45); }
+:root {
+  /* Light Mode — white/light surfaces, warm charcoal base, a
+     controlled crimson border with a very light burgundy tint.
+     Readability first: never dark-red fills under dark text. */
+  --qnalys-highlight-primary: #a01a2b;      /* brand-700 */
+  --qnalys-highlight-secondary: #c22334;    /* brand-600 */
+  --qnalys-highlight-accent: #db4a58;       /* brand-500 */
+  --qnalys-highlight-surface: rgba(194, 35, 52, 0.05);
+  --qnalys-highlight-border: rgba(160, 26, 43, 0.5);
+  --qnalys-highlight-glow: rgba(194, 35, 52, 0.16);
+  --qnalys-highlight-glow-strong: rgba(194, 35, 52, 0.28);
+  --qnalys-highlight-edge: rgba(160, 26, 43, 0.16);
 }
 
-.evidence-highlight {
+.dark {
+  /* Dark Mode — deep charcoal foundation, controlled crimson
+     accent, subtle red glow. Tint stays light enough that text,
+     icons, badges and controls inside the record stay readable. */
+  --qnalys-highlight-primary: #db4a58;      /* brand-500 */
+  --qnalys-highlight-secondary: #c22334;    /* brand-600 */
+  --qnalys-highlight-accent: #e9757f;       /* brand-400 */
+  --qnalys-highlight-surface: rgba(219, 74, 88, 0.09);
+  --qnalys-highlight-border: rgba(219, 74, 88, 0.6);
+  --qnalys-highlight-glow: rgba(219, 74, 88, 0.2);
+  --qnalys-highlight-glow-strong: rgba(219, 74, 88, 0.34);
+  --qnalys-highlight-edge: rgba(233, 117, 127, 0.18);
+}
+
+@keyframes qnalys-highlight-pulse {
+  /* REVEAL → glow expands → settle → one weaker echo → settle. */
+  0% {
+    box-shadow: 0 0 0 2px var(--qnalys-highlight-border), 0 0 10px var(--qnalys-highlight-glow);
+    background-color: transparent;
+  }
+  30% {
+    box-shadow: 0 0 0 2px var(--qnalys-highlight-primary), 0 0 22px var(--qnalys-highlight-glow-strong);
+  }
+  55% {
+    box-shadow: 0 0 0 2px var(--qnalys-highlight-border), 0 0 12px var(--qnalys-highlight-glow);
+  }
+  75% {
+    box-shadow: 0 0 0 2px var(--qnalys-highlight-border), 0 0 16px var(--qnalys-highlight-glow-strong);
+  }
+  100% {
+    box-shadow: 0 0 0 2px var(--qnalys-highlight-border), 0 0 10px var(--qnalys-highlight-glow);
+  }
+}
+
+/* The base highlight. Two trigger paths, one visual language:
+   • [data-qn-highlight] — set by useRecordHighlight() on the
+     resolved element (React never manages this attribute, so
+     re-renders cannot wipe the highlight mid-window);
+   • .qn-highlight — the declarative <GlobalRecordHighlight> path.
+   Both are purely additive: no dimension, no layout, no content. */
+[data-qn-highlight],
+.qn-highlight {
   border-radius: 0.6rem;
-  animation: evidence-highlight-pulse 1.1s ease-in-out 3;
-  box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.75);
-  scroll-margin-block: 6rem;
+  scroll-margin-block: 6rem; /* sticky header / table header respect */
+  background-color: var(--qnalys-highlight-surface);
+  border-color: var(--qnalys-highlight-border);
+  box-shadow: 0 0 0 2px var(--qnalys-highlight-border), 0 0 10px var(--qnalys-highlight-glow);
+  animation: qnalys-highlight-pulse 2.2s ease-in-out 1 both;
+  position: relative;
+}
+
+/* Gradient edge + inline-start accent indicator — pseudo-elements
+   so the record's own box model is never touched. The gradient
+   runs along the BLOCK axis (direction-independent RTL/LTR); the
+   accent bar uses logical inset so it always hugs the reading
+   edge without mirroring anything. */
+[data-qn-highlight]::after,
+.qn-highlight::after {
+  content: '';
+  position: absolute;
+  inset-inline: 0;
+  top: 0;
+  height: 3px;
+  border-radius: 0.6rem 0.6rem 0 0;
+  background: linear-gradient(
+    to bottom,
+    var(--qnalys-highlight-edge),
+    transparent
+  );
+  opacity: 0.9;
+  pointer-events: none;
+}
+
+[data-qn-highlight]::before,
+.qn-highlight::before {
+  content: '';
+  position: absolute;
+  inset-inline-start: 0;
+  top: 15%;
+  bottom: 15%;
+  width: 3px;
+  border-radius: 999px;
+  background: linear-gradient(
+    to bottom,
+    var(--qnalys-highlight-accent),
+    var(--qnalys-highlight-secondary)
+  );
+  opacity: 0.85;
+  pointer-events: none;
+}
+
+/* Component-aware variants — same lifecycle and tokens, shapes
+   adapted to the surface. Rows stay QUIET for dense tables: tint +
+   accent border + soft glow only — no pseudo-element bars (they
+   are unreliable on <tr> in some engines and a dense table does
+   not want them). Cards and sections get the full layered
+   treatment; fields read as a focused inline target without
+   background fill. */
+[data-qn-highlight='row'],
+.qn-highlight--row {
+  border-radius: 0.375rem;
+}
+[data-qn-highlight='row']::after,
+.qn-highlight--row::after,
+[data-qn-highlight='row']::before,
+.qn-highlight--row::before {
+  content: none;
+}
+
+[data-qn-highlight='card'],
+.qn-highlight--card {
+  border-radius: 0.75rem;
+  box-shadow: 0 0 0 2px var(--qnalys-highlight-border), 0 0 18px var(--qnalys-highlight-glow);
+}
+
+[data-qn-highlight='section'],
+.qn-highlight--section {
+  border-radius: 0.75rem;
+  box-shadow: 0 0 0 2px var(--qnalys-highlight-border), 0 0 16px var(--qnalys-highlight-glow);
+}
+
+[data-qn-highlight='field'],
+.qn-highlight--field {
+  border-radius: 0.375rem;
+  background-color: transparent;
+  box-shadow: 0 0 0 2px var(--qnalys-highlight-border);
+}
+[data-qn-highlight='field']::after,
+.qn-highlight--field::after {
+  content: none;
+}
+
+/* Motion contract: reduced motion gets the same clear static
+   Qnalys highlight — pulse removed, no glow animation. The hook
+   also switches smooth scrolling to instant. */
+@media (prefers-reduced-motion: reduce) {
+  [data-qn-highlight],
+  .qn-highlight {
+    animation: none;
+  }
+}
+
+/* Print: the navigation highlight is screen-only state. */
+@media print {
+  [data-qn-highlight],
+  .qn-highlight {
+    background-color: transparent;
+    box-shadow: none;
+    border-color: inherit;
+  }
+  [data-qn-highlight]::before,
+  .qn-highlight::before,
+  [data-qn-highlight]::after,
+  .qn-highlight::after {
+    content: none;
+  }
 }
 
 /* ── Scroll shadow indicators ──────────────────────────────────────────────

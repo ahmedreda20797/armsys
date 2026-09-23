@@ -15,10 +15,18 @@
 //      imported TYPE-ONLY (the performance-intelligence barrel is
 //      server-side) and there are zero React imports, so the module
 //      is directly unit-testable under node:test.
+//
+//  §I18N-BOUNDARY — every label emitted here is APPLICATION-OWNED UI
+//  derived from system enum codes (never business/user data, which
+//  passes through raw). Label maps carry [ar, en] pairs picked by the
+//  caller's locale; 'ar' (the default) reproduces the historical
+//  Arabic rendering byte-for-byte.
 // ══════════════════════════════════════════════════════════════
 
 import type { EmployeePerformanceDataset, RelationshipConfidence } from '@/lib/performance-intelligence';
 import type { KpiValueBasis } from '@/lib/kpi-reporting';
+import type { Locale } from '@/lib/i18n/dictionary';
+import { formatMonthKey } from '@/lib/i18n/format';
 
 // ─────────────────────────────────────────────────────────────
 //  Shared vocabulary
@@ -27,8 +35,22 @@ import type { KpiValueBasis } from '@/lib/kpi-reporting';
 /** Explicit unavailable state — spec §3 ("Never invent information"). */
 export const UNAVAILABLE = 'غير متاح';
 
+const UNAVAILABLE_LABELS: [string, string] = ['غير متاح', 'N/A'];
+
+/** Locale-aware unavailable label (UNAVAILABLE is its Arabic side). */
+export function unavailableLabel(locale: Locale = 'ar'): string {
+  return locale === 'en' ? UNAVAILABLE_LABELS[1] : UNAVAILABLE_LABELS[0];
+}
+
 /** The unclassified grouping key used by the analytical engine. */
 const UNCLASSIFIED_KEY = '_unclassified';
+
+const UNCLASSIFIED_LABELS: [string, string] = ['غير مصنّف', 'Unclassified'];
+
+/** Pick the locale side of an application-owned [ar, en] label pair. */
+function uiLabel(pair: [string, string], locale: Locale): string {
+  return locale === 'en' ? pair[1] : pair[0];
+}
 
 export type Tone = 'neutral' | 'good' | 'warn' | 'bad' | 'info' | 'accent';
 
@@ -46,7 +68,7 @@ export interface ChipFact {
 }
 
 // ─────────────────────────────────────────────────────────────
-//  Label maps (stored vocabulary → Arabic display labels)
+//  Label maps (system enum codes → [ar, en] display labels)
 // ─────────────────────────────────────────────────────────────
 
 const MONTH_LABELS_AR = [
@@ -54,7 +76,8 @@ const MONTH_LABELS_AR = [
   'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر',
 ];
 
-export function formatMonth(monthKey: string): string {
+export function formatMonth(monthKey: string, locale: Locale = 'ar'): string {
+  if (locale === 'en') return formatMonthKey(monthKey, 'en');
   const [y, m] = monthKey.split('-');
   const idx = parseInt(m, 10) - 1;
   if (Number.isNaN(idx) || idx < 0 || idx > 11) return monthKey;
@@ -72,61 +95,62 @@ export function currentMonthKey(now: Date = new Date()): string {
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
 }
 
-export const EMPLOYMENT_STATUS_LABELS: Record<string, string> = {
-  active: 'نشط',
-  inactive: 'غير نشط',
-  archived: 'مؤرشف',
-  unknown: 'غير معروف',
+export const EMPLOYMENT_STATUS_LABELS: Record<string, [string, string]> = {
+  active: ['نشط', 'Active'],
+  inactive: ['غير نشط', 'Inactive'],
+  archived: ['مؤرشف', 'Archived'],
+  unknown: ['غير معروف', 'Unknown'],
 };
 
-export const RELATIONSHIP_LABELS: Record<RelationshipConfidence, string> = {
-  CONFIRMED: 'ربط مباشر مؤكد',
-  INDIRECT: 'ارتباط غير مباشر (عبر مرجع ثانوي)',
-  NOT_AVAILABLE: 'لا توجد بيانات مخزّنة',
+export const RELATIONSHIP_LABELS: Record<RelationshipConfidence, [string, string]> = {
+  CONFIRMED: ['ربط مباشر مؤكد', 'Confirmed direct attribution'],
+  INDIRECT: ['ارتباط غير مباشر (عبر مرجع ثانوي)', 'Indirect (via secondary reference)'],
+  NOT_AVAILABLE: ['لا توجد بيانات مخزّنة', 'No stored data'],
 };
 
-export const VALUE_BASIS_LABELS: Record<KpiValueBasis, string> = {
-  MTD: 'MTD — حتى تاريخه',
-  LIVE: 'حية (غير نهائية)',
-  FINALIZED: 'مجمّدة نهائية',
+export const VALUE_BASIS_LABELS: Record<KpiValueBasis, [string, string]> = {
+  MTD: ['MTD — حتى تاريخه', 'MTD — month to date'],
+  LIVE: ['حية (غير نهائية)', 'Live (non-final)'],
+  FINALIZED: ['مجمّدة نهائية', 'Finalized'],
 };
 
-const SEVERITY_LABELS: Record<string, string> = {
-  low: 'منخفضة',
-  medium: 'متوسطة',
-  high: 'عالية',
-  critical: 'حرجة',
+const SEVERITY_LABELS: Record<string, [string, string]> = {
+  low: ['منخفضة', 'Low'],
+  medium: ['متوسطة', 'Medium'],
+  high: ['عالية', 'High'],
+  critical: ['حرجة', 'Critical'],
 };
 
-const TREND_LABELS: Record<string, string> = {
-  UP: '▲ اتجاه صاعد',
-  DOWN: '▼ اتجاه هابط',
-  STABLE: '─ مستقر',
+const TREND_LABELS: Record<string, [string, string]> = {
+  UP: ['▲ اتجاه صاعد', '▲ Upward trend'],
+  DOWN: ['▼ اتجاه هابط', '▼ Downward trend'],
+  STABLE: ['─ مستقر', '─ Stable'],
 };
 
-const DEAL_STATUS_LABELS: Record<string, string> = {
-  upcoming: 'قادمة',
-  in_progress: 'قيد التنفيذ',
-  completed: 'مكتملة',
-  canceled: 'ملغاة',
+const DEAL_STATUS_LABELS: Record<string, [string, string]> = {
+  upcoming: ['قادمة', 'Upcoming'],
+  in_progress: ['قيد التنفيذ', 'In progress'],
+  completed: ['مكتملة', 'Completed'],
+  canceled: ['ملغاة', 'Canceled'],
 };
 
-const ACTION_STATE_LABELS: Record<string, string> = {
-  not_started: 'لم تبدأ',
-  in_progress: 'قيد التنفيذ',
-  completed: 'مكتملة',
+const ACTION_STATE_LABELS: Record<string, [string, string]> = {
+  not_started: ['لم تبدأ', 'Not started'],
+  in_progress: ['قيد التنفيذ', 'In progress'],
+  completed: ['مكتملة', 'Completed'],
 };
 
-const RESOLUTION_LABELS_AR: Record<string, string> = {
-  open: 'مفتوحة',
-  in_review: 'قيد المراجعة',
-  resolved: 'محلولة',
-  closed: 'مغلقة',
+const RESOLUTION_LABELS_AR: Record<string, [string, string]> = {
+  open: ['مفتوحة', 'Open'],
+  in_review: ['قيد المراجعة', 'In review'],
+  resolved: ['محلولة', 'Resolved'],
+  closed: ['مغلقة', 'Closed'],
 };
 
 /** Fallback-aware label for stored vocabularies (unknown keys stay verbatim). */
-function storedLabel(map: Record<string, string>, key: string): string {
-  return map[key] ?? key;
+function storedLabel(map: Record<string, [string, string]>, key: string, locale: Locale): string {
+  const pair = map[key];
+  return pair ? uiLabel(pair, locale) : key;
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -186,38 +210,40 @@ export interface ReportHeaderView {
   datasetKind: string;
 }
 
-export function buildReportHeader(dataset: EmployeePerformanceDataset): ReportHeaderView {
+export function buildReportHeader(dataset: EmployeePerformanceDataset, locale: Locale = 'ar'): ReportHeaderView {
   const { employee, period, kpi } = dataset;
 
   const facts: KeyValueFact[] = [
-    { label: 'القسم', value: employee.department ?? UNAVAILABLE, unavailable: employee.department === null },
+    { label: uiLabel(['القسم', 'Department'], locale), value: employee.department ?? unavailableLabel(locale), unavailable: employee.department === null },
     {
       // The team resolves from the ORGANIZATION TREE (service-side).
       // Datasets built before the team field existed (and unassigned
       // employees) render the explicit unavailable state — spec §3.
-      label: 'الفريق',
-      value: employee.team ?? UNAVAILABLE,
+      label: uiLabel(['الفريق', 'Team'], locale),
+      value: employee.team ?? unavailableLabel(locale),
       unavailable: !employee.team,
     },
-    { label: 'المسمى الوظيفي', value: employee.position ?? UNAVAILABLE, unavailable: employee.position === null },
+    { label: uiLabel(['المسمى الوظيفي', 'Job title'], locale), value: employee.position ?? unavailableLabel(locale), unavailable: employee.position === null },
     {
-      label: 'حالة التوظيف',
-      value: storedLabel(EMPLOYMENT_STATUS_LABELS, employee.employmentStatus),
+      label: uiLabel(['حالة التوظيف', 'Employment status'], locale),
+      value: storedLabel(EMPLOYMENT_STATUS_LABELS, employee.employmentStatus, locale),
       unavailable: employee.employmentStatus === 'unknown',
     },
     {
-      label: 'أهلية الفترة',
-      value: employee.eligibleForPeriod ? 'مؤهل للفترة' : 'غير مؤهل للفترة',
+      label: uiLabel(['أهلية الفترة', 'Period eligibility'], locale),
+      value: employee.eligibleForPeriod
+        ? uiLabel(['مؤهل للفترة', 'Eligible for the period'], locale)
+        : uiLabel(['غير مؤهل للفترة', 'Not eligible for the period'], locale),
       unavailable: false,
     },
   ];
 
   const lifecycleBadges: Array<{ label: string; tone: Tone }> = [];
   if (employee.archivedButEligible) {
-    lifecycleBadges.push({ label: 'مؤرشف حاليًا — فترة تاريخية', tone: 'warn' });
+    lifecycleBadges.push({ label: uiLabel(['مؤرشف حاليًا — فترة تاريخية', 'Currently archived — historical period'], locale), tone: 'warn' });
   }
   if (employee.relationship === 'INDIRECT') {
-    lifecycleBadges.push({ label: RELATIONSHIP_LABELS.INDIRECT, tone: 'warn' });
+    lifecycleBadges.push({ label: uiLabel(RELATIONSHIP_LABELS.INDIRECT, locale), tone: 'warn' });
   }
 
   return {
@@ -226,10 +252,14 @@ export function buildReportHeader(dataset: EmployeePerformanceDataset): ReportHe
     employeeCode: employee.employeeCode,
     facts,
     lifecycleBadges,
-    periodLabel: formatMonth(period.monthKey),
+    periodLabel: formatMonth(period.monthKey, locale),
     valueBasis: period.valueBasis,
-    valueBasisLabel: VALUE_BASIS_LABELS[period.valueBasis],
-    schemeLabel: kpi.scheme ? `${kpi.scheme.schemeName} — إصدار ${kpi.scheme.schemeVersion}` : null,
+    valueBasisLabel: uiLabel(VALUE_BASIS_LABELS[period.valueBasis], locale),
+    schemeLabel: kpi.scheme
+      ? locale === 'en'
+        ? `${kpi.scheme.schemeName} — version ${kpi.scheme.schemeVersion}`
+        : `${kpi.scheme.schemeName} — إصدار ${kpi.scheme.schemeVersion}`
+      : null,
     datasetKind: dataset.datasetKind,
   };
 }
@@ -268,7 +298,7 @@ export interface KpiHeroView {
   evidenceNote: string | null;
 }
 
-export function buildKpiHero(dataset: EmployeePerformanceDataset): KpiHeroView {
+export function buildKpiHero(dataset: EmployeePerformanceDataset, locale: Locale = 'ar'): KpiHeroView {
   const { kpi, trend } = dataset;
   const quality = kpi.quality;
   const mom = trend.mom;
@@ -281,11 +311,13 @@ export function buildKpiHero(dataset: EmployeePerformanceDataset): KpiHeroView {
   const obsTotal = dataset.quality.observations.total;
   const dedCount = dataset.quality.deductions.count;
   const evidenceParts: string[] = [];
-  if (obsTotal > 0) evidenceParts.push(`${obsTotal} ملاحظة جودة`);
-  if (dedCount > 0) evidenceParts.push(`${dedCount} خصم جودة`);
+  if (obsTotal > 0) evidenceParts.push(locale === 'en' ? `${obsTotal} quality observations` : `${obsTotal} ملاحظة جودة`);
+  if (dedCount > 0) evidenceParts.push(locale === 'en' ? `${dedCount} quality deductions` : `${dedCount} خصم جودة`);
   const evidenceNote =
     !kpiValueAvailable && evidenceParts.length > 0
-      ? `توجد أدلة جودة حقيقية لهذه الفترة (${evidenceParts.join(' · ')}) وتُعرض في الأقسام أدناه — نتيجة KPI غير متاحة وفق قواعد المحرك، ولا تُختلق قيم بديلة.`
+      ? locale === 'en'
+        ? `Real quality evidence exists for this period (${evidenceParts.join(' · ')}) and is shown in the sections below — the KPI result is unavailable per engine rules, and no substitute values are invented.`
+        : `توجد أدلة جودة حقيقية لهذه الفترة (${evidenceParts.join(' · ')}) وتُعرض في الأقسام أدناه — نتيجة KPI غير متاحة وفق قواعد المحرك، ولا تُختلق قيم بديلة.`
       : null;
 
   return {
@@ -304,9 +336,13 @@ export function buildKpiHero(dataset: EmployeePerformanceDataset): KpiHeroView {
     previousScoreDisplay: mom ? formatScore(mom.previousRawScore) : null,
     deltaDisplay: formatSignedPoints(mom?.deltaPoints ?? null),
     deltaToneValue: deltaTone(mom?.deltaPoints ?? null),
-    directionLabel: trend.direction ? TREND_LABELS[trend.direction] ?? trend.direction : null,
+    directionLabel: trend.direction ? storedLabel(TREND_LABELS, trend.direction, locale) : null,
     outcomeMessage: kpi.message,
-    schemeLabel: kpi.scheme ? `${kpi.scheme.schemeName} — إصدار ${kpi.scheme.schemeVersion}` : null,
+    schemeLabel: kpi.scheme
+      ? locale === 'en'
+        ? `${kpi.scheme.schemeName} — version ${kpi.scheme.schemeVersion}`
+        : `${kpi.scheme.schemeName} — إصدار ${kpi.scheme.schemeVersion}`
+      : null,
     evidenceNote,
   };
 }
@@ -329,7 +365,7 @@ export interface KpiComponentsView {
   hasUnavailableComponents: boolean;
 }
 
-export function buildKpiComponents(dataset: EmployeePerformanceDataset): KpiComponentsView {
+export function buildKpiComponents(dataset: EmployeePerformanceDataset, locale: Locale = 'ar'): KpiComponentsView {
   const { kpi } = dataset;
   const quality = kpi.quality;
 
@@ -337,7 +373,7 @@ export function buildKpiComponents(dataset: EmployeePerformanceDataset): KpiComp
 
   if (quality) {
     rows.push({
-      label: quality.name || 'الجودة',
+      label: quality.name || uiLabel(['الجودة', 'Quality'], locale),
       contributionDisplay: formatContribution(quality.weightedContribution, quality.maxContribution),
       statusLabel: quality.status,
       available: quality.weightedContribution !== null,
@@ -346,8 +382,8 @@ export function buildKpiComponents(dataset: EmployeePerformanceDataset): KpiComp
   } else {
     // No quality component result — explicit NOT AVAILABLE row (no zero).
     rows.push({
-      label: 'الجودة',
-      contributionDisplay: UNAVAILABLE,
+      label: uiLabel(['الجودة', 'Quality'], locale),
+      contributionDisplay: unavailableLabel(locale),
       statusLabel: 'NOT_AVAILABLE',
       available: false,
       isOverall: false,
@@ -355,12 +391,16 @@ export function buildKpiComponents(dataset: EmployeePerformanceDataset): KpiComp
   }
 
   rows.push({
-    label: 'إجمالي KPI (المتاح)',
+    label: uiLabel(['إجمالي KPI (المتاح)', 'Total KPI (available)'], locale),
     contributionDisplay:
       kpi.weightedTotal === null
-        ? UNAVAILABLE
+        ? unavailableLabel(locale)
         : `${formatPlainNumber(kpi.weightedTotal)}${
-            kpi.availableWeight === null ? '' : ` / وزن متاح ${formatPlainNumber(kpi.availableWeight)}`
+            kpi.availableWeight === null
+              ? ''
+              : locale === 'en'
+                ? ` / available weight ${formatPlainNumber(kpi.availableWeight)}`
+                : ` / وزن متاح ${formatPlainNumber(kpi.availableWeight)}`
           }`,
     statusLabel: kpi.rowStatus,
     available: kpi.rowStatus === 'AVAILABLE' || kpi.rowStatus === 'FINALIZED',
@@ -398,12 +438,12 @@ export interface TrendView {
   previousScoreDisplay: string | null;
 }
 
-export function buildTrend(dataset: EmployeePerformanceDataset): TrendView {
+export function buildTrend(dataset: EmployeePerformanceDataset, locale: Locale = 'ar'): TrendView {
   const { trend } = dataset;
   const points: TrendPointView[] = trend.points.map((p) => ({
     monthKey: p.monthKey,
-    monthLabel: formatMonth(p.monthKey),
-    scoreDisplay: p.available ? formatScore(p.rawScore) : UNAVAILABLE,
+    monthLabel: formatMonth(p.monthKey, locale),
+    scoreDisplay: p.available ? formatScore(p.rawScore) : unavailableLabel(locale),
     available: p.available,
     finalized: p.finalized,
   }));
@@ -413,10 +453,10 @@ export function buildTrend(dataset: EmployeePerformanceDataset): TrendView {
     points,
     availableCount: points.filter((p) => p.available).length,
     insufficient: points.every((p) => !p.available),
-    directionLabel: trend.direction ? TREND_LABELS[trend.direction] ?? trend.direction : null,
+    directionLabel: trend.direction ? storedLabel(TREND_LABELS, trend.direction, locale) : null,
     deltaDisplay: mom ? formatSignedPoints(mom.deltaPoints) : null,
     deltaToneValue: deltaTone(mom?.deltaPoints ?? null),
-    previousMonthLabel: mom ? formatMonth(mom.previousMonth) : null,
+    previousMonthLabel: mom ? formatMonth(mom.previousMonth, locale) : null,
     previousScoreDisplay: mom ? formatScore(mom.previousRawScore) : null,
   };
 }
@@ -445,7 +485,7 @@ const RESOLUTION_TONES: Record<string, Tone> = {
   closed: 'neutral',
 };
 
-export function buildObservations(dataset: EmployeePerformanceDataset): ObservationsView {
+export function buildObservations(dataset: EmployeePerformanceDataset, locale: Locale = 'ar'): ObservationsView {
   const obs = dataset.quality.observations;
   return {
     total: obs.total,
@@ -453,22 +493,22 @@ export function buildObservations(dataset: EmployeePerformanceDataset): Observat
     pending: obs.pending,
     rejected: obs.rejected,
     severityChips: Object.entries(obs.bySeverity).map(([key, count]) => ({
-      label: storedLabel(SEVERITY_LABELS, key),
+      label: storedLabel(SEVERITY_LABELS, key, locale),
       count,
       tone: key === 'critical' || key === 'high' ? 'bad' : key === 'medium' ? 'warn' : 'neutral',
     })),
     resolutionChips: Object.entries(obs.byResolutionStatus).map(([key, count]) => ({
-      label: storedLabel(RESOLUTION_LABELS_AR, key),
+      label: storedLabel(RESOLUTION_LABELS_AR, key, locale),
       count,
       tone: RESOLUTION_TONES[key] ?? 'neutral',
     })),
     categoryRows: obs.byCategory.map((c) => ({
       categoryId: c.categoryId,
-      categoryName: c.categoryId === UNCLASSIFIED_KEY ? 'غير مصنّف' : c.categoryName,
+      categoryName: c.categoryId === UNCLASSIFIED_KEY ? uiLabel(UNCLASSIFIED_LABELS, locale) : c.categoryName,
       count: c.count,
     })),
     typeRows: dataset.quality.repeatedIssues.byType.map((t) => ({
-      label: t.issueKey === UNCLASSIFIED_KEY ? 'غير مصنّف' : t.label,
+      label: t.issueKey === UNCLASSIFIED_KEY ? uiLabel(UNCLASSIFIED_LABELS, locale) : t.label,
       count: t.occurrenceCount,
     })),
     minOccurrences: dataset.quality.repeatedIssues.minOccurrences,
@@ -496,7 +536,7 @@ export interface RepeatedIssuesView {
   empty: boolean;
 }
 
-export function buildRepeatedIssues(dataset: EmployeePerformanceDataset): RepeatedIssuesView {
+export function buildRepeatedIssues(dataset: EmployeePerformanceDataset, locale: Locale = 'ar'): RepeatedIssuesView {
   const ri = dataset.quality.repeatedIssues;
   const windowByKey = new Map(ri.windowByCategory.map((w) => [w.issueKey, w]));
 
@@ -504,12 +544,14 @@ export function buildRepeatedIssues(dataset: EmployeePerformanceDataset): Repeat
     groups.map((g) => {
       const w = windowByKey.get(g.issueKey);
       return {
-        label: g.issueKey === UNCLASSIFIED_KEY ? 'غير مصنّف' : g.label,
+        label: g.issueKey === UNCLASSIFIED_KEY ? uiLabel(UNCLASSIFIED_LABELS, locale) : g.label,
         occurrenceCount: g.occurrenceCount,
         firstOccurrence: g.firstOccurrence,
         lastOccurrence: g.lastOccurrence,
         windowSummary: w
-          ? `${w.occurrenceCount} مرات عبر ${w.monthsPresent} أشهر`
+          ? locale === 'en'
+            ? `${w.occurrenceCount} occurrences across ${w.monthsPresent} months`
+            : `${w.occurrenceCount} مرات عبر ${w.monthsPresent} أشهر`
           : null,
         recordCount: g.observationIds.length,
       };
@@ -550,7 +592,7 @@ export interface DeductionsView {
   empty: boolean;
 }
 
-export function buildDeductions(dataset: EmployeePerformanceDataset): DeductionsView {
+export function buildDeductions(dataset: EmployeePerformanceDataset, locale: Locale = 'ar'): DeductionsView {
   const d = dataset.quality.deductions;
   return {
     count: d.count,
@@ -559,7 +601,7 @@ export function buildDeductions(dataset: EmployeePerformanceDataset): Deductions
     totalDaysDisplay: formatPlainNumber(d.totalDays),
     totalAmountDisplay: formatPlainNumber(d.totalAmount),
     typeChips: d.byType.map((t) => ({
-      label: t.categoryId === UNCLASSIFIED_KEY ? 'غير مصنّف' : t.categoryName,
+      label: t.categoryId === UNCLASSIFIED_KEY ? uiLabel(UNCLASSIFIED_LABELS, locale) : t.categoryName,
       count: t.count,
       tone: 'neutral',
     })),
@@ -595,21 +637,26 @@ export interface ComplaintsView {
   repeatedTypes: Array<{ label: string; count: number }>;
 }
 
-export function buildComplaints(dataset: EmployeePerformanceDataset): ComplaintsView {
+export function buildComplaints(dataset: EmployeePerformanceDataset, locale: Locale = 'ar'): ComplaintsView {
   const c = dataset.complaints;
   return {
     relationship: c.relationship,
-    relationshipLabel: RELATIONSHIP_LABELS[c.relationship],
+    relationshipLabel: uiLabel(RELATIONSHIP_LABELS[c.relationship], locale),
     total: c.total,
-    statusChips: entriesToChips(c.byStatus, RESOLUTION_LABELS_AR),
+    statusChips: entriesToChips(c.byStatus, RESOLUTION_LABELS_AR, locale),
     typeChips: entriesToChips(c.byType),
-    severityChips: entriesToChips(c.bySeverity, SEVERITY_LABELS),
+    severityChips: entriesToChips(c.bySeverity, SEVERITY_LABELS, locale),
     resolvedOrClosed: c.resolvedOrClosed,
     stillOpen: c.stillOpen,
     viaDealCount: c.viaDealCount,
-    avgResolutionDisplay: c.avgResolutionDays === null ? UNAVAILABLE : `${Math.round(c.avgResolutionDays * 100) / 100} يوم`,
+    avgResolutionDisplay:
+      c.avgResolutionDays === null
+        ? unavailableLabel(locale)
+        : locale === 'en'
+          ? `${Math.round(c.avgResolutionDays * 100) / 100} days`
+          : `${Math.round(c.avgResolutionDays * 100) / 100} يوم`,
     repeatedTypes: c.repeatedTypes.map((t) => ({
-      label: t.issueKey === UNCLASSIFIED_KEY ? 'غير مصنّف' : t.label,
+      label: t.issueKey === UNCLASSIFIED_KEY ? uiLabel(UNCLASSIFIED_LABELS, locale) : t.label,
       count: t.occurrenceCount,
     })),
   };
@@ -636,22 +683,32 @@ export interface CapaView {
   indirectCount: number;
 }
 
-export function buildCapa(dataset: EmployeePerformanceDataset): CapaView {
+export function buildCapa(dataset: EmployeePerformanceDataset, locale: Locale = 'ar'): CapaView {
   const c = dataset.capa;
   return {
-    relationshipLabel: RELATIONSHIP_LABELS[c.relationship],
+    relationshipLabel: uiLabel(RELATIONSHIP_LABELS[c.relationship], locale),
     total: c.total,
     statusChips: entriesToChips(c.byStatus),
-    priorityChips: entriesToChips(c.byPriority, SEVERITY_LABELS),
+    priorityChips: entriesToChips(c.byPriority, SEVERITY_LABELS, locale),
     sourceChips: entriesToChips(c.bySource),
     active: c.active,
     terminal: c.terminal,
     overdue: c.overdue,
-    avgOverdueDisplay: c.avgOverdueDays === null ? UNAVAILABLE : `${Math.round(c.avgOverdueDays * 100) / 100} يوم`,
-    correctiveChips: entriesToChips(c.correctiveStatus, ACTION_STATE_LABELS),
-    preventiveChips: entriesToChips(c.preventiveStatus, ACTION_STATE_LABELS),
+    avgOverdueDisplay:
+      c.avgOverdueDays === null
+        ? unavailableLabel(locale)
+        : locale === 'en'
+          ? `${Math.round(c.avgOverdueDays * 100) / 100} days`
+          : `${Math.round(c.avgOverdueDays * 100) / 100} يوم`,
+    correctiveChips: entriesToChips(c.correctiveStatus, ACTION_STATE_LABELS, locale),
+    preventiveChips: entriesToChips(c.preventiveStatus, ACTION_STATE_LABELS, locale),
     closedCount: c.closedCount,
-    avgClosureDisplay: c.avgClosureDays === null ? UNAVAILABLE : `${Math.round(c.avgClosureDays * 100) / 100} يوم`,
+    avgClosureDisplay:
+      c.avgClosureDays === null
+        ? unavailableLabel(locale)
+        : locale === 'en'
+          ? `${Math.round(c.avgClosureDays * 100) / 100} days`
+          : `${Math.round(c.avgClosureDays * 100) / 100} يوم`,
     indirectCount: c.indirectCount,
   };
 }
@@ -674,7 +731,7 @@ export interface FollowUpsView {
   priorityChips: ChipFact[];
 }
 
-export function buildFollowUps(dataset: EmployeePerformanceDataset): FollowUpsView {
+export function buildFollowUps(dataset: EmployeePerformanceDataset, locale: Locale = 'ar'): FollowUpsView {
   const f = dataset.followUps;
   return {
     total: f.total,
@@ -684,36 +741,46 @@ export function buildFollowUps(dataset: EmployeePerformanceDataset): FollowUpsVi
     completionRateDisplay: formatPercent(f.completionRate),
     dueToday: f.dueToday,
     // Explicit unavailable state — never an estimate (spec §13).
-    avgOverdueDisplay: f.avgOverdueDays === null ? UNAVAILABLE : `${Math.round(f.avgOverdueDays * 100) / 100} يوم`,
+    avgOverdueDisplay:
+      f.avgOverdueDays === null
+        ? unavailableLabel(locale)
+        : locale === 'en'
+          ? `${Math.round(f.avgOverdueDays * 100) / 100} days`
+          : `${Math.round(f.avgOverdueDays * 100) / 100} يوم`,
     statusChips: entriesToChips(f.byStatus),
     typeChips: entriesToChips(f.byType),
-    priorityChips: entriesToChips(f.byPriority, SEVERITY_LABELS),
+    priorityChips: entriesToChips(f.byPriority, SEVERITY_LABELS, locale),
   };
 }
 
 // ─────────────────────────────────────────────────────────────
-//  §14  Travel deals / operational context view
+//  §14  Travel deals / operational context view (§DEAL-DATES)
 // ─────────────────────────────────────────────────────────────
 
 export interface DealsView {
-  total: number;
+  /** TRAVEL dimension — deals departing in the period (travel volume). */
+  travelTotal: number;
   statusChips: ChipFact[];
-  completed: number;
+  /** CLOSED dimension — observed closures in the period (closedAt). */
+  closedTotal: number;
+  /** Completed deals with unknown closure month — surfaced, never attributed. */
+  closedUnknownMonth: number;
   canceled: number;
   active: number;
   completionRateDisplay: string;
 }
 
-export function buildDeals(dataset: EmployeePerformanceDataset): DealsView {
+export function buildDeals(dataset: EmployeePerformanceDataset, locale: Locale = 'ar'): DealsView {
   const d = dataset.deals;
   return {
-    total: d.total,
+    travelTotal: d.travelTotal,
     statusChips: (Object.entries(d.byStatus) as Array<[string, number]>).map(([key, count]) => ({
-      label: storedLabel(DEAL_STATUS_LABELS, key),
+      label: storedLabel(DEAL_STATUS_LABELS, key, locale),
       count,
       tone: key === 'completed' ? 'good' : key === 'canceled' ? 'bad' : 'info',
     })),
-    completed: d.completed,
+    closedTotal: d.closedTotal,
+    closedUnknownMonth: d.closedUnknownMonth,
     canceled: d.canceled,
     active: d.active,
     completionRateDisplay: formatPercent(d.completionRate),
@@ -729,7 +796,7 @@ export interface AttendanceView {
   facts: KeyValueFact[];
 }
 
-export function buildAttendance(dataset: EmployeePerformanceDataset): AttendanceView {
+export function buildAttendance(dataset: EmployeePerformanceDataset, locale: Locale = 'ar'): AttendanceView {
   const a = dataset.attendance;
   if (a.status !== 'AVAILABLE' || !a.result) {
     return { available: false, facts: [] };
@@ -738,12 +805,12 @@ export function buildAttendance(dataset: EmployeePerformanceDataset): Attendance
   return {
     available: true,
     facts: [
-      { label: 'أيام التأخير', value: formatPlainNumber(r.lateDays), unavailable: false },
-      { label: 'أيام الغياب', value: formatPlainNumber(r.absentDays), unavailable: false },
-      { label: 'أيام الإجازة/الاستثناء', value: formatPlainNumber(r.exemptDays), unavailable: false },
-      { label: 'إجمالي دقائق التأخير', value: formatPlainNumber(r.totalMinutesLate), unavailable: false },
-      { label: 'نسبة الالتزام', value: formatPercent(r.compliance), unavailable: false },
-      { label: 'أيام خصم الحضور', value: formatPlainNumber(r.attendanceDeductionDays), unavailable: false },
+      { label: uiLabel(['أيام التأخير', 'Late days'], locale), value: formatPlainNumber(r.lateDays), unavailable: false },
+      { label: uiLabel(['أيام الغياب', 'Absent days'], locale), value: formatPlainNumber(r.absentDays), unavailable: false },
+      { label: uiLabel(['أيام الإجازة/الاستثناء', 'Exempt days'], locale), value: formatPlainNumber(r.exemptDays), unavailable: false },
+      { label: uiLabel(['إجمالي دقائق التأخير', 'Total late minutes'], locale), value: formatPlainNumber(r.totalMinutesLate), unavailable: false },
+      { label: uiLabel(['نسبة الالتزام', 'Compliance rate'], locale), value: formatPercent(r.compliance), unavailable: false },
+      { label: uiLabel(['أيام خصم الحضور', 'Attendance deduction days'], locale), value: formatPlainNumber(r.attendanceDeductionDays), unavailable: false },
     ],
   };
 }
@@ -775,24 +842,24 @@ const EVIDENCE_TARGETS: Record<string, string | null> = {
   kpiSchemes: 'kpiSettings',
 };
 
-const EVIDENCE_LABELS: Record<string, string> = {
-  qualityObservations: 'ملاحظات الجودة',
-  qualityDeductions: 'خصومات الجودة',
-  complaints: 'شكاوى العملاء',
-  capaCases: 'حالات CAPA',
-  followUps: 'المتابعات',
-  travelDeals: 'صفقات السفر',
-  attendanceResults: 'نتائج الحضور',
-  monthSnapshots: 'لقطات الشهر (KPI)',
-  kpiSchemes: 'مخططات KPI',
+const EVIDENCE_LABELS: Record<string, [string, string]> = {
+  qualityObservations: ['ملاحظات الجودة', 'Quality observations'],
+  qualityDeductions: ['خصومات الجودة', 'Quality deductions'],
+  complaints: ['شكاوى العملاء', 'Customer complaints'],
+  capaCases: ['حالات CAPA', 'CAPA cases'],
+  followUps: ['المتابعات', 'Follow-ups'],
+  travelDeals: ['صفقات السفر', 'Travel deals'],
+  attendanceResults: ['نتائج الحضور', 'Attendance results'],
+  monthSnapshots: ['لقطات الشهر (KPI)', 'Month snapshots (KPI)'],
+  kpiSchemes: ['مخططات KPI', 'KPI schemes'],
 };
 
-export function buildEvidenceGroups(dataset: EmployeePerformanceDataset): EvidenceGroupView[] {
+export function buildEvidenceGroups(dataset: EmployeePerformanceDataset, locale: Locale = 'ar'): EvidenceGroupView[] {
   const e = dataset.evidence;
   const groups: EvidenceGroupView[] = [e.observations, e.deductions, e.complaints, e.capa, e.followUps, e.deals].map(
     (ref) => ({
       collection: ref.collection,
-      label: storedLabel(EVIDENCE_LABELS, ref.collection),
+      label: storedLabel(EVIDENCE_LABELS, ref.collection, locale),
       count: ref.recordIds.length,
       recordIds: ref.recordIds,
       targetPage: EVIDENCE_TARGETS[ref.collection] ?? null,
@@ -801,7 +868,7 @@ export function buildEvidenceGroups(dataset: EmployeePerformanceDataset): Eviden
   if (e.attendance) {
     groups.push({
       collection: e.attendance.collection,
-      label: storedLabel(EVIDENCE_LABELS, e.attendance.collection),
+      label: storedLabel(EVIDENCE_LABELS, e.attendance.collection, locale),
       count: e.attendance.recordIds.length,
       recordIds: e.attendance.recordIds,
       targetPage: EVIDENCE_TARGETS[e.attendance.collection] ?? null,
@@ -811,7 +878,7 @@ export function buildEvidenceGroups(dataset: EmployeePerformanceDataset): Eviden
   for (const ref of e.kpi) {
     groups.push({
       collection: ref.collection,
-      label: storedLabel(EVIDENCE_LABELS, ref.collection),
+      label: storedLabel(EVIDENCE_LABELS, ref.collection, locale),
       count: ref.recordIds.length,
       recordIds: ref.recordIds,
       targetPage: EVIDENCE_TARGETS[ref.collection] ?? null,
@@ -830,10 +897,10 @@ export interface DataQualityView {
   notes: string[];
 }
 
-export function buildDataQuality(dataset: EmployeePerformanceDataset): DataQualityView {
+export function buildDataQuality(dataset: EmployeePerformanceDataset, locale: Locale = 'ar'): DataQualityView {
   const dq = dataset.dataQuality;
   const unattributedChips = dq.unattributedRecords.map((u) => ({
-    label: storedLabel(EVIDENCE_LABELS, u.collection),
+    label: storedLabel(EVIDENCE_LABELS, u.collection, locale),
     count: u.count,
   }));
   return {
@@ -849,10 +916,11 @@ export function buildDataQuality(dataset: EmployeePerformanceDataset): DataQuali
 
 function entriesToChips(
   entries: Record<string, number>,
-  labels?: Record<string, string>,
+  labels?: Record<string, [string, string]>,
+  locale: Locale = 'ar',
 ): ChipFact[] {
   return Object.entries(entries).map(([key, count]) => ({
-    label: labels ? storedLabel(labels, key) : key,
+    label: labels ? storedLabel(labels, key, locale) : key,
     count,
     tone: 'neutral' as const,
   }));

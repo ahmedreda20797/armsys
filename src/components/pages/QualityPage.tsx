@@ -58,7 +58,11 @@ import { logCreate, logUpdate, logDelete } from '@/lib/activity-logger';
 import { authFetch } from '@/lib/api-fetch';
 import { toast } from 'sonner';
 import { useAppStore } from '@/lib/store';
-import { formatMonthLabelAr } from '@/lib/month-label';
+import { useLanguage } from '@/lib/i18n/language-context';
+import { T } from '@/lib/i18n/T';
+import { translateUIText } from '@/lib/i18n/ui-text';
+import { formatNumber, formatInteger, formatMonthKey, displayLocale } from '@/lib/i18n/format';
+import type { Locale } from '@/lib/i18n/dictionary';
 import { todayDisplayDate, currentMonthKey } from '@/lib/date-utils';
 import { PagePeriodIndicator } from '@/components/shared/PagePeriodIndicator';
 import { PageHeaderBar } from '@/components/shared/PageHeaderBar';
@@ -86,11 +90,11 @@ const DAY_PRESETS = [
   { value: 'custom', label: 'مخصص' },
 ];
 
-function getDayLabel(days: number): string {
+function getDayLabel(days: number, locale: Locale = displayLocale()): string {
   const preset = DAY_PRESETS.find((p) => p.value === String(days));
-  if (preset) return preset.label;
+  if (preset) return translateUIText(preset.label, locale);
   if (days === 0) return '—';
-  return `${days} يوم`;
+  return `${formatNumber(days, { locale })} ${translateUIText('يوم', locale)}`;
 }
 
 function parseDateToMonth(dateStr: string): string {
@@ -142,52 +146,52 @@ function getDaysColor(days: number): string {
   return 'bg-brand-500/20 text-brand-300 border-brand-500/30';
 }
 
-function formatDeductionForCopy(deduction: QualityWithEmployee, empName: string): string {
-  const typeLabel = deductionTypeLabel(deduction.type);
-  const dayLabel = getDayLabel(deduction.deductionDays);
+function formatDeductionForCopy(deduction: QualityWithEmployee, empName: string, locale: Locale = displayLocale()): string {
+  const typeLabel = translateUIText(deductionTypeLabel(deduction.type), locale);
+  const dayLabel = getDayLabel(deduction.deductionDays, locale);
   let text = `━━━━━━━━━━━━━━━━━━━\n`;
-  text += `  خصم ${typeLabel}\n`;
+  text += `  ${translateUIText('خصم', locale)} ${typeLabel}\n`;
   text += `━━━━━━━━━━━━━━━━━━━\n\n`;
-  text += `  الموظف: ${empName}\n`;
-  text += `  التاريخ: ${deduction.date}\n`;
-  text += `  عدد الخصم: ${dayLabel}\n`;
+  text += `  ${translateUIText('الموظف: ', locale)}${empName}\n`;
+  text += `  ${translateUIText('التاريخ: ', locale)}${deduction.date}\n`;
+  text += `  ${translateUIText('عدد الخصم: ', locale)}${dayLabel}\n`;
   if (deduction.deductionAmount > 0) {
-    text += `  المبلغ: ${deduction.deductionAmount.toLocaleString()} جنيه\n`;
+    text += `  ${translateUIText('المبلغ: ', locale)}${formatNumber(deduction.deductionAmount, { locale })} ${translateUIText('جنيه', locale)}\n`;
   }
-  text += `\n  التفاصيل:\n  ${deduction.description || 'لا يوجد وصف'}\n`;
+  text += `\n  ${translateUIText('التفاصيل:', locale)}\n  ${deduction.description || translateUIText('لا يوجد وصف', locale)}\n`;
   if (deduction.evidence) {
-    text += `\n  الدليل: ${deduction.evidence}\n`;
+    text += `\n  ${translateUIText('الدليل: ', locale)}${deduction.evidence}\n`;
   }
   text += `\n━━━━━━━━━━━━━━━━━━━`;
   return text;
 }
 
-function formatAllDeductionsForCopy(empName: string, deductions: QualityWithEmployee[]): string {
+function formatAllDeductionsForCopy(empName: string, deductions: QualityWithEmployee[], locale: Locale = displayLocale()): string {
   const totalDays = deductions.reduce((s, d) => s + d.deductionDays, 0);
   const totalAmount = deductions.reduce((s, d) => s + d.deductionAmount, 0);
 
   let text = `══════════════════════════════\n`;
-  text += `  ملخص خصومات الجودة\n`;
+  text += `  ${translateUIText('ملخص خصومات الجودة', locale)}\n`;
   text += `══════════════════════════════\n\n`;
-  text += `  الموظف: ${empName}\n`;
-  text += `  عدد الخصومات: ${deductions.length}\n`;
-  text += `  إجمالي الأيام: ${totalDays} يوم\n`;
+  text += `  ${translateUIText('الموظف: ', locale)}${empName}\n`;
+  text += `  ${translateUIText('عدد الخصومات: ', locale)}${formatInteger(deductions.length, locale)}\n`;
+  text += `  ${translateUIText('إجمالي الأيام: ', locale)}${formatNumber(totalDays, { locale })} ${translateUIText('يوم', locale)}\n`;
   if (totalAmount > 0) {
-    text += `  إجمالي المبلغ: ${totalAmount.toLocaleString()} جنيه\n`;
+    text += `  ${translateUIText('إجمالي المبلغ: ', locale)}${formatNumber(totalAmount, { locale })} ${translateUIText('جنيه', locale)}\n`;
   }
   text += `\n──────────────────────────────\n\n`;
 
   deductions.forEach((d, idx) => {
-    const typeLabel = deductionTypeLabel(d.type);
-    text += `  ${idx + 1}. خصم ${typeLabel}\n`;
-    text += `     التاريخ: ${d.date}\n`;
-    text += `     الخصم: ${getDayLabel(d.deductionDays)}\n`;
+    const typeLabel = translateUIText(deductionTypeLabel(d.type), locale);
+    text += `  ${formatInteger(idx + 1, locale)}. ${translateUIText('خصم', locale)} ${typeLabel}\n`;
+    text += `     ${translateUIText('التاريخ: ', locale)}${d.date}\n`;
+    text += `     ${translateUIText('الخصم: ', locale)}${getDayLabel(d.deductionDays, locale)}\n`;
     if (d.deductionAmount > 0) {
-      text += `     المبلغ: ${d.deductionAmount.toLocaleString()} جنيه\n`;
+      text += `     ${translateUIText('المبلغ: ', locale)}${formatNumber(d.deductionAmount, { locale })} ${translateUIText('جنيه', locale)}\n`;
     }
-    text += `     التفاصيل: ${d.description || 'لا يوجد وصف'}\n`;
+    text += `     ${translateUIText('التفاصيل: ', locale)}${d.description || translateUIText('لا يوجد وصف', locale)}\n`;
     if (d.evidence) {
-      text += `     الدليل: ${d.evidence}\n`;
+      text += `     ${translateUIText('الدليل: ', locale)}${d.evidence}\n`;
     }
     text += `\n`;
   });
@@ -198,6 +202,7 @@ function formatAllDeductionsForCopy(empName: string, deductions: QualityWithEmpl
 
 export default function QualityPage() {
   const { canEdit, canCreate, canUpdate, canDelete, canUpload, canApprove, canDoAction, canViewPage } = usePermissions('quality');
+  const { locale } = useLanguage();
   // §2 AUDIT-IDENTITY — WHO registered a discount is audit metadata: the
   // canonical permission is the 'qualityAuditLog' page grant (System
   // Owner bypasses; managers/quality staff hold it by preset). The API
@@ -401,7 +406,7 @@ export default function QualityPage() {
   };
 
   const copySingleDeduction = async (deduction: QualityWithEmployee, empName: string) => {
-    const text = formatDeductionForCopy(deduction, empName);
+    const text = formatDeductionForCopy(deduction, empName, locale);
     try {
       await navigator.clipboard.writeText(text);
       setCopiedDedId(deduction.id);
@@ -420,7 +425,7 @@ export default function QualityPage() {
   };
 
   const copyAllDeductionsForEmployee = async (empId: string, empName: string, empDeductions: QualityWithEmployee[]) => {
-    const text = formatAllDeductionsForCopy(empName, empDeductions);
+    const text = formatAllDeductionsForCopy(empName, empDeductions, locale);
     try {
       await navigator.clipboard.writeText(text);
       setCopiedAllEmpId(empId);
@@ -471,14 +476,14 @@ export default function QualityPage() {
             d.id === id ? { ...d, archived, archivedAt: archived ? new Date().toISOString() : null } : d,
           ),
         );
-        toast.success(archived ? 'تم أرشفة الخصم — لن يأثر على الإجماليات النشطة' : 'تم استعادة الخصم من الأرشيف');
+        toast.success(archived ? translateUIText('تم أرشفة الخصم — لن يأثر على الإجماليات النشطة', locale) : translateUIText('تم استعادة الخصم من الأرشيف', locale));
         setArchivingId(null);
       } else {
         const data = await res.json().catch(() => null);
-        toast.error(data?.error || 'تعذّر تغيير حالة الأرشيف');
+        toast.error(data?.error || translateUIText('تعذّر تغيير حالة الأرشيف', locale));
       }
     } catch {
-      toast.error('تعذّر الاتصال بالخادم');
+      toast.error(translateUIText('تعذّر الاتصال بالخادم', locale));
     } finally {
       setArchiveLoadingId(null);
     }
@@ -491,7 +496,7 @@ export default function QualityPage() {
   const handleApproval = async (id: string, action: 'approve' | 'reject') => {
     let body: Record<string, unknown> = {};
     if (action === 'reject') {
-      const reason = window.prompt('سبب رفض الخصم (مطلوب):');
+      const reason = window.prompt(translateUIText('سبب رفض الخصم (مطلوب):', locale));
       if (!reason || !reason.trim()) return;
       body = { reason: reason.trim() };
     }
@@ -503,14 +508,14 @@ export default function QualityPage() {
         body: JSON.stringify(body),
       });
       if (res.ok) {
-        toast.success(action === 'approve' ? 'تم اعتماد الخصم — أصبح ساريًا في الحسابات' : 'تم رفض الخصم');
+        toast.success(action === 'approve' ? translateUIText('تم اعتماد الخصم — أصبح ساريًا في الحسابات', locale) : translateUIText('تم رفض الخصم', locale));
         await fetchData();
       } else {
         const data = await res.json().catch(() => null);
-        toast.error(data?.error || 'تعذّر تنفيذ الإجراء');
+        toast.error(data?.error || translateUIText('تعذّر تنفيذ الإجراء', locale));
       }
     } catch {
-      toast.error('تعذّر تنفيذ الإجراء');
+      toast.error(translateUIText('تعذّر تنفيذ الإجراء', locale));
     } finally {
       setApprovalLoadingId(null);
     }
@@ -579,7 +584,7 @@ export default function QualityPage() {
   }>>((acc, d) => {
     if (!acc[d.employeeId]) {
       acc[d.employeeId] = {
-        name: d.employee?.name || 'غير معروف',
+        name: d.employee?.name || translateUIText('غير معروف', locale),
         department: d.employee?.department || null,
         deductions: [],
         totalDays: 0,
@@ -642,18 +647,23 @@ export default function QualityPage() {
       <PageHeaderBar
         icon={<Award className="size-5" />}
         iconClassName="bg-brand-500/15 border-brand-500/30 text-brand-400"
-        title="خصومات الجودة"
-        description={`${filtered.length} سجل خصم — ${sortedEmployees.length} موظف${grandPendingCount > 0 ? ` — ${grandPendingCount} قيد الاعتماد` : ''}`}
+        title={translateUIText('خصومات الجودة', locale)}
+        description={
+          <>
+            {formatInteger(filtered.length, locale)} <T>سجل خصم</T> — {formatInteger(sortedEmployees.length, locale)} <T>موظف</T>
+            {grandPendingCount > 0 ? <> — {formatInteger(grandPendingCount, locale)} <T>قيد الاعتماد</T></> : null}
+          </>
+        }
         extras={
           <PagePeriodIndicator
             testId="quality-period-indicator"
-            label={monthFilter && monthFilter !== 'all' ? formatMonthLabelAr(monthFilter) : 'كل الأشهر'}
+            label={monthFilter && monthFilter !== 'all' ? formatMonthKey(monthFilter, locale) : translateUIText('كل الأشهر', locale)}
             filtered={!!monthFilter && monthFilter !== 'all'}
             onShowAll={() => setMonthFilter('all')}
           />
         }
         primaryAction={canCreate ? {
-          label: 'إضافة خصم',
+          label: translateUIText('إضافة خصم', locale),
           onClick: () => {
             setEditingDeduction(null);
             // §5: DEFAULT DATE = TODAY — month derives from it; the
@@ -673,29 +683,29 @@ export default function QualityPage() {
           className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2.5"
         >
           <div className="rounded-lg border border-amber-500/25 bg-amber-500/8 px-3.5 py-2.5">
-            <p className="text-slate-500 text-[11px] mb-0.5">إجمالي الأيام</p>
-            <p className="text-amber-400 font-bold text-lg leading-tight">{grandTotalDays}</p>
-            <p className="text-slate-500 text-[10px]">يوم خصم</p>
+            <p className="text-slate-500 text-[11px] mb-0.5"><T>إجمالي الأيام</T></p>
+            <p className="text-amber-400 font-bold text-lg leading-tight">{formatNumber(grandTotalDays, { locale })}</p>
+            <p className="text-slate-500 text-[10px]"><T>يوم خصم</T></p>
           </div>
           {grandTotalAmount > 0 && (
             <div className="rounded-lg border border-rose-500/25 bg-rose-500/8 px-3.5 py-2.5">
-              <p className="text-slate-500 text-[11px] mb-0.5">إجمالي المبلغ</p>
+              <p className="text-slate-500 text-[11px] mb-0.5"><T>إجمالي المبلغ</T></p>
               <p className="text-rose-400 font-bold text-lg leading-tight" dir="ltr">
-                {grandTotalAmount.toLocaleString()}
+                {formatNumber(grandTotalAmount, { locale })}
               </p>
-              <p className="text-slate-500 text-[10px]">جنيه</p>
+              <p className="text-slate-500 text-[10px]"><T>جنيه</T></p>
             </div>
           )}
           <div className="rounded-lg border border-cyan-500/25 bg-cyan-500/8 px-3.5 py-2.5">
-            <p className="text-slate-500 text-[11px] mb-0.5">عدد الموظفين</p>
-            <p className="text-cyan-400 font-bold text-lg leading-tight">{sortedEmployees.length}</p>
-            <p className="text-slate-500 text-[10px]">موظف</p>
+            <p className="text-slate-500 text-[11px] mb-0.5"><T>عدد الموظفين</T></p>
+            <p className="text-cyan-400 font-bold text-lg leading-tight">{formatInteger(sortedEmployees.length, locale)}</p>
+            <p className="text-slate-500 text-[10px]"><T>موظف</T></p>
           </div>
           {grandPendingCount > 0 && (
             <div className="rounded-lg border border-amber-500/25 bg-amber-500/8 px-3.5 py-2.5">
-              <p className="text-slate-500 text-[11px] mb-0.5">قيد الاعتماد</p>
-              <p className="text-amber-400 font-bold text-lg leading-tight">{grandPendingCount}</p>
-              <p className="text-slate-500 text-[10px]">لا تدخل في الإجماليات</p>
+              <p className="text-slate-500 text-[11px] mb-0.5"><T>قيد الاعتماد</T></p>
+              <p className="text-amber-400 font-bold text-lg leading-tight">{formatInteger(grandPendingCount, locale)}</p>
+              <p className="text-slate-500 text-[10px]"><T>لا تدخل في الإجماليات</T></p>
             </div>
           )}
         </motion.div>
@@ -706,7 +716,7 @@ export default function QualityPage() {
         <div className="relative flex-1 max-w-sm">
           <Search className="absolute right-3 top-1/2 -translate-y-1/2 size-4 text-slate-500" />
           <Input
-            placeholder="بحث بالاسم أو سبب الخصم..."
+            placeholder={translateUIText('بحث بالاسم أو سبب الخصم...', locale)}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="bg-slate-800/70 border-slate-700/70 text-white pr-9 placeholder:text-slate-500 h-9 text-sm"
@@ -723,12 +733,12 @@ export default function QualityPage() {
         <Select value={monthFilter} onValueChange={setMonthFilter}>
           <SelectTrigger className="bg-slate-800/70 border-slate-700/70 text-white w-full sm:w-40 h-9 text-sm">
             <CalendarDays className="size-3.5 ml-1.5 text-slate-500" />
-            <SelectValue placeholder="الشهر" />
+            <SelectValue placeholder={translateUIText('الشهر', locale)} />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all" className="text-white">كل الأشهر</SelectItem>
+            <SelectItem value="all" className="text-white"><T>كل الأشهر</T></SelectItem>
             {months.map((m) => (
-              <SelectItem key={m} value={m} className="text-white">{formatMonthLabelAr(m)}</SelectItem>
+              <SelectItem key={m} value={m} className="text-white">{formatMonthKey(m, locale)}</SelectItem>
             ))}
           </SelectContent>
         </Select>
@@ -744,7 +754,7 @@ export default function QualityPage() {
           }`}
         >
           <Archive className="size-3.5" />
-          المؤرشفة
+          <T>المؤرشفة</T>
         </button>
       </div>
 
@@ -764,9 +774,9 @@ export default function QualityPage() {
                 : 'bg-slate-800/50 text-slate-400 border-slate-700/50 hover:text-slate-200'
             }`}
           >
-            {chip.label}
+            {chip.label && <T>{chip.label}</T>}
             <span className={`min-w-4 text-center px-1 rounded-full text-[10px] ${statusFilter === chip.key ? 'bg-white/15' : 'bg-slate-700/60'}`}>
-              {chip.count}
+              {formatInteger(chip.count, locale)}
             </span>
           </button>
         ))}
@@ -782,7 +792,7 @@ export default function QualityPage() {
           initial={{ opacity: 0, y: 5 }}
           animate={{ opacity: 1, y: 0 }}
           className="rounded-xl border border-amber-500/30 bg-amber-500/[0.04] overflow-hidden"
-          aria-label="بانتظار الاعتماد"
+          aria-label={translateUIText('بانتظار الاعتماد', locale)}
         >
           <button
             onClick={() => setPendingOpen((v) => !v)}
@@ -792,15 +802,15 @@ export default function QualityPage() {
               <Clock className="size-4 text-amber-400" />
             </span>
             <div className="text-right flex-1 min-w-0">
-              <p className="text-sm font-bold text-amber-200 leading-tight">بانتظار الاعتماد</p>
+              <p className="text-sm font-bold text-amber-200 leading-tight"><T>بانتظار الاعتماد</T></p>
               <p className="text-[10px] text-slate-500 leading-tight mt-0.5">
-                {isApprover
+                <T>{isApprover
                   ? 'خصومات جديدة تنتظر قرارك — لا تدخل في التقارير حتى اعتمادها'
-                  : 'خصومات أُرسلت للمختصين ولن تدخل في التقارير حتى اعتمادها'}
+                  : 'خصومات أُرسلت للمختصين ولن تدخل في التقارير حتى اعتمادها'}</T>
               </p>
             </div>
             <span className="flex items-center justify-center min-w-6 h-6 px-1.5 rounded-full bg-amber-500 text-slate-950 text-xs font-bold shrink-0">
-              {pendingItems.length}
+              {formatInteger(pendingItems.length, locale)}
             </span>
             <ChevronDown className={`size-4 text-amber-400/70 transition-transform ${pendingOpen ? 'rotate-180' : ''}`} />
           </button>
@@ -821,12 +831,12 @@ export default function QualityPage() {
                       <div key={d.id} className="flex items-center gap-2 px-4 py-2">
                         <span className={`flex-shrink-0 inline-flex items-center gap-1 px-1.5 py-0.5 rounded border text-[10px] font-medium ${badge.color}`}>
                           <BadgeIcon className="size-2.5" />
-                          {badge.label}
+                          <T>{badge.label}</T>
                         </span>
-                        <EmployeeLink employeeId={d.employeeId} name={d.employee?.name || 'غير معروف'} compact hideAvatar />
+                        <EmployeeLink employeeId={d.employeeId} name={d.employee?.name || translateUIText('غير معروف', locale)} compact hideAvatar />
                         <span className="flex-shrink-0 text-slate-500 text-[11px]" dir="ltr">{d.date}</span>
-                        <p className="flex-1 min-w-0 text-slate-400 text-xs truncate">{d.description || 'بدون وصف'}</p>
-                        <span className="flex-shrink-0 text-amber-400 font-bold text-xs">{d.deductionDays}ي</span>
+                        <p className="flex-1 min-w-0 text-slate-400 text-xs truncate">{d.description || translateUIText('بدون وصف', locale)}</p>
+                        <span className="flex-shrink-0 text-amber-400 font-bold text-xs">{formatNumber(d.deductionDays, { locale })}<T>ي</T></span>
                         {isApprover && (
                           <div className="flex items-center gap-1.5 shrink-0">
                             {canApprove && (
@@ -837,7 +847,7 @@ export default function QualityPage() {
                                 onClick={() => void handleApproval(d.id, 'approve')}
                               >
                                 <CheckCircle2 className="size-3 ml-1" />
-                                اعتماد
+                                <T>اعتماد</T>
                               </Button>
                             )}
                             {canReject && (
@@ -849,7 +859,7 @@ export default function QualityPage() {
                                 onClick={() => void handleApproval(d.id, 'reject')}
                               >
                                 <XCircle className="size-3 ml-1" />
-                                رفض
+                                <T>رفض</T>
                               </Button>
                             )}
                           </div>
@@ -857,9 +867,9 @@ export default function QualityPage() {
                         <button
                           onClick={() => jumpToDeduction(d)}
                           className="flex-shrink-0 text-[11px] text-cyan-400 hover:text-cyan-300 px-2 py-1 rounded-md bg-cyan-500/10 border border-cyan-500/20"
-                          title="الانتقال إلى السجل في القائمة"
+                          title={translateUIText('الانتقال إلى السجل في القائمة', locale)}
                         >
-                          عرض
+                          <T>عرض</T>
                         </button>
                       </div>
                     );
@@ -884,8 +894,8 @@ export default function QualityPage() {
             <div className="size-12 rounded-full bg-rose-500/10 flex items-center justify-center mb-3">
               <AlertTriangle className="size-6 text-rose-400" />
             </div>
-            <p className="text-rose-300 text-sm font-medium">{error}</p>
-            <Button variant="outline" size="sm" className="mt-4" onClick={() => fetchData()}>إعادة المحاولة</Button>
+            <p className="text-rose-300 text-sm font-medium">{error && <T>{error}</T>}</p>
+            <Button variant="outline" size="sm" className="mt-4" onClick={() => fetchData()}><T>إعادة المحاولة</T></Button>
           </CardContent>
         </Card>
       ) : statusFiltered.length === 0 ? (
@@ -895,15 +905,15 @@ export default function QualityPage() {
               <Award className="size-6 text-slate-600" />
             </div>
             <p className="text-slate-400 text-sm font-medium">
-              {statusFilter === 'pending' ? 'لا توجد خصومات قيد الاعتماد' : statusFilter === 'rejected' ? 'لا توجد خصومات مرفوضة' : 'لا توجد خصومات'}
+              <T>{statusFilter === 'pending' ? 'لا توجد خصومات قيد الاعتماد' : statusFilter === 'rejected' ? 'لا توجد خصومات مرفوضة' : 'لا توجد خصومات'}</T>
             </p>
             <p className="text-slate-600 text-xs mt-1">
               {/* §10/§56: the active period is NAMED in the empty state. */}
               {search
-                ? 'لم يتم العثور على نتائج'
+                ? <T>لم يتم العثور على نتائج</T>
                 : statusFilter === 'all' && monthFilter && monthFilter !== 'all'
-                  ? `لا توجد خصومات مسجلة في ${formatMonthLabelAr(monthFilter)}.`
-                  : statusFilter === 'all' ? 'لم يتم تسجيل أي خصومات بعد' : 'جرّب تغيير عامل التصفية'}
+                  ? <><T>لا توجد خصومات مسجلة في </T>{formatMonthKey(monthFilter, locale)}.</>
+                  : statusFilter === 'all' ? <T>لم يتم تسجيل أي خصومات بعد</T> : <T>جرّب تغيير عامل التصفية</T>}
             </p>
           </CardContent>
         </Card>
@@ -944,21 +954,21 @@ export default function QualityPage() {
                   <div className="flex items-center gap-2 flex-shrink-0">
                     {/* Deductions count */}
                     <div className="flex items-center gap-1 px-2 py-1 rounded-full bg-slate-700/50 border border-slate-600/30">
-                      <span className="text-slate-400 text-[11px]">{emp.deductions.length}</span>
-                      <span className="text-slate-500 text-[10px]">خصم</span>
+                      <span className="text-slate-400 text-[11px]">{formatInteger(emp.deductions.length, locale)}</span>
+                      <span className="text-slate-500 text-[10px]"><T>خصم</T></span>
                     </div>
 
                     {/* Total Days Bubble */}
                     <div className={`flex items-center gap-1 px-2.5 py-1 rounded-full border ${daysColor}`}>
-                      <span className="font-bold text-xs">{emp.totalDays}</span>
-                      <span className="text-[10px]">يوم</span>
+                      <span className="font-bold text-xs">{formatNumber(emp.totalDays, { locale })}</span>
+                      <span className="text-[10px]"><T>يوم</T></span>
                     </div>
 
                     {/* Total Amount Bubble */}
                     {emp.totalAmount > 0 && (
                       <div className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-rose-500/15 text-rose-300 border border-rose-500/30">
-                        <span className="font-bold text-xs" dir="ltr">{emp.totalAmount.toLocaleString()}</span>
-                        <span className="text-[10px]">ج</span>
+                        <span className="font-bold text-xs" dir="ltr">{formatNumber(emp.totalAmount, { locale })}</span>
+                        <span className="text-[10px]"><T>ج</T></span>
                       </div>
                     )}
 
@@ -966,10 +976,10 @@ export default function QualityPage() {
                     {emp.pendingCount > 0 && (
                       <div
                         className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-amber-500/15 text-amber-300 border border-amber-500/30"
-                        title="خصومات قيد الاعتماد — لا تدخل في الإجماليات"
+                        title={translateUIText('خصومات قيد الاعتماد — لا تدخل في الإجماليات', locale)}
                       >
                         <Clock className="size-3" />
-                        <span className="font-bold text-xs">{emp.pendingCount}</span>
+                        <span className="font-bold text-xs">{formatInteger(emp.pendingCount, locale)}</span>
                       </div>
                     )}
                   </div>
@@ -990,7 +1000,7 @@ export default function QualityPage() {
                         ? 'text-brand-400 bg-brand-500/10'
                         : 'text-slate-600 hover:text-brand-400 hover:bg-brand-500/10'
                     }`}
-                    title="نسخ كل الخصومات"
+                    title={translateUIText('نسخ كل الخصومات', locale)}
                   >
                     {copiedAllEmpId === empId ? (
                       <ClipboardCheck className="size-4" />
@@ -1036,7 +1046,7 @@ export default function QualityPage() {
                                 {/* Type Badge */}
                                 <div className={`flex-shrink-0 flex items-center gap-1 px-1.5 py-0.5 rounded border text-[10px] font-medium ${badge.color}`}>
                                   <BadgeIcon className="size-2.5" />
-                                  <span>{badge.label}</span>
+                                  <span><T>{badge.label}</T></span>
                                 </div>
 
                                 {/* Employee name (for screenshot) */}
@@ -1055,9 +1065,9 @@ export default function QualityPage() {
                                 {canSeeAuditIdentity && d.createdByName && (
                                   <span
                                     className="hidden md:inline-flex flex-shrink-0 items-center gap-1 text-[10px] text-slate-500 bg-slate-800/60 border border-slate-700/40 px-1.5 py-0.5 rounded"
-                                    title="سجلها"
+                                    title={translateUIText('سجلها', locale)}
                                   >
-                                    بواسطة: <span className="text-slate-400">{d.createdByName}</span>
+                                    <T>بواسطة: </T><span className="text-slate-400">{d.createdByName}</span>
                                   </span>
                                 )}
 
@@ -1070,7 +1080,7 @@ export default function QualityPage() {
                                 {approvalChip && ApprovalChipIcon && (
                                   <span className={`hidden sm:inline-flex flex-shrink-0 items-center gap-1 px-1.5 py-0.5 rounded border text-[10px] font-medium ${approvalChip.cls}`}>
                                     <ApprovalChipIcon className="size-2.5" />
-                                    {approvalChip.label}
+                                    <T>{approvalChip.label}</T>
                                   </span>
                                 )}
 
@@ -1078,24 +1088,24 @@ export default function QualityPage() {
                                 {d.archived && (
                                   <span className="hidden sm:inline-flex flex-shrink-0 items-center gap-1 px-1.5 py-0.5 rounded border border-slate-500/30 bg-slate-500/15 text-slate-300 text-[10px] font-medium">
                                     <Archive className="size-2.5" />
-                                    مؤرشف
+                                    <T>مؤرشف</T>
                                   </span>
                                 )}
 
                                 {/* Description preview */}
                                 <div className="flex-1 min-w-0">
                                   <p className="text-slate-300 text-xs truncate">
-                                    {d.description || 'بدون وصف'}
+                                    {d.description || translateUIText('بدون وصف', locale)}
                                   </p>
                                 </div>
 
                                 {/* Days */}
                                 <span className="flex-shrink-0 text-amber-400 font-bold text-xs">
-                                  {d.deductionDays}ي
+                                  {formatNumber(d.deductionDays, { locale })}<T>ي</T>
                                 </span>
                                 {d.deductionAmount > 0 && (
                                   <span className="flex-shrink-0 text-rose-400 font-medium text-[11px]" dir="ltr">
-                                    {d.deductionAmount.toLocaleString()}ج
+                                    {formatNumber(d.deductionAmount, { locale })}<T>ج</T>
                                   </span>
                                 )}
 
@@ -1111,11 +1121,11 @@ export default function QualityPage() {
                                   <div className="flex-shrink-0">
                                     <SmartActionMenu
                                       size="sm"
-                                      label="إجراءات الخصم"
+                                      label={translateUIText('إجراءات الخصم', locale)}
                                       actions={[
-                                        { key: 'edit', label: 'تعديل', icon: <Pencil className="size-3.5" />, onSelect: () => openEdit(d), hidden: !canUpdate },
-                                        { key: 'archive', label: d.archived ? 'استعادة من الأرشيف' : 'أرشفة', icon: <Archive className="size-3.5" />, onSelect: () => (d.archived ? void handleArchive(d.id, false) : setArchivingId(d.id)), hidden: !canUpdate },
-                                        { key: 'delete', label: 'حذف', icon: <Trash2 className="size-3.5" />, destructive: true, onSelect: () => setDeletingId(d.id), hidden: !canDelete },
+                                        { key: 'edit', label: translateUIText('تعديل', locale), icon: <Pencil className="size-3.5" />, onSelect: () => openEdit(d), hidden: !canUpdate },
+                                        { key: 'archive', label: translateUIText(d.archived ? 'استعادة من الأرشيف' : 'أرشفة', locale), icon: <Archive className="size-3.5" />, onSelect: () => (d.archived ? void handleArchive(d.id, false) : setArchivingId(d.id)), hidden: !canUpdate },
+                                        { key: 'delete', label: translateUIText('حذف', locale), icon: <Trash2 className="size-3.5" />, destructive: true, onSelect: () => setDeletingId(d.id), hidden: !canDelete },
                                       ]}
                                     />
                                   </div>
@@ -1132,7 +1142,7 @@ export default function QualityPage() {
                                       ? 'text-brand-400'
                                       : 'text-slate-600 hover:text-brand-400'
                                   }`}
-                                  title="نسخ تفاصيل الخصم"
+                                  title={translateUIText('نسخ تفاصيل الخصم', locale)}
                                 >
                                   {copiedDedId === d.id ? (
                                     <ClipboardCheck className="size-3" />
@@ -1165,23 +1175,23 @@ export default function QualityPage() {
                                           <p className="text-slate-600 text-[10px]">• {emp.department}</p>
                                         )}
                                       </div>
-                                      <p className="text-slate-400 text-[10px] mb-1">سبب الخصم</p>
+                                      <p className="text-slate-400 text-[10px] mb-1"><T>سبب الخصم</T></p>
                                       <p className="text-slate-300 text-sm leading-relaxed whitespace-pre-wrap break-words">
-                                        {d.description || 'لا يوجد وصف'}
+                                        {d.description || translateUIText('لا يوجد وصف', locale)}
                                       </p>
                                       <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-2 text-[11px]">
-                                        <span className="text-slate-500">التاريخ: <span className="text-slate-400" dir="ltr">{d.date}</span></span>
-                                        <span className="text-slate-500">الشهر: <span className="text-slate-400" dir="ltr">{d.month}</span></span>
-                                        <span className="text-slate-500">الخصم: <span className="text-amber-400">{getDayLabel(d.deductionDays)}</span></span>
+                                        <span className="text-slate-500"><T>التاريخ: </T><span className="text-slate-400" dir="ltr">{d.date}</span></span>
+                                        <span className="text-slate-500"><T>الشهر: </T><span className="text-slate-400" dir="ltr">{formatMonthKey(d.month, locale)}</span></span>
+                                        <span className="text-slate-500"><T>الخصم: </T><span className="text-amber-400">{getDayLabel(d.deductionDays, locale)}</span></span>
                                         {d.deductionAmount > 0 && (
-                                          <span className="text-slate-500">المبلغ: <span className="text-rose-400" dir="ltr">{d.deductionAmount.toLocaleString()} جنيه</span></span>
+                                          <span className="text-slate-500"><T>المبلغ: </T><span className="text-rose-400" dir="ltr">{formatNumber(d.deductionAmount, { locale })} <T>جنيه</T></span></span>
                                         )}
                                         {/* §WORKFLOW — status only; WHO created/decided
                                             stays in the hidden audit metadata. */}
                                         {approvalChip && ApprovalChipIcon && (
                                           <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded border text-[10px] font-medium ${approvalChip.cls}`}>
                                             <ApprovalChipIcon className="size-2.5" />
-                                            {approvalChip.label}
+                                            <T>{approvalChip.label}</T>
                                           </span>
                                         )}
                                       </div>
@@ -1197,7 +1207,7 @@ export default function QualityPage() {
                                               onClick={(e) => { e.stopPropagation(); void handleApproval(d.id, 'approve'); }}
                                             >
                                               <CheckCircle2 className="size-3 ml-1" />
-                                              اعتماد
+                                              <T>اعتماد</T>
                                             </Button>
                                           )}
                                           {canReject && (
@@ -1209,7 +1219,7 @@ export default function QualityPage() {
                                               onClick={(e) => { e.stopPropagation(); void handleApproval(d.id, 'reject'); }}
                                             >
                                               <XCircle className="size-3 ml-1" />
-                                              رفض
+                                              <T>رفض</T>
                                             </Button>
                                           )}
                                         </div>
@@ -1223,7 +1233,7 @@ export default function QualityPage() {
                                           className="inline-flex items-center gap-1 mt-2 text-cyan-400 hover:text-cyan-300 text-[11px] bg-cyan-500/10 px-2 py-1 rounded-md border border-cyan-500/20"
                                         >
                                           <LinkIcon className="size-2.5" />
-                                          عرض الدليل
+                                          <T>عرض الدليل</T>
                                         </a>
                                       )}
                                       {/* ═══ CAPA Integration (Bidirectional) ═══ */}
@@ -1257,7 +1267,7 @@ export default function QualityPage() {
                                           }}
                                         >
                                           <ShieldAlert className="size-3 ml-1" />
-                                          إنشاء CAPA
+                                          <T>إنشاء CAPA</T>
                                         </Button>
                                       )}
                                     </div>
@@ -1277,7 +1287,7 @@ export default function QualityPage() {
                             <InlineFormPanel
                               tone="violet"
                               icon={<ShieldAlert className="size-3.5 text-brand-400" />}
-                              title="إنشاء CAPA من خصم الجودة"
+                              title={translateUIText('إنشاء CAPA من خصم الجودة', locale)}
                               onClose={() => setCapaPrefill(null)}
                             >
                               <CAPAInlineForm
@@ -1308,14 +1318,14 @@ export default function QualityPage() {
       <Dialog open={isAddOpen} onOpenChange={(open) => { if (!open) { setIsAddOpen(false); setEditingDeduction(null); } }}>
         <DialogContent className="backdrop-blur-xl bg-slate-900 border-slate-700 max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle className="text-white">{editingDeduction ? 'تعديل خصم جودة' : 'إضافة خصم جودة'}</DialogTitle>
+            <DialogTitle className="text-white"><T>{editingDeduction ? 'تعديل خصم جودة' : 'إضافة خصم جودة'}</T></DialogTitle>
             <DialogDescription className="text-slate-400">
-              {editingDeduction ? 'عدّل تفاصيل الخصم' : 'أدخل تفاصيل الخصم'} - يتم حساب الشهر تلقائياً من التاريخ
+              <T>{editingDeduction ? 'عدّل تفاصيل الخصم' : 'أدخل تفاصيل الخصم'}</T> - <T>يتم حساب الشهر تلقائياً من التاريخ</T>
               {!editingDeduction && (
                 <span className="block text-amber-400/90 text-[11px] mt-1">
-                  {isApprover
+                  <T>{isApprover
                     ? 'سيُحفظ الخصم بحالة «قيد الاعتماد» — يمكنك اعتماده فوراً من قائمة الانتظار أعلى الصفحة.'
-                    : 'سيُرسل الخصم بحالة «قيد الاعتماد» ولن يؤثر في التقارير والإجماليات حتى اعتماده من المختصين.'}
+                    : 'سيُرسل الخصم بحالة «قيد الاعتماد» ولن يؤثر في التقارير والإجماليات حتى اعتماده من المختصين.'}</T>
                 </span>
               )}
             </DialogDescription>
@@ -1327,13 +1337,13 @@ export default function QualityPage() {
                 employees={employees}
                 value={addForm.employeeId}
                 onChange={(id) => setAddForm((p) => ({ ...p, employeeId: id }))}
-                label="الموظف"
-                placeholder="ابحث عن اسم الموظف..."
+                label={translateUIText('الموظف', locale)}
+                placeholder={translateUIText('ابحث عن اسم الموظف...', locale)}
               />
             </div>
             )}
             <div className="space-y-2">
-              <Label className="text-slate-300 text-sm">التاريخ</Label>
+              <Label className="text-slate-300 text-sm"><T>التاريخ</T></Label>
               <Input
                 value={addForm.date}
                 onChange={(e) => handleDateChange(e.target.value)}
@@ -1343,7 +1353,7 @@ export default function QualityPage() {
               />
             </div>
             <div className="space-y-2">
-              <Label className="text-slate-300 text-sm">النوع</Label>
+              <Label className="text-slate-300 text-sm"><T>النوع</T></Label>
               <Select
                 value={addForm.type}
                 onValueChange={(v) => setAddForm((p) => ({ ...p, type: v }))}
@@ -1352,14 +1362,14 @@ export default function QualityPage() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="quality_issue" className="text-white">مشكلة جودة</SelectItem>
-                  <SelectItem value="safety" className="text-white">سلامة</SelectItem>
-                  <SelectItem value="compliance" className="text-white">التزام</SelectItem>
+                  <SelectItem value="quality_issue" className="text-white"><T>مشكلة جودة</T></SelectItem>
+                  <SelectItem value="safety" className="text-white"><T>سلامة</T></SelectItem>
+                  <SelectItem value="compliance" className="text-white"><T>التزام</T></SelectItem>
                 </SelectContent>
               </Select>
             </div>
             <div className="space-y-2">
-              <Label className="text-slate-300 text-sm">نوع الخصم (بالأيام)</Label>
+              <Label className="text-slate-300 text-sm"><T>نوع الخصم (بالأيام)</T></Label>
               <Select
                 value={addForm.dayPreset}
                 onValueChange={(v) => setAddForm((p) => ({ ...p, dayPreset: v }))}
@@ -1370,7 +1380,7 @@ export default function QualityPage() {
                 <SelectContent>
                   {DAY_PRESETS.map((p) => (
                     <SelectItem key={p.value} value={p.value} className="text-white">
-                      {p.label}
+                      <T>{p.label}</T>
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -1378,7 +1388,7 @@ export default function QualityPage() {
             </div>
             {addForm.dayPreset === 'custom' && (
               <div className="space-y-2">
-                <Label className="text-slate-300 text-sm">عدد الأيام (مخصص)</Label>
+                <Label className="text-slate-300 text-sm"><T>عدد الأيام (مخصص)</T></Label>
                 <Input
                   type="number"
                   step="0.25"
@@ -1391,18 +1401,18 @@ export default function QualityPage() {
               </div>
             )}
             <div className="space-y-2">
-              <Label className="text-slate-300 text-sm">مبلغ الخصم (اختياري)</Label>
+              <Label className="text-slate-300 text-sm"><T>مبلغ الخصم (اختياري)</T></Label>
               <Input
                 type="number"
                 value={addForm.deductionAmount}
                 onChange={(e) => setAddForm((p) => ({ ...p, deductionAmount: e.target.value }))}
                 className="bg-slate-800 border-slate-600 text-white"
-                placeholder="اختياري"
+                placeholder={translateUIText('اختياري', locale)}
                 dir="ltr"
               />
             </div>
             <div className="space-y-2">
-              <Label className="text-slate-300 text-sm">الشهر (تلقائي)</Label>
+              <Label className="text-slate-300 text-sm"><T>الشهر (تلقائي)</T></Label>
               <Input
                 value={addForm.month}
                 readOnly
@@ -1412,17 +1422,17 @@ export default function QualityPage() {
               />
             </div>
             <div className="space-y-2 sm:col-span-2">
-              <Label className="text-slate-300 text-sm">سبب الخصم</Label>
+              <Label className="text-slate-300 text-sm"><T>سبب الخصم</T></Label>
               <Textarea
                 value={addForm.description}
                 onChange={(e) => setAddForm((p) => ({ ...p, description: e.target.value }))}
                 className="bg-slate-800 border-slate-600 text-white resize-none"
-                placeholder="اكتب سبب الخصم بالتفصيل..."
+                placeholder={translateUIText('اكتب سبب الخصم بالتفصيل...', locale)}
                 rows={3}
               />
             </div>
             <div className="space-y-2 sm:col-span-2">
-              <Label className="text-slate-300 text-sm">رابط الدليل (اختياري)</Label>
+              <Label className="text-slate-300 text-sm"><T>رابط الدليل (اختياري)</T></Label>
               <Input
                 value={addForm.evidence}
                 onChange={(e) => setAddForm((p) => ({ ...p, evidence: e.target.value }))}
@@ -1438,14 +1448,14 @@ export default function QualityPage() {
               onClick={() => { setIsAddOpen(false); setEditingDeduction(null); }}
               className="border-slate-600 text-slate-300"
             >
-              إلغاء
+              <T>إلغاء</T>
             </Button>
             <Button
               onClick={handleSaveDeduction}
               disabled={saving || !addForm.date}
               className="bg-linear-to-r from-brand-600 to-brand-700 hover:from-brand-700 hover:to-brand-800 text-white h-9 px-5 shadow-lg shadow-brand-500/20 transition-all"
             >
-              {saving ? 'جاري الحفظ...' : (editingDeduction ? 'حفظ التعديل' : 'حفظ')}
+              <T>{saving ? 'جاري الحفظ...' : (editingDeduction ? 'حفظ التعديل' : 'حفظ')}</T>
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1456,10 +1466,10 @@ export default function QualityPage() {
       <ConfirmDialog
         open={!!archivingId}
         onOpenChange={(o) => { if (!o) setArchivingId(null); }}
-        title="أرشفة الخصم"
-        description="الخصم المؤرشف يصبح سجلاً تاريخياً: لن يحسب في الإجماليات النشطة أو مؤشرات KPI الحالية، ويبقى قابلاً للتدقيق في الأرشيف."
+        title={translateUIText('أرشفة الخصم', locale)}
+        description={translateUIText('الخصم المؤرشف يصبح سجلاً تاريخياً: لن يحسب في الإجماليات النشطة أو مؤشرات KPI الحالية، ويبقى قابلاً للتدقيق في الأرشيف.', locale)}
         itemName={archivingId ? deductions.find((d: { id: string }) => d.id === archivingId)?.description : undefined}
-        confirmLabel="أرشفة"
+        confirmLabel={translateUIText('أرشفة', locale)}
         destructive={false}
         loading={archiveLoadingId === archivingId}
         onConfirm={async () => { if (archivingId) await handleArchive(archivingId, true); }}
@@ -1469,7 +1479,7 @@ export default function QualityPage() {
       <ConfirmDialog
         open={!!deletingId}
         onOpenChange={(open) => { if (!open) setDeletingId(null); }}
-        description="هل أنت متأكد من حذف هذا الخصم؟ لا يمكن التراجع عن هذا الإجراء."
+        description={translateUIText('هل أنت متأكد من حذف هذا الخصم؟ لا يمكن التراجع عن هذا الإجراء.', locale)}
         itemName={deletingId ? deductions.find((d: { id: string; description?: string }) => d.id === deletingId)?.description : undefined}
         loading={deleteLoading}
         onConfirm={async () => { if (deletingId) await handleDelete(deletingId); }}
