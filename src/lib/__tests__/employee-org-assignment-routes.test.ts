@@ -299,7 +299,7 @@ describe('GET /api/employees/org-nodes — minimal assignment-selector list', ()
     );
     assert.equal(res.status, 200);
     const data = await res.json();
-    assert.equal(data.nodes.length, 4);
+    assert.equal(data.nodes.length, 5);
     const team = data.nodes.find((n: { id: string }) => n.id === 'qaTeam');
     assert.deepEqual(
       Object.keys(team).sort(),

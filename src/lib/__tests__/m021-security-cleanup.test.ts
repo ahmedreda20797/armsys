@@ -110,6 +110,15 @@ async function fixturesWithOverrides(): Promise<TestTokens & {
 
 /** Seed every table the target routes read so 200s carry real rows. */
 function seedTables(): void {
+  // §ORG-BOUNDARY — the scoped viewers' boundary override ('ga' from
+  // registerFixtures) must resolve against a real node, and the
+  // observation's employee must sit inside it.
+  setTable('orgNodes', [
+    { id: 'ga', name: 'GA', type: 'general_administration', parentId: null, managerUserId: null, managerUserName: null, status: 'active', order: 0, description: null, createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z' },
+  ]);
+  setTable('employees', [
+    { id: 'e1', name: 'موظف اختبار', orgNodeId: 'ga' },
+  ]);
   setTable('qualityObservations', [
     {
       id: 'o1', schemaVersion: 1, employeeId: 'e1', employeeName: 'موظف اختبار',

@@ -56,10 +56,15 @@ before(async () => {
 
 beforeEach(async () => {
   resetTestData();
+  // §ORG-BOUNDARY — the HR viewer's boundary override ('ga' from
+  // registerFixtures) must resolve, and emp_1 must sit inside it.
+  setTable('orgNodes', [
+    { id: 'ga', name: 'GA', type: 'general_administration', parentId: null, managerUserId: null, managerUserName: null, status: 'active', order: 0, description: null, createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z' },
+  ]);
   setTable('employees', [
     {
       id: 'emp_1', name: 'أحمد محمد', code: '001', department: 'المبيعات',
-      position: 'مندوب مبيعات', status: 'active',
+      position: 'مندوب مبيعات', status: 'active', orgNodeId: 'ga',
       createdAt: '2026-01-10T00:00:00.000Z',
     },
   ]);
