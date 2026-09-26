@@ -25,7 +25,10 @@ import {
   getEmployeePerformanceDataset,
   defaultPerformanceIntelligenceLoaders,
 } from '@/lib/performance-intelligence';
-import type { PerformanceIntelligenceLoaders } from '@/lib/performance-intelligence';
+import type {
+  EmployeePerformanceDataset,
+  PerformanceIntelligenceLoaders,
+} from '@/lib/performance-intelligence';
 import { buildHrEmployeeDecisionReport, buildHrEmployeeOpsFacts, buildHrTeamDecisionReport } from './report';
 import type { HrEmployeeDecisionReport, HrTeamDecisionReport } from './types';
 
@@ -37,6 +40,12 @@ export interface GetHrEmployeeDecisionInput {
   windowMonths?: number;
   now?: Date;
   loaders?: PerformanceIntelligenceLoaders;
+  /**
+   * Pre-built canonical dataset (Employee 360 composes the decision
+   * report over the SAME dataset it already built — no second engine
+   * run). When omitted, the service builds it from the loaders.
+   */
+  dataset?: EmployeePerformanceDataset;
   /**
    * Stored HR deduction reader (the hrDeductions collection via the
    * established employee-performance table constant). Injectable for
@@ -68,14 +77,16 @@ export async function getHrEmployeeDecisionReport(
   const loaders = input.loaders ?? defaultPerformanceIntelligenceLoaders;
   const now = input.now ?? new Date();
 
-  const [dataset, settings, followUps, capaSplit, hrRecords] = await Promise.all([
-    getEmployeePerformanceDataset({
-      employeeId: input.employeeId,
-      monthKey: input.monthKey,
-      windowMonths: input.windowMonths,
-      now,
-      loaders,
-    }),
+  const [datasetOrUndefined, settings, followUps, capaSplit, hrRecords] = await Promise.all([
+    input.dataset
+      ? Promise.resolve(input.dataset)
+      : getEmployeePerformanceDataset({
+          employeeId: input.employeeId,
+          monthKey: input.monthKey,
+          windowMonths: input.windowMonths,
+          now,
+          loaders,
+        }),
     input.loadTargetScore
       ? input.loadTargetScore()
       : getKpiSettings().then((s) => s.defaultScore),
@@ -86,6 +97,7 @@ export async function getHrEmployeeDecisionReport(
       : defaultLoadHrDeductions(input.employeeId),
   ]);
 
+  const dataset = datasetOrUndefined;
   if (!dataset) return null;
 
   const hrMonth = buildHrMonthSummary(input.monthKey, hrRecords);

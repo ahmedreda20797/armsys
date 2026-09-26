@@ -21,15 +21,33 @@ export function useUserPreferences() {
   });
 }
 
+// ══════════════════════════════════════════════════════════════
+//  §UX-STRUCTURE 12A — a save is only "done" when the SERVER
+//  returns the persisted record. The API PUT answers with the
+//  merged record it wrote (`{ success, preferences }`), so the
+//  mutation adopts THAT response as the cache state — local UI
+//  state is never allowed to drift from what actually persisted —
+//  then invalidates for an authoritative refetch. The success
+//  path of any consumer may therefore treat the response as
+//  proof of persistence (12A.9: never toast before this).
+// ══════════════════════════════════════════════════════════════
+type SavePreferencesResponse = { success: boolean; preferences?: UserPreferences };
+
 export function useSaveUserPreferences() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (preferences: UserPreferences) =>
-      apiFetch<{ success: boolean }>('/api/user-preferences', {
+      apiFetch<SavePreferencesResponse>('/api/user-preferences', {
         method: 'PUT',
         body: JSON.stringify(preferences),
       }),
-    onSuccess: () => {
+    onSuccess: (response) => {
+      if (response?.preferences) {
+        // Server-confirmed state — cache it directly (12A.7/8).
+        qc.setQueryData(userPreferencesKeys.all, response.preferences);
+      }
+      // Refetch anyway so other fields (favorites, sidebar, ui) are
+      // reconciled from the authoritative record.
       qc.invalidateQueries({ queryKey: userPreferencesKeys.all });
     },
   });

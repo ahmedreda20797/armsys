@@ -182,6 +182,40 @@ export interface HrDeduction {
   archivedByName?: string | null;
 }
 
+/** §BOOKING-ITEMS — the supported booking/service types (dynamic model).
+ *  'train' extends the legacy six fixed services; repeated types are
+ *  FIRST-CLASS (each item carries its own id/sequence/status). */
+export type BookingServiceType =
+  | 'international_flight'
+  | 'domestic_flight'
+  | 'hotel'
+  | 'visa'
+  | 'tours'
+  | 'transportation'
+  | 'train';
+
+/** §BOOKING-ITEMS — the EXISTING service-status vocabulary, verbatim
+ *  (backward compatible with the legacy fixed *Status fields:
+ *  booked = محجوز/مكتمل, pending = معلق, missing = غير موجود). */
+export type BookingItemStatus = 'booked' | 'pending' | 'missing';
+
+/** One independent booking/service row on a travel deal. A deal may
+ *  hold ANY number of items per type; the item identity is `id`, never
+ *  the type. The deal-level `status` is a separate concept. */
+export interface BookingItem {
+  /** Stable unique id (unique within the deal's bookingItems). */
+  id: string;
+  type: BookingServiceType;
+  /** 1-based ordering within the deal (display: "طيران دولي 2"). */
+  sequence: number;
+  /** Optional free-text label override (defaults to "<type label> <sequence>"). */
+  label?: string | null;
+  status: BookingItemStatus;
+  /** Optional free-text details (hotel name, airline, notes...). */
+  details?: string | null;
+  updatedAt?: string | null;
+}
+
 export interface TravelDeal {
   id: string;
   employeeId: string;
@@ -206,14 +240,33 @@ export interface TravelDeal {
   status: 'upcoming' | 'in_progress' | 'completed' | 'canceled';
   createdAt: string;
   /**
+   * §DEAL-DATES (DEAL_CLOSED dimension) — تاريخ تقفيل الديل: the
+   * BUSINESS date on which the deal was closed with the responsible
+   * employee and entered into Qnalys. Display contract DD/MM/YYYY
+   * (like departureDate). Defaults to TODAY on create; editable by
+   * authorized callers only. NOT the travel date, NOT the completion
+   * date, NOT merely the technical createdAt. Legacy records created
+   * before this field carry null → month attribution is UNKNOWN
+   * (surfaced, never inferred from another date).
+   */
+  dealClosedAt?: string | null;
+  /**
    * §DEAL-DATES — the moment the deal was OBSERVED entering the
    * 'completed' state (server-stamped on the status transition; ISO).
-   * Canonical CLOSED-dimension date for closed-deal/productivity
-   * attribution. Legacy completed records and Excel imports carry no
+   * Canonical CLOSED-dimension date = تاريخ اكتمال الديل/الرحلة.
+   * Legacy completed records and Excel imports carry no
    * trustworthy closure timestamp → null (unknown — never fabricated
    * from departureDate). Client-supplied values are ignored.
    */
   closedAt?: string | null;
+  /**
+   * §BOOKING-ITEMS — the canonical dynamic booking/service rows.
+   * Null/absent on legacy deals (they render through read-time
+   * normalization from the fixed has-flags and status fields above;
+   * the server projects items back onto those fields when a deal is
+   * saved so legacy readers stay correct).
+   */
+  bookingItems?: BookingItem[] | null;
 }
 
 export interface FollowUp {
@@ -397,6 +450,16 @@ export interface AppNotification {
    * the directed/broadcast rules only.
    */
   recipientUserIds?: string[] | null;
+  /**
+   * §NOTIFICATIONS-DEEPLINK — structured navigation context (WHAT /
+   * WHO / WHY / WHERE) the destination page consumes through the
+   * canonical navigateTo(page, highlightId, navParams) channel.
+   * String values only (RTDB-friendly); resolved + merged by
+   * buildNotificationNavParams (lib/notifications/navigation.ts).
+   * Optional — legacy notifications carry null and navigate by
+   * targetPage/sourceRecordId alone.
+   */
+  navParams?: Record<string, string> | null;
   createdAt: string;
   readAt: string | null;
   acknowledgedAt: string | null;

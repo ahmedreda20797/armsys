@@ -639,19 +639,34 @@ html.light {
 
 /* ═══════════════════════════════════════════════════════════
    ARM ERP DESIGN SYSTEM — Scroll CSS Variables
+   ONE token system for EVERY scrollbar (page + internal
+   regions). Never restyle scrollbars per page — consume these
+   tokens (or the .arm-scroll utility) instead.
    ═══════════════════════════════════════════════════════════ */
 
 :root {
-  --scroll-thumb: oklch(0.40 0.03 22 / 0.40);
-  --scroll-thumb-hover: oklch(0.50 0.05 22 / 0.60);
-  --scroll-thumb-active: oklch(0.58 0.08 22 / 0.75);
+  /* Dark theme (default): quiet charcoal-red thumb on a subtle track */
+  --scroll-thumb: oklch(0.42 0.03 22 / 0.38);
+  --scroll-thumb-hover: oklch(0.52 0.05 22 / 0.60);
+  --scroll-thumb-active: oklch(0.60 0.08 22 / 0.75);
   --scroll-track: transparent;
+  --scroll-track-hover: oklch(0.30 0.02 22 / 0.25);
   --scroll-width: 5px;
 }
 
+/* Light theme: darker slate-red thumb so contrast survives on paper */
+html.light {
+  --scroll-thumb: oklch(0.55 0.02 22 / 0.40);
+  --scroll-thumb-hover: oklch(0.45 0.04 22 / 0.60);
+  --scroll-thumb-active: oklch(0.40 0.06 22 / 0.75);
+  --scroll-track-hover: oklch(0.80 0.01 22 / 0.30);
+}
+
 /* ═══════════════════════════════════════════════════════════
-   GLOBAL SCROLLBAR — ARM ERP Design System
-   Thin, rounded, slate/indigo theme. Never green.
+   GLOBAL SCROLLBAR — Qnalys Design System (single system)
+   Slim (5px), rounded, subtle; slightly more visible on
+   hover/active. Firefox uses the same tokens via
+   scrollbar-color. Never hide the scrollbar — it stays usable.
    ═══════════════════════════════════════════════════════════ */
 
 ::-webkit-scrollbar {
@@ -665,29 +680,31 @@ html.light {
 
 ::-webkit-scrollbar-thumb {
   background: var(--scroll-thumb);
+  background-clip: padding-box;
   border-radius: 100px;
-  transition: background 0.2s ease;
 }
 
 ::-webkit-scrollbar-thumb:hover {
   background: var(--scroll-thumb-hover);
+  background-clip: padding-box;
 }
 
 ::-webkit-scrollbar-thumb:active {
   background: var(--scroll-thumb-active);
+  background-clip: padding-box;
 }
 
 ::-webkit-scrollbar-corner {
   background: transparent;
 }
 
-/* Firefox */
+/* Firefox — same token system */
 * {
   scrollbar-width: thin;
   scrollbar-color: var(--scroll-thumb) var(--scroll-track);
 }
 
-/* Radix scroll area */
+/* Radix scroll area — participates in the same token system */
 [data-radix-scroll-area-viewport] {
   overflow-y: auto !important;
   scrollbar-gutter: stable;
@@ -1086,6 +1103,174 @@ input:focus::placeholder {
   background-size: 200% 100%;
   animation: gradient-shift 6s ease-in-out infinite;
 }
+
+/* ═══════════════════════════════════════════════════════════
+   SIDEBAR GROUP FRAME — §SIDEBAR-GROUP-FRAME
+   Dynamic glass container for expanded navigation groups.
+   The boundary is ONE SVG path (pathLength=100) whose
+   stroke-dashoffset DRAWs the perimeter from the top-center
+   start point on open, and RETRACTS along the same path back
+   to the start point on close (the transition simply runs in
+   reverse — the line is pulled back, never faded out).
+   State-driven CSS only: no timers, no JS animation.
+   ═══════════════════════════════════════════════════════════ */
+
+/* Glass surface — extremely low contrast. It separates the group
+   from the sidebar background without becoming a card. Nothing sits
+   behind it inside the sidebar, so backdrop blur would be a no-op. */
+.sidebar-group-frame-glass {
+  background: linear-gradient(
+    to bottom,
+    rgba(255, 255, 255, 0.05),
+    rgba(255, 255, 255, 0.015) 55%,
+    rgba(255, 255, 255, 0.03)
+  );
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.045);
+}
+
+/* The drawn boundary. The Qnalys highlight token adapts to the theme
+   (brand-500 crimson on dark / brand-700 burgundy on light). Dash
+   values are in pathLength units (100 = the whole perimeter), so one
+   rule fits every group height. BUTT caps: a round cap would render a
+   dot for the zero-length dash at the fully-retracted offset. */
+.sidebar-group-frame-path {
+  stroke: var(--qnalys-highlight-primary);
+  stroke-width: 1;
+  stroke-linecap: butt;
+  stroke-dasharray: 100 100;
+  stroke-dashoffset: 100;
+  transition: stroke-dashoffset 480ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.sidebar-group-frame-path[data-open='true'] {
+  stroke-dashoffset: 0;
+  /* OPEN — the perimeter is DRAWN: top → inline-start side → bottom →
+     wrap → back to the start point. The 120ms delay lets the group
+     content settle first (§9: no frame before content is ready). */
+  animation: sidebar-group-frame-draw 640ms cubic-bezier(0.4, 0, 0.2, 1) 120ms backwards;
+}
+
+@keyframes sidebar-group-frame-draw {
+  from { stroke-dashoffset: 100; }
+  to   { stroke-dashoffset: 0; }
+}
+
+/* Geometry mirrors with the layout direction: the line always travels
+   down the INLINE-START side first. The rounded rect is symmetric, so
+   a horizontal mirror of the SVG is an exact RTL rendering — no
+   hardcoded left/right anywhere. */
+.sidebar-group-frame-svg {
+  overflow: visible;
+}
+[dir='rtl'] .sidebar-group-frame-svg {
+  transform: scaleX(-1);
+}
+
+/* Collapsed rail — open/active group indication is the ICON COLOR
+   only: no container, no bar, no dot, no glow (§8). Unlayered, so it
+   outranks the muted/hover text utilities. */
+.sidebar-group-icon-active {
+  color: var(--qnalys-highlight-accent);
+}
+.sidebar-group-icon-active:hover {
+  color: var(--qnalys-highlight-accent);
+}
+
+/* Reduced motion: the frame appears/disappears without the draw. */
+@media (prefers-reduced-motion: reduce) {
+  .sidebar-group-frame-path,
+  .sidebar-group-frame-path[data-open='true'] {
+    animation: none;
+    transition: none;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════
+   SIDEBAR EDIT WORKSPACE — §SIDEBAR-WORKSPACE drag & drop
+   Premium-quiet feedback: a thin Qnalys insertion line, a faint
+   ambient accent on the group under the pointer, and a small
+   elevated drag preview. No heavy borders, no glow, no neon.
+   All accents ride the theme token (--qnalys-highlight-primary).
+   ═══════════════════════════════════════════════════════════ */
+
+/* Thin insertion line for ITEMS — 2px Qnalys accent that fades out
+   toward the inline-end, with a small origin dot at the inline-start.
+   Logical properties only: mirrors with the direction. */
+.sidebar-drop-line {
+  position: absolute;
+  inset-inline-start: 0;
+  width: 100%;
+  height: 2px;
+  pointer-events: none;
+  z-index: 10;
+  background: linear-gradient(
+    to right,
+    var(--qnalys-highlight-primary),
+    color-mix(in oklab, var(--qnalys-highlight-primary) 35%, transparent)
+  );
+  border-radius: 999px;
+  transition: top 110ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+.sidebar-drop-line::before {
+  content: '';
+  position: absolute;
+  inset-inline-start: -1px;
+  top: 50%;
+  width: 5px;
+  height: 5px;
+  border-radius: 999px;
+  background: var(--qnalys-highlight-primary);
+  transform: translateY(-50%);
+}
+[dir='rtl'] .sidebar-drop-line {
+  /* Mirror the fade direction (gradient above is physical). */
+  background: linear-gradient(
+    to left,
+    var(--qnalys-highlight-primary),
+    color-mix(in oklab, var(--qnalys-highlight-primary) 35%, transparent)
+  );
+}
+
+/* Group-level insertion line (reordering groups) — same language,
+   slightly narrower so it reads as "between sections". */
+.sidebar-drop-line-group {
+  inset-inline-start: 4%;
+  width: 92%;
+}
+
+/* Ambient destination accent — the group under a dragged ITEM gets a
+   whisper of brand tint and an inset hairline. Never a heavy border,
+   never a glowing container. */
+.sidebar-drop-ambient {
+  background: color-mix(in oklab, var(--qnalys-highlight-primary) 4%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--qnalys-highlight-primary) 18%, transparent);
+}
+
+/* The row being dragged dims in place — the position stays honest
+   (insertion indices are computed against the real list) while the
+   pointer carries the elevated preview. */
+.sidebar-item-dragging {
+  opacity: 0.35;
+}
+
+/* Floating drag preview — small elevation, crisp text, brand hairline.
+   Portal-rendered; moves by direct transform writes (no re-renders). */
+.sidebar-drag-ghost {
+  background: rgba(15, 23, 42, 0.96);
+  box-shadow:
+    0 10px 24px rgba(0, 0, 0, 0.35),
+    0 2px 6px rgba(0, 0, 0, 0.25),
+    inset 0 0 0 1px color-mix(in oklab, var(--qnalys-highlight-primary) 35%, transparent);
+  backdrop-filter: blur(6px);
+}
+
+/* Reduced motion: drop feedback appears/disappears without sliding. */
+@media (prefers-reduced-motion: reduce) {
+  .sidebar-drop-line {
+    transition: none;
+  }
+}
+
 
 /* ═══════════════════════════════════════════════════════════
    TABLE ROW HOVER GLOW
@@ -2109,6 +2294,17 @@ html.light .header-gradient-line {
     transparent 100%);
 }
 
+/* ── §LIGHT SIDEBAR GROUP FRAME — readable glass on paper ─────── */
+html.light .sidebar-group-frame-glass {
+  background: linear-gradient(
+    to bottom,
+    rgba(15, 23, 42, 0.03),
+    rgba(15, 23, 42, 0.012) 55%,
+    rgba(15, 23, 42, 0.02)
+  );
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65);
+}
+
 /* ── §LIGHT PRINT-PREVIEW HOST — white chrome around the paper ── */
 html.light .print-overlay { background: rgba(15, 23, 42, 0.45); }
 html.light .print-overlay-toolbar {
@@ -2124,3 +2320,25 @@ html.light .qnlys-bg-glow-b { background: radial-gradient(circle, rgba(100, 116,
 html.light .qnlys-bg-sheen { background: linear-gradient(to bottom, rgba(255, 255, 255, 0.6), transparent); }
 html.light .qnlys-bg-vignette { background: radial-gradient(ellipse 120% 90% at 50% 40%, transparent 60%, rgba(15, 23, 42, 0.05) 100%); }
 
+/* ══════════════════════════════════════════════════════════════
+   §EMPLOYEE360-PRINT — the rebuilt Employee 360 overlay prints the
+   SAME canonical view model the screen renders (one dataset, one
+   authorization model). The period control, drill-down buttons and
+   sticky bar are screen affordances only; sections keep their data
+   states (unknown/no-permission never print as zeros).
+   ══════════════════════════════════════════════════════════════ */
+@media print {
+  /* The overlay becomes a plain document page. */
+  .e360-print-host {
+    position: static !important;
+    inset: auto !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    border: 0 !important;
+    box-shadow: none !important;
+    background: white !important;
+    overflow: visible !important;
+  }
+  /* Screen-only interactive surfaces inside the profile. */
+  .e360-noprint { display: none !important; }
+}

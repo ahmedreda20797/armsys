@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import { usePermissions } from '@/hooks/usePermissions';
 import { usePageState } from '@/hooks/use-page-state';
@@ -53,7 +53,10 @@ import {
 import { PageIdentity } from '@/components/shared/PageIdentity';
 import type { BiometricRecord, Employee } from '@/types';
 import { logCreate } from '@/lib/activity-logger';
-import { authFetch } from '@/lib/api-fetch';
+import { apiFetch } from '@/lib/api-fetch';
+import { useQueryClient } from '@tanstack/react-query';
+import { useBiometricsList, useEmployees } from '@/hooks/use-queries';
+import { DataFreshnessIndicator } from '@/components/shared/DataFreshnessIndicator';
 
 interface BiometricWithEmployee extends BiometricRecord {
   employeeName: string;
@@ -85,9 +88,15 @@ const MONTH_OPTIONS = generateMonthOptions();
 export default function BiometricPage() {
   const { canEdit, canUpload, canDelete, isAdmin } = usePermissions('biometric');
   const { locale } = useLanguage();
-  const [records, setRecords] = useState<BiometricWithEmployee[]>([]);
-  const [employees, setEmployees] = useState<Employee[]>([]);
-  const [loading, setLoading] = useState(true);
+  // ═══ DATA STATE (cache-backed, §4) — snapshot restore + background
+  //  revalidation; page state below stays in usePageState (§4).
+  const queryClient = useQueryClient();
+  const biometricsQuery = useBiometricsList();
+  const employeesQuery = useEmployees();
+  const records = biometricsQuery.data ?? [];
+  const employees = employeesQuery.data ?? [];
+  const loading = biometricsQuery.isLoading || employeesQuery.isLoading;
+  const revalidating = (biometricsQuery.isFetching || employeesQuery.isFetching) && !loading;
   // Phase 6.3 (§8): filter context persists per user (session-scoped).
   const [biometricView, setBiometricView] = usePageState<{
     search: string;
@@ -115,31 +124,10 @@ export default function BiometricPage() {
   const [clearing, setClearing] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => {
-    fetchData();
-  }, []);
-
-  async function fetchData() {
-    try {
-      const [bioRes, empRes] = await Promise.all([
-        authFetch('/api/biometric'),
-        authFetch('/api/employees'),
-      ]);
-      if (bioRes.ok) {
-        const bioData = await bioRes.json();
-        setRecords(bioData);
-      }
-      if (empRes.ok) {
-        const empData = await empRes.json();
-        setEmployees(empData);
-      }
-    } catch {
-      setRecords([]);
-      setEmployees([]);
-    } finally {
-      setLoading(false);
-    }
-  }
+  // ═══ Manual refresh / mutation revalidation (§26).
+  const refreshData = useCallback(async () => {
+    await queryClient.invalidateQueries({ queryKey: ['biometrics'] });
+  }, [queryClient]);
 
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -148,15 +136,12 @@ export default function BiometricPage() {
     try {
       const formData = new FormData();
       formData.append('file', file);
-      const res = await authFetch('/api/biometric/upload', {
+      const data = await apiFetch<any>('/api/biometric/upload', {
         method: 'POST',
         body: formData,
       });
-      if (res.ok) {
-        const data = await res.json();
-        logCreate('biometric', 'سجل بصمة', `${data.imported || 0} سجل`);
-        await fetchData();
-      }
+      logCreate('biometric', 'سجل بصمة', `${data.imported || 0} سجل`);
+      await refreshData();
     } catch {
       // Error handled silently
     } finally {
@@ -169,16 +154,13 @@ export default function BiometricPage() {
     if (!clearMonth) return;
     setClearing(true);
     try {
-      const res = await authFetch('/api/biometric/clear', {
+      await apiFetch('/api/biometric/clear', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ month: clearMonth }),
       });
-      if (res.ok) {
-        await fetchData();
-        setIsClearOpen(false);
-        setClearMonth('');
-      }
+      await refreshData();
+      setIsClearOpen(false);
+      setClearMonth('');
     } catch {
       // Error handled silently
     } finally {
@@ -372,6 +354,9 @@ export default function BiometricPage() {
       </div>
 
       {/* Loading */}
+      {/* Subtle background-revalidation state (§32) */}
+      <DataFreshnessIndicator revalidating={revalidating} />
+
       {loading ? (
         <div className="space-y-3">
           {[1, 2, 3].map((i) => (

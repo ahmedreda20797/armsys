@@ -16,7 +16,7 @@ import {
   FileText, Loader2, X, ExternalLink, Calendar, User, AlertTriangle,
   CheckCircle2, ArrowRight,
 } from 'lucide-react';
-import { authFetch } from '@/lib/api-fetch';
+import { apiFetch } from '@/lib/api-fetch';
 import { formatDate } from '@/lib/capa-helpers';
 
 interface CAPADetailPanelProps {
@@ -45,7 +45,7 @@ const STATUS_META: Record<string, { label: string; color: string }> = {
 export function CAPADetailPanel({ capaId, onBack, onFullPage }: CAPADetailPanelProps) {
   const { data, isLoading, error } = useQuery({
     queryKey: ['capa-case', capaId],
-    queryFn: () => authFetch(`/api/capa-cases/${capaId}`).then((r) => r.ok ? r.json() : null),
+    queryFn: () => apiFetch<any>(`/api/capa-cases/${capaId}`),
     staleTime: 5_000,
   });
 

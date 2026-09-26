@@ -73,7 +73,24 @@ export function usePageHeaderActions(actions: HeaderContextualAction[]): void {
 
   useEffect(() => {
     const pageId = useAppStore.getState().currentPage;
-    useAppStore.getState().setPageHeaderActions({ pageId, value: actionsRef.current });
+    // §UX-STRUCTURE 12A — STALE-CLOSURE FIX. The signature guard means
+    // this registration does NOT re-run when only a handler's captured
+    // state changed (e.g. the Home customize draft order/hidden set).
+    // Registering the raw closures froze the header buttons to the
+    // draft AS OF the last signature change — pressing حفظ after a
+    // drag saved the PRE-EDIT layout (success toast, then everything
+    // "reset" on reload). The registered actions therefore dispatch
+    // through the ref: onClick dereferences the LATEST action with the
+    // same id at click time, so behavior can never go stale even while
+    // the visual signature (and thus re-registration) stays stable.
+    const stable: HeaderContextualAction[] = actionsRef.current.map((a) => ({
+      ...a,
+      onClick: () => {
+        const latest = actionsRef.current.find((x) => x.id === a.id);
+        latest?.onClick?.();
+      },
+    }));
+    useAppStore.getState().setPageHeaderActions({ pageId, value: stable });
     return () => {
       const current = useAppStore.getState().pageHeaderActions;
       if (current?.pageId === pageId) {

@@ -124,11 +124,34 @@ export interface KpiQualityFacts {
   bonusPoints: number;
 }
 
+/**
+ * HR-safe projection of ONE configured scheme component's engine
+ * result (the full breakdown the executive KPI view renders). Every
+ * value is consumed verbatim from the engine's KpiComponentResult —
+ * PENDING components (no adapter yet, e.g. manager/HR entries) keep
+ * their status so the UI shows "pending", never a fabricated score.
+ */
+export interface KpiComponentFact {
+  componentId: string;
+  name: string;
+  owner: string;
+  /** Percent weight from the CONFIGURED scheme component. */
+  weight: number;
+  status: KpiComponentResultStatus;
+  /** 0–100 raw score; null = no value (PENDING/NOT_ELIGIBLE). */
+  rawScore: number | null;
+  /** rawScore × weight / 100; null when no value exists. */
+  weightedContribution: number | null;
+  maxContribution: number;
+}
+
 export interface KpiFacts {
   outcomeStatus: EmployeeKpiOutcomeStatus;
   /** Arabic engine explanation for non-value outcomes (verbatim). */
   message: string | null;
   scheme: KpiReportSchemeDisplay | null;
+  /** FULL component breakdown (engine output verbatim, all statuses). */
+  components: KpiComponentFact[];
   quality: KpiQualityFacts | null;
   availableWeight: number | null;
   weightedTotal: number | null;
@@ -396,6 +419,30 @@ export interface TravelDealFacts {
    *  trustworthy closedAt). Surfaced as unknown — never attributed
    *  to a month, never derived from departureDate. */
   closedUnknownMonth: number;
+  /** CREATED dimension — deals whose record-creation month (createdAt)
+   *  IS the period (intake activity). Never conflated with CLOSED. */
+  createdTotal: number;
+  /** CREATED dimension — months with deal creation inside the
+   *  analysis window (no fabricated months). */
+  createdMonthly: MonthlyCount[];
+  /** DEAL_CLOSED dimension — ALL deals ever closed with the employee
+   *  across the loaded history (a deal exists in Qnalys only after it
+   *  was closed with the employee — تاريخ تقفيل الديل). */
+  closedWithEmployeeTotal: number;
+  /** DEAL_CLOSED dimension — deals whose closure-with-employee month
+   *  (dealClosedAt) IS the period, ANY current status (a deal closed
+   *  with the employee in September and still جاري counts here). */
+  closedWithEmployeeInPeriod: number;
+  /** DEAL_CLOSED dimension — months with deal closures inside the
+   *  analysis window (no fabricated months). */
+  closedWithEmployeeMonthly: MonthlyCount[];
+  /** Deals whose deal-closure date (dealClosedAt) is UNKNOWN (legacy
+   *  records created before the field). Surfaced as unknown — never
+   *  attributed to a month, never derived from another date. */
+  closedWithEmployeeUnknownMonth: number;
+  /** All-time CURRENT-STATUS snapshot (verbatim vocabulary — the
+   *  operational "now" counts, independent of every date dimension). */
+  statusAllTime: Record<'upcoming' | 'in_progress' | 'completed' | 'canceled', number>;
 }
 
 // ─────────────────────────────────────────────────────────────

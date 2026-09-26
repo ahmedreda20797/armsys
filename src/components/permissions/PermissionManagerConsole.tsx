@@ -351,10 +351,13 @@ export function PermissionManagerConsole({ users, selectedUserId, onSelectUser, 
   }, [profile]);
 
   // ── render ────────────────────────────────────────────────────
+  // §UX-STRUCTURE PART 7 — the console is a BOUNDED workspace: the
+  // user-list column is pinned BELOW the sticky app header (h-12 +
+  // hairline ≈ top-16) and both columns keep the page itself short.
   return (
     <div className="grid grid-cols-1 xl:grid-cols-[340px_1fr] gap-4 items-start">
       {/* ═══ USER LIST ═══ */}
-      <div className="space-y-3 xl:sticky xl:top-4">
+      <div className="space-y-3 xl:sticky xl:top-16">
         <div className="relative">
           <Search className="absolute start-3 top-1/2 -translate-y-1/2 size-4 text-slate-500" />
           <Input
@@ -458,8 +461,11 @@ export function PermissionManagerConsole({ users, selectedUserId, onSelectUser, 
         </ScrollArea>
       </div>
 
-      {/* ═══ AUTHORIZATION PROFILE ═══ */}
-      <div className="space-y-3 min-w-0">
+      {/* ═══ AUTHORIZATION PROFILE ═══
+          §PART 7 — the details/edit column is ITS OWN bounded scroll
+          region on xl (the workspace must not stretch the page); the
+          sticky change bar rides the column's scrollport. */}
+      <div className="space-y-3 min-w-0 arm-scroll xl:max-h-[calc(100vh-5.5rem)] xl:pe-1">
         {!selectedUserId ? (
           <EmptyState
             icon={<UserIcon className="size-12 text-slate-600" />}

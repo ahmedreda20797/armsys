@@ -5,14 +5,14 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { usePermissions } from '@/hooks/usePermissions';
 import { useAppStore } from '@/lib/store';
 import { useRecordHighlight } from '@/hooks/use-record-highlight';
-import { getDaysRemaining } from '@/lib/date-utils';
+import { getDaysRemaining, todayDisplayDate } from '@/lib/date-utils';
 import {
   getDepartureUrgency,
   getTravelPhase,
   isNearDeparture,
   type DepartureUrgency,
 } from '@/lib/travel-status';
-import { useTravel, useEmployees, useCreateTravel, useUpdateTravel, useDeleteTravel } from '@/hooks/use-queries';
+import { useTravel, useEmployees, useCreateTravel, useUpdateTravel, useDeleteTravel, useDashboardUsers } from '@/hooks/use-queries';
 import { usePageState } from '@/hooks/use-page-state';
 import { PageHeaderBar } from '@/components/shared/PageHeaderBar';
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
@@ -62,13 +62,9 @@ import {
   Pencil,
   Trash2,
   Clock,
-  Hotel,
-  CreditCard,
   CheckCircle2,
   XCircle,
   X,
-  Car,
-  Palmtree,
   Search,
   Upload,
   FileSpreadsheet,
@@ -89,7 +85,27 @@ import {
   ChevronsRight,
   MessageSquareWarning,
 } from 'lucide-react';
-import type { TravelDeal, Employee } from '@/types';
+import type { TravelDeal, Employee, BookingItem, BookingServiceType } from '@/types';
+// §BOOKING-ITEMS — canonical dynamic booking model + legacy normalization.
+import {
+  normalizeBookingItems,
+  BOOKING_SERVICE_TYPES,
+  BOOKING_TYPE_LABELS_AR,
+  BOOKING_TYPE_ICONS,
+  bookingItemNumber,
+  newBookingItemId,
+} from '@/lib/booking-items';
+// §TRAVEL-FILTERS — the canonical trip-category rule (one implementation
+// shared with the API route — never a page-private copy).
+import { getTripCategory, resolveTravelNavLink, TRAVEL_STATUS_FILTERS, type TravelStatusFilter } from '@/lib/travel-filters';
+// §DEAL-DATES — canonical date bases (أساس التاريخ) + basis month keys.
+import {
+  DEAL_DATE_BASES,
+  DEAL_DATE_BASIS_LABELS_AR,
+  getDealDateMonthKey,
+  parseDealDateBasis,
+  type DealDateBasis,
+} from '@/lib/deal-dates';
 import { logCreate, logUpdate, logDelete } from '@/lib/activity-logger';
 import { EmployeeSearchInput } from '@/components/shared/EmployeeSearchInput';
 import { authFetch } from '@/lib/api-fetch';
@@ -97,7 +113,9 @@ import { T } from '@/lib/i18n/T';
 import { translateUIText } from '@/lib/i18n/ui-text';
 import { useLanguage } from '@/lib/i18n/language-context';
 import type { Locale } from '@/lib/i18n/dictionary';
-import { formatInteger, formatMonthKey } from '@/lib/i18n/format';
+import { formatDateTime, formatInteger, formatMonthKey } from '@/lib/i18n/format';
+// §DEAL-DATES — canonical deal date dimensions (closure display/filter).
+import { getDealMonthKey } from '@/lib/deal-dates';
 
 // ═══════════════════════════════════════════════════════════════
 //  TYPES
@@ -112,20 +130,12 @@ interface TravelFormData {
   destination: string;
   departureDate: string;
   returnDate: string;
+  /** §DEAL-DATES (DEAL_CLOSED) — تاريخ تقفيل الديل (DD/MM/YYYY). */
+  dealClosedAt: string;
   dealerName: string;
   customerNames: string;
-  hasInternationalFlight: boolean;
-  hasDomesticFlight: boolean;
-  hasHotel: boolean;
-  hasVisa: boolean;
-  hasTours: boolean;
-  hasTransportation: boolean;
-  internationalFlightStatus: string;
-  domesticFlightStatus: string;
-  hotelStatus: string;
-  visaStatus: string;
-  toursStatus: string;
-  transportationStatus: string;
+  /** §BOOKING-ITEMS — canonical dynamic booking rows (replaces the six fixed selects). */
+  bookingItems: BookingItem[];
   notes: string;
   status: string;
 }
@@ -136,18 +146,13 @@ interface TravelFormData {
 
 const emptyForm: TravelFormData = {
   employeeId: '', destination: '', departureDate: '', returnDate: '',
+  // §DEAL-DATES — the deal-closed date defaults to TODAY (the deal is
+  // entered into Qnalys the day it is closed with the employee); the
+  // user keeps full manual override for historical registration.
+  dealClosedAt: todayDisplayDate(),
   dealerName: '', customerNames: '',
-  hasInternationalFlight: false, hasDomesticFlight: false, hasHotel: false, hasVisa: false,
-  hasTours: false, hasTransportation: false,
-  internationalFlightStatus: 'missing', domesticFlightStatus: 'missing', hotelStatus: 'missing', visaStatus: 'missing',
-  toursStatus: 'missing', transportationStatus: 'missing',
+  bookingItems: [],
   notes: '', status: 'upcoming',
-};
-
-const arabicMonths: Record<string, string> = {
-  '1': 'يناير', '2': 'فبراير', '3': 'مارس', '4': 'أبريل',
-  '5': 'مايو', '6': 'يونيو', '7': 'يوليو', '8': 'أغسطس',
-  '9': 'سبتمبر', '10': 'أكتوبر', '11': 'نوفمبر', '12': 'ديسمبر',
 };
 
 type CategoryTab = 'all' | 'upcoming' | 'in_progress' | 'returned' | 'canceled';
@@ -202,39 +207,9 @@ const statusConfig = [
   { key: 'canceled', label: 'ملغي', activeClass: 'bg-red-500/20 text-red-400 ring-red-500/40' },
 ] as const;
 
-const serviceLabels: Record<string, string> = {
-  internationalFlight: 'الطيران الدولي', domesticFlight: 'الطيران الداخلي',
-  hotel: 'الفندق', visa: 'التأشيرة',
-  tours: 'الجولات', transportation: 'المواصلات',
-};
-
-const missingItemsConfig = [
-  { key: 'hasInternationalFlight' as const, label: 'طيران دولي' },
-  { key: 'hasDomesticFlight' as const, label: 'طيران داخلي' },
-  { key: 'hasHotel' as const, label: 'فندق' },
-  { key: 'hasVisa' as const, label: 'تأشيرة' },
-  { key: 'hasTours' as const, label: 'جولات' },
-  { key: 'hasTransportation' as const, label: 'مواصلات' },
-];
-
 // ═══════════════════════════════════════════════════════════════
 //  PURE UTILITY FUNCTIONS (defined outside component — zero re-creation)
 // ═══════════════════════════════════════════════════════════════
-
-function getMonthKey(dateStr: string): string {
-  if (!dateStr) return 'غير محدد';
-  const p = dateStr.split('/');
-  if (p.length !== 3) return 'غير محدد';
-  const month = p[1].padStart(2, '0');
-  return `${p[2]}-${month}`;
-}
-
-function getMonthLabel(dateStr: string): string {
-  if (!dateStr) return 'غير محدد';
-  const p = dateStr.split('/');
-  if (p.length !== 3) return 'غير محدد';
-  return `${arabicMonths[p[1]] || p[1]} ${p[2]}`;
-}
 
 function getMonthLabelFromKey(key: string, locale?: Locale): string {
   // §I18N-BOUNDARY — month labels are app-generated display text, so the
@@ -272,12 +247,8 @@ function getUrgencyLabel(daysLeft: number, urgentType: 'departure' | 'return' = 
   return locale === 'en' ? `${formatInteger(Math.abs(daysLeft), locale)} days ago` : `منذ ${Math.abs(daysLeft)} يوم`;
 }
 
-function getTripCategory(depDate: string, retDate: string | null): 'upcoming' | 'in_progress' | 'returned' {
-  const retDays = retDate ? getDaysRemaining(retDate) : null;
-  if (retDays !== null && retDays < 0) return 'returned';
-  if (getDaysRemaining(depDate) < 0) return 'in_progress';
-  return 'upcoming';
-}
+// getTripCategory lives in §TRAVEL-FILTERS (src/lib/travel-filters.ts) —
+// the ONE canonical implementation shared with the API route.
 
 // §TRAVEL-THRESHOLD — the per-trip STATUS LABEL rule: "قريب" ONLY when
 // departure is within the 10-day window; anything further out is
@@ -328,51 +299,69 @@ const CategoryBadge = memo(function CategoryBadge({ category, daysLeft }: { cate
   return <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-brand-500/15 text-brand-400 font-medium">✈ <T>قريب</T></span>;
 });
 
-/** Service toggle button inside expanded card */
-const ServiceToggle = memo(function ServiceToggle({
-  trip, service, label, canEdit, onToggle,
+/** §BOOKING-ITEMS — the compact dynamic services/bookings section
+    ("الخدمات والحجوزات"). Each booking is an INDEPENDENT row with its
+    own id, type, per-type number and status — repeated types are
+    first-class (طيران دولي 1 / طيران دولي 2 …). Legacy deals render
+    through read-time normalization of the fixed fields (non-destructive).
+    Clicking a row (authorized editors) cycles THAT item's status only —
+    item #2 never touches item #1, and the deal-level status is a
+    separate concept entirely. */
+const BookingItemsSection = memo(function BookingItemsSection({
+  trip, canEdit, onToggleItem,
 }: {
-  trip: TravelWithEmployee; service: string; label: string;
-  canEdit: boolean; onToggle: (tripId: string, service: string) => void;
+  trip: TravelWithEmployee; canEdit: boolean;
+  onToggleItem: (tripId: string, itemId: string) => void;
 }) {
   const { locale } = useLanguage();
-  const hasField = `has${service.charAt(0).toUpperCase() + service.slice(1)}` as keyof TravelDeal;
-  const statusField = `${service}Status` as keyof TravelDeal;
-  const has = trip[hasField] as boolean;
-  const svcStatus = (trip[statusField] as string) || (has ? 'booked' : 'missing');
-  const isMissing = svcStatus === 'missing';
-  const isBooked = svcStatus === 'booked';
-  const isPending = svcStatus === 'pending';
-  const Icon = service === 'internationalFlight' ? Plane : service === 'domesticFlight' ? Globe : service === 'hotel' ? Hotel : service === 'visa' ? CreditCard : service === 'tours' ? Palmtree : Car;
+  const items = useMemo(() => normalizeBookingItems(trip), [trip]);
+  if (items.length === 0) return null;
 
-  // Hide missing services entirely on the card
-  if (isMissing) return null;
+  const statusBadge = (status: string) => {    if (status === 'booked') return <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300"><T>مكتمل</T></span>;
+    if (status === 'pending') return <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-amber-500/20 text-amber-300"><T>معلق</T></span>;
+    return <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-slate-500/20 text-slate-300"><T>غير موجود</T></span>;
+  };
 
-  const titleText = isBooked ? `تحويل إلى معلق` : `تحويل إلى مكتمل`;
-
-  if (!canEdit) {
-    return (
-      <div className={`flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg ${
-        isBooked ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30'
-          : 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
-      }`}>
-        <Icon className="size-3.5" /> {isBooked ? <CheckCircle2 className="size-3.5" /> : <Clock className="size-3.5" />} <span><T>{label}</T></span>
-        <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full ${isBooked ? 'bg-emerald-500/20 text-emerald-300' : 'bg-amber-500/20 text-amber-300'}`}>{isBooked ? <T>مكتمل</T> : <T>معلق</T>}</span>
-      </div>
-    );
-  }
   return (
-    <button
-      onClick={() => onToggle(trip.id, service)}
-      className={`flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg transition-all duration-200 cursor-pointer select-none ${
-        isBooked ? 'bg-emerald-500/15 text-emerald-400 hover:bg-amber-500/20 ring-1 ring-emerald-500/50 hover:ring-amber-500/50'
-          : 'bg-amber-500/15 text-amber-400 hover:bg-emerald-500/20 ring-1 ring-amber-500/30 hover:ring-emerald-500/30'
-      }`}
-      title={translateUIText(titleText, locale)}
-    >
-      <Icon className="size-3.5" /> {isBooked ? <CheckCircle2 className="size-3.5" /> : <Clock className="size-3.5" />} <span><T>{label}</T></span>
-      <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full ${isBooked ? 'bg-emerald-500/25 text-emerald-300' : 'bg-amber-500/25 text-amber-300'}`}>{isBooked ? <T>مكتمل</T> : <T>معلق</T>}</span>
-    </button>
+    <div>
+      <p className="text-xs text-slate-500 mb-2 font-medium"><T>الخدمات والحجوزات</T></p>
+      <div className="flex flex-wrap gap-1.5">
+        {items.map((item) => {
+          const titleText = !canEdit ? undefined
+            : item.status === 'booked' ? translateUIText('تحويل إلى معلق', locale) : translateUIText('تحويل إلى مكتمل', locale);
+          const row = (
+            <>
+              <span aria-hidden="true">{BOOKING_TYPE_ICONS[item.type]}</span>
+              <span>{translateUIText(BOOKING_TYPE_LABELS_AR[item.type], locale)} {formatInteger(bookingItemNumber(items, item.id), locale)}</span>
+              {item.status === 'booked' ? <CheckCircle2 className="size-3.5" /> : item.status === 'pending' ? <Clock className="size-3.5" /> : <AlertTriangle className="size-3.5" />}
+              {statusBadge(item.status)}
+            </>
+          );
+          const rowClass = item.status === 'booked'
+            ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30'
+            : item.status === 'pending'
+              ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
+              : 'bg-slate-500/10 text-slate-400 border border-slate-500/20';
+          if (!canEdit) {
+            return (
+              <div key={item.id} className={`flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg ${rowClass}`}>
+                {row}
+              </div>
+            );
+          }
+          return (
+            <button
+              key={item.id}
+              onClick={() => onToggleItem(trip.id, item.id)}
+              className={`flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg transition-all duration-200 cursor-pointer select-none hover:opacity-80 ${rowClass}`}
+              title={titleText}
+            >
+              {row}
+            </button>
+          );
+        })}
+      </div>
+    </div>
   );
 });
 
@@ -406,20 +395,23 @@ interface TripCardProps {
   isHighlighted: boolean;
   isExpanded: boolean;
   canEdit: boolean;
+  /** §PART 11 — complaints:create (the permission the complaints API enforces). */
+  canComplaint: boolean;
   highlightRef: React.RefObject<HTMLDivElement | null>;
   onToggleExpand: (id: string | null) => void;
   onEdit: (trip: TravelWithEmployee) => void;
   onDelete: (id: string) => void;
   onQuickChangeStatus: (tripId: string, status: string) => void;
-  onQuickToggleService: (tripId: string, service: string) => void;
+  /** §BOOKING-ITEMS — cycle ONE booking item's status (per-item independence). */
+  onQuickToggleItem: (tripId: string, itemId: string) => void;
   /** Milestone 7 §7: report a complaint/problem from this deal. */
   onReportComplaint: (trip: TravelWithEmployee) => void;
 }
 
 /** THE KEY OPTIMIZATION: React.memo trip card — only re-renders when its own data changes */
 const TripCard = memo(function TripCard({
-  trip, showCategoryBadge, isHighlighted, isExpanded, canEdit, highlightRef,
-  onToggleExpand, onEdit, onDelete, onQuickChangeStatus, onQuickToggleService,
+  trip, showCategoryBadge, isHighlighted, isExpanded, canEdit, canComplaint, highlightRef,
+  onToggleExpand, onEdit, onDelete, onQuickChangeStatus, onQuickToggleItem,
   onReportComplaint,
 }: TripCardProps) {
   const { locale } = useLanguage();
@@ -460,7 +452,6 @@ const TripCard = memo(function TripCard({
   const dealerName = trip.dealerName || '';
   const displayName = dealerName || trip.employeeName;
   const displayInitial = displayName.charAt(0);
-  const missingItems = missingItemsConfig.filter(i => !trip[i.key]);
 
   return (
     <Collapsible
@@ -534,12 +525,18 @@ const TripCard = memo(function TripCard({
                 <div className={`text-xl font-bold tabular-nums ${countdownInfo.color}`}>{formatInteger(countdownInfo.value, locale)}</div>
                 <span className="text-slate-500 text-[10px]"><T>{countdownInfo.label}</T></span>
               </div>
-              {canEdit && (
+              {/* §PART 11 — ONE ⋮ menu for the deal's secondary actions:
+                  تعديل/حذف (travel:update) and تبليغ عن مشكلة/شكوى
+                  (complaints:create). Actions the caller lacks are
+                  hidden declaratively; the menu itself renders when at
+                  least one action exists. Enforcement stays server-side. */}
+              {(canEdit || canComplaint) && (
                 <div onClick={(e) => e.stopPropagation()}>
                   <SmartActionMenu
                     actions={[
-                      { key: 'edit', label: translateUIText('تعديل', locale), icon: <Pencil className="size-3.5" />, onSelect: () => onEdit(trip) },
-                      { key: 'delete', label: translateUIText('حذف', locale), icon: <Trash2 className="size-3.5" />, destructive: true, separatorBefore: true, onSelect: () => onDelete(trip.id) },
+                      { key: 'complaint', label: translateUIText('تبليغ عن مشكلة / شكوى', locale), icon: <MessageSquareWarning className="size-3.5" />, hidden: !canComplaint, onSelect: () => onReportComplaint(trip) },
+                      { key: 'edit', label: translateUIText('تعديل', locale), icon: <Pencil className="size-3.5" />, hidden: !canEdit, separatorBefore: !canComplaint, onSelect: () => onEdit(trip) },
+                      { key: 'delete', label: translateUIText('حذف', locale), icon: <Trash2 className="size-3.5" />, hidden: !canEdit, destructive: true, separatorBefore: true, onSelect: () => onDelete(trip.id) },
                     ]}
                     label={translateUIText('إجراءات الرحلة', locale)}
                   />
@@ -566,6 +563,23 @@ const TripCard = memo(function TripCard({
                 <div className="p-4 space-y-4">
                   {/* Dates */}
                   <div className="flex flex-wrap gap-4 text-sm">
+                    {/* §DEAL-DATES (DEAL_CLOSED) — تاريخ تقفيل الديل: the
+                        business date the deal was closed with the employee
+                        and entered into Qnalys. Distinct from the travel
+                        date, the completion date and createdAt. */}
+                    {trip.dealClosedAt ? (
+                      <div className="flex items-center gap-2 text-slate-300">
+                        <span className="text-xs">🤝</span>
+                        <span className="text-slate-500"><T>تقفيل الديل:</T></span>
+                        <span className="text-white font-medium" dir="ltr">{trip.dealClosedAt}</span>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-2 text-slate-300">
+                        <span className="text-xs">🤝</span>
+                        <span className="text-slate-500"><T>تقفيل الديل:</T></span>
+                        <span className="text-amber-400 text-xs font-medium"><T>غير مسجل (صفقة قديمة)</T></span>
+                      </div>
+                    )}
                     <div className="flex items-center gap-2 text-slate-300">
                       <span className="text-xs">📅</span>
                       <span className="text-slate-500"><T>السفر:</T></span>
@@ -595,6 +609,33 @@ const TripCard = memo(function TripCard({
                         <span className="text-xs font-medium"><T>تاريخ العودة غير محدد — يرجى إكمال البيانات</T></span>
                       </div>
                     )}
+                    {/* §DEAL-DATES — the COMPLETION date is a SERVER-generated
+                        ledger (closedAt = تاريخ اكتمال الديل/الرحلة, stamped by
+                        the API on the completed transition). It is READ-ONLY
+                        here: never a form field, never derived from other
+                        dates, never confused with تاريخ تقفيل الديل.
+                        Historical completed deals without closedAt remain
+                        explicitly UNKNOWN — never assigned a fake month. */}
+                    <div className="flex items-center gap-2 text-slate-300 bg-slate-800/50 rounded-lg px-3 py-2 border border-slate-700/20">
+                      <span className="text-xs">🏁</span>
+                      <span className="text-slate-500"><T>الاكتمال:</T></span>
+                      {trip.status === 'completed' ? (
+                        trip.closedAt ? (
+                          <>
+                            <span className="text-emerald-400 font-medium text-sm" dir="ltr">{formatDateTime(trip.closedAt, locale)}</span>
+                            <Badge variant="outline" className="text-[10px] px-1.5 text-emerald-400 border-emerald-500/30">
+                              {getMonthLabelFromKey(getDealMonthKey(trip, 'CLOSED') ?? '', locale)}
+                            </Badge>
+                          </>
+                        ) : (
+                          <span className="text-amber-400 text-xs font-medium">
+                            <T>تاريخ الاكتمال غير معروف — سجل مكتمل أرشيفي (قبل التسجيل التلقائي)</T>
+                          </span>
+                        )
+                      ) : (
+                        <span className="text-slate-500 text-xs"><T>غير مكتمل — يُسجل تلقائياً من النظام عند الإكمال</T></span>
+                      )}
+                    </div>
                   </div>
 
                   {/* Dealer & Customers */}
@@ -617,29 +658,10 @@ const TripCard = memo(function TripCard({
                     </div>
                   )}
 
-                  {/* Service Statuses */}
-                  <div>
-                    <p className="text-xs text-slate-500 mb-2 font-medium"><T>حالة الخدمات</T></p>
-                    <div className="flex flex-wrap gap-2">
-                      <ServiceToggle trip={trip} service="internationalFlight" label="طيران دولي" canEdit={canEdit} onToggle={onQuickToggleService} />
-                      <ServiceToggle trip={trip} service="domesticFlight" label="طيران داخلي" canEdit={canEdit} onToggle={onQuickToggleService} />
-                      <ServiceToggle trip={trip} service="hotel" label="فندق" canEdit={canEdit} onToggle={onQuickToggleService} />
-                      <ServiceToggle trip={trip} service="visa" label="تأشيرة" canEdit={canEdit} onToggle={onQuickToggleService} />
-                      <ServiceToggle trip={trip} service="tours" label="جولات" canEdit={canEdit} onToggle={onQuickToggleService} />
-                      <ServiceToggle trip={trip} service="transportation" label="مواصلات" canEdit={canEdit} onToggle={onQuickToggleService} />
-                    </div>
-                  </div>
-
-                  {/* Missing items */}
-                  {missingItems.length > 0 && (
-                    <div className="flex flex-wrap gap-2">
-                      {missingItems.map((item) => (
-                        <Badge key={item.label} variant="outline" className="border-red-500/25 text-red-400/80 text-[11px] gap-1">
-                          <AlertTriangle className="size-3" /><T>{item.label}</T>
-                        </Badge>
-                      ))}
-                    </div>
-                  )}
+                  {/* §BOOKING-ITEMS — dynamic services/bookings (compact rows,
+                      independent statuses, repeated types). Legacy deals render
+                      through read-time normalization. */}
+                  <BookingItemsSection trip={trip} canEdit={canEdit} onToggleItem={onQuickToggleItem} />
 
                   {/* Notes */}
                   {trip.notes && (
@@ -656,19 +678,10 @@ const TripCard = memo(function TripCard({
                       <QuickStatusBtns trip={trip} onStatusChange={onQuickChangeStatus} />
                     </div>
                   )}
-
-                  {/* §7 — Report a complaint/problem from this deal.
-                      Integrates with the EXISTING complaint workflow
-                      (navigates with pre-fill context; zero duplicated
-                      complaint logic inside Travel). */}
-                  <button
-                    onClick={() => onReportComplaint(trip)}
-                    className="flex items-center justify-center gap-1.5 w-full px-3 py-2 rounded-lg border border-rose-500/30 bg-rose-500/10 text-rose-300 text-xs font-medium hover:bg-rose-500/20 hover:text-rose-200 transition-colors"
-                    title={translateUIText('فتح نموذج شكوى معبأ ببيانات هذه الرحلة', locale)}
-                  >
-                    <MessageSquareWarning className="size-3.5" />
-                    <T>تبليغ عن مشكلة / شكوى بخصوص هذه الرحلة</T>
-                  </button>
+                  {/* §PART 11 — the complaint action moved into the card's
+                      ⋮ menu (with complaints:create permission gating);
+                      the standalone full-width button is gone. The menu
+                      opens the SAME inline complaint panel below. */}
                 </div>
               </div>
             </motion.div>
@@ -681,16 +694,45 @@ const TripCard = memo(function TripCard({
 
 // ─── TripFormDialog ───
 const TripFormDialog = memo(function TripFormDialog({
-  title, open, onOpenChange, form, setForm, employees, saving, onSave,
+  title, open, onOpenChange, form, setForm, employees, saving, onSave, editingTrip,
 }: {
   title: string; open: boolean; onOpenChange: (v: boolean) => void;
   form: TravelFormData; setForm: React.Dispatch<React.SetStateAction<TravelFormData>>;
   employees: Employee[]; saving: boolean; onSave: () => void;
+  /** The stored deal when editing (drives the read-only completion info). */
+  editingTrip: TravelWithEmployee | null;
 }) {
   const { locale } = useLanguage();
-  const updateForm = useCallback((field: keyof TravelFormData, value: string | boolean) => {
+  const updateForm = useCallback((field: keyof TravelFormData, value: string | boolean | BookingItem[]) => {
     setForm((prev) => ({ ...prev, [field]: value }));
   }, [setForm]);
+
+  const updateBookingItem = useCallback((itemId: string, patch: Partial<BookingItem>) => {
+    setForm((prev) => ({
+      ...prev,
+      bookingItems: prev.bookingItems.map((it) => (it.id === itemId ? { ...it, ...patch } : it)),
+    }));
+  }, [setForm]);
+
+  const removeBookingItem = useCallback((itemId: string) => {
+    setForm((prev) => ({
+      ...prev,
+      // re-sequence deterministically after removal (array order = display order)
+      bookingItems: prev.bookingItems.filter((it) => it.id !== itemId).map((it, i) => ({ ...it, sequence: i + 1 })),
+    }));
+  }, [setForm]);
+
+  const addBookingItem = useCallback(() => {
+    setForm((prev) => ({
+      ...prev,
+      bookingItems: [
+        ...prev.bookingItems,
+        { id: newBookingItemId(), type: 'international_flight' as BookingServiceType, sequence: prev.bookingItems.length + 1, label: null, status: 'pending' as const, details: null },
+      ],
+    }));
+  }, [setForm]);
+
+  const storedCompletion = editingTrip?.closedAt ?? null;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -725,6 +767,20 @@ const TripFormDialog = memo(function TripFormDialog({
               </SelectContent>
             </Select>
           </div>
+          {/* §DEAL-DATES (DEAL_CLOSED) — تاريخ تقفيل الديل: the business
+              date the deal was closed with the employee. Defaults to
+              TODAY; editable (the business date of entry into Qnalys) —
+              NOT تاريخ تسجيل الصفقة, NOT the travel/completion date. */}
+          <div className="space-y-2">
+            <Label className="text-slate-300"><T>تاريخ تقفيل الديل</T> <span className="text-red-400">*</span></Label>
+            <Input
+              value={form.dealClosedAt}
+              onChange={(e) => updateForm('dealClosedAt', e.target.value)}
+              className="bg-slate-800 border-slate-600 text-white"
+              placeholder="DD/MM/YYYY"
+              dir="ltr"
+            />
+          </div>
           <div className="space-y-2">
             <Label className="text-slate-300"><T>تاريخ السفر</T></Label>
             <Input value={form.departureDate} onChange={(e) => updateForm('departureDate', e.target.value)} className="bg-slate-800 border-slate-600 text-white" placeholder="DD/MM/YYYY" dir="ltr" />
@@ -733,7 +789,22 @@ const TripFormDialog = memo(function TripFormDialog({
             <Label className="text-slate-300"><T>تاريخ العودة</T></Label>
             <Input value={form.returnDate} onChange={(e) => updateForm('returnDate', e.target.value)} className="bg-slate-800 border-slate-600 text-white" placeholder="DD/MM/YYYY" dir="ltr" />
           </div>
-          <div className="space-y-2 sm:col-span-2">
+          {/* §DEAL-DATES — تاريخ الاكتمال is a SERVER-generated ledger
+              (closedAt): READ-ONLY, never a form field, never trusted
+              from the client. Historical unknown stays unknown. */}
+          {editingTrip && (
+            <div className="space-y-2">
+              <Label className="text-slate-300"><T>تاريخ الاكتمال</T></Label>
+              <div className="bg-slate-800/60 border border-slate-700/40 rounded-md px-3 py-2 text-sm text-slate-300" dir="ltr">
+                {editingTrip.status === 'completed'
+                  ? (storedCompletion
+                    ? <span className="text-emerald-400">{formatDateTime(storedCompletion, locale)}</span>
+                    : <span className="text-amber-400"><T>تاريخ الاكتمال غير معروف</T></span>)
+                  : <span className="text-slate-500"><T>يُسجل تلقائياً من النظام عند الإكمال</T></span>}
+              </div>
+            </div>
+          )}
+          <div className="space-y-2">
             <Label className="text-slate-300"><T>اسم الديل</T></Label>
             <Input value={form.dealerName} onChange={(e) => updateForm('dealerName', e.target.value)} className="bg-slate-800 border-slate-600 text-white" placeholder={translateUIText('أدخل اسم الديل...', locale)} />
           </div>
@@ -741,19 +812,56 @@ const TripFormDialog = memo(function TripFormDialog({
             <Label className="text-slate-300"><T>أسماء العملاء المسافرين</T></Label>
             <Textarea value={form.customerNames} onChange={(e) => updateForm('customerNames', e.target.value)} className="bg-slate-800 border-slate-600 text-white" placeholder={translateUIText('أدخل أسماء العملاء...', locale)} rows={2} />
           </div>
-          {(['internationalFlight', 'domesticFlight', 'hotel', 'visa', 'tours', 'transportation'] as const).map((svc) => (
-            <div key={svc} className="space-y-2">
-              <Label className="text-slate-300"><T>حالة </T>{translateUIText(serviceLabels[svc], locale)}</Label>
-              <Select value={form[`${svc}Status` as keyof TravelFormData] as string} onValueChange={(v) => { updateForm(`${svc}Status` as keyof TravelFormData, v); updateForm(`has${svc.charAt(0).toUpperCase() + svc.slice(1)}` as keyof TravelFormData, v === 'booked'); }}>
-                <SelectTrigger className="bg-slate-800 border-slate-600 text-white"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="booked" className="text-white"><T>محجوز</T></SelectItem>
-                  <SelectItem value="pending" className="text-white"><T>معلق</T></SelectItem>
-                  <SelectItem value="missing" className="text-white"><T>غير موجود</T></SelectItem>
-                </SelectContent>
-              </Select>
+          {/* §BOOKING-ITEMS — the dynamic services/bookings editor
+              (replaces the six fixed service selects). Repeated types are
+              supported: each row is an independent item with its own id
+              and status; the deal-level status above stays separate. */}
+          <div className="space-y-2 sm:col-span-2">
+            <div className="flex items-center justify-between">
+              <Label className="text-slate-300"><T>الخدمات والحجوزات</T></Label>
+              <Button type="button" variant="outline" size="sm" onClick={addBookingItem}
+                className="border-brand-500/40 text-brand-400 hover:bg-brand-500/10 h-7 px-2 text-xs">
+                + <T>إضافة حجز</T>
+              </Button>
             </div>
-          ))}
+            {form.bookingItems.length === 0 ? (
+              <p className="text-xs text-slate-500"><T>لا حجوزات بعد — أضف أول حجز (نفس النوع يمكن تكراره)</T></p>
+            ) : (
+              <div className="space-y-1.5">
+                {form.bookingItems.map((item, idx) => (
+                  <div key={item.id} className="flex items-center gap-1.5">
+                    <span aria-hidden="true" className="shrink-0">{BOOKING_TYPE_ICONS[item.type]}</span>
+                    <Select value={item.type} onValueChange={(v) => updateBookingItem(item.id, { type: v as BookingServiceType })}>
+                      <SelectTrigger className="bg-slate-800 border-slate-600 text-white h-8 text-xs flex-1"><SelectValue /></SelectTrigger>
+                      <SelectContent className="bg-slate-900 border-slate-700">
+                        {BOOKING_SERVICE_TYPES.map((t) => (
+                          <SelectItem key={t} value={t} className="text-white text-xs">{translateUIText(BOOKING_TYPE_LABELS_AR[t], locale)}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <Select value={item.status} onValueChange={(v) => updateBookingItem(item.id, { status: v as BookingItem['status'] })}>
+                      <SelectTrigger className="bg-slate-800 border-slate-600 text-white h-8 text-xs w-24 shrink-0"><SelectValue /></SelectTrigger>
+                      <SelectContent className="bg-slate-900 border-slate-700">
+                        <SelectItem value="booked" className="text-white text-xs"><T>محجوز</T></SelectItem>
+                        <SelectItem value="pending" className="text-white text-xs"><T>معلق</T></SelectItem>
+                        <SelectItem value="missing" className="text-white text-xs"><T>غير موجود</T></SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <button
+                      type="button"
+                      onClick={() => removeBookingItem(item.id)}
+                      className="shrink-0 text-red-400/70 hover:text-red-400 transition-colors cursor-pointer"
+                      title={translateUIText('إزالة الحجز', locale)}
+                      aria-label={translateUIText('إزالة الحجز', locale)}
+                    >
+                      <Trash2 className="size-3.5" />
+                    </button>
+                    <span className="sr-only">{formatInteger(idx + 1, locale)}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
           <div className="space-y-2 sm:col-span-2">
             <Label className="text-slate-300"><T>ملاحظات</T></Label>
             <Textarea value={form.notes} onChange={(e) => updateForm('notes', e.target.value)} className="bg-slate-800 border-slate-600 text-white" placeholder={translateUIText('ملاحظات إضافية...', locale)} />
@@ -1008,7 +1116,12 @@ const PaginationBar = memo(function PaginationBar({
 // ═══════════════════════════════════════════════════════════════
 
 export default function TravelPage() {
-  const { canEdit, canCreate, canUpdate, canDelete, canExport } = usePermissions('travel');
+  const { canEdit, canCreate, canUpdate, canDelete, canExport, canDoAction } = usePermissions('travel');
+  // §UX-STRUCTURE PART 11 — the complaint action is gated by the
+  // COMPLAINTS page permission (create), exactly what the POST
+  // /api/complaints route enforces server-side. Frontend check only
+  // hides the affordance; enforcement stays canonical + server-side.
+  const canComplaint = canDoAction('complaints', 'create');
   const { locale } = useLanguage();
   const highlightId = useAppStore((s) => s.highlightId);
   const setHighlightId = useAppStore((s) => s.setHighlightId);
@@ -1017,25 +1130,43 @@ export default function TravelPage() {
   // Phase 6.3 (§8): filter context persists per user; an explicit
   // navigation seed (§27) wins for that mount.
   const [activeTab, setActiveTab] = useState<CategoryTab>('all');
-  // Phase 5.3 (spec §27): an evidence deep-link seeds the month filter
-  // with the RECORD's own month (server-derived meta.month), so the
-  // target deal becomes reachable inside the month-filtered list.
-  const navMonth = useAppStore((s) => {
-    const m = s.navParams.month;
-    return typeof m === 'string' && m.length === 7 && m[4] === '-' ? m : null;
-  });
+  // ── §7/§31 — Deep-link resolution (ONE pure canonical resolver) ──
+  // Home "صفقات مغلقة" passes { dateBasis: 'dealClosedAt', month, status: 'all' };
+  // Employee360 drills pass their own explicit bases; legacy links pass
+  // closedMonth (completed-by-closedAt). ANY explicit navigation intent
+  // wins over the persisted filter state for this mount — a stale
+  // persisted departure-month filter can never silently intersect the
+  // deep-linked dataset (the "7 vs 1" regression).
+  const navParams = useAppStore((s) => s.navParams);
+  const nav = resolveTravelNavLink(navParams);
+  const navMonth = nav.month;
+  const navEmployeeId = nav.employeeId;
+  const effectiveNavBasis = nav.dateBasis;
+  const effectiveNavStatus = nav.status;
   const [travelView, setTravelView, resetTravelView] = usePageState<{
     filterMonth: string;
     filterEmployee: string;
     searchQuery: string;
+    dateBasis: string;
+    statusFilter: string;
     tomorrowDeparture?: boolean;
     tomorrowReturn?: boolean;
   }>({
     page: 'travel',
     slot: 'filters',
-    version: 1,
-    initial: () => ({ filterMonth: navMonth ?? 'all', filterEmployee: 'all', searchQuery: '' }),
-    skipRestore: navMonth !== null,
+    version: 2,
+    // Phase 5.3 contract: the seed `filterMonth: navMonth ?? 'all'`
+    // stays inside the initial state (deep-link month seeds the list).
+    initial: () => ({ filterMonth: navMonth ?? 'all',
+      filterEmployee: navEmployeeId ?? 'all',
+      searchQuery: '',
+      dateBasis: effectiveNavBasis ?? 'departureDate',
+      statusFilter: effectiveNavStatus ?? 'all',
+    }),
+    // §31 — ANY explicit navigation intent wins over the persisted
+    // filter state for this mount (a stale persisted departure-month
+    // filter must never silently intersect a Home deep-link dataset).
+    skipRestore: nav.hasNavIntent,
     validate: (raw) =>
       raw && typeof raw === 'object' && typeof (raw as { filterMonth?: unknown }).filterMonth === 'string'
         ? raw
@@ -1047,6 +1178,14 @@ export default function TravelPage() {
   const setSearchQuery = (value: string) => setTravelView((v) => ({ ...v, searchQuery: value }));
   const filterEmployee = travelView.filterEmployee;
   const setFilterEmployee = (value: string) => setTravelView((v) => ({ ...v, filterEmployee: value }));
+  // §DEAL-DATES — the selected date basis (always visible in the bar).
+  const filterDateBasis: DealDateBasis = parseDealDateBasis(travelView.dateBasis) ?? 'departureDate';
+  const setFilterDateBasis = (value: DealDateBasis) => setTravelView((v) => ({ ...v, dateBasis: value }));
+  // §9 — independent status filter (الكل/تعديل/جاري/مكتمل/ملغي).
+  const statusFilter: TravelStatusFilter = (TRAVEL_STATUS_FILTERS as readonly string[]).includes(travelView.statusFilter)
+    ? (travelView.statusFilter as TravelStatusFilter)
+    : 'all';
+  const setStatusFilter = (value: TravelStatusFilter) => setTravelView((v) => ({ ...v, statusFilter: value }));
   // §TRAVEL-TOMORROW — real filters (server-side), persisted with the
   // rest of the filter context; active state is always visible.
   const tomorrowDeparture = travelView.tomorrowDeparture === true;
@@ -1090,21 +1229,16 @@ export default function TravelPage() {
     pageSize,
     tomorrowDeparture,
     tomorrowReturn,
+    dateBasis: filterDateBasis,
+    status: statusFilter,
   });
   const { data: employees = [] } = useEmployees();
 
   // §7 inline complaint form: system users for the "المسؤول" picker —
-  // the same endpoint the quick-action host and ObservationsPage use,
-  // so the inline form offers the identical picker as the Complaints page.
-  const [systemUsers, setSystemUsers] = useState<{ id: string; name: string; email?: string; role?: string }[]>([]);
-  useEffect(() => {
-    let cancelled = false;
-    authFetch('/api/dashboard/users?basic=1')
-      .then((r) => (r.ok ? r.json() : []))
-      .then((list) => { if (!cancelled) setSystemUsers((list as { id: string; name: string }[]) ?? []); })
-      .catch(() => {});
-    return () => { cancelled = true; };
-  }, []);
+  // deduped through the canonical cache (same entry as the quick-action
+  // host and every other consumer of the basic users payload).
+  const { data: systemUsersData } = useDashboardUsers('basic');
+  const systemUsers = (systemUsersData ?? []) as { id: string; name: string }[];
 
   // Extract data from server response
   const trips = (data?.data || []) as TravelWithEmployee[];
@@ -1137,7 +1271,7 @@ export default function TravelPage() {
 
   // ── Reset page when filters change — compiler-endorsed "adjust state during render"
   // guard (no effect + setState cascade) ──
-  const pageFilterTuple = [activeTab, filterEmployee, filterMonth, deferredSearch, tomorrowDeparture, tomorrowReturn] as const;
+  const pageFilterTuple = [activeTab, filterEmployee, filterMonth, deferredSearch, tomorrowDeparture, tomorrowReturn, filterDateBasis, statusFilter] as const;
   const [lastPageFilterTuple, setLastPageFilterTuple] = useState<readonly unknown[]>(pageFilterTuple);
   if (pageFilterTuple.some((v, i) => v !== lastPageFilterTuple[i])) {
     setLastPageFilterTuple(pageFilterTuple);
@@ -1149,26 +1283,45 @@ export default function TravelPage() {
     updateTravel.mutate({ id: tripId, data: { status: newStatus } });
   }, [updateTravel]);
 
-  const quickToggleService = useCallback((tripId: string, service: string) => {
-    const current = queryClient.getQueryData<any>(['travel', activeTab, filterEmployee, filterMonth, deferredSearch, page, pageSize]);
-    const trip = current?.data?.find((t: any) => t.id === tripId);
+  // §BOOKING-ITEMS — cycle ONE booking item's status. The full item
+  // list goes to the server with ONLY that item changed (item #2 never
+  // touches item #1); the server re-projects the legacy fields. The
+  // deal-level status is never touched here.
+  const quickToggleItem = useCallback((tripId: string, itemId: string) => {
+    const trip = trips.find((t) => t.id === tripId);
     if (!trip) return;
-    const statusField = `${service}Status`;
-    const hasField = `has${service.charAt(0).toUpperCase() + service.slice(1)}`;
-    const currentStatus = (trip[statusField] as string) || (trip[hasField] ? 'booked' : 'missing');
-    // Cycle: booked → pending → booked (never go to missing from the card toggle)
-    const newStatus = currentStatus === 'booked' ? 'pending' : 'booked';
-    const newHas = newStatus === 'booked';
-    updateTravel.mutate({ id: tripId, data: { [statusField]: newStatus, [hasField]: newHas } });
-  }, [updateTravel, queryClient, activeTab, filterEmployee, filterMonth, deferredSearch, page, pageSize]);
+    const items = normalizeBookingItems(trip);
+    const item = items.find((i) => i.id === itemId);
+    if (!item) return;
+    // Cycle: booked → pending → booked (never to missing from the card)
+    const nextStatus = item.status === 'booked' ? 'pending' : 'booked';
+    const nextItems = items.map((i) => (i.id === itemId ? { ...i, status: nextStatus, updatedAt: new Date().toISOString() } : i));
+    updateTravel.mutate({ id: tripId, data: { bookingItems: nextItems } });
+  }, [updateTravel, trips]);
 
   const handleSave = useCallback(() => {
+    // §DEAL-DATES — dealClosedAt goes through only when set; an empty
+    // value on a legacy edit leaves the stored value untouched (the
+    // server rejects invalid shapes and never fabricates the date).
+    // closedAt is NEVER sent — it is a server-side ledger.
+    const payload = {
+      employeeId: form.employeeId,
+      destination: form.destination,
+      departureDate: form.departureDate,
+      returnDate: form.returnDate,
+      dealClosedAt: form.dealClosedAt || undefined,
+      dealerName: form.dealerName,
+      customerNames: form.customerNames,
+      bookingItems: form.bookingItems,
+      notes: form.notes,
+      status: form.status,
+    };
     if (editingTrip) {
-      updateTravel.mutate({ id: editingTrip.id, data: form }, {
+      updateTravel.mutate({ id: editingTrip.id, data: payload }, {
         onSuccess: () => { logUpdate('travel', 'رحلة', form.destination); setEditingTrip(null); setIsAddOpen(false); setForm(emptyForm); },
       });
     } else {
-      createTravel.mutate(form, {
+      createTravel.mutate(payload, {
         onSuccess: () => { logCreate('travel', 'رحلة', form.destination); setIsAddOpen(false); setForm(emptyForm); },
       });
     }
@@ -1190,12 +1343,13 @@ export default function TravelPage() {
     setForm({
       employeeId: trip.employeeId, destination: trip.destination,
       departureDate: trip.departureDate, returnDate: trip.returnDate || '',
+      // §DEAL-DATES — legacy deals carry no dealClosedAt; the field is
+      // left empty for the authorized editor to fill with the REAL
+      // business date — never inferred from createdAt/departure/closure.
+      dealClosedAt: trip.dealClosedAt || '',
       dealerName: trip.dealerName || '', customerNames: trip.customerNames || '',
-      hasInternationalFlight: trip.hasInternationalFlight, hasDomesticFlight: trip.hasDomesticFlight, hasHotel: trip.hasHotel, hasVisa: trip.hasVisa,
-      hasTours: trip.hasTours, hasTransportation: trip.hasTransportation,
-      internationalFlightStatus: trip.internationalFlightStatus || 'missing', domesticFlightStatus: trip.domesticFlightStatus || 'missing',
-      hotelStatus: trip.hotelStatus || 'missing', visaStatus: trip.visaStatus || 'missing',
-      toursStatus: trip.toursStatus || 'missing', transportationStatus: trip.transportationStatus || 'missing',
+      // §BOOKING-ITEMS — canonical items (legacy deals normalize at read time).
+      bookingItems: normalizeBookingItems(trip),
       notes: trip.notes || '', status: trip.status,
     });
   }, []);
@@ -1221,6 +1375,8 @@ export default function TravelPage() {
     setActiveTab('all');
     setFilterEmployee('all');
     setFilterMonth('all');
+    setFilterDateBasis('departureDate');
+    setStatusFilter('all');
     setSearchQuery('');
     setPage(1);
     requestAnimationFrame(() => {
@@ -1235,8 +1391,10 @@ export default function TravelPage() {
   const clearFilters = useCallback(() => {
     // §9: clear = RESET TO PAGE DEFAULT + remove the persisted state.
     // §TRAVEL-TOMORROW: the tomorrow toggles clear with everything else.
+    // §DEAL-DATES: the date basis returns to the operational TRAVEL
+    // default and the status filter to الكل — true semantic reset.
     resetTravelView();
-    setTravelView({ filterMonth: 'all', filterEmployee: 'all', searchQuery: '', tomorrowDeparture: false, tomorrowReturn: false });
+    setTravelView({ filterMonth: 'all', filterEmployee: 'all', searchQuery: '', dateBasis: 'departureDate', statusFilter: 'all', tomorrowDeparture: false, tomorrowReturn: false });
   }, [resetTravelView, setTravelView]);
 
   const handlePageSizeChange = useCallback((newSize: number) => {
@@ -1245,6 +1403,9 @@ export default function TravelPage() {
   }, []);
 
   // ── Group current page trips by month (lightweight — only current page) ──
+  // §DEAL-DATES — the grouping month key follows the SELECTED date
+  // basis (the same semantics the server used to filter), so what the
+  // group header says and what the period filter means always agree.
   const groupedByMonth = useMemo(() => {
     if (trips.length === 0) return [];
     if (activeTab !== 'all') {
@@ -1252,19 +1413,19 @@ export default function TravelPage() {
     }
     const map = new Map<string, TravelWithEmployee[]>();
     for (const trip of trips) {
-      const key = getMonthKey(trip.departureDate);
+      const key = getDealDateMonthKey(trip, filterDateBasis) ?? 'unknown';
       if (!map.has(key)) map.set(key, []);
       map.get(key)!.push(trip);
     }
     return Array.from(map, ([key, monthTrips]) => ({
       key,
-      label: getMonthLabelFromKey(key, locale),
+      label: key === 'unknown' ? translateUIText('غير محدد', locale) : getMonthLabelFromKey(key, locale),
       trips: monthTrips,
     }));
-  }, [trips, activeTab, locale]);
+  }, [trips, activeTab, locale, filterDateBasis]);
 
   // ── Derived ──
-  const activeFiltersCount = (filterEmployee !== 'all' ? 1 : 0) + (filterMonth !== 'all' ? 1 : 0) + (tomorrowDeparture ? 1 : 0) + (tomorrowReturn ? 1 : 0);
+  const activeFiltersCount = (filterEmployee !== 'all' ? 1 : 0) + (filterMonth !== 'all' ? 1 : 0) + (tomorrowDeparture ? 1 : 0) + (tomorrowReturn ? 1 : 0) + (filterDateBasis !== 'departureDate' ? 1 : 0) + (statusFilter !== 'all' ? 1 : 0);
 
   // ── Month group renderers ──
   const renderAllMonthGroup = (group: { key: string; label: string; trips: TravelWithEmployee[] }) => {
@@ -1295,9 +1456,9 @@ export default function TravelPage() {
                 <TripCard
                   key={trip.id} trip={trip} showCategoryBadge={true}
                   isHighlighted={highlightId === trip.id} isExpanded={expandedCardId === trip.id}
-                  canEdit={canUpdate} highlightRef={highlightRef}
+                  canEdit={canUpdate} canComplaint={canComplaint} highlightRef={highlightRef}
                   onToggleExpand={handleToggleExpand} onEdit={openEdit} onDelete={setDeletingId}
-                  onQuickChangeStatus={quickChangeStatus} onQuickToggleService={quickToggleService} onReportComplaint={reportComplaint}
+                  onQuickChangeStatus={quickChangeStatus} onQuickToggleItem={quickToggleItem} onReportComplaint={reportComplaint}
                 />
               ))}
             </AnimatePresence>
@@ -1314,6 +1475,9 @@ export default function TravelPage() {
                     <TableHead className="text-slate-500 text-xs font-medium"><T>الوجهة</T></TableHead>
                     <TableHead className="text-slate-500 text-xs font-medium hidden sm:table-cell"><T>التاريخ</T></TableHead>
                     <TableHead className="text-slate-500 text-xs font-medium hidden md:table-cell"><T>العملاء</T></TableHead>
+                    {/* §DEAL-DATES — server-generated closure ledger (closedAt);
+                        historical completions without one stay explicitly unknown. */}
+                    <TableHead className="text-slate-500 text-xs font-medium hidden lg:table-cell"><T>الإغلاق</T></TableHead>
                     <TableHead className="text-slate-500 text-xs font-medium"><T>الحالة</T></TableHead>
                     {(canUpdate || canDelete) && <TableHead className="w-16" />}
                   </TableRow>
@@ -1325,6 +1489,13 @@ export default function TravelPage() {
                       <TableCell className="text-slate-300 text-xs">{trip.destination}</TableCell>
                       <TableCell className="text-slate-400 text-xs hidden sm:table-cell" dir="ltr">{trip.departureDate}</TableCell>
                       <TableCell className="text-slate-400 text-xs hidden md:table-cell truncate max-w-36">{trip.customerNames || '—'}</TableCell>
+                      <TableCell className="hidden lg:table-cell">
+                        {trip.closedAt ? (
+                          <span className="text-emerald-400 text-xs" dir="ltr">{formatDateTime(trip.closedAt, locale)}</span>
+                        ) : (
+                          <span className="text-amber-400/80 text-[11px]"><T>غير معروف</T></span>
+                        )}
+                      </TableCell>
                       <TableCell><StatusBadge status={trip.status} /></TableCell>
                       {(canUpdate || canDelete) && (
                         <TableCell>
@@ -1432,9 +1603,9 @@ export default function TravelPage() {
               <TripCard
                 key={trip.id} trip={trip} showCategoryBadge={false}
                 isHighlighted={highlightId === trip.id} isExpanded={expandedCardId === trip.id}
-                canEdit={canUpdate} highlightRef={highlightRef}
+                canEdit={canUpdate} canComplaint={canComplaint} highlightRef={highlightRef}
                 onToggleExpand={handleToggleExpand} onEdit={openEdit} onDelete={setDeletingId}
-                onQuickChangeStatus={quickChangeStatus} onQuickToggleService={quickToggleService} onReportComplaint={reportComplaint}
+                onQuickChangeStatus={quickChangeStatus} onQuickToggleItem={quickToggleItem} onReportComplaint={reportComplaint}
               />
             ))}
           </AnimatePresence>
@@ -1581,7 +1752,9 @@ export default function TravelPage() {
         }
         primaryAction={canCreate ? {
           label: translateUIText('إضافة رحلة', locale),
-          onClick: () => { setForm(emptyForm); setEditingTrip(null); setIsAddOpen(true); },
+          // §DEAL-DATES — dealClosedAt defaults to TODAY at open time
+          // (not module load), per the DEFAULT DATE = TODAY doctrine.
+          onClick: () => { setForm({ ...emptyForm, dealClosedAt: todayDisplayDate() }); setEditingTrip(null); setIsAddOpen(true); },
         } : undefined}
         actions={canCreate ? (
           <Button onClick={() => setIsUploadOpen(true)} variant="outline" className="border-amber-500/30 text-amber-400 hover:bg-amber-500/10">
@@ -1712,6 +1885,39 @@ export default function TravelPage() {
             <PlaneLanding className="size-3.5" />
             <T>العملاء العائدون غدًا</T>
           </button>
+          {/* §DEAL-DATES — أساس التاريخ: WHICH canonical date the period
+              means (تقفيل الديل / السفر / التسجيل / الاكتمال). Always
+              visible; never mixed with the status filter. */}
+          <span className="text-xs text-slate-500"><T>أساس التاريخ:</T></span>
+          <Select value={filterDateBasis} onValueChange={(v) => setFilterDateBasis(parseDealDateBasis(v) ?? 'departureDate')}>
+            <SelectTrigger className="bg-slate-800/50 border-slate-700/50 text-white h-8 w-40 text-xs">
+              <CalendarDays className="size-3.5 ml-1 text-emerald-400" />
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {DEAL_DATE_BASES.map((basis) => (
+                <SelectItem key={basis} value={basis} className="text-white text-xs">
+                  {translateUIText(DEAL_DATE_BASIS_LABELS_AR[basis], locale)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {/* §9 — الحالة: independent current-status filter (الكل /
+              تعديل / جاري / مكتمل / ملغي). Orthogonal to the date basis:
+              (تقفيل الديل + الكل + شهر) shows ALL deals closed with
+              employees that month regardless of current status. */}
+          <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as TravelStatusFilter)}>
+            <SelectTrigger className="bg-slate-800/50 border-slate-700/50 text-white h-8 w-32 text-xs">
+              <Filter className="size-3.5 ml-1 text-slate-400" />
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all" className="text-white text-xs"><T>الحالة: الكل</T></SelectItem>
+              {statusConfig.map((s) => (
+                <SelectItem key={s.key} value={s.key} className="text-white text-xs"><T>{s.label}</T></SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
           {activeFiltersCount > 0 && (
             <Button variant="ghost" onClick={clearFilters} className="text-slate-500 hover:text-red-400 text-xs h-8 px-2">
               <XCircle className="size-3" /> <T>مسح الفلاتر</T>
@@ -1767,6 +1973,7 @@ export default function TravelPage() {
         form={form} setForm={setForm}
         employees={employees} saving={createTravel.isPending}
         onSave={handleSave}
+        editingTrip={null}
       />
       <TripFormDialog
         title={`${translateUIText('تعديل', locale)}: ${editingTrip?.destination ?? ''}`}
@@ -1775,6 +1982,7 @@ export default function TravelPage() {
         form={form} setForm={setForm}
         employees={employees} saving={updateTravel.isPending}
         onSave={handleSave}
+        editingTrip={editingTrip}
       />
       <DeleteConfirmDialog
         open={!!deletingId}

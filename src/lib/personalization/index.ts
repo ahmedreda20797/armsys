@@ -27,6 +27,7 @@
 // ══════════════════════════════════════════════════════════════
 
 import type { WidgetConfig } from '@/config/dashboard-widgets';
+import { sanitizeSidebarLayoutPayload, type SidebarLayout } from '@/lib/personalization/sidebar-layout';
 
 /** RTDB table: arm_erp/userPreferences/{userId} — ONE record per user. */
 export const USER_PREFERENCES_TABLE = 'userPreferences';
@@ -110,6 +111,14 @@ export interface PinEntry extends NavigationDescriptor {
 export interface UserPreferences {
   userId?: string;
   sidebar?: SidebarPreferences;
+  /**
+   * §SIDEBAR-WORKSPACE — the Personalizable Navigation Workspace layout:
+   * groups of REFERENCES to navigation items (never labels/routes/
+   * permissions). Presentation state only — authorization is always
+   * re-applied on read (reconcileSidebarLayout). Typed via
+   * lib/personalization/sidebar-layout (the pure layout engine).
+   */
+  sidebarLayout?: SidebarLayout | null;
   dashboard?: DashboardPreferences;
   favorites?: FavoriteEntry[];
   pins?: PinEntry[];
@@ -143,11 +152,43 @@ export function reconcileSidebarOrder(
   });
 }
 
+// ─── §UX-STRUCTURE 12C — DEFAULT_LAYOUT vs PERSISTED_USER_LAYOUT ───
+//
+// ONE reconciliation used by every consumer (the home workspace, the
+// customizer, tests): while a user has NO explicit dashboard
+// customization, the registry's `defaultVisible` decides; the moment
+// any explicit hidden/order exists, THE USER'S SAVED SET ALONE
+// applies (a saved customization must never be silently blended with
+// defaults). Hydration order lives in the hook layer: authenticated
+// user → load persisted → validate (sanitizer on write) → apply.
+
+/** The registry ids hidden by DEFAULT (defaultVisible: false). */
+export function defaultHiddenWidgetIds(widgets: WidgetConfig[]): Set<string> {
+  return new Set(widgets.filter((w) => !w.defaultVisible).map((w) => w.id));
+}
+
+/**
+ * The EFFECTIVE hidden set for a user's preferences:
+ *   • explicit customization exists (any saved hidden/order) →
+ *     exactly the saved hidden set;
+ *   • otherwise → the registry default visibility.
+ */
+export function effectiveHiddenWidgets(
+  widgets: WidgetConfig[],
+  preferences: UserPreferences | null | undefined,
+): Set<string> {
+  const savedHidden = preferences?.dashboard?.hiddenWidgets ?? [];
+  const savedOrder = preferences?.dashboard?.widgetOrder ?? [];
+  const hasExplicitPrefs = savedHidden.length > 0 || savedOrder.length > 0;
+  if (hasExplicitPrefs) return new Set(savedHidden);
+  return defaultHiddenWidgetIds(widgets);
+}
+
 /**
  * Resolve the effective dashboard widget layout:
- *   permitted widgets → apply default visibility → apply the user's
- *   hidden set → sort by the user's order (unknown ids append in
- *   registry order).
+ *   permitted widgets → apply the EFFECTIVE hidden set
+ *   (default visibility until the user saves their own) → sort by
+ *   the user's order (unknown ids append in registry order).
  *
  * `isWidgetPermitted` is the PERMISSION gate (step 1) supplied by
  * the caller from usePermissions — personalization cannot override
@@ -159,7 +200,7 @@ export function resolveWidgetLayout(
   preferences: UserPreferences | null | undefined,
   isWidgetPermitted: (widget: WidgetConfig) => boolean,
 ): WidgetConfig[] {
-  const hidden = new Set(preferences?.dashboard?.hiddenWidgets ?? []);
+  const hidden = effectiveHiddenWidgets(widgets, preferences);
   const order = preferences?.dashboard?.widgetOrder;
 
   const available = widgets.filter((w) => isWidgetPermitted(w));
@@ -170,7 +211,7 @@ export function resolveWidgetLayout(
   }
   const rank = new Map<string, number>();
   order.forEach((id, idx) => {
-    if (!rank.has(id)) rank.set(id, idx);
+    if (!rank.has(id)) rank.set(id, idx); // first occurrence wins
   });
   return [...visible].sort((a, b) => {
     const ra = rank.has(a.id) ? rank.get(a.id)! : Number.MAX_SAFE_INTEGER;
@@ -341,6 +382,11 @@ export function sanitizeUserPreferencesInput(body: unknown): UserPreferences | n
       };
     }
   }
+  // §SIDEBAR-WORKSPACE — the navigation workspace layout (groups of
+  // item references). Structural whitelist only; the read path
+  // re-reconciles against CURRENT permissions (never an access source).
+  const sidebarLayout = sanitizeSidebarLayoutPayload(raw.sidebarLayout);
+  if (sidebarLayout) out.sidebarLayout = sidebarLayout;
   if (raw.dashboard && typeof raw.dashboard === 'object' && !Array.isArray(raw.dashboard)) {
     const dash = raw.dashboard as Record<string, unknown>;
     const hiddenWidgets = sanitizeIdArray(dash.hiddenWidgets);

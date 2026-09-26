@@ -16,6 +16,7 @@
 
 import { useMemo } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
+import { invalidateDomain } from '@/lib/cache/invalidation';
 import {
   CheckCircle2, ChevronLeft, Clock, Loader2, UserRound, Users, XCircle,
 } from 'lucide-react';
@@ -98,9 +99,10 @@ export function HomeStatDetailDialog({
       });
       if (res.ok) {
         toast.success(action === 'approved' ? 'تمت الموافقة' : 'تم الرفض');
-        await qc.invalidateQueries({ queryKey: ['home-stats'] });
-        await qc.invalidateQueries({ queryKey: ['homeStats'] });
-        await qc.invalidateQueries({ queryKey: ['requests'] });
+        // Canonical keys — the old ['home-stats'] / ['homeStats'] keys
+        // never matched the live ['home','stats'] entry (§CACHE-KEYS).
+        await invalidateDomain(qc, 'requests');
+        await invalidateDomain(qc, 'homeStats');
       } else {
         toast.error('تعذر تنفيذ القرار');
       }

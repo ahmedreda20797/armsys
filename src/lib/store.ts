@@ -75,15 +75,15 @@ interface PageScoped<T> {
 //      expanded = full surface (288px, page names visible)
 //      collapsed = icon rail (72px, Q + icons)
 //
-//  PERSISTENCE (existing user-specific architecture): the pin state
+//  PERSISTENCE (existing user-specific architecture): the PIN axis
 //  maps onto the existing `sidebar.pinOpen` preference —
-//    pinOpen === true   → pinned + expanded  (the user pinned it open)
-//    pinOpen === false  → unpinned           (the user unpinned it)
-//    pinOpen === undefined → legacy default: pinned rail (the
-//      pre-V2 default was the collapsed rail pinned in layout).
+//    pinOpen === false  → unpinned (legacy V2 explicit unpin; drawer mode)
+//    pinOpen === true / undefined → pinned (the §SIDEBAR-V3 default)
 //  The expanded/collapsed width choice is SESSION state (part of the
 //  same store) so collapsing to the rail is instant and never fights
-//  the persisted pin choice.
+//  the persisted pin choice. It is deliberately NEVER written into
+//  pinOpen: presentation must not corrupt the persisted pin axis
+//  (collapse-once → reload-as-drawer was the §10 leak, now removed).
 // ══════════════════════════════════════════════════════════════
 
 /**
@@ -101,9 +101,10 @@ export function resolveInitialSidebarState(pinOpen: boolean | undefined | null):
   expanded: boolean;
 } {
   // Default: pinned in layout, collapsed to rail (icons only)
-  // pinOpen === true  → user explicitly pinned expanded (legacy)
-  // pinOpen === false → user explicitly unpinned (drawer mode)
-  // pinOpen === undefined (default) → pinned + collapsed (NEW DEFAULT)
+  // pinOpen === false → legacy V2 explicit unpin (drawer mode)
+  // pinOpen === true / undefined (default) → pinned + collapsed rail
+  // (the expanded/collapsed width choice is SESSION state — never
+  // persisted, so it can never corrupt the pin axis).
   if (pinOpen === false) return { pinned: false, expanded: false };
   return { pinned: true, expanded: false };
 }

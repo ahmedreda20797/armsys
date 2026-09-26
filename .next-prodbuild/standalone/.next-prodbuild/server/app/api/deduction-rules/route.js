@@ -1,9 +1,10 @@
 var R=require("../../../chunks/[turbopack]_runtime.js")("server/app/api/deduction-rules/route.js")
-R.c("server/chunks/[root-of-the-server]__0_5cj-u._.js")
+R.c("server/chunks/_0oupltd._.js")
 R.c("server/chunks/src_03zg4r8._.js")
-R.c("server/chunks/_0b57xqx._.js")
+R.c("server/chunks/[root-of-the-server]__098igru._.js")
 R.c("server/chunks/[root-of-the-server]__0vxxedz._.js")
 R.c("server/chunks/_0-2dxey._.js")
+R.c("server/chunks/_0b57xqx._.js")
 R.c("server/chunks/_next-internal_server_app_api_deduction-rules_route_actions_0b00k_k.js")
 R.m(92713)
 module.exports=R.m(92713).exports

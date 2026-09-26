@@ -1,6 +1,5 @@
 ﻿node_modules/
 .next/
-/upload/
 swapfile
 *.db
 .turbo/
@@ -8,3 +7,5 @@ tsconfig.tsbuildinfo
 bun.lock
 .env*
 .vercel
+.next-prodbuild/
+.scratch/

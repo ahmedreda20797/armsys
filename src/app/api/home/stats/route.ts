@@ -7,9 +7,12 @@ import {
 import { requireAuth } from '@/lib/verify-permission';
 import { isOverdueFollowUp } from '@/lib/metrics';
 import { isEffectiveDeduction, deductionTypeLabel } from '@/lib/quality-deductions/domain';
-import { isActiveFollowUp, isTerminalFollowUp } from '@/lib/metrics/followUpMetrics';
+import { isActiveFollowUp, isTerminalFollowUp, isDueToday } from '@/lib/metrics/followUpMetrics';
 import { filterEmployeesInScope, authScopeViewer, filterRowsByEmployeeScope, resolveEmployeeScopeFromDb } from '@/lib/scope/server';
-import { getDealBusinessDate, getDealMonthKey, isCompletedDeal, countClosedDealsForMonth } from '@/lib/deal-dates';
+// §DEAL-DATES — canonical deal date dimensions + the ONE canonical
+// deal metrics builder (Home and Travel answer deal questions through
+// the same builder — the summary count and the detail dataset cannot drift).
+import { getDealBusinessDate, getDealMonthKey, isCompletedDeal, buildDealMetrics } from '@/lib/deal-dates';
 import { migratePermission } from '@/config/permissions';
 
 function getTodayStr(): string {
@@ -113,15 +116,21 @@ interface TopOffender {
    ═══════════════════════════════════════════════════════════════════ */
 
 interface ClosedDealSummary {
-  /** Completed deals whose CLOSED date falls in the current month. */
+  /** §DEAL-DATES (DEAL_CLOSED) — deals CLOSED WITH THE EMPLOYEE
+   *  (dealClosedAt) during the current month, ANY current status.
+   *  "صفقة مغلقة" = closed with the employee, NOT completed-travel. */
   closedThisMonth: number;
-  /** Completed deals whose CLOSED date is unknown (no closedAt). */
+  /** Deals whose deal-closure date is unknown (legacy records) —
+   *  surfaced, never attributed to a month. */
   closedUnknown: number;
+  /** §DEAL-DATES (CLOSED) — deals COMPLETED (closedAt) during the
+   *  month. A DIFFERENT metric, never merged with closedThisMonth. */
+  completedThisMonth: number;
   /** Total value/amount if available (placeholder for future). */
   totalValue: number;
   /** Period label (YYYY-MM) */
   monthKey: string;
-  /** Freshness: when the last closedAt was observed (ISO) */
+  /** Freshness: the latest dealClosedAt in the dataset (DD/MM/YYYY) */
   lastUpdated: string | null;
 }
 
@@ -422,6 +431,15 @@ export async function GET(request: NextRequest) {
 
     const completedTravelCount = travelDeals.filter((d: any) => d.status === 'completed').length;
     const inProgressTravelCount = travelDeals.filter((d: any) => d.status === 'in_progress').length;
+    // §DEAL-DATES — "العمل المكتمل" in a period context is attributed by
+    // the TRAVEL dimension (departureDate month): completed trips of the
+    // current month's travel operations. The all-time status snapshot
+    // (completedTravelCount) is never shown next to month-scoped
+    // metrics; and the CLOSED dimension (closedAt) is the separate
+    // صفقات مغلقة card — the two never substitute for each other.
+    const completedTravelThisMonth = travelDeals.filter(
+      (d: any) => d.status === 'completed' && getDealMonthKey(d, 'TRAVEL') === currentMonthKey,
+    ).length;
 
     // --- Late employees (in-memory filter) ---
     const lateEmployeesRaw = todayRecords.filter((r: any) => r.status === 'late');
@@ -491,9 +509,15 @@ export async function GET(request: NextRequest) {
     const biometricRecordCount = allBiometrics.length;
 
     // --- Today's follow-ups (scheduled for today) ---
-    const todayISO = new Date().toISOString().split('T')[0];
+    // §26 DATA ACCURACY — the SAME canonical predicate the Follow-ups
+    // page and performance-intelligence use (isDueToday = active status
+    // + nextFollowUpDate === today). The old inline filter tested
+    // status against 'open' | 'in_progress' — 'in_progress' does not
+    // exist in the follow-up vocabulary and 'under_review' /
+    // 'under_follow_up' were silently dropped, so Home undercounted
+    // the records the Follow-ups page shows.
     const todaysFollowUps = allFollowUps
-      .filter((f: any) => f.nextFollowUpDate === todayISO && (f.status === 'open' || f.status === 'in_progress'))
+      .filter((f: any) => isDueToday(f))
       .map((f: any) => {
         const emp = empMap.get(f.employeeId);
         const resp = empMap.get(f.responsiblePerson);
@@ -575,24 +599,33 @@ export async function GET(request: NextRequest) {
       capa: canViewPage('capa'),
     };
 
-    // --- Closed deals summary (CLOSED dimension per deal-dates.ts) ---
+    // --- Closed deals summary (§DEAL-DATES via the ONE canonical
+    // metrics builder — the SAME semantics the Travel detail view
+    // applies, so the count and the deep-linked dataset cannot drift) ---
+    // "الصفقات المغلقة" = deals CLOSED WITH THE EMPLOYEE (dealClosedAt)
+    // during the month, ANY current status (§12: a deal closed in
+    // September and still جاري counts here; a completed deal whose
+    // closure-with-employee was in September counts here even if it
+    // completed in October). Completion-month numbers (closedAt) are
+    // the separate completedThisMonth — the two never merge.
     const completedDeals = travelDeals.filter((d: any) => isCompletedDeal(d));
     const closedDealSummary: ClosedDealSummary = viewerCan.travel
       ? (() => {
-          const counts = countClosedDealsForMonth(completedDeals, currentMonthKey);
-          const lastClosedAt = completedDeals
-            .map((d: any) => getDealBusinessDate(d, 'CLOSED'))
-            .filter((d: string | null): d is string => !!d)
-            .reduce((latest: string | null, d: string) => (!latest || d > latest ? d : latest), null);
+          const metrics = buildDealMetrics(travelDeals, { periodMonthKey: currentMonthKey });
+          const lastClosed = travelDeals
+            .map((d: any) => (typeof d.dealClosedAt === 'string' ? d.dealClosedAt : ''))
+            .filter(Boolean)
+            .reduce((latest: string, d: string) => (parseDateToSortable(d) > parseDateToSortable(latest) ? d : latest), '');
           return {
-            closedThisMonth: counts.closed,
-            closedUnknown: counts.unknown,
+            closedThisMonth: metrics.closedWithEmployeeInPeriod,
+            closedUnknown: metrics.closedWithEmployeeUnknownMonth,
+            completedThisMonth: metrics.completedInPeriod,
             totalValue: 0,
             monthKey: currentMonthKey,
-            lastUpdated: lastClosedAt,
+            lastUpdated: lastClosed || null,
           };
         })()
-      : { closedThisMonth: 0, closedUnknown: 0, totalValue: 0, monthKey: currentMonthKey, lastUpdated: null, unavailable: true } as ClosedDealSummary & { unavailable: boolean };
+      : { closedThisMonth: 0, closedUnknown: 0, completedThisMonth: 0, totalValue: 0, monthKey: currentMonthKey, lastUpdated: null, unavailable: true } as ClosedDealSummary & { unavailable: boolean };
 
     // --- Timeline events (real operational events from existing data) ---
     // §17 NO FAKE DATA — every event is a real stored record attributed
@@ -848,7 +881,8 @@ export async function GET(request: NextRequest) {
       targetScore: null,
       progress: null,
       trend: [],
-      completedWork: completedTravelCount,
+      // §DEAL-DATES — month-scoped completed trips (TRAVEL dimension).
+      completedWork: completedTravelThisMonth,
       followUpCompletionRate: totalTrackedFollowUps > 0
         ? Math.round((completedFollowUps / totalTrackedFollowUps) * 100)
         : 0,
@@ -886,6 +920,7 @@ export async function GET(request: NextRequest) {
       requestTypeSummary,
       activeTravel: upcomingTravel.length,
       completedTravelCount,
+      completedTravelThisMonth,
       inProgressTravelCount,
       upcomingTravel,
       lateEmployees,

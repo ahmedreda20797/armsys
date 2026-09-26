@@ -72,10 +72,16 @@ export async function GET(request: NextRequest) {
     if (dateFrom) records = records.filter((r) => r.createdAt >= dateFrom);
     if (dateTo) records = records.filter((r) => r.createdAt <= dateTo + 'T23:59:59.999Z');
 
-    // Sort by createdAt descending (newest first)
-    records.sort(
-      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-    );
+    // Sort by createdAt descending (newest first). NaN-safe: a record
+    // with a missing/invalid createdAt must not poison the comparator
+    // (NaN comparisons scatter arbitrary records deep into the list —
+    // observed live: a valid notification became unreachable in the
+    // unfiltered panel), it simply sorts as oldest.
+    const ts = (v: AppNotification): number => {
+      const t = new Date(v.createdAt ?? '').getTime();
+      return Number.isFinite(t) ? t : 0;
+    };
+    records.sort((a, b) => ts(b) - ts(a));
 
     // §16 — the TRUE unread count (over ALL visible notifications,
     // before the date/limit windows) so the bell badge can never

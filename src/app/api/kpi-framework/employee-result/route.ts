@@ -12,7 +12,10 @@
 //            | 'NOT_ELIGIBLE_PERIOD' | 'NO_SCHEME' | 'AMBIGUOUS'
 //            | 'OVERRIDE_NOT_RESOLVABLE',
 //      resolution: KpiSchemeResolution | null,
-//      result: EmployeeKpiResult | null
+//      result: EmployeeKpiResult | null,
+//      performanceSignals: {
+//        closedDeals: { count, unknownClosure, monthKey, dimension: 'CLOSED' }
+//      }   — canonical non-weighted performance signal (§DEAL-DATES)
 //    }
 //
 //  Employee NOT found → 404 (anti-enumeration, same as
@@ -27,6 +30,10 @@ import {
 import { computeEmployeeKpiResult } from '@/lib/kpi-framework';
 import { validateMonthKey } from '@/lib/month-utils';
 import { employeeInScope, authScopeViewer } from '@/lib/scope/server';
+import { getAll, TTL } from '@/lib/db';
+// §DEAL-DATES — the ONE canonical closed-deal calculation.
+import { countClosedDealsForMonth } from '@/lib/deal-dates';
+import type { TravelDeal } from '@/types';
 
 export async function GET(request: NextRequest) {
   try {
@@ -52,12 +59,33 @@ export async function GET(request: NextRequest) {
       return notFoundError('الموظف غير موجود');
     }
 
+    // §4.3 CANONICAL PERFORMANCE SIGNAL — the employee's closed-deal
+    // output for the evaluation month (CLOSED dimension: closedAt),
+    // computed by the one canonical helper (deal-dates) inside the
+    // caller's already-enforced employee scope. This is a SIGNAL for
+    // the target/performance evaluation layer — it is deliberately NOT
+    // weighted into any KPI component: the default scheme's `target`
+    // component is calculationType 'none' (PENDING placeholder), and
+    // inventing a conversion would fabricate a business rule.
+    const empTravelDeals = (await getAll<TravelDeal>('travelDeals', TTL.MEDIUM))
+      .filter((d) => d.employeeId === employeeId);
+    const closedCounts = countClosedDealsForMonth(empTravelDeals, month);
+
     return Response.json({
       employeeId: outcome.employeeId,
       month: outcome.period,
       status: outcome.status,
       resolution: outcome.resolution,
       result: outcome.result,
+      // Canonical performance signals (dimension-labeled, non-weighted).
+      performanceSignals: {
+        closedDeals: {
+          count: closedCounts.closed,
+          unknownClosure: closedCounts.unknown,
+          monthKey: month,
+          dimension: 'CLOSED',
+        },
+      },
     });
   } catch (error) {
     logServerFailure('kpi-framework/employee-result', 'GET', error);

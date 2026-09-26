@@ -333,6 +333,27 @@ export async function updateRecord(table: string, id: string, data: Record<strin
   return getById(table, id);
 }
 
+/**
+ * Bulk patch of MANY records of one table in a SINGLE RTDB multi-path
+ * update (one round-trip, one cache invalidation). `updatesById` maps
+ * record id → shallow patch merged into that record; unspecified
+ * siblings are never touched (RTDB update() semantics per path).
+ * The canonical writer for "mark all notifications read" — never a
+ * sequential per-id updateRecord() fan-out.
+ */
+export async function updateRecords(table: string, updatesById: Record<string, Record<string, any>>): Promise<number> {
+  const ids = Object.keys(updatesById);
+  if (ids.length === 0) return 0;
+  const now = new Date().toISOString();
+  const multiPath: Record<string, Record<string, any>> = {};
+  for (const id of ids) {
+    multiPath[id] = { ...updatesById[id], updatedAt: now };
+  }
+  await rtdbRef(`arm_erp/${table}`).update(multiPath);
+  invalidateCache(table);
+  return ids.length;
+}
+
 export async function deleteRecord(table: string, id: string): Promise<void> {
   await rtdbRef(`arm_erp/${table}/${id}`).remove();
   invalidateCache(table);

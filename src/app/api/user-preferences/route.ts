@@ -38,6 +38,7 @@ export async function GET(request: NextRequest) {
     return Response.json({
       userId: auth.userId,
       sidebar: record?.sidebar ?? {},
+      sidebarLayout: record?.sidebarLayout ?? null,
       dashboard: record?.dashboard ?? {},
       favorites: record?.favorites ?? [],
       pins: record?.pins ?? [],
@@ -71,6 +72,7 @@ export async function PUT(request: NextRequest) {
     // flags namespace merges per-key (§10 alert collapse state).
     const merged: UserPreferences = {
       sidebar: { ...(existing?.sidebar ?? {}), ...(sanitized.sidebar ?? {}) },
+      sidebarLayout: sanitized.sidebarLayout ?? existing?.sidebarLayout ?? null,
       dashboard: { ...(existing?.dashboard ?? {}), ...(sanitized.dashboard ?? {}) },
       favorites: sanitized.favorites ?? existing?.favorites ?? [],
       pins: sanitized.pins ?? existing?.pins ?? [],

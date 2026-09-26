@@ -1,7 +1,7 @@
 'use client';
 
 // ══════════════════════════════════════════════════════════════
-//  Sidebar — enterprise navigation surface (§SIDEBAR-V2)
+//  Sidebar — Personalizable Navigation Workspace (§SIDEBAR-V2 + §SIDEBAR-WORKSPACE)
 //
 //  TWO INDEPENDENT AXES (store §SIDEBAR-V2):
 //    PINNED ⇄ UNPINNED  — layout: pinned = sticky in-flow column the
@@ -13,9 +13,19 @@
 //      rail (72). Hover on the rail temporarily expands it as an
 //      overlay (z-40) WITHOUT touching content width.
 //
-//  §2  CUSTOMIZATION HAPPENS HERE: the ⋮ menu enters in-place EDIT
-//      MODE — drag handles on the real items, [إلغاء]/[حفظ] finish.
-//      ORDER ONLY (reconcileSidebarOrder — permissions always win).
+//  §SIDEBAR-WORKSPACE — the navigation structure comes from the
+//  USER'S LAYOUT (useSidebarLayout): groups of REFERENCES into the
+//  canonical, permission-filtered navigation registry. The registry
+//  stays the single source of truth for labels/icons/routes/
+//  permissions; the layout only answers "which group, which order".
+//  A user without a layout gets ONE main group in registry order;
+//  legacy §21 preferences (order/groupOrder/itemGroups) migrate
+//  once, inside the hook.
+//
+//  §2 CUSTOMIZATION happens in a dedicated EDIT MODE
+//  (SidebarEditNav): draft-based pointer drag & drop, group
+//  create/rename/delete/reset, persisted only on Done. Normal mode
+//  never drags — no handles, no drop targets.
 //
 //  §SIDEBAR-STATE group open/closed state persists through surface
 //      swaps AND reloads (localStorage mirror) — collapsing the
@@ -30,74 +40,43 @@ import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react'
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  LayoutDashboard,
-  Users,
-  Fingerprint,
-  Clock,
-  FileText,
-  Scale,
-  Award,
-  Banknote,
-  Plane,
-  BarChart3,
-  Settings,
-  Database,
   X,
   ChevronRight,
   ChevronLeft,
-  ClipboardCheck,
-  ShieldCheck,
-  MessageSquareWarning,
-  BookOpen,
-  AlertTriangle,
-  Monitor,
-  Bell,
-  Zap,
-  Shield,
-  Workflow,
-  Eye,
-  Tags,
-  FilePlus2,
-  Gauge,
-  CalendarCog,
-  Settings2,
-  ScrollText,
-  FileWarning,
-  Network,
-  FileBarChart,
-  FileSearch,
-  SlidersHorizontal,
+  ChevronDown,
+  ChevronUp,
   MoreVertical,
   RotateCcw,
-  GripVertical,
-  ArrowUp,
-  ArrowDown,
   Star,
   Pin as PinIcon,
-  Save,
-  Loader2,
+  Folder,
+  SlidersHorizontal,
 } from 'lucide-react';
-import { usePermissions } from '@/hooks/usePermissions';
-import { useSidebarPages } from '@/hooks/use-sidebar-order';
 import { useUnseenCounts, unseenCountOf, pendingCountOf } from '@/hooks/use-unseen';
 import { SidebarActivityBadge } from '@/components/shared/SidebarActivityBadge';
 import { useIsMobile, useIsDesktop } from '@/hooks/use-mobile';
-import { SIDEBAR_GROUPS, APP_PAGES, localizedPageLabel, localizedGroupLabel } from '@/config/permissions';
+import { APP_PAGES, localizedPageLabel } from '@/config/permissions';
 import { useLanguage } from '@/lib/i18n/language-context';
-import { MenuCustomizationDialog } from '@/components/shared/MenuCustomizationDialog';
 import { useAppStore, resolveInitialSidebarState } from '@/lib/store';
 import { SidebarLogo } from '@/components/layout/SidebarLogo';
+import { SidebarGroupFrame } from '@/components/layout/SidebarGroupFrame';
+import { SIDEBAR_ICON_MAP } from '@/components/layout/sidebar-icons';
+import { SidebarEditNav } from '@/components/layout/SidebarEditNav';
 import {
   useUserPreferences,
-  useSaveUserPreferences,
 } from '@/hooks/use-user-preferences';
+import { useSidebarLayout } from '@/hooks/use-sidebar-layout';
 import {
-  reconcileSidebarOrder,
   reconcileNavigationEntries,
   type FavoriteEntry,
   type NavigationDescriptor,
   type PinEntry,
 } from '@/lib/personalization';
+import {
+  createDefaultLayout,
+  sidebarGroupLabel,
+  type SidebarLayout,
+} from '@/lib/personalization/sidebar-layout';
 import {
   useFavoriteToggleAction,
   usePinToggleAction,
@@ -111,56 +90,33 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
 import { toast } from 'sonner';
-import type { LucideIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
-
-/** §SIDEBAR-STATE — localStorage mirror for group expanded/collapsed
- *  state (Bitrix-style: navigation state survives reloads; loaded
- *  post-mount so SSR markup and client markup stay identical). */
-const SIDEBAR_GROUPS_STORAGE_KEY = 'arm-erp:sidebar:collapsedGroups';
-
-const ICON_MAP: Record<string, LucideIcon> = {
-  LayoutDashboard,
-  Users,
-  Fingerprint,
-  Clock,
-  FileText,
-  Scale,
-  Award,
-  Banknote,
-  Plane,
-  BarChart3,
-  Settings,
-  Database,
-  ClipboardCheck,
-  ShieldCheck,
-  MessageSquareWarning,
-  BookOpen,
-  AlertTriangle,
-  Monitor,
-  Bell,
-  Zap,
-  Shield,
-  Workflow,
-  Eye,
-  Tags,
-  FilePlus2,
-  Gauge,
-  CalendarCog,
-  Settings2,
-  ScrollText,
-  FileWarning,
-  Network,
-  FileBarChart,
-  FileSearch,
-};
 
 /** Page id → config (current-page ⭐/📌 descriptors in the ⋮ menu). */
 const APP_PAGES_BY_ID = new Map(APP_PAGES.map((p) => [p.id, p]));
 
 const WIDTH_COLLAPSED = 72;
 const WIDTH_EXPANDED = 288;
+
+/** §27 SHOW-ALL — per-group preview cap in BOTH surfaces. A group
+ *  longer than CAP + 1 renders its first CAP items plus a "Show all"
+ *  control; the active page ALWAYS forces a full reveal (the current
+ *  location is never hidden behind overflow). */
+const GROUP_PREVIEW_ITEMS = 6;
+
+/**
+ * §27 — the visible slice of one group's pages. Groups at or under
+ * CAP + 1 never overflow (no "+1" button for a single item); a
+ * revealed or active group shows everything. Pure.
+ */
+function previewSlice<T>(pages: readonly T[], revealed: boolean): { shown: T[]; hiddenCount: number } {
+  if (revealed || pages.length <= GROUP_PREVIEW_ITEMS + 1) {
+    return { shown: [...pages], hiddenCount: 0 };
+  }
+  return { shown: pages.slice(0, GROUP_PREVIEW_ITEMS), hiddenCount: pages.length - GROUP_PREVIEW_ITEMS };
+}
 
 // ══════════════════════════════════════════════════════════════
 //  Fixed-position Tooltip — rendered in a portal so it NEVER
@@ -244,14 +200,6 @@ function SidebarTooltip({ label, children }: { label: string; children: React.Re
   );
 }
 
-/** Array move preserving all other indices (ORDER ONLY). */
-function moveItem(list: string[], from: number, to: number): string[] {
-  const next = [...list];
-  const [item] = next.splice(from, 1);
-  next.splice(to, 0, item);
-  return next;
-}
-
 // ══════════════════════════════════════════════════════════════
 //  Workspace entries (⭐ Favorites / 📌 Pins) — dedicated section
 // ══════════════════════════════════════════════════════════════
@@ -281,7 +229,7 @@ function WorkspaceSection<T extends NavigationDescriptor & { id: string }>({
           // §ICON-PARITY — each entry shows ITS OWN page icon (looked up
           // from the page registry), not the section's star/pin glyph
           // (the section header already carries that).
-          const EntryIcon = ICON_MAP[APP_PAGES_BY_ID.get(entry.route)?.icon ?? ''];
+          const EntryIcon = SIDEBAR_ICON_MAP[APP_PAGES_BY_ID.get(entry.route)?.icon ?? ''];
           // §I18N-BILINGUAL — the stored label is a page-title snapshot;
           // the registry-localized label renders for the active locale.
           const entryLabel = localizedPageLabel(entry.route, locale);
@@ -329,7 +277,7 @@ function WorkspaceSection<T extends NavigationDescriptor & { id: string }>({
 //  proper theme variants). The expanded state uses a flex row
 //  so the chevron has its own space — no absolute positioning
 //  that overlaps the logo.
-// ═══════════════════════════════════════════════════════════════
+// ═════════════════════════════════════════════════════════════
 function QLogoToggle({
   expanded,
   onToggle,
@@ -445,10 +393,15 @@ export function Sidebar({
   isOpen,
   onToggle,
 }: SidebarProps) {
-  // Permission-filtered pages in the USER'S saved order (Milestone 10).
-  // Permission resolution happens FIRST; the personal order only
-  // reorders within the authorized set (never the other way round).
-  const visiblePages = useSidebarPages();
+  // ── §SIDEBAR-WORKSPACE — the user's layout + the permission-
+  //    filtered registry universe (hook; see file header). ──
+  const {
+    layout,
+    visiblePages,
+    saveLayout,
+    toggleGroupCollapsed,
+    saving: layoutSaving,
+  } = useSidebarLayout();
   const isMobile = useIsMobile();
   // §SIDEBAR-TABLET — the pinned in-layout sidebar exists ONLY on
   // desktop (≥1024px, the `lg:` breakpoint). Below that (including the
@@ -457,7 +410,6 @@ export function Sidebar({
   const isDesktop = useIsDesktop();
 
   const { data: preferences } = useUserPreferences();
-  const savePrefs = useSaveUserPreferences();
   const { locale, t, dir } = useLanguage();
 
   // ── §SIDEBAR-V2 — the two axes live in the store ──
@@ -518,9 +470,13 @@ export function Sidebar({
   }, []);
 
   // ── §SIDEBAR-V3 — ONE toggle: the Q-logo ──
-  // Click toggles expanded ⇄ collapsed (pinned mode). The expanded
-  // choice persists (user-scoped `sidebar.pinOpen` reuses the same
-  // channel: true = expanded, false/undefined = collapsed rail).
+  // Click toggles expanded ⇄ collapsed (pinned mode). The width choice
+  // is SESSION state by design (store doctrine: it "never fights the
+  // persisted pin choice") — it is deliberately NOT written into
+  // `sidebar.pinOpen`. Writing it there leaked presentation into the
+  // persisted pin axis: collapsing the rail once persisted pinOpen=false,
+  // which the hydration rule maps to UNPINNED drawer mode after a
+  // reload (the §10 presentation-corrupts-persistence bug family).
   // Expanding from the rail/hover-preview always clears the temporary
   // hover overlay so exactly one surface owns the screen.
   const handleToggleExpand = useCallback(() => {
@@ -528,10 +484,7 @@ export function Sidebar({
     clearHoverTimer();
     setSidebarHoverExpand(false);
     setSidebarExpanded(next);
-    savePrefs.mutate({ sidebar: { pinOpen: next } }, {
-      onError: () => toast.error(t('sidebar.prefSaveFailed')),
-    });
-  }, [clearHoverTimer, setSidebarHoverExpand, setSidebarExpanded, savePrefs, t]);
+  }, [clearHoverTimer, setSidebarHoverExpand, setSidebarExpanded]);
 
   const handleRailMouseEnter = useCallback(() => {
     clearHoverTimer();
@@ -578,51 +531,57 @@ export function Sidebar({
   const [menuOpen, setMenuOpen] = useState(false);
   const [menuOpenSurface, setMenuOpenSurface] = useState(false);
 
-  // ── §2: in-sidebar EDIT MODE ──
-  const defaultOrder = useMemo(() => visiblePages.map((p) => p.id), [visiblePages]);
-  const [editOrder, setEditOrder] = useState<string[] | null>(null);
-  // §21 — the full customization dialog (groups + cross-group DnD).
-  const [customizeOpen, setCustomizeOpen] = useState(false);
-  const [dragIndex, setDragIndex] = useState<number | null>(null);
-  const [dropIndex, setDropIndex] = useState<number | null>(null);
+  // ── §SIDEBAR-WORKSPACE: dedicated EDIT MODE ──
+  // `editing` swaps the nav for SidebarEditNav, which owns a LOCAL
+  // DRAFT of the layout: nothing persists until Done validates and
+  // the server confirms; Cancel restores the previous layout without
+  // a write. Draft isolation prevents partial/accidental writes
+  // during drag operations.
+  const [editing, setEditing] = useState(false);
   const wasExpandedBeforeEditRef = useRef<boolean | null>(null);
 
-  const enterEditMode = () => {
+  const enterEditMode = useCallback(() => {
+    if (!layout) return;
     wasExpandedBeforeEditRef.current = sidebarExpanded;
     clearHoverTimer();
     setSidebarHoverExpand(false);
     if (!sidebarExpanded) setSidebarExpanded(true); // editing needs the full surface
-    setEditOrder([...defaultOrder]);
-  };
-  const exitEditMode = () => {
-    setEditOrder(null);
-    setDragIndex(null);
-    setDropIndex(null);
-    if (wasExpandedBeforeEditRef.current === false && sidebarExpanded) {
+    setEditing(true);
+  }, [clearHoverTimer, layout, setSidebarExpanded, setSidebarHoverExpand, sidebarExpanded]);
+
+  const exitEditMode = useCallback(() => {
+    setEditing(false);
+    if (wasExpandedBeforeEditRef.current === false && useAppStore.getState().sidebarExpanded) {
       setSidebarExpanded(false); // restore the rail
     }
     wasExpandedBeforeEditRef.current = null;
-  };
-  const saveEdit = async () => {
-    if (!editOrder) return;
+  }, [setSidebarExpanded]);
+
+  const handleEditDone = useCallback(async (draft: SidebarLayout) => {
     try {
-      await savePrefs.mutateAsync({ sidebar: { order: editOrder } });
-      toast.success(t('sidebar.orderSaved'));
+      // Success feedback ONLY after the persistence write is
+      // confirmed by the server (§12/§13).
+      await saveLayout(draft);
+      toast.success(t('sidebar.layoutSaved'));
       exitEditMode();
     } catch {
-      toast.error(t('sidebar.orderSaveFailed'));
+      // Stay in edit mode — the draft survives for another attempt.
+      toast.error(t('sidebar.layoutSaveFailed'));
     }
-  };
-  const resetOrder = async () => {
+  }, [exitEditMode, saveLayout, t]);
+
+  // ── Reset layout (normal mode) — canonical default, confirmed ──
+  const [resetConfirmOpen, setResetConfirmOpen] = useState(false);
+  const handleResetLayout = async () => {
+    if (!layout) return;
     try {
-      await savePrefs.mutateAsync({ sidebar: { order: defaultOrder } });
-      toast.success(t('sidebar.orderReset'));
-      setEditOrder(null);
+      await saveLayout(createDefaultLayout(visiblePages.map((p) => p.id)));
+      toast.success(t('sidebar.layoutSaved'));
     } catch {
-      toast.error(t('sidebar.orderResetFailed'));
+      toast.error(t('sidebar.layoutSaveFailed'));
     }
   };
-  const editing = editOrder !== null;
+
   // §1: while the ⋮ menu is open the surface is FROZEN to whatever it
   // was when the menu opened — the menu's portal lives outside this
   // element, so hover state must never swap the surface under an open
@@ -659,15 +618,6 @@ export function Sidebar({
     return () => window.removeEventListener('keydown', onKey);
   }, [isDesktop, sidebarPinned, isOpen]);
 
-  const handleDrop = () => {
-    if (dragIndex === null || dropIndex === null || !editOrder) return;
-    if (dragIndex !== dropIndex) {
-      setEditOrder(moveItem(editOrder, dragIndex, dropIndex));
-    }
-    setDragIndex(null);
-    setDropIndex(null);
-  };
-
   // ── §4/§5: favorites + pins, reconciled against CURRENT routes ──
   const visibleIds = useMemo(() => new Set(visiblePages.map((p) => p.id)), [visiblePages]);
   const isRouteVisible = useCallback((route: string) => visibleIds.has(route), [visibleIds]);
@@ -701,93 +651,114 @@ export function Sidebar({
   const toggleFavorite = useFavoriteToggleAction();
   const togglePin = usePinToggleAction();
 
-  const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>(() => {
-    const initial: Record<string, boolean> = {};
-    SIDEBAR_GROUPS.forEach((g, i) => { initial[g.id] = i > 0; });
-    return initial;
-  });
+  // ── §SIDEBAR-WORKSPACE — the rendered groups come from the LAYOUT ──
+  // References → registry configs. The reconcile step already removed
+  // stale/unauthorized refs; the lookup filter is belt-and-braces so a
+  // registry change can never render a bare id.
+  const layoutGroups = useMemo(() => {
+    if (!layout) return [];
+    return layout.groups
+      .map((g) => ({
+        id: g.id,
+        name: g.name,
+        pages: g.items
+          .map((it) => APP_PAGES_BY_ID.get(it.id))
+          .filter((p): p is NonNullable<typeof p> => Boolean(p) && visibleIds.has(p!.id)),
+      }))
+      .filter((g) => g.pages.length > 0);
+  }, [layout, visibleIds]);
 
-  // §SIDEBAR-STATE — Bitrix-style persistence: the expanded/collapsed
-  // state of each navigation group is a USER choice, not session
-  // noise. It survives sidebar collapse/expand (the Sidebar stays
-  // mounted, only the surface swaps) AND full reloads (localStorage
-  // mirror loaded post-mount to avoid SSR hydration mismatch).
-  // Presentation-only concern → localStorage, not the preferences API.
-  const sidebarGroupsHydratedRef = useRef(false);
-  useEffect(() => {
-    if (sidebarGroupsHydratedRef.current) return;
-    sidebarGroupsHydratedRef.current = true;
-    let stored: Record<string, unknown> | null = null;
-    try {
-      const raw = window.localStorage.getItem(SIDEBAR_GROUPS_STORAGE_KEY);
-      if (raw) {
-        const parsed = JSON.parse(raw) as unknown;
-        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-          stored = parsed as Record<string, unknown>;
-        }
-      }
-    } catch { /* corrupted storage → keep defaults */ }
-    if (!stored) return;
-    const initial: Record<string, boolean> = {};
-    SIDEBAR_GROUPS.forEach((g, i) => { initial[g.id] = i > 0; });
-    for (const g of SIDEBAR_GROUPS) {
-      const v = stored[g.id];
-      if (typeof v === 'boolean') initial[g.id] = v;
-    }
-    setCollapsedGroups(initial);
+  // ── §22 GROUP STATE — ONE system: the persisted layout's
+  //  `collapsed` flags (per user, via the preferences API). Derived
+  //  here; toggles go through `toggleGroupCollapsed` (optimistic
+  //  cache seed + one server write per click). Survives sidebar
+  //  collapse/expand, navigation, reloads and logout/login BY
+  //  CONSTRUCTION — it is the stored layout, not a mirror. Absent
+  //  flag = open (a fresh MAIN-only layout renders open).
+  const collapsedGroups = useMemo(() => {
+    const map: Record<string, boolean> = {};
+    layout?.groups.forEach((g) => { map[g.id] = g.collapsed === true; });
+    return map;
+  }, [layout]);
+
+  // ── §27 SHOW-ALL — per-group overflow reveal (SESSION state, both
+  //  surfaces share it: the rail and the expanded nav are the same
+  //  model). Never persisted: it is a transient view of a long group,
+  //  not a layout change. The group containing the CURRENT page is
+  //  always treated as revealed.
+  const [revealedGroups, setRevealedGroups] = useState<Set<string>>(new Set());
+  const toggleRevealGroup = useCallback((groupId: string) => {
+    setRevealedGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(groupId)) next.delete(groupId);
+      else next.add(groupId);
+      return next;
+    });
   }, []);
-  useEffect(() => {
-    try {
-      window.localStorage.setItem(SIDEBAR_GROUPS_STORAGE_KEY, JSON.stringify(collapsedGroups));
-    } catch { /* storage full/blocked → best-effort */ }
-  }, [collapsedGroups]);
+
+  // ── §16/§39 ACTIVE-GROUP DISCOVERABILITY — navigating to a page of
+  //  a CLOSED group reveals that group for the session WITHOUT writing
+  //  the stored layout (the user's saved collapse choice is untouched;
+  //  §22). An explicit user toggle on the group clears the override.
+  const [navOpenedGroups, setNavOpenedGroups] = useState<Set<string>>(new Set());
+
+  // §7 UNIFIED MODEL — the ONE rendered-collapse map both surfaces
+  // consume: stored flag (§22) + session navigation reveal (§16).
+  // The rail and the expanded nav render the same groups open/closed.
+  const renderedCollapsed = useMemo(() => {
+    const map: Record<string, boolean> = {};
+    layoutGroups.forEach((g) => {
+      map[g.id] = collapsedGroups[g.id] === true && !navOpenedGroups.has(g.id);
+    });
+    return map;
+  }, [layoutGroups, collapsedGroups, navOpenedGroups]);
 
   const toggleGroup = useCallback((groupId: string) => {
-    setCollapsedGroups((prev) => ({ ...prev, [groupId]: !prev[groupId] }));
-  }, []);
+    // Toggle operates on the RENDERED state (a navigation-forced-open
+    // group reads as open): clicking it closed removes the override —
+    // and writes only when the stored flag actually changes.
+    if (navOpenedGroups.has(groupId)) {
+      setNavOpenedGroups((prev) => {
+        const next = new Set(prev);
+        next.delete(groupId);
+        return next;
+      });
+      if (!collapsedGroups[groupId]) toggleGroupCollapsed(groupId); // rendered open AND stored open → persist close
+      return; // stored flag already says collapsed — the override was the only opener
+    }
+    toggleGroupCollapsed(groupId);
+  }, [collapsedGroups, navOpenedGroups, toggleGroupCollapsed]);
 
   // ── §SIDEBAR-MIRROR — the group containing the CURRENT page is
   //  always shown open. One source of truth (collapsedGroups) drives
   //  BOTH surfaces: navigating to a page of a closed group re-opens
   //  that group. Explicit user collapse of that same group is still
-  //  respected until the next navigation.
-  const activeGroupId = useMemo(() => {
-    const active = visiblePages.find((p) => p.id === currentPage);
-    return active?.groupId ?? null;
-  }, [visiblePages, currentPage]);
+  //  respected until the next navigation. (§16 — the active page is
+  //  always discoverable, without destroying the user's collapse
+  //  preference.)
+  const activeGroupId = useMemo(
+    () => layoutGroups.find((g) => g.pages.some((p) => p.id === currentPage))?.id ?? null,
+    [layoutGroups, currentPage],
+  );
+  // Fires ONLY on an activeGroupId CHANGE (not on layout refetches):
+  // an explicit user collapse of the active group is respected until
+  // the user navigates elsewhere and back.
+  const lastActiveGroupRef = useRef<string | null>(null);
   useEffect(() => {
-    if (!activeGroupId) return;
-    // Route-driven group state sync — mirrors the file's canonical
-    // hydration guard pattern (no render-safe alternative exists).
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- route-change sync of persisted group state.
-    setCollapsedGroups((prev) => (prev[activeGroupId] ? { ...prev, [activeGroupId]: false } : prev));
+    const prev = lastActiveGroupRef.current;
+    lastActiveGroupRef.current = activeGroupId;
+    if (!activeGroupId || activeGroupId === prev) return;
+    if (!collapsedGroups[activeGroupId]) return; // stored open — nothing to reveal
+    // Route-change reveal sync — mirrors the file's canonical hydration
+    // guard pattern (no render-safe alternative exists).
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- route-change sync of the session reveal override.
+    setNavOpenedGroups((prevSet) => (prevSet.has(activeGroupId) ? prevSet : new Set(prevSet).add(activeGroupId)));
+    // collapsedGroups is intentionally NOT a dependency: only navigation
+    // (activeGroupId) may add a reveal override, never a layout refetch.
   }, [activeGroupId]);
 
-  // Groups that actually render (≥1 visible page) — shared by the
-  // expanded nav and the collapsed rail (SAME structure, two sizes).
-  // §21 — menu customization: saved GROUP order + cross-group item
-  // overrides apply here (the single rendering path — no second
-  // navigation architecture). Permissions already filtered
-  // `visiblePages`; ordering can never resurrect a hidden page.
-  const sidebarPrefs = preferences?.sidebar;
-  const visibleGroups = useMemo(() => {
-    const groupOf = (p: typeof visiblePages[number]) => {
-      const override = sidebarPrefs?.itemGroups?.[p.id];
-      return override && SIDEBAR_GROUPS.some((g) => g.id === override) ? override : p.groupId;
-    };
-    const groupRank = new Map<string, number>();
-    (sidebarPrefs?.groupOrder ?? []).forEach((id, i) => { if (!groupRank.has(id)) groupRank.set(id, i); });
-    return SIDEBAR_GROUPS
-      .map((g) => ({ ...g, pages: visiblePages.filter((p) => groupOf(p) === g.id) }))
-      .filter((g) => g.pages.length > 0)
-      .sort((a, b) => {
-        const ra = groupRank.get(a.id) ?? Number.MAX_SAFE_INTEGER;
-        const rb = groupRank.get(b.id) ?? Number.MAX_SAFE_INTEGER;
-        return ra - rb;
-      });
-  }, [visiblePages, sidebarPrefs]);
-
-  // ── Sidebar settings ⋮ menu (§2) — shared by expanded + collapsed ──
+  // ── Sidebar settings ⋮ menu (§SIDEBAR-WORKSPACE) — shared by
+  //    expanded + collapsed surfaces ──
   const settingsMenu = (
     <DropdownMenu onOpenChange={handleMenuOpenChange}>
       <DropdownMenuTrigger asChild>
@@ -803,31 +774,20 @@ export function Sidebar({
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" side="top" sideOffset={6} className="bg-slate-900 border-slate-700/60 min-w-52 z-50">
         <DropdownMenuItem
-          onClick={() => setCustomizeOpen(true)}
+          onClick={enterEditMode}
+          disabled={editing || !layout}
           className="gap-2 cursor-pointer text-xs text-slate-300 focus:text-white focus:bg-slate-800"
         >
           <SlidersHorizontal className="size-3.5" />
-          {t('sidebar.customize')}
+          {t('sidebar.editSidebar')}
         </DropdownMenuItem>
-        {!isMobile && (
-          <DropdownMenuItem
-            // §13 DIRECT MANIPULATION — in-place edit mode: drag handles
-            // on the REAL items with exact drop positioning (no dialog).
-            onClick={enterEditMode}
-            disabled={editing}
-            className="gap-2 cursor-pointer text-xs text-slate-300 focus:text-white focus:bg-slate-800"
-          >
-            <GripVertical className="size-3.5" />
-            {t('sidebar.directOrder')}
-          </DropdownMenuItem>
-        )}
         <DropdownMenuItem
-          onClick={() => void resetOrder()}
-          disabled={savePrefs.isPending}
+          onClick={() => setResetConfirmOpen(true)}
+          disabled={layoutSaving}
           className="gap-2 cursor-pointer text-xs text-slate-300 focus:text-white focus:bg-slate-800"
         >
           <RotateCcw className="size-3.5" />
-          {t('sidebar.resetOrder')}
+          {t('sidebar.resetLayout')}
         </DropdownMenuItem>
         {pageDescriptor && (
           <>
@@ -862,10 +822,12 @@ export function Sidebar({
   // icon sits at the row start/right; the label starts offset TOWARD
   // the icon and settles left into place). Staggered per item — CSS
   // class + framer transforms only, replayed when the surface mounts.
-  // §CUSTOMIZATION-PARITY: iterates `visibleGroups` — the SAME
-  // customized group order/membership the collapsed rail renders (the
-  // old SIDEBAR_GROUPS iteration ignored groupOrder/itemGroups, so the
-  // rail and the expanded surface disagreed after customization).
+  // §SIDEBAR-WORKSPACE: iterates `layoutGroups` — the user's own
+  // group structure over the permission-filtered registry set.
+  // Group headers carry the NAME only (main group localized; custom
+  // names are user content, rendered verbatim) — no emoji, no dots
+  // (§23/§24: structure comes from typography, spacing and the
+  // §SIDEBAR-GROUP-FRAME ambient boundary).
   const expandedNav = (
     <nav
       ref={expandedNavRefCb}
@@ -873,11 +835,20 @@ export function Sidebar({
       className="flex-1 overflow-y-auto py-3 px-3 arm-scroll"
       aria-label={t('sidebar.pagesNav')}
     >
-      {visibleGroups.map((group, groupIdx) => {
+      {layoutGroups.map((group, groupIdx) => {
         const groupPages = group.pages;
         if (groupPages.length === 0) return null;
-        const isGroupCollapsed = collapsedGroups[group.id] ?? false;
+        const isGroupCollapsed = renderedCollapsed[group.id] === true;
         const isActiveGroup = activeGroupId === group.id;
+        const groupLabel = sidebarGroupLabel(group, locale);
+        // §27 SHOW-ALL — the active group never overflows; "Show less"
+        // only appears when the USER revealed the group (not navigation).
+        const isRevealed = revealedGroups.has(group.id) || isActiveGroup;
+        const preview = previewSlice(groupPages, isRevealed);
+        const canShowLess = preview.hiddenCount === 0
+          && revealedGroups.has(group.id)
+          && !isActiveGroup
+          && groupPages.length > GROUP_PREVIEW_ITEMS + 1;
 
         return (
           <motion.div
@@ -887,6 +858,13 @@ export function Sidebar({
             transition={{ delay: groupIdx * 0.04 + 0.08, duration: 0.24, ease: [0.4, 0, 0.2, 1] }}
             className={cn(groupIdx > 0 && 'mt-2')}
           >
+            {/* §SIDEBAR-GROUP-FRAME — the group renders as ONE connected
+                object: a transparent glass surface whose thin Qnalys
+                boundary is DRAWN progressively on open and retracted in
+                reverse on close. Geometry follows the real content box
+                (no hardcoded heights); the collapsed rail never mounts
+                it, so icon mode stays frame-free. */}
+            <SidebarGroupFrame open={!isGroupCollapsed} className="p-1">
             <button
               onClick={() => toggleGroup(group.id)}
               aria-expanded={!isGroupCollapsed}
@@ -894,12 +872,11 @@ export function Sidebar({
                 'w-full flex items-center gap-2.5 px-2 py-2 rounded-lg hover:bg-slate-800/50 transition-colors group/header focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/40',
               )}
             >
-              <span className="text-xs leading-none shrink-0" aria-hidden="true">{group.emoji}</span>
               <span className={cn(
-                'flex-1 text-start text-[10px] font-bold tracking-wide whitespace-nowrap transition-colors',
+                'flex-1 text-start text-[10px] font-bold tracking-wide whitespace-nowrap transition-colors truncate',
                 isActiveGroup ? 'text-slate-300' : 'text-slate-500 group-hover/header:text-slate-400',
               )}>
-                {localizedGroupLabel(group.id, locale)}
+                {groupLabel}
               </span>
               <motion.span
                 animate={{ rotate: isGroupCollapsed ? 0 : 180 }}
@@ -921,8 +898,8 @@ export function Sidebar({
                   transition={{ duration: 0.22, ease: [0.4, 0, 0.2, 1] }}
                   className="overflow-hidden space-y-0.5 mt-0.5"
                 >
-                  {groupPages.map((page, index) => {
-                    const Icon = ICON_MAP[page.icon];
+                  {preview.shown.map((page, index) => {
+                    const Icon = SIDEBAR_ICON_MAP[page.icon];
                     const isActive = currentPage === page.id;
                     const unseenBadge = unseenBadgeFor(page.id);
                     const pendingBadge = pendingBadgeFor(page.id);
@@ -978,106 +955,30 @@ export function Sidebar({
                       </motion.li>
                     );
                   })}
+                  {/* §27 SHOW-ALL — navigation overflow control (keyboard
+                      accessible; reveals the remaining items in place). */}
+                  {(preview.hiddenCount > 0 || canShowLess) && (
+                    <li className="px-2 pt-0.5">
+                      <button
+                        type="button"
+                        onClick={() => toggleRevealGroup(group.id)}
+                        aria-expanded={preview.hiddenCount === 0}
+                        className="w-full flex items-center justify-center gap-1 px-3 py-1.5 rounded-lg text-[11px] font-semibold text-brand-300/80 hover:text-brand-200 hover:bg-slate-800/40 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/40"
+                      >
+                        {preview.hiddenCount > 0
+                          ? `${t('sidebar.showAll')} (${groupPages.length})`
+                          : t('sidebar.showLess')}
+                      </button>
+                    </li>
+                  )}
                 </motion.ul>
               )}
             </AnimatePresence>
+            </SidebarGroupFrame>
           </motion.div>
         );
       })}
     </nav>
-  );
-
-  // ── §2: EDIT MODE surface — flat, directly draggable list ──
-  const editNav = (
-    <div
-      className="flex-1 overflow-y-auto py-3 px-3 arm-scroll space-y-1"
-      onDragOver={(e) => e.preventDefault()}
-      onDrop={handleDrop}
-      aria-label={t('sidebar.editOrderAria')}
-    >
-      <p className="text-[10px] text-slate-500 px-2 pb-1 leading-relaxed">
-        {t('sidebar.editHint')}
-      </p>
-      {(editOrder ?? []).map((pageId, index) => {
-        const page = APP_PAGES_BY_ID.get(pageId);
-        const Icon = page ? ICON_MAP[page.icon] : undefined;
-        const isDragging = dragIndex === index;
-        const isDropTarget = dropIndex === index && dragIndex !== null && dragIndex !== index;
-        return (
-          <div
-            key={pageId}
-            draggable
-            onDragStart={(e) => {
-              setDragIndex(index);
-              e.dataTransfer.effectAllowed = 'move';
-              try { e.dataTransfer.setData('text/plain', pageId); } catch { /* optional */ }
-            }}
-            onDragEnd={() => { setDragIndex(null); setDropIndex(null); }}
-            onDragOver={(e) => {
-              e.preventDefault();
-              e.dataTransfer.dropEffect = 'move';
-              setDropIndex(index);
-            }}
-            onDrop={handleDrop}
-            className={cn(
-              'flex items-center gap-2 p-2 rounded-xl bg-slate-800/40 border transition-colors cursor-grab active:cursor-grabbing',
-              isDragging ? 'border-brand-500/60 opacity-60' : isDropTarget ? 'border-brand-500/80 ring-1 ring-brand-500/60' : 'border-slate-700/30',
-            )}
-          >
-            <GripVertical className="size-4 text-slate-600 shrink-0" aria-hidden="true" />
-            <span className="text-[10px] text-slate-500 font-mono w-5 text-center shrink-0">{index + 1}</span>
-            {Icon && <Icon className="size-4 text-slate-400 shrink-0" />}
-            <div className="flex-1 min-w-0">
-              <p className="text-xs text-slate-200 truncate">{localizedPageLabel(pageId, locale)}</p>
-              <p className="text-[9px] text-slate-500">{localizedGroupLabel(page?.groupId ?? '', locale)}</p>
-            </div>
-            <div className="flex items-center gap-0.5 shrink-0">
-              <button
-                type="button"
-                disabled={index === 0}
-                onClick={() => setEditOrder(moveItem(editOrder ?? [], index, index - 1))}
-                aria-label={`${t('sidebar.moveUp')}: ${localizedPageLabel(pageId, locale)}`}
-                className="p-1.5 rounded-md text-slate-400 hover:text-white hover:bg-slate-700/60 disabled:opacity-30"
-              >
-                <ArrowUp className="size-3.5" />
-              </button>
-              <button
-                type="button"
-                disabled={index === (editOrder ?? []).length - 1}
-                onClick={() => setEditOrder(moveItem(editOrder ?? [], index, index + 1))}
-                aria-label={`${t('sidebar.moveDown')}: ${localizedPageLabel(pageId, locale)}`}
-                className="p-1.5 rounded-md text-slate-400 hover:text-white hover:bg-slate-700/60 disabled:opacity-30"
-              >
-                <ArrowDown className="size-3.5" />
-              </button>
-            </div>
-          </div>
-        );
-      })}
-    </div>
-  );
-
-  // ── §2: edit-mode footer — ONLY [إلغاء] [حفظ] ──
-  const editFooter = (
-    <div className="border-t border-slate-700/50 p-3 shrink-0 flex items-center gap-2">
-      <button
-        type="button"
-        onClick={exitEditMode}
-        className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg border border-slate-600/60 text-slate-300 hover:bg-slate-800 hover:text-white text-xs font-semibold transition-colors"
-      >
-        <X className="size-3.5" />
-        {t('action.cancel')}
-      </button>
-      <button
-        type="button"
-        onClick={() => void saveEdit()}
-        disabled={savePrefs.isPending}
-        className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-brand-600 hover:bg-brand-700 text-white text-xs font-semibold transition-colors disabled:opacity-60"
-      >
-        {savePrefs.isPending ? <Loader2 className="size-3.5 animate-spin" /> : <Save className="size-3.5" />}
-        {t('action.save')}
-      </button>
-    </div>
   );
 
   // ── Normal-mode footer: sidebar's OWN controls only (⋮ settings).
@@ -1126,8 +1027,19 @@ export function Sidebar({
         </div>
       </header>
 
-      {/* §2: editing replaces the nav; §4/§5: favorites/pins live here */}
-      {editing ? editNav : expandedNav}
+      {/* §SIDEBAR-WORKSPACE: edit mode swaps the nav for the draft
+          editor (own footer); normal mode renders navigation + the
+          favorites/pins workspace sections. */}
+      {editing && layout ? (
+        <SidebarEditNav
+          key="sidebar-edit-nav"
+          initialLayout={layout}
+          visiblePages={visiblePages}
+          saving={layoutSaving}
+          onDone={handleEditDone}
+          onCancel={exitEditMode}
+        />
+      ) : expandedNav}
       {!editing && (
         <div className="px-2 pb-2 space-y-2 border-t border-slate-800/60 pt-2 overflow-y-auto arm-scroll max-h-56 shrink-0">
           <WorkspaceSection
@@ -1147,7 +1059,7 @@ export function Sidebar({
         </div>
       )}
 
-      {editing ? editFooter : normalFooter}
+      {!editing && normalFooter}
       {/* a11y: surface is a navigation region; close control exists above */}
       <span className="sr-only">{showCloseButton ? t('sidebar.escHint') : ''}</span>
     </div>
@@ -1186,21 +1098,14 @@ export function Sidebar({
           </>
         )}
       </AnimatePresence>
-      {/* §21 — menu customization dialog (groups → items, DnD) */}
-      <MenuCustomizationDialog
-        open={customizeOpen}
-        onOpenChange={setCustomizeOpen}
-        groups={SIDEBAR_GROUPS.map((g) => ({ id: g.id, label: g.label }))}
-        pages={visiblePages.map((p) => ({ id: p.id, title: p.title, groupId: p.groupId }))}
-        state={{
-          order: sidebarPrefs?.order,
-          groupOrder: sidebarPrefs?.groupOrder,
-          itemGroups: sidebarPrefs?.itemGroups,
-        }}
-        saving={savePrefs.isPending}
-        onSave={async (next) => {
-          await savePrefs.mutateAsync({ sidebar: next });
-        }}
+      <ConfirmDialog
+        open={resetConfirmOpen}
+        onOpenChange={setResetConfirmOpen}
+        destructive={false}
+        title={t('sidebar.resetLayout')}
+        description={t('sidebar.resetLayoutDescription')}
+        confirmLabel={t('sidebar.resetLayout')}
+        onConfirm={() => void handleResetLayout()}
       />
       </>
     );
@@ -1240,21 +1145,14 @@ export function Sidebar({
         )}
       </AnimatePresence>
 
-      {/* §21 — menu customization dialog (groups → items, DnD) */}
-      <MenuCustomizationDialog
-        open={customizeOpen}
-        onOpenChange={setCustomizeOpen}
-        groups={SIDEBAR_GROUPS.map((g) => ({ id: g.id, label: g.label }))}
-        pages={visiblePages.map((p) => ({ id: p.id, title: p.title, groupId: p.groupId }))}
-        state={{
-          order: sidebarPrefs?.order,
-          groupOrder: sidebarPrefs?.groupOrder,
-          itemGroups: sidebarPrefs?.itemGroups,
-        }}
-        saving={savePrefs.isPending}
-        onSave={async (next) => {
-          await savePrefs.mutateAsync({ sidebar: next });
-        }}
+      <ConfirmDialog
+        open={resetConfirmOpen}
+        onOpenChange={setResetConfirmOpen}
+        destructive={false}
+        title={t('sidebar.resetLayout')}
+        description={t('sidebar.resetLayoutDescription')}
+        confirmLabel={t('sidebar.resetLayout')}
+        onConfirm={() => void handleResetLayout()}
       />
       </>
     );
@@ -1291,7 +1189,7 @@ export function Sidebar({
         width: expanded ? WIDTH_EXPANDED : WIDTH_COLLAPSED,
         transition: 'width 260ms cubic-bezier(0.4, 0, 0.2, 1)',
       }}
-      aria-label="التنقل الرئيسي"
+      aria-label={t('sidebar.mainNav')}
     >
       {expanded ? (
         surface
@@ -1301,9 +1199,11 @@ export function Sidebar({
             currentPage={currentPage}
             onNavigate={onNavigate}
             onExpand={handleToggleExpand}
-            visibleGroups={visibleGroups}
-            collapsedGroups={collapsedGroups}
+            layoutGroups={layoutGroups}
+            renderedCollapsed={renderedCollapsed}
             onToggleGroup={toggleGroup}
+            revealedGroups={revealedGroups}
+            onToggleReveal={toggleRevealGroup}
             settingsMenu={settingsMenu}
             navScrollRefCb={railNavRefCb}
             onNavScroll={handleNavScroll}
@@ -1336,21 +1236,14 @@ export function Sidebar({
       )}
     </aside>
 
-    {/* §21 — menu customization dialog (groups → items, DnD) */}
-    <MenuCustomizationDialog
-      open={customizeOpen}
-      onOpenChange={setCustomizeOpen}
-      groups={SIDEBAR_GROUPS.map((g) => ({ id: g.id, label: g.label }))}
-      pages={visiblePages.map((p) => ({ id: p.id, title: p.title, groupId: p.groupId }))}
-      state={{
-        order: sidebarPrefs?.order,
-        groupOrder: sidebarPrefs?.groupOrder,
-        itemGroups: sidebarPrefs?.itemGroups,
-      }}
-      saving={savePrefs.isPending}
-      onSave={async (next) => {
-        await savePrefs.mutateAsync({ sidebar: next });
-      }}
+    <ConfirmDialog
+      open={resetConfirmOpen}
+      onOpenChange={setResetConfirmOpen}
+      destructive={false}
+      title={t('sidebar.resetLayout')}
+      description={t('sidebar.resetLayoutDescription')}
+      confirmLabel={t('sidebar.resetLayout')}
+      onConfirm={() => void handleResetLayout()}
     />
     </>
   );
@@ -1358,32 +1251,23 @@ export function Sidebar({
 
 // ══════════════════════════════════════════════════════════════
 //  Collapsed rail (§UNIFIED-RAIL) — the SAME navigation structure as
-//  the expanded sidebar (group → pages), ICONS-ONLY:
+//  the expanded sidebar (layout groups → pages), ICONS-ONLY:
 //    • The group icon toggles the SAME open/closed state (one source
-//      of truth: `collapsedGroups` — preserved across collapse).
+//      of truth: the persisted layout's §22 flags + the session §16
+//      navigation reveal, pre-merged into `renderedCollapsed` —
+//      preserved across surface swaps by construction).
 //    • Pages of OPEN groups render beneath their group icon; tooltips
-//      carry the labels. No counters, no flyouts.
-//    • §6 NEUTRAL HIERARCHY: group containers are NEVER filled with
-//      the active gradient — neutral icons, subtle hover, an accent
-//      bar for the group containing the CURRENT page, and a tiny
-//      state dot for open groups. Only the ACTIVE PAGE gets the
-//      gradient fill.
+//      carry the labels. §27 SHOW-ALL overflow identical to expanded.
+//      No counters, no flyouts.
+//    • §22 CLEAN RAIL: no group frames, backgrounds or labels here —
+//      a single neutral group glyph per group (structure, not
+//      decoration), the Qnalys accent marks the group holding the
+//      CURRENT page, and only the ACTIVE PAGE gets the gradient fill.
 // ══════════════════════════════════════════════════════════════
-
-const GROUP_META: Record<string, { label: string; emoji: string; representativeIcon: keyof typeof ICON_MAP }> = {
-  daily_ops:     { label: 'العمليات اليومية',  emoji: '📊', representativeIcon: 'LayoutDashboard' },
-  employee_mgmt: { label: 'إدارة الموظفين',   emoji: '👥', representativeIcon: 'Users' },
-  quality_ctrl:  { label: 'الجودة والرقابة',  emoji: '🎯', representativeIcon: 'Award' },
-  hr:            { label: 'الموارد البشرية',   emoji: '🏢', representativeIcon: 'Banknote' },
-  travel_ops:    { label: 'العمليات والسفر',  emoji: '✈️', representativeIcon: 'Plane' },
-  reports:       { label: 'التقارير والتحليلات', emoji: '📈', representativeIcon: 'BarChart3' },
-  settings:      { label: 'الإدارة والإعدادات', emoji: '⚙️', representativeIcon: 'Settings' },
-};
 
 interface RailGroup {
   id: string;
-  label: string;
-  emoji?: string;
+  name: string;
   pages: { id: string; title: string; icon: string }[];
 }
 
@@ -1391,9 +1275,11 @@ function CollapsedRail({
   currentPage,
   onNavigate,
   onExpand,
-  visibleGroups,
-  collapsedGroups,
+  layoutGroups,
+  renderedCollapsed,
   onToggleGroup,
+  revealedGroups,
+  onToggleReveal,
   settingsMenu,
   navScrollRefCb,
   onNavScroll,
@@ -1403,9 +1289,14 @@ function CollapsedRail({
   currentPage: string;
   onNavigate: (page: string) => void;
   onExpand: () => void;
-  visibleGroups: RailGroup[];
-  collapsedGroups: Record<string, boolean>;
+  layoutGroups: RailGroup[];
+  /** §7 UNIFIED MODEL — the same rendered-collapse map the expanded
+   *  surface uses (stored §22 flags + session §16 navigation reveal). */
+  renderedCollapsed: Record<string, boolean>;
   onToggleGroup: (groupId: string) => void;
+  /** §27 SHOW-ALL — shared with the expanded surface. */
+  revealedGroups: Set<string>;
+  onToggleReveal: (groupId: string) => void;
   settingsMenu: React.ReactNode;
   /** §SIDEBAR-V3 — shared nav scroll continuity (restore on mount). */
   navScrollRefCb: (el: HTMLElement | null) => void;
@@ -1416,9 +1307,9 @@ function CollapsedRail({
   const { locale, t, dir } = useLanguage();
   // Determine which group the active page belongs to (for the active accent).
   const activeGroupId = useMemo(() => {
-    const active = visibleGroups.find((g) => g.pages.some((p) => p.id === currentPage));
+    const active = layoutGroups.find((g) => g.pages.some((p) => p.id === currentPage));
     return active?.id ?? null;
-  }, [visibleGroups, currentPage]);
+  }, [layoutGroups, currentPage]);
 
   return (
     <div className="flex flex-col h-full w-full bg-slate-900">
@@ -1432,22 +1323,28 @@ function CollapsedRail({
         </div>
       </header>
 
-      {/* Navigation — group containers stay NEUTRAL (§6); only the
-          group holding the CURRENT page gets the accent bar + a faint
-          contextual surface, and only the current page gets the
-          gradient. Open-group state = a tiny dot, never a fill. */}
+      {/* Navigation — §22: icon-only, ultra clean. The group glyph is a
+          neutral structural marker (the user names their groups in the
+          expanded surface / tooltips); the Qnalys accent marks the
+          group holding the CURRENT page; only the current page gets
+          the gradient. */}
       <nav
         ref={navScrollRefCb}
         onScroll={onNavScroll}
-        className="flex-1 overflow-y-auto py-3 flex flex-col items-center gap-1 px-2 arm-scroll"
+        className="flex-1 overflow-y-auto py-3 flex flex-col items-center gap-1.5 px-2 arm-scroll"
         aria-label={t('sidebar.groupsNav')}
       >
-        {visibleGroups.map((group) => {
-          const meta = GROUP_META[group.id];
-          const GroupIcon = ICON_MAP[meta?.representativeIcon ?? 'LayoutDashboard'] ?? LayoutDashboard;
+        {layoutGroups.map((group) => {
           const isActive = activeGroupId === group.id;
-          const isGroupOpen = !collapsedGroups[group.id];
-          const groupLabel = localizedGroupLabel(group.id, locale);
+          const isGroupOpen = !renderedCollapsed[group.id];
+          const groupLabel = sidebarGroupLabel(group, locale);
+          // §27 SHOW-ALL — the SAME preview contract as the expanded
+          // surface (shared reveal state; active group never overflows).
+          const railPreview = previewSlice(group.pages, revealedGroups.has(group.id) || isActive);
+          const canShowLess = railPreview.hiddenCount === 0
+            && revealedGroups.has(group.id)
+            && !isActive
+            && group.pages.length > GROUP_PREVIEW_ITEMS + 1;
           return (
             <div key={group.id} className="w-full flex flex-col items-center gap-0.5">
               <SidebarTooltip label={groupLabel}>
@@ -1458,25 +1355,13 @@ function CollapsedRail({
                   aria-label={groupLabel}
                   aria-expanded={isGroupOpen}
                   className={cn(
-                    'w-12 h-10 flex items-center justify-center rounded-lg transition-colors duration-150 relative focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50',
-                    isActive
-                      ? 'bg-slate-800/90 text-white'
-                      : 'text-slate-400 hover:bg-slate-800/60 hover:text-white',
+                    'w-12 h-10 flex items-center justify-center rounded-lg transition-colors duration-150 text-slate-400 hover:bg-slate-800/60 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50',
+                    // The accent COLOR (never a fill/container) marks the
+                    // group holding the current page.
+                    isActive && 'sidebar-group-icon-active',
                   )}
                 >
-                  <GroupIcon className="h-5 w-5 shrink-0" />
-                  {isActive && (
-                    <motion.span
-                      className="absolute start-0 top-1/2 -translate-y-1/2 w-1 h-6 rounded-e-full bg-brand-400"
-                      layoutId="collapsedIndicator"
-                      transition={{ type: 'spring', stiffness: 350, damping: 30 }}
-                    />
-                  )}
-                  {/* §UNIFIED-RAIL — state dot: this group is currently
-                      expanded (its page icons are visible beneath it). */}
-                  {isGroupOpen && (
-                    <span aria-hidden="true" className="absolute top-1 left-1 size-1.5 rounded-full bg-brand-300/80 ring-2 ring-slate-900" />
-                  )}
+                  <Folder className="h-5 w-5 shrink-0" />
                 </motion.button>
               </SidebarTooltip>
 
@@ -1493,10 +1378,11 @@ function CollapsedRail({
                     className="overflow-hidden w-full"
                   >
                     <div className="relative flex flex-col items-center gap-0.5 py-0.5">
-                      {/* tree spine connecting the group icon to its pages */}
-                      <span aria-hidden="true" className="absolute top-0 bottom-0 start-[27px] w-px bg-slate-700/50" />
-                      {group.pages.map((page) => {
-                        const PageIcon = ICON_MAP[page.icon];
+                      {/* tree spine connecting the group icon to its pages —
+                          centered on the icon axis (logical, RTL-safe) */}
+                      <span aria-hidden="true" className="absolute top-0 bottom-0 start-1/2 w-px bg-slate-700/50" />
+                      {railPreview.shown.map((page) => {
+                        const PageIcon = SIDEBAR_ICON_MAP[page.icon];
                         const isCurrent = currentPage === page.id;
                         const unseenBadge = unseenBadgeFor?.(page.id) ?? 0;
                         const pendingBadge = pendingBadgeFor?.(page.id) ?? 0;
@@ -1549,6 +1435,28 @@ function CollapsedRail({
                         );
                       })}
                     </div>
+                    {/* §27 SHOW-ALL — compact overflow toggle (tooltip
+                        carries the label; keyboard accessible). */}
+                    {(railPreview.hiddenCount > 0 || canShowLess) && (
+                      <SidebarTooltip
+                        label={railPreview.hiddenCount > 0
+                          ? `${t('sidebar.showAll')} (${group.pages.length})`
+                          : t('sidebar.showLess')}
+                      >
+                        <button
+                          type="button"
+                          onClick={() => onToggleReveal(group.id)}
+                          aria-label={railPreview.hiddenCount > 0
+                            ? `${t('sidebar.showAll')} (${group.pages.length})`
+                            : t('sidebar.showLess')}
+                          className="w-9 h-6 flex items-center justify-center rounded-md text-slate-500 hover:text-white hover:bg-slate-800/60 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50"
+                        >
+                          {railPreview.hiddenCount > 0
+                            ? <ChevronDown className="size-3.5" />
+                            : <ChevronUp className="size-3.5" />}
+                        </button>
+                      </SidebarTooltip>
+                    )}
                   </motion.div>
                 )}
               </AnimatePresence>

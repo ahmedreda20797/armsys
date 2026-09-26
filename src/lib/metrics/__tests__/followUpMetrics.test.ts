@@ -10,21 +10,28 @@ import {
   isOverdueFollowUp,
   isActiveFollowUp,
   isTerminalFollowUp,
+  isDueToday,
   ACTIVE_FOLLOWUP_STATUSES,
   TERMINAL_FOLLOWUP_STATUSES,
 } from '../followUpMetrics';
 
+/**
+ * LOCAL calendar-day key (YYYY-MM-DD) — the same shape users enter via
+ * <input type="date"> and the predicates compare against. NEVER build
+ * fixtures with toISOString(): it yields the UTC day, which differs
+ * from the local day between 00:00 and 03:00 for UTC+X clients — the
+ * exact trap the canonical predicates guard against.
+ */
+function localDayKey(offsetDays: number): string {
+  const d = new Date();
+  d.setDate(d.getDate() + offsetDays);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
 describe('isOverdueFollowUp', () => {
-  const yesterday = new Date();
-  yesterday.setDate(yesterday.getDate() - 1);
-  const yesterdayStr = yesterday.toISOString().split('T')[0];
-
-  const tomorrow = new Date();
-  tomorrow.setDate(tomorrow.getDate() + 1);
-  const tomorrowStr = tomorrow.toISOString().split('T')[0];
-
-  const today = new Date();
-  const todayStr = today.toISOString().split('T')[0];
+  const yesterdayStr = localDayKey(-1);
+  const tomorrowStr = localDayKey(1);
+  const todayStr = localDayKey(0);
 
   it('past-due open follow-up → overdue = true', () => {
     assert.equal(isOverdueFollowUp({ status: 'open', nextFollowUpDate: yesterdayStr }), true);
@@ -105,5 +112,50 @@ describe('isTerminalFollowUp', () => {
     for (const s of ACTIVE_FOLLOWUP_STATUSES) {
       assert.equal(isTerminalFollowUp({ status: s }), false, `${s} should not be terminal`);
     }
+  });
+});
+
+
+// ══════════════════════════════════════════════════════════════
+//  isDueToday — the canonical "متابعات اليوم" predicate (§26).
+//  The Home dashboard MUST count exactly these records: active
+//  statuses (open | under_review | under_follow_up) whose
+//  nextFollowUpDate equals today. The pre-fix Home route tested
+//  'open' | 'in_progress' — 'in_progress' does not exist and
+//  'under_review'/'under_follow_up' were silently dropped, so Home
+//  undercounted the records the Follow-ups page shows.
+// ══════════════════════════════════════════════════════════════
+describe('isDueToday — canonical due-today semantics', () => {
+  const todayStr = localDayKey(0);
+  const tomorrowStr = localDayKey(1);
+  const yesterdayStr = localDayKey(-1);
+
+  it('every ACTIVE status due today counts — including under_review and under_follow_up', () => {
+    for (const status of ACTIVE_FOLLOWUP_STATUSES) {
+      assert.equal(isDueToday({ status, nextFollowUpDate: todayStr }), true, `status=${status}`);
+    }
+  });
+
+  it('terminal statuses never count as due today', () => {
+    for (const status of TERMINAL_FOLLOWUP_STATUSES) {
+      assert.equal(isDueToday({ status, nextFollowUpDate: todayStr }), false, `status=${status}`);
+    }
+  });
+
+  it('due tomorrow is not due today', () => {
+    assert.equal(isDueToday({ status: 'open', nextFollowUpDate: tomorrowStr }), false);
+  });
+
+  it('due yesterday is overdue, not due today', () => {
+    assert.equal(isDueToday({ status: 'open', nextFollowUpDate: yesterdayStr }), false);
+  });
+
+  it('a missing next-follow-up date is never due today', () => {
+    assert.equal(isDueToday({ status: 'open', nextFollowUpDate: null }), false);
+    assert.equal(isDueToday({ status: 'open' }), false);
+  });
+
+  it('an unparseable next-follow-up date is never due today (fail-closed)', () => {
+    assert.equal(isDueToday({ status: 'open', nextFollowUpDate: 'not-a-date' }), false);
   });
 });

@@ -948,6 +948,8 @@ export function explainScopeSource(
 export const PAGE_SECTIONS: Record<string, ReadonlyArray<{ id: string; title: string }>> = {
   employee360: [
     { id: 'basicInfo', title: 'البيانات الأساسية' },
+    { id: 'performance', title: 'الأداء والتقييم' },
+    { id: 'deals', title: 'الصفقات' },
     { id: 'attendance', title: 'الحضور والانصراف' },
     { id: 'quality', title: 'الجودة' },
     { id: 'observations', title: 'ملاحظات الجودة' },
@@ -957,7 +959,9 @@ export const PAGE_SECTIONS: Record<string, ReadonlyArray<{ id: string; title: st
     { id: 'travel', title: 'السفر' },
     { id: 'complaints', title: 'الشكاوى' },
     { id: 'capa', title: 'كابا' },
-    { id: 'risk', title: 'المخاطر' },
+    { id: 'risk', title: 'المخاطر والانتباه' },
+    { id: 'decisionSupport', title: 'دعم قرارات الموارد البشرية' },
+    { id: 'organization', title: 'الهيكل التنظيمي' },
     { id: 'timeline', title: 'السجل الزمني' },
   ],
 };

@@ -1,9 +1,10 @@
 'use client';
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { apiFetch } from '@/lib/query-provider';
+import { apiFetch } from '@/lib/api-fetch';
+import { invalidateDomain } from '@/lib/cache/invalidation';
 import { parseAuditLogPayload } from '@/app/api/quality-audit-log/payload';
-import type { MonthSnapshot } from '@/types/quality-kpi';
+import type { MonthSnapshot, QualityObservation } from '@/types/quality-kpi';
 
 // ═══════════════════════════════════════════════════
 //  Query Key Factory — Quality KPI (Phase 1)
@@ -72,9 +73,12 @@ export function useCreateObservation() {
         method: 'POST',
         body: JSON.stringify(data),
       }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: kpiQueryKeys.observations });
-      qc.invalidateQueries({ queryKey: ['kpi', 'dashboard'] });
+    onSuccess: (data) => {
+      // Targeted dependency map (§20): KPI surfaces + Home + risk +
+      // this subject's Employee 360 — nothing else refetches.
+      invalidateDomain(qc, 'qualityObservations', {
+        employeeId: (data as Record<string, unknown>)?.employeeId as string | undefined,
+      });
     },
   });
 }
@@ -87,12 +91,10 @@ export function useUpdateObservation() {
         method: 'PUT',
         body: JSON.stringify(data),
       }),
-    onSettled: () => {
-      qc.invalidateQueries({ queryKey: kpiQueryKeys.observations });
-      qc.invalidateQueries({ queryKey: ['kpi', 'dashboard'] });
-      // Open-month snapshot details are live previews — refresh them so
-      // Employee 360 monthly rows reflect the mutation.
-      qc.invalidateQueries({ queryKey: kpiQueryKeys.snapshots });
+    onSettled: (_res, _err, vars) => {
+      invalidateDomain(qc, 'qualityObservations', {
+        employeeId: vars?.data?.employeeId as string | undefined,
+      });
     },
   });
 }
@@ -103,39 +105,71 @@ export function useDeleteObservation() {
     mutationFn: (id: string) =>
       apiFetch(`/api/quality-observations/${id}`, { method: 'DELETE' }),
     onSettled: () => {
-      qc.invalidateQueries({ queryKey: kpiQueryKeys.observations });
-      qc.invalidateQueries({ queryKey: ['kpi', 'dashboard'] });
-      qc.invalidateQueries({ queryKey: kpiQueryKeys.snapshots });
+      invalidateDomain(qc, 'qualityObservations');
     },
   });
 }
 
+// ══════════════════════════════════════════════════════════════
+//  §UX-STRUCTURE PART 10 — approval state must show IMMEDIATELY
+//  after اعتماد/رفض. Both routes respond with the PERSISTED record
+//  (projected status + append-only history), so the mutation feeds
+//  that authoritative response straight into the cached lists
+//  (setQueryData) before the invalidation refetch lands. The UI
+//  never paints a local guess — and after a reload the same state
+//  remains, because it came from the backend.
+// ══════════════════════════════════════════════════════════════
+
+type ObservationCacheUpdater = (record: QualityObservation) => void;
+
+function useApplyObservationResponse(): ObservationCacheUpdater {
+  const qc = useQueryClient();
+  return (record: QualityObservation) => {
+    // Every materialized list variant (status/month filters…) keyed
+    // under ['kpi','observations', qs] gets the authoritative record.
+    qc.setQueriesData({ queryKey: kpiQueryKeys.observations }, (old: unknown) =>
+      Array.isArray(old)
+        ? old.map((o) => (o && typeof o === 'object' && (o as QualityObservation).id === record.id ? { ...(o as QualityObservation), ...record } : o))
+        : old,
+    );
+    qc.setQueryData(kpiQueryKeys.observation(record.id), (old: unknown) =>
+      old && typeof old === 'object' ? { ...(old as QualityObservation), ...record } : old,
+    );
+  };
+}
+
 export function useApproveObservation() {
   const qc = useQueryClient();
+  const applyResponse = useApplyObservationResponse();
   return useMutation({
     mutationFn: ({ id, data }: { id: string; data: { notes?: string; points?: number } }) =>
-      apiFetch(`/api/quality-observations/${id}/approve`, {
+      apiFetch<QualityObservation>(`/api/quality-observations/${id}/approve`, {
         method: 'POST',
         body: JSON.stringify(data),
       }),
-    onSettled: () => {
-      qc.invalidateQueries({ queryKey: kpiQueryKeys.observations });
-      qc.invalidateQueries({ queryKey: ['kpi', 'dashboard'] });
+    onSuccess: (updated) => applyResponse(updated),
+    onSettled: (updated) => {
+      invalidateDomain(qc, 'qualityObservations', {
+        employeeId: (updated as unknown as Record<string, unknown>)?.employeeId as string | undefined,
+      });
     },
   });
 }
 
 export function useRejectObservation() {
   const qc = useQueryClient();
+  const applyResponse = useApplyObservationResponse();
   return useMutation({
     mutationFn: ({ id, reason }: { id: string; reason: string }) =>
-      apiFetch(`/api/quality-observations/${id}/reject`, {
+      apiFetch<QualityObservation>(`/api/quality-observations/${id}/reject`, {
         method: 'POST',
         body: JSON.stringify({ reason }),
       }),
-    onSettled: () => {
-      qc.invalidateQueries({ queryKey: kpiQueryKeys.observations });
-      qc.invalidateQueries({ queryKey: ['kpi', 'dashboard'] });
+    onSuccess: (updated) => applyResponse(updated),
+    onSettled: (updated) => {
+      invalidateDomain(qc, 'qualityObservations', {
+        employeeId: (updated as unknown as Record<string, unknown>)?.employeeId as string | undefined,
+      });
     },
   });
 }

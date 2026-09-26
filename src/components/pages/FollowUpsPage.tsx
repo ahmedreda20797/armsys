@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { isOverdueFollowUp } from '@/lib/metrics/followUpMetrics';
+import { isOverdueFollowUp, isDueToday } from '@/lib/metrics/followUpMetrics';
 import { ReportView } from '@/components/shared/reports/ReportView';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '@/contexts/AuthContext';
@@ -22,6 +22,7 @@ import { EmployeeSearchInput } from '@/components/shared/EmployeeSearchInput';
 import { UserSearchInput } from '@/components/shared/UserSearchInput';
 import { CAPALinkBadge } from '@/components/shared/CAPALinkBadge';
 import { AttentionPanel, type AttentionItem } from '@/components/shared/AttentionPanel';
+import { DataFreshnessIndicator } from '@/components/shared/DataFreshnessIndicator';
 import { SmartActionMenu, type SmartAction } from '@/components/shared/SmartActionMenu';
 import type { OverflowMenuItem } from '@/components/shared/OverflowMenu';
 import { InlineFormPanel } from '@/components/shared/InlineFormPanel';
@@ -53,7 +54,10 @@ import type { Locale } from '@/lib/i18n/dictionary';
 interface SystemUser { id: string; name: string; email?: string; role?: string; }
 import { logCreate, logUpdate, logDelete } from '@/lib/activity-logger';
 import { toast } from 'sonner';
-import { authFetch } from '@/lib/api-fetch';
+import { apiFetch } from '@/lib/api-fetch';
+import { useQueryClient } from '@tanstack/react-query';
+import { useFollowUpsList, useEmployees, useDashboardUsers } from '@/hooks/use-queries';
+import { invalidateDomain } from '@/lib/cache/invalidation';
 import { useAppStore } from '@/lib/store';
 import { addDays, todayDayKey } from '@/lib/date-utils';
 
@@ -256,12 +260,27 @@ export default function FollowUpsPage() {
   const { canCreate: canCreateCapa } = usePermissions('capa');
   const isManagerOrAdmin = isAdmin || user?.role === 'admin' || user?.role === 'manager';
 
-  const [followUps, setFollowUps] = useState<FollowUp[]>([]);
-  const [employeeRiskScores, setEmployeeRiskScores] = useState<Record<string, number>>({});
-  const [employees, setEmployees] = useState<Employee[]>([]);
-  const [systemUsers, setSystemUsers] = useState<SystemUser[]>([]);
-  const [loading, setLoading] = useState(!canView); // start settled when the user lacks view permission
-  const [error, setError] = useState<string | null>(null);
+  // ═══ DATA STATE (cache-backed, §4) — records come from the canonical
+  //  client data cache: first visit fetches, return visits restore the
+  //  last snapshot instantly and revalidate in the background (§9/§28).
+  //  PAGE STATE (filters/view) above stays in usePageState — untouched.
+  const queryClient = useQueryClient();
+  const followUpsQuery = useFollowUpsList(canView);
+  const employeesQuery = useEmployees(canView);
+  const systemUsersQuery = useDashboardUsers('full', canView);
+  const followUps = followUpsQuery.data?.followUps ?? [];
+  const employeeRiskScores = followUpsQuery.data?.employeeRiskScores ?? {};
+  const employees = employeesQuery.data ?? [];
+  const systemUsers = systemUsersQuery.data ?? [];
+  // Full-page skeleton ONLY when there is no snapshot to show (§11).
+  const loading = canView && (followUpsQuery.isLoading || employeesQuery.isLoading);
+  // Background revalidation on an existing snapshot → subtle state only.
+  const revalidating = canView && (followUpsQuery.isFetching || employeesQuery.isFetching) && !loading;
+  // Blocking error ONLY when there is no snapshot to show (§33) —
+  // a failed background revalidation keeps the last valid data.
+  const error = canView && followUpsQuery.isError && !followUpsQuery.data
+    ? 'تعذّر تحميل المتابعات'
+    : null;
   // Phase 6.3 (§8): filter/view context persists per user (session-scoped).
   // collapsedEmployees (§25 container state) persists as an array so a
   // returning user finds the same groups collapsed.
@@ -280,6 +299,9 @@ export default function FollowUpsPage() {
     startDate: string;
     endDate: string;
     overdueOnly?: boolean;
+    /** §NOTIFICATIONS-DEEPLINK / Home due-today card — filter by the
+     *  canonical isDueToday predicate (nextFollowUpDate = today). */
+    dueTodayOnly?: boolean;
     viewMode: 'table' | 'cards';
     collapsedEmployees: string[];
   }>({
@@ -295,8 +317,12 @@ export default function FollowUpsPage() {
         typeFilter: typeof navSeed.type === 'string' && navSeed.type ? navSeed.type : 'all',
         priorityFilter: typeof navSeed.priority === 'string' && navSeed.priority ? navSeed.priority : 'all',
         deptFilter: 'all',
-        startDate: navSeed.dueToday === '1' ? todayKey : '',
-        endDate: navSeed.dueToday === '1' ? todayKey : '',
+        startDate: '',
+        endDate: '',
+        // §DEEP-LINK — dueToday filters the DUE dimension
+        // (nextFollowUpDate via isDueToday), never the record's own
+        // `date` field — the two are different date dimensions.
+        dueTodayOnly: navSeed.dueToday === '1',
         overdueOnly: navSeed.overdue === '1',
         viewMode: 'table',
         collapsedEmployees: [],
@@ -324,6 +350,8 @@ export default function FollowUpsPage() {
   const setEndDate = (v: string) => setFollowUpsView((s) => ({ ...s, endDate: v }));
   const overdueOnly = followUpsView.overdueOnly === true;
   const setOverdueOnly = (v: boolean) => setFollowUpsView((s) => ({ ...s, overdueOnly: v }));
+  const dueTodayOnly = followUpsView.dueTodayOnly === true;
+  const setDueTodayOnly = (v: boolean) => setFollowUpsView((s) => ({ ...s, dueTodayOnly: v }));
   const viewMode = followUpsView.viewMode;
   const setViewMode = (v: 'table' | 'cards') => setFollowUpsView((s) => ({ ...s, viewMode: v }));
   const collapsedEmployees = useMemo(
@@ -393,8 +421,11 @@ export default function FollowUpsPage() {
 
   const todayStr = getTodayStr();
   const todaysFollowUps = useMemo(() =>
-    followUps.filter(f => f.nextFollowUpDate === todayStr && (f.status === 'open' || f.status === 'under_follow_up')),
-    [followUps, todayStr]
+    // §26 — the SAME canonical isDueToday predicate the dashboard and
+    // performance-intelligence use (all active statuses; 'under_review'
+    // was silently dropped before, so page and Home disagreed).
+    followUps.filter(f => isDueToday(f)),
+    [followUps]
   );
   // §8: overdue active follow-ups join the alert area as structured
   // items (display-only derivation — the canonical status/timing rules
@@ -418,42 +449,13 @@ export default function FollowUpsPage() {
     return Array.from(depts).sort((a, b) => a.localeCompare(b, 'ar'));
   }, [employees]);
 
-  // ═══ Fetch Data ═══
-  useEffect(() => {
-    if (!canView) return; // loading initialized to false for non-viewers
-    fetchData();
-  }, []);
-
-  async function fetchData() {
-    setError(null);
-    try {
-      const [fuRes, empRes, usrRes] = await Promise.allSettled([
-        authFetch('/api/follow-ups'),
-        authFetch('/api/employees'),
-        authFetch('/api/dashboard/users'),
-      ]);
-      if (fuRes.status === 'fulfilled' && fuRes.value.ok) {
-        const fuData = await fuRes.value.json();
-        const items = fuData?.data || fuData || [];
-        setFollowUps(Array.isArray(items) ? items : []);
-        setEmployeeRiskScores(fuData?.employeeRiskScores || {});
-      }
-      if (empRes.status === 'fulfilled' && empRes.value.ok) {
-        const empData = await empRes.value.json();
-        setEmployees(Array.isArray(empData) ? empData : []);
-      }
-      if (usrRes.status === 'fulfilled' && usrRes.value.ok) {
-        const usrData = await usrRes.value.json();
-        setSystemUsers(Array.isArray(usrData) ? usrData : []);
-      }
-    } catch {
-      setError('تعذّر تحميل المتابعات');
-      setFollowUps([]);
-      setEmployees([]);
-    } finally {
-      setLoading(false);
-    }
-  }
+  // ═══ Manual refresh / mutation-triggered revalidation (§26).
+  //  invalidateDomain marks the affected cache entries stale and
+  //  refetches what is mounted — the current snapshot stays visible
+  //  while the fresh data arrives (no blank reload).
+  const refreshData = useCallback(async () => {
+    await queryClient.invalidateQueries({ queryKey: ['followUps'] });
+  }, [queryClient]);
 
   // ═══ Filtered Data ═══
   const filtered = useMemo(() => {
@@ -465,6 +467,8 @@ export default function FollowUpsPage() {
       // §17 — the overdue deep-link shows EXACTLY the overdue records
       // the canonical metric counts on the dashboard.
       if (overdueOnly && !isOverdueFollowUp(item)) return false;
+      // §DEEP-LINK — exactly the records the Home "متابعات اليوم" card counts.
+      if (dueTodayOnly && !isDueToday(item)) return false;
 
       const empName = item.employeeName || employees.find((e: any) => e.id === item.employeeId)?.name || '';
       const matchesSearch = search === '' ||
@@ -479,7 +483,7 @@ export default function FollowUpsPage() {
       if (dateCompare !== 0) return dateCompare;
       return (b.createdAt || '').localeCompare(a.createdAt || '');
     });
-  }, [followUps, startDate, endDate, deptFilter, priorityFilter, search, statusFilter, typeFilter, overdueOnly, employees]);
+  }, [followUps, startDate, endDate, deptFilter, priorityFilter, search, statusFilter, typeFilter, overdueOnly, dueTodayOnly, employees]);
 
   // ═══ Group by Employee ═══
   const groupedByEmployee = useMemo(() => {
@@ -654,33 +658,29 @@ export default function FollowUpsPage() {
       };
 
       if (editingItem) {
-        const res = await authFetch(`/api/follow-ups/${editingItem.id}`, {
+        await apiFetch(`/api/follow-ups/${editingItem.id}`, {
           method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload),
         });
-        if (res.ok) {
-          const empName = employees.find((e: any) => e.id === form.employeeId)?.name || editingItem.employeeName || '';
-          logUpdate('followUps', 'متابعة يومية', `${empName} - ${form.subject}`);
-          toast.success(translateUIText('تم تحديث المتابعة بنجاح', locale));
-          await fetchData();
-          setIsDialogOpen(false);
-          setEditingItem(null);
-        }
+        const empName = employees.find((e: any) => e.id === form.employeeId)?.name || editingItem.employeeName || '';
+        logUpdate('followUps', 'متابعة يومية', `${empName} - ${form.subject}`);
+        toast.success(translateUIText('تم تحديث المتابعة بنجاح', locale));
+        // Targeted invalidation: follow-up surfaces + Home metric for
+        // THIS employee's 360 — nothing else refetches (§18).
+        await invalidateDomain(queryClient, 'followUps', { employeeId: form.employeeId });
+        setIsDialogOpen(false);
+        setEditingItem(null);
       } else {
-        const res = await authFetch('/api/follow-ups', {
+        await apiFetch('/api/follow-ups', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload),
         });
-        if (res.ok) {
-          const empName = employees.find((e: any) => e.id === form.employeeId)?.name || '';
-          logCreate('followUps', 'متابعة يومية', `${empName} - ${form.subject}`);
-          toast.success(translateUIText('تم إضافة المتابعة بنجاح', locale));
-          await fetchData();
-          setIsDialogOpen(false);
-          setEditingItem(null);
-        }
+        const empName = employees.find((e: any) => e.id === form.employeeId)?.name || '';
+        logCreate('followUps', 'متابعة يومية', `${empName} - ${form.subject}`);
+        toast.success(translateUIText('تم إضافة المتابعة بنجاح', locale));
+        await invalidateDomain(queryClient, 'followUps', { employeeId: form.employeeId });
+        setIsDialogOpen(false);
+        setEditingItem(null);
       }
     } catch {
       toast.error(translateUIText('حدث خطأ أثناء الحفظ', locale));
@@ -694,14 +694,14 @@ export default function FollowUpsPage() {
     setDeleteLoading(true);
     try {
       const item = followUps.find(f => f.id === id);
-      const res = await authFetch(`/api/follow-ups/${id}`, { method: 'DELETE' });
-      if (res.ok) {
-        const empName = item?.employeeName || employees.find((e: any) => e.id === item?.employeeId)?.name || '';
-        logDelete('followUps', 'متابعة يومية', `${empName} - ${item?.subject || ''}`);
-        toast.success(translateUIText('تم حذف المتابعة', locale));
-        setFollowUps(prev => prev.filter(f => f.id !== id));
-        setDeletingId(null);
-      }
+      await apiFetch(`/api/follow-ups/${id}`, { method: 'DELETE' });
+      const empName = item?.employeeName || employees.find((e: any) => e.id === item?.employeeId)?.name || '';
+      logDelete('followUps', 'متابعة يومية', `${empName} - ${item?.subject || ''}`);
+      toast.success(translateUIText('تم حذف المتابعة', locale));
+      // The list refetches through the cache invalidation below —
+      // the previous manual local removal is no longer needed.
+      await invalidateDomain(queryClient, 'followUps', { employeeId: item?.employeeId });
+      setDeletingId(null);
     } catch {
       toast.error(translateUIText('حدث خطأ أثناء الحذف', locale));
     } finally {
@@ -718,9 +718,10 @@ export default function FollowUpsPage() {
     setStartDate('');
     setEndDate('');
     setOverdueOnly(false);
+    setDueTodayOnly(false);
   };
 
-  const hasActiveFilters = search || statusFilter !== 'all' || typeFilter !== 'all' || priorityFilter !== 'all' || deptFilter !== 'all' || startDate || endDate || overdueOnly;
+  const hasActiveFilters = search || statusFilter !== 'all' || typeFilter !== 'all' || priorityFilter !== 'all' || deptFilter !== 'all' || startDate || endDate || overdueOnly || dueTodayOnly;
 
   // ═══ Permission Guard ═══
   if (!canView) {
@@ -833,6 +834,10 @@ export default function FollowUpsPage() {
         )}
       </AnimatePresence>
 
+      {/* Subtle background-revalidation state — the snapshot above
+          stays visible; this never blocks the UI (§10/§32). */}
+      <DataFreshnessIndicator revalidating={revalidating} />
+
       {/* ━━━ §12 INLINE CAPA FORM — opens here (prefilled from the
           triggering follow-up) instead of navigating to the CAPA page;
           the shared InlineFormPanel keeps the header/close standard. ━━━ */}
@@ -850,7 +855,7 @@ export default function FollowUpsPage() {
               onClose={() => setCapaPrefill(null)}
               onCreated={() => {
                 setCapaPrefill(null);
-                void fetchData();
+                void refreshData();
               }}
               employees={employees}
               systemUsers={systemUsers}
@@ -969,6 +974,21 @@ export default function FollowUpsPage() {
               <AlertTriangle className="size-3.5" />
               <T>متأخرة عن موعدها</T>
             </button>
+            {/* §DEEP-LINK — due-today chip (Home "متابعات اليوم" target);
+                same canonical predicate as the card. */}
+            <button
+              type="button"
+              onClick={() => setDueTodayOnly(!dueTodayOnly)}
+              aria-pressed={dueTodayOnly}
+              className={`inline-flex items-center gap-1.5 px-3 h-9 rounded-lg border text-xs font-medium transition-colors ${
+                dueTodayOnly
+                  ? 'bg-amber-500/15 text-amber-300 border-amber-500/30'
+                  : 'bg-slate-800/50 text-slate-400 border-slate-700/50 hover:text-slate-200'
+              }`}
+            >
+              <CalendarDays className="size-3.5" />
+              <T>مستحقة اليوم</T>
+            </button>
             {/* §24 — open the deterministic follow-ups report */}
             <Button
               size="sm"
@@ -1032,7 +1052,7 @@ export default function FollowUpsPage() {
               <AlertTriangle className="size-6 text-rose-400" />
             </div>
             <p className="text-rose-300 text-sm font-medium">{error && <T>{error}</T>}</p>
-            <Button variant="outline" size="sm" className="mt-4" onClick={() => fetchData()}><T>إعادة المحاولة</T></Button>
+            <Button variant="outline" size="sm" className="mt-4" onClick={() => void refreshData()}><T>إعادة المحاولة</T></Button>
           </CardContent>
         </Card>
       ) : filtered.length === 0 ? (
@@ -1076,15 +1096,16 @@ export default function FollowUpsPage() {
                       const statusBadge = getStatusBadge(item.status, locale);
                       const StatusIcon = getStatusIcon(item.status);
                       const empName = item.employeeName || employees.find((e: any) => e.id === item.employeeId)?.name || '—';
-                      const isDueToday = item.nextFollowUpDate === todayStr && (item.status === 'open' || item.status === 'under_follow_up');
-                      const isOverdue = item.nextFollowUpDate && item.nextFollowUpDate < todayStr && (item.status === 'open' || item.status === 'under_follow_up');
+                      // §26 — canonical predicates (same as the dashboard cards)
+                      const dueToday = isDueToday(item);
+                      const overdueRow = isOverdueFollowUp(item);
 
                       return (
                         <motion.tr
                           key={item.id}
                           data-record-id={item.id}
                           variants={itemVariants}
-                          className={`border-b border-slate-700/20 hover:bg-slate-800/50 transition-colors ${isDueToday ? 'bg-amber-500/5' : isOverdue ? 'bg-red-500/3' : ''}`}
+                          className={`border-b border-slate-700/20 hover:bg-slate-800/50 transition-colors ${dueToday ? 'bg-amber-500/5' : overdueRow ? 'bg-red-500/3' : ''}`}
                         >
                           <td className="px-3 py-2.5 whitespace-nowrap text-slate-400 text-xs" dir="ltr">{item.date}</td>
                           <td className="px-3 py-2.5 whitespace-nowrap text-white text-xs font-medium">{empName}</td>
@@ -1112,7 +1133,7 @@ export default function FollowUpsPage() {
                           <td className="px-3 py-2.5 whitespace-nowrap text-slate-500 text-xs">{item.createdByName || '—'}</td>
                           <td className="px-3 py-2.5 whitespace-nowrap">
                             {item.nextFollowUpDate ? (
-                              <span className={`text-xs ${isOverdue ? 'text-red-400' : isDueToday ? 'text-amber-400' : 'text-slate-500'}`} dir="ltr">
+                              <span className={`text-xs ${overdueRow ? 'text-red-400' : dueToday ? 'text-amber-400' : 'text-slate-500'}`} dir="ltr">
                                 {item.nextFollowUpDate}
                               </span>
                             ) : <span className="text-slate-600 text-xs">—</span>}
@@ -1226,8 +1247,9 @@ export default function FollowUpsPage() {
                               const statusBadge = getStatusBadge(item.status, locale);
                               const StatusIcon = getStatusIcon(item.status);
                               const responsibleName = systemUsers.find((u: any) => u.id === item.responsiblePerson)?.name || item.responsiblePerson || '—';
-                              const isDueToday = item.nextFollowUpDate === todayStr && (item.status === 'open' || item.status === 'under_follow_up');
-                              const isOverdue = item.nextFollowUpDate && item.nextFollowUpDate < todayStr && (item.status === 'open' || item.status === 'under_follow_up');
+                              // §26 — canonical predicates (same as the dashboard cards)
+                              const dueToday = isDueToday(item);
+                              const overdueRow = isOverdueFollowUp(item);
 
                               return (
                                 <motion.div
@@ -1236,7 +1258,7 @@ export default function FollowUpsPage() {
                                   layout
                                   initial={{ opacity: 0, y: 5 }}
                                   animate={{ opacity: 1, y: 0 }}
-                                  className={`rounded-lg border ${isDueToday ? 'border-amber-500/40 bg-amber-500/5' : isOverdue ? 'border-red-500/30 bg-red-500/3' : 'border-slate-700/30 bg-slate-800/40'} p-3 space-y-2.5`}
+                                  className={`rounded-lg border ${dueToday ? 'border-amber-500/40 bg-amber-500/5' : overdueRow ? 'border-red-500/30 bg-red-500/3' : 'border-slate-700/30 bg-slate-800/40'} p-3 space-y-2.5`}
                                 >
                                   <div className="flex flex-wrap items-center gap-2">
                                     <span className="text-slate-400 text-xs font-medium" dir="ltr">
@@ -1254,13 +1276,13 @@ export default function FollowUpsPage() {
                                       <StatusIcon className="size-2.5" />
                                       {statusBadge.label}
                                     </div>
-                                    {isDueToday && (
+                                    {dueToday && (
                                       <div className="flex items-center gap-1 px-1.5 py-0.5 rounded border text-[10px] font-medium bg-amber-500/15 text-amber-400 border-amber-500/30">
                                         <Bell className="size-2.5" />
                                         <T>متابعة اليوم</T>
                                       </div>
                                     )}
-                                    {isOverdue && (
+                                    {overdueRow && (
                                       <div className="flex items-center gap-1 px-1.5 py-0.5 rounded border text-[10px] font-medium bg-red-500/15 text-red-400 border-red-500/30">
                                         <AlertTriangle className="size-2.5" />
                                         <T>تأخر</T>
@@ -1335,7 +1357,7 @@ export default function FollowUpsPage() {
                                       <T>النقاط: </T><span className="text-slate-300">{formatInteger(item.score ?? SCORE_MAP[item.priorityLevel] ?? 3, locale)}</span>
                                     </span>
                                     {item.nextFollowUpDate && (
-                                      <span className={`flex items-center gap-1 ${isOverdue ? 'text-red-400' : 'text-slate-500'}`}>
+                                      <span className={`flex items-center gap-1 ${overdueRow ? 'text-red-400' : 'text-slate-500'}`}>
                                         <CalendarDays className="size-2.5" />
                                         <T>المتابعة القادمة: </T><span dir="ltr">{item.nextFollowUpDate}</span>
                                       </span>

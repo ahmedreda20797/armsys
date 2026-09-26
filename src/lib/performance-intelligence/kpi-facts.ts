@@ -14,6 +14,7 @@
 
 import type { EmployeeKpiReport } from '@/lib/kpi-reporting';
 import type {
+  KpiComponentFact,
   KpiFacts,
   KpiQualityFacts,
   ScoreTrendFacts,
@@ -39,6 +40,24 @@ function toKpiQualityFacts(report: EmployeeKpiReport): KpiQualityFacts | null {
 }
 
 /**
+ * Project the engine's FULL component breakdown verbatim (all
+ * statuses — PENDING components stay pending, never 0-filled). No
+ * evidence internals leave the technical report.
+ */
+function toKpiComponentFacts(report: EmployeeKpiReport): KpiComponentFact[] {
+  return (report.components ?? []).map((c) => ({
+    componentId: c.componentId,
+    name: c.name,
+    owner: c.owner,
+    weight: c.weight,
+    status: c.status,
+    rawScore: c.rawScore,
+    weightedContribution: c.weightedContribution,
+    maxContribution: c.maxContribution,
+  }));
+}
+
+/**
  * Build the dataset's KPI facts from the canonical employee report.
  * The engine's outcome vocabulary is preserved in full — a missing
  * result (NOT_ELIGIBLE / NO_SCHEME / …) stays an explicit outcome,
@@ -49,6 +68,7 @@ export function buildKpiFacts(report: EmployeeKpiReport): KpiFacts {
     outcomeStatus: report.outcomeStatus,
     message: report.message,
     scheme: report.scheme,
+    components: toKpiComponentFacts(report),
     quality: toKpiQualityFacts(report),
     availableWeight: report.availableWeight,
     weightedTotal: report.weightedTotal,

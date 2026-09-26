@@ -46,6 +46,13 @@ interface NotificationContextValue {
   markReadLocal: (id: string) => void;
   /** Mark all as read */
   markAllRead: () => Promise<void>;
+  /**
+   * §NOTIFICATIONS-UX — optimistic mark-all: zero the badge + mark
+   * loaded items read LOCALLY (no server call). The caller performs
+   * the single authoritative POST; on failure it reconciles via
+   * refresh().
+   */
+  markAllReadLocal: () => void;
   /** Refresh notifications from server */
   refresh: () => Promise<void>;
   /** Remove a notification locally (after delete) */
@@ -437,6 +444,18 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
     setServerUnreadCount(0);
   }, [notifications, markReadLocal]);
 
+  // ── Optimistic mark-all (local only — see interface doc) ──
+  const markAllReadLocal = useCallback(() => {
+    setNotifications((prev) =>
+      prev.map((n) =>
+        n.status === 'unread'
+          ? { ...n, status: 'read' as const, readAt: n.readAt || new Date().toISOString() }
+          : n,
+      ),
+    );
+    setServerUnreadCount(0);
+  }, []);
+
   // ── Remove local ──
   const removeLocal = useCallback((id: string) => {
     const target = notifications.find((n) => n.id === id);
@@ -484,6 +503,7 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
         markRead,
         markReadLocal,
         markAllRead,
+        markAllReadLocal,
         refresh,
         removeLocal,
         deleteNotification,

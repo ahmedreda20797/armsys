@@ -580,6 +580,12 @@
       "namedRegex": "^/api/employees(?:/)?$"
     },
     {
+      "page": "/api/employees/org-nodes",
+      "regex": "^/api/employees/org\\-nodes(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/employees/org\\-nodes(?:/)?$"
+    },
+    {
       "page": "/api/employees/upload",
       "regex": "^/api/employees/upload(?:/)?$",
       "routeKeys": {},
@@ -860,6 +866,24 @@
       "regex": "^/api/reports/generate(?:/)?$",
       "routeKeys": {},
       "namedRegex": "^/api/reports/generate(?:/)?$"
+    },
+    {
+      "page": "/api/reports/hr-performance",
+      "regex": "^/api/reports/hr\\-performance(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/reports/hr\\-performance(?:/)?$"
+    },
+    {
+      "page": "/api/reports/hr-performance/decision",
+      "regex": "^/api/reports/hr\\-performance/decision(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/reports/hr\\-performance/decision(?:/)?$"
+    },
+    {
+      "page": "/api/reports/hr-performance/decision/employee",
+      "regex": "^/api/reports/hr\\-performance/decision/employee(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/reports/hr\\-performance/decision/employee(?:/)?$"
     },
     {
       "page": "/api/reports/management",

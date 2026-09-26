@@ -19,6 +19,7 @@ import { toast } from 'sonner';
 import { usePermissions } from '@/hooks/usePermissions';
 import { useUserPreferences, useSaveUserPreferences } from '@/hooks/use-user-preferences';
 import { DASHBOARD_WIDGETS, type WidgetConfig } from '@/config/dashboard-widgets';
+import { effectiveHiddenWidgets } from '@/lib/personalization';
 
 interface DashboardCustomizeDialogProps {
   open: boolean;
@@ -61,8 +62,10 @@ function DashboardCustomizer({ canViewPage, preferences, onClose }: {
   const [order, setOrder] = useState<string[]>(
     savedOrder && savedOrder.length > 0 ? savedOrder : defaultOrder,
   );
+  // §12C — the EFFECTIVE hidden set (registry defaults until an
+  // explicit customization exists), never raw saved-only state.
   const [hidden, setHidden] = useState<Set<string>>(
-    new Set(preferences?.dashboard?.hiddenWidgets ?? []),
+    () => effectiveHiddenWidgets(DASHBOARD_WIDGETS, preferences),
   );
 
   const widgetById = useMemo(() => new Map(DASHBOARD_WIDGETS.map((w) => [w.id, w])), []);

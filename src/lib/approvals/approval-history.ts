@@ -136,3 +136,25 @@ export function isPendingStatus(status: ApprovalStatus): boolean {
 export function isRejectedStatus(status: ApprovalStatus): boolean {
   return status === 'rejected';
 }
+
+/**
+ * The DECISIVE event behind the current status — approve/reject with
+ * its actor, timestamp and notes (the rejection reason rides in
+ * `notes`, exactly as the API routes persist it).
+ *
+ * Walks newest → oldest with the SAME precedence rules as
+ * {@link projectLatestApprovalStatus}: `reopen` resets to pending
+ * (no decision to show), `override`/`submit` are not decisions.
+ * Returns null while the item is awaiting its first decision.
+ *
+ * @param history - The append-only approval history.
+ * @returns The latest decisive event, or null when still pending.
+ */
+export function latestApprovalDecision(history: ApprovalEvent[]): ApprovalEvent | null {
+  for (let i = history.length - 1; i >= 0; i--) {
+    const event = history[i];
+    if (event.action === 'approve' || event.action === 'reject') return event;
+    if (event.action === 'reopen') return null;
+  }
+  return null;
+}

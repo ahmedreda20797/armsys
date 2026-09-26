@@ -48,6 +48,7 @@ import { CAPAInlineForm } from '@/components/shared/inline-forms';
 import { TimelineView } from '@/components/shared/audit';
 import { ApprovalHistoryTimeline } from '@/components/shared/approval';
 import { buildTimeline } from '@/lib/audit/timeline-builder';
+import { latestApprovalDecision } from '@/lib/approvals/approval-history';
 import {
   classifyEvidence,
   truncateEvidenceForDisplay,
@@ -76,10 +77,54 @@ const STATUS_LABELS: Record<string, [string, string]> = {
   open: ['مفتوحة', 'Open'], in_review: ['قيد المراجعة', 'In review'], resolved: ['تم الحل', 'Resolved'], closed: ['مغلقة', 'Closed'],
 };
 
+const APPROVAL_LABELS: Record<string, [string, string]> = {
+  pending: ['بانتظار الاعتماد', 'Pending'], approved: ['معتمدة', 'Approved'], rejected: ['مرفوضة', 'Rejected'],
+};
+
 /** Pick the locale side of an enum-label pair; unknown codes pass raw. */
 function enumLabel(map: Record<string, [string, string]>, code: string, locale: Locale): string {
   const pair = map[code];
   return pair ? (locale === 'en' ? pair[1] : pair[0]) : code;
+}
+
+// ═══ §UX-STRUCTURE PART 10 — the decision state is FIRST-CLASS ═══
+// After اعتماد/رفض the record must show the RESULTING state, WHO
+// decided and WHEN (plus the rejection reason where the business
+// logic stores one — the reject route persists it in the event's
+// notes). Everything renders from the PERSISTED approvalHistory —
+// the same data the backend projects approvalStatus from — so the
+// state survives a reload by construction. No local-only state.
+function ApprovalDecisionSummary({ obs, locale }: { obs: QualityObservation; locale: Locale }) {
+  const decision = useMemo(
+    () => latestApprovalDecision(obs.approvalHistory ?? []),
+    [obs.approvalHistory],
+  );
+  if (obs.approvalStatus === 'pending' || !decision) return null;
+
+  const approved = obs.approvalStatus === 'approved';
+  const reason = !approved && decision.notes ? decision.notes : null;
+  return (
+    <p
+      className={cn(
+        'text-[11px] mt-1 flex items-center gap-1.5 flex-wrap',
+        approved ? 'text-emerald-400' : 'text-rose-400',
+      )}
+    >
+      {approved ? <Check className="size-3" /> : <X className="size-3" />}
+      <span className="font-semibold">{enumLabel(APPROVAL_LABELS, obs.approvalStatus, locale)}</span>
+      {decision.actorName && (
+        <span className="text-slate-500">
+          <T>بواسطة</T> <span className="text-slate-300">{decision.actorName}</span>
+        </span>
+      )}
+      <span className="text-slate-500" dir="ltr">· {formatDate(decision.timestamp, locale)}</span>
+      {reason && (
+        <span className="text-slate-400 truncate max-w-56" title={reason}>
+          — <T>السبب</T>: {reason}
+        </span>
+      )}
+    </p>
+  );
 }
 
 /** §7 — GLOBAL RULE (inline contract): "إنشاء CAPA" from a quality note
@@ -690,6 +735,9 @@ function ObservationCard({
                 </>
               )}
             </div>
+            {/* §PART 10 — decided records state WHO decided and WHEN,
+                directly on the card (pending renders nothing here). */}
+            <ApprovalDecisionSummary obs={obs} locale={locale} />
           </div>
           <div className="flex items-center gap-1 shrink-0">
             {/* §7: the ONE visible primary action is تفاصيل; everything
@@ -784,7 +832,7 @@ function ObservationDetailDialog({
             <InfoCell label={<T>التصنيف</T>} value={obs.categoryName} />
             <InfoCell label={<T>الخطورة</T>} value={enumLabel(SEVERITY_LABELS, obs.severity, locale)} />
             <InfoCell label={<T>الحالة</T>} value={enumLabel(STATUS_LABELS, obs.status, locale)} />
-            <InfoCell label={<T>الاعتماد</T>} value={obs.approvalStatus} />
+            <InfoCell label={<T>الاعتماد</T>} value={enumLabel(APPROVAL_LABELS, obs.approvalStatus, locale)} />
             <InfoCell label={<T>النقاط</T>} value={obs.applyPointDeduction ? `${obs.isBonus ? '+' : '-'}${formatNumber(obs.points, { locale })}` : '—'} />
             {/* §2 — «بواسطة» is NOT repeated here: it already appears ONCE
                 on the card row (and only reaches authorized viewers — the
@@ -794,6 +842,10 @@ function ObservationDetailDialog({
             {obs.dueDate && <InfoCell label={<T>تاريخ الاستحقاق</T>} value={obs.dueDate} />}
             {obs.resolvedDate && <InfoCell label={<T>تاريخ الحل</T>} value={obs.resolvedDate} />}
           </div>
+
+          {/* §PART 10 — the decision block: resulting state · decider ·
+              timestamp · rejection reason (all from approvalHistory). */}
+          <ApprovalDecisionSummary obs={obs} locale={locale} />
 
           {obs.notes && (
             <div className="rounded-lg border border-slate-700/40 bg-slate-800/30 p-3">

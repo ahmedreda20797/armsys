@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { usePermissions } from '@/hooks/usePermissions';
 import { usePageState } from '@/hooks/use-page-state';
@@ -57,7 +57,11 @@ import { EmployeeSearchInput } from '@/components/shared/EmployeeSearchInput';
 import type { HrDeduction, Employee } from '@/types';
 import { useAppStore } from '@/lib/store';
 import { useAuth } from '@/contexts/AuthContext';
-import { authFetch } from '@/lib/api-fetch';
+import { apiFetch } from '@/lib/api-fetch';
+import { useQueryClient } from '@tanstack/react-query';
+import { useHrDeductionsList, useEmployees, useDashboardUsers } from '@/hooks/use-queries';
+import { invalidateDomain } from '@/lib/cache/invalidation';
+import { DataFreshnessIndicator } from '@/components/shared/DataFreshnessIndicator';
 import { T } from '@/lib/i18n/T';
 import { translateUIText } from '@/lib/i18n/ui-text';
 import { useLanguage } from '@/lib/i18n/language-context';
@@ -122,9 +126,6 @@ export default function HrDeductionsPage() {
   // own create permission); it never navigates to the CAPA page.
   const { canCreate: canCreateCapa } = usePermissions('capa');
   const { user } = useAuth();
-  const [deductions, setDeductions] = useState<HrDeductionWithEmployee[]>([]);
-  const [employees, setEmployees] = useState<Employee[]>([]);
-  const [loading, setLoading] = useState(true);
   // Phase 6.3 (§8): filter context persists per user (session-scoped).
   // Milestone 7 §13: period filter added — DEFAULT = CURRENT MONTH
   // (no persisted state only, §27); 'all' stays selectable. Version
@@ -156,6 +157,17 @@ export default function HrDeductionsPage() {
   // §ARCHIVE — optional historical view of archived HR deductions.
   const showArchived = hrView.showArchived === true;
   const setShowArchived = (v: boolean) => setHrView((s) => ({ ...s, showArchived: v }));
+  // ═══ DATA STATE (cache-backed, §4) — archived/live are distinct
+  //  cache entries; toggling restores the other snapshot instantly.
+  const queryClient = useQueryClient();
+  const deductionsQuery = useHrDeductionsList(showArchived);
+  const employeesQuery = useEmployees();
+  const systemUsersQuery = useDashboardUsers('basic');
+  const deductions = deductionsQuery.data ?? [];
+  const employees = employeesQuery.data ?? [];
+  const systemUsers = systemUsersQuery.data ?? [];
+  const loading = deductionsQuery.isLoading || employeesQuery.isLoading;
+  const revalidating = (deductionsQuery.isFetching || employeesQuery.isFetching) && !loading;
   // Phase 6.1 (Global Search §8): exact-record deep-link highlight via
   // the shared evidence mechanism — records carry data-record-id below.
   useRecordHighlight({ ready: !loading });
@@ -168,46 +180,18 @@ export default function HrDeductionsPage() {
   const [capaCreating, setCapaCreating] = useState<string | null>(null);
   // §12 — inline CAPA creation from an approved HR violation.
   const [capaPrefill, setCapaPrefill] = useState<Partial<CapaInlineFormState> | null>(null);
-  const [systemUsers, setSystemUsers] = useState<{ id: string; name: string; email?: string; role?: string }[]>([]);
 
-  useEffect(() => {
-    fetchData();
-    // System users for the inline CAPA form (assigned-to field).
-    authFetch('/api/dashboard/users?basic=1')
-      .then((r) => (r.ok ? r.json() : []))
-      .then((list) => setSystemUsers(Array.isArray(list) ? list : []))
-      .catch(() => setSystemUsers([]));
-  }, []);
-
-  async function fetchData() {
-    try {
-      const [dedRes, empRes] = await Promise.all([
-        authFetch(`/api/hr-deductions${showArchived ? '?includeArchived=1' : ''}`),
-        authFetch('/api/employees'),
-      ]);
-      if (dedRes.ok) {
-        const dedData = await dedRes.json();
-        setDeductions(dedData);
-      }
-      if (empRes.ok) {
-        const empData = await empRes.json();
-        setEmployees(empData);
-      }
-    } catch {
-      setDeductions([]);
-      setEmployees([]);
-    } finally {
-      setLoading(false);
-    }
-  }
+  // ═══ Manual refresh / mutation revalidation (§26).
+  const refreshData = useCallback(async () => {
+    await invalidateDomain(queryClient, 'hrDeductions');
+  }, [queryClient]);
 
   const handleAdd = async () => {
     if (!addForm.employeeId || !addForm.type || !addForm.amount || !addForm.unit || !addForm.month) return;
     setSaving(true);
     try {
-      const res = await authFetch('/api/hr-deductions', {
+      await apiFetch('/api/hr-deductions', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           employeeId: addForm.employeeId,
           type: addForm.type,
@@ -218,11 +202,9 @@ export default function HrDeductionsPage() {
           deductionDate: addForm.deductionDate || null,
         }),
       });
-      if (res.ok) {
-        await fetchData();
-        setIsAddOpen(false);
-        setAddForm({ ...EMPTY_FORM });
-      }
+      await invalidateDomain(queryClient, 'hrDeductions', { employeeId: addForm.employeeId });
+      setIsAddOpen(false);
+      setAddForm({ ...EMPTY_FORM });
     } catch {
       // Error handled silently
     } finally {
@@ -234,9 +216,8 @@ export default function HrDeductionsPage() {
     if (!editForm.id) return;
     setSaving(true);
     try {
-      const res = await authFetch(`/api/hr-deductions/${editForm.id}`, {
+      await apiFetch(`/api/hr-deductions/${editForm.id}`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           type: editForm.type,
           amount: Number(editForm.amount),
@@ -246,11 +227,9 @@ export default function HrDeductionsPage() {
           deductionDate: editForm.deductionDate || null,
         }),
       });
-      if (res.ok) {
-        await fetchData();
-        setIsEditOpen(false);
-        setEditForm({ ...EMPTY_FORM, id: '' });
-      }
+      await invalidateDomain(queryClient, 'hrDeductions', { employeeId: editForm.employeeId });
+      setIsEditOpen(false);
+      setEditForm({ ...EMPTY_FORM, id: '' });
     } catch {
       // Error handled silently
     } finally {
@@ -261,14 +240,12 @@ export default function HrDeductionsPage() {
   const handleReview = async (id: string, status: 'approved' | 'rejected') => {
     setReviewing(true);
     try {
-      const res = await authFetch(`/api/hr-deductions/${id}`, {
+      const ded = deductions.find((d: any) => d.id === id);
+      await apiFetch(`/api/hr-deductions/${id}`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status, approvedBy: user?.id }),
       });
-      if (res.ok) {
-        await fetchData();
-      }
+      await invalidateDomain(queryClient, 'hrDeductions', { employeeId: ded?.employeeId });
     } catch {
       // Error handled silently
     } finally {
@@ -286,21 +263,16 @@ export default function HrDeductionsPage() {
   const handleArchive = async (id: string, archived: boolean) => {
     setArchiveLoading(true);
     try {
-      const res = await authFetch(`/api/hr-deductions/${id}`, {
+      const ded = deductions.find((d: any) => d.id === id);
+      await apiFetch(`/api/hr-deductions/${id}`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ archived }),
       });
-      if (res.ok) {
-        toast.success(archived ? translateUIText('تم أرشفة الخصم — لن يأثر على الإجماليات النشطة', locale) : translateUIText('تم استعادة الخصم من الأرشيف', locale));
-        setArchivingId(null);
-        await fetchData();
-      } else {
-        const data = await res.json().catch(() => null);
-        toast.error(data?.error || translateUIText('تعذّر تغيير حالة الأرشيف', locale));
-      }
-    } catch {
-      toast.error(translateUIText('تعذّر الاتصال بالخادم', locale));
+      toast.success(archived ? translateUIText('تم أرشفة الخصم — لن يأثر على الإجماليات النشطة', locale) : translateUIText('تم استعادة الخصم من الأرشيف', locale));
+      setArchivingId(null);
+      await invalidateDomain(queryClient, 'hrDeductions', { employeeId: ded?.employeeId });
+    } catch (err: any) {
+      toast.error(err?.message || translateUIText('تعذّر الاتصال بالخادم', locale));
     } finally {
       setArchiveLoading(false);
     }
@@ -309,11 +281,10 @@ export default function HrDeductionsPage() {
   const handleDelete = async (id: string) => {
     setDeleteLoading(true);
     try {
-      const res = await authFetch(`/api/hr-deductions/${id}`, { method: 'DELETE' });
-      if (res.ok) {
-        setDeletingId(null);
-        await fetchData();
-      }
+      const ded = deductions.find((d: any) => d.id === id);
+      await apiFetch(`/api/hr-deductions/${id}`, { method: 'DELETE' });
+      setDeletingId(null);
+      await invalidateDomain(queryClient, 'hrDeductions', { employeeId: ded?.employeeId });
     } catch {
       // Error handled silently
     } finally {
@@ -324,14 +295,11 @@ export default function HrDeductionsPage() {
   const handleCreateCapa = async (ded: HrDeductionWithEmployee) => {
     setCapaCreating(ded.id);
     try {
-      const res = await authFetch(`/api/hr-deductions/${ded.id}/create-capa`, {
+      await apiFetch(`/api/hr-deductions/${ded.id}/create-capa`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({}),
       });
-      if (res.ok) {
-        await fetchData();
-      }
+      await invalidateDomain(queryClient, 'hrDeductions', { employeeId: ded.employeeId });
     } catch {
       // Error handled silently
     } finally {
@@ -476,6 +444,9 @@ export default function HrDeductionsPage() {
           </motion.button>
         ))}
       </div>
+
+      {/* Subtle background-revalidation state (§32) */}
+      <DataFreshnessIndicator revalidating={revalidating} />
 
       {/* Loading */}
       {loading ? (
@@ -704,7 +675,7 @@ export default function HrDeductionsPage() {
               onClose={() => setCapaPrefill(null)}
               onCreated={() => {
                 setCapaPrefill(null);
-                fetchData();
+                void refreshData();
               }}
               employees={employees}
               systemUsers={systemUsers}

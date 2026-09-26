@@ -7,21 +7,20 @@
 //  contract. Every value below comes from the stored-results
 //  reader /api/employee-performance/[employeeId]:
 //
-//    • الشهر الحالي — the current month's OWN stored results only
-//      (nulls shown explicitly; history is never promoted).
+//  Rebuilt role inside the new Employee 360: the STORED HISTORY
+//  surface only (the current-month domains are owned by the rebuilt
+//  sections; the KPI trend is owned by the canonical engine view):
+//
 //    • السجل الشهري — stored monthly results for earlier months,
 //      with the shared TimeScope selector (no second range system).
 //    • المسار الوظيفي (كل الفترات) — career aggregations DERIVED
 //      from stored monthly results (never a new counter/trend).
-//    • تطور الأداء — the historical monthly progression, exactly
-//      as stored (no scoring system, no final KPI — future work).
 //
 //  Domains stay attributable: الحضور (نتائج الحضور المخزنة),
 //  الجودة (لقطة الشهر المخزنة), خصومات HR (مجال مستقل).
 // ══════════════════════════════════════════════════════════════
 
-import { useState, useEffect, useCallback } from 'react';
-import { motion } from 'framer-motion';
+import { useState } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -29,7 +28,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
 import { Award, Banknote, CalendarDays, Clock, History, Loader2, TrendingUp } from 'lucide-react';
-import { authFetch } from '@/lib/api-fetch';
+import { useEmployeePerformance } from '@/hooks/use-queries';
 import { generateMonthOptions } from '@/lib/date-utils';
 import { T } from '@/lib/i18n/T';
 import { translateUIText } from '@/lib/i18n/ui-text';
@@ -143,25 +142,6 @@ const NO_ATTENDANCE_RESULT = 'لم يتم إنشاء نتيجة الحضور ل�
 
 // ─── Sub-components ───
 
-function DomainCard({ title, icon, scopeLabel, children }: {
-  title: string;
-  icon: React.ReactNode;
-  scopeLabel: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <Card className="bg-slate-800/40 border border-slate-700/30 backdrop-blur-sm">
-      <CardContent className="p-4 space-y-3">
-        <div className="flex items-center justify-between">
-          <h4 className="text-white text-sm font-semibold flex items-center gap-2">{icon}{title}</h4>
-          <span className="text-[10px] text-slate-500 border border-slate-700/40 rounded-md px-1.5 py-0.5">{scopeLabel}</span>
-        </div>
-        {children}
-      </CardContent>
-    </Card>
-  );
-}
-
 function EmptyState({ text }: { text: string }) {
   return <p className="text-slate-500 text-xs py-2">{text}</p>;
 }
@@ -244,84 +224,35 @@ function CareerSummaryCard({ title, icon, career, unit, valueLabel, worstLabel }
   );
 }
 
-/** Historical monthly progression of one stored value — display only, no scoring (spec §19). */
-function DevelopmentBars({ title, points, unit }: {
-  title: string;
-  points: { month: string; value: number }[];
-  unit: string;
-}) {
-  const { locale } = useLanguage();
-  if (points.length === 0) return null;
-  return (
-    <div className="space-y-2">
-      <p className="text-slate-400 text-xs font-medium">{title}</p>
-      <div className="space-y-1.5">
-        {points.map((point) => (
-          <div key={point.month} className="flex items-center gap-2 text-xs">
-            <span className="text-slate-500 w-24 flex-shrink-0" dir="ltr">{formatMonthKey(point.month, locale)}</span>
-            <div className="flex-1 h-2.5 rounded-full bg-slate-700/40 overflow-hidden">
-              <motion.div
-                className={`h-full rounded-full ${scoreBarColor(point.value)}`}
-                initial={{ width: 0 }}
-                animate={{ width: `${Math.min(Math.max(point.value, 0), 100)}%` }}
-                transition={{ duration: 0.7, ease: [0.22, 1, 0.36, 1] }}
-              />
-            </div>
-            <span className={`font-bold w-14 text-left flex-shrink-0 ${scoreColor(point.value)}`} dir="ltr">{point.value}{unit}</span>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
 // ─── Main Section ───
 
 export function EmployeePerformanceSection({ employeeId }: { employeeId: string }) {
   const { locale } = useLanguage();
   const [scopeKind, setScopeKind] = useState<ScopeKind>('career');
   const [selectedMonth, setSelectedMonth] = useState<string>(() => generateMonthOptions('YYYY-MM')[1] ?? '');
-  const [data, setData] = useState<PerformanceResponse | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
 
-  const fetchPerformance = useCallback(async () => {
-    if (!employeeId) return;
-    try {
-      const params = new URLSearchParams({ scope: scopeKind });
-      if (scopeKind === 'selected_month' && selectedMonth) params.set('month', selectedMonth);
-      const res = await authFetch(`/api/employee-performance/${employeeId}?${params.toString()}`);
-      if (!res.ok) {
-        const errData = await res.json().catch(() => null);
-        setError(errData?.error || 'فشل تحميل سجل الأداء');
-        return;
-      }
-      setData(await res.json());
-      setError(null);
-    } catch {
-      setError('خطأ في الاتصال بالخادم');
-    }
-  }, [employeeId, scopeKind, selectedMonth]);
+  // ═══ DATA STATE (cache-backed, §4) — scope + month are part of the
+  //  cache identity (§16/§43): switching dimension restores that
+  //  dimension's cached snapshot instantly (fetch only if absent).
+  const perfQuery = useEmployeePerformance(employeeId, {
+    scope: scopeKind,
+    month: selectedMonth,
+    enabled: !!employeeId,
+  });
+  const data = (perfQuery.data ?? null) as PerformanceResponse | null;
+  // Full skeleton only without a snapshot for the current dimension (§11).
+  const loading = perfQuery.isLoading;
+  const error = perfQuery.isError && !perfQuery.data
+    ? (perfQuery.error instanceof Error ? perfQuery.error.message : 'فشل تحميل سجل الأداء')
+    : null;
 
-  useEffect(() => {
-    let active = true;
-    (async () => {
-      await fetchPerformance();
-      if (active) setLoading(false);
-    })();
-    return () => {
-      active = false;
-    };
-  }, [fetchPerformance]);
-
-  /** Scope changes raise the loading flag in the handler (event-driven), not in the effect. */
+  /** Scope/month changes select a new cache identity — a cached
+   *  snapshot for that identity renders instantly. */
   const changeScope = (kind: ScopeKind) => {
-    setLoading(true);
     setScopeKind(kind);
   };
 
   const changeSelectedMonth = (month: string) => {
-    setLoading(true);
     setSelectedMonth(month);
   };
 
@@ -348,7 +279,7 @@ export function EmployeePerformanceSection({ employeeId }: { employeeId: string 
         <CardContent className="p-5 flex items-center justify-between">
           <p className="text-slate-400 text-sm">{error || 'لا توجد بيانات'}</p>
           <button
-            onClick={fetchPerformance}
+            onClick={() => void perfQuery.refetch()}
             className="text-emerald-400 hover:text-emerald-300 text-sm flex items-center gap-1"
           >
             <Loader2 className="size-3.5" /> إعادة المحاولة
@@ -358,108 +289,10 @@ export function EmployeePerformanceSection({ employeeId }: { employeeId: string 
     );
   }
 
-  const { current, history, career } = data;
-  const currentScopeLabel = translateUIText('الشهر الحالي — ', locale) + formatMonthKey(data.currentMonthKey, locale);
-
-  // Chronological stored series for the development view (oldest → newest,
-  // current month appended only when its own stored result exists).
-  const attendanceSeries = [
-    ...[...history].reverse().filter((row) => row.attendance).map((row) => ({ month: row.month, value: row.attendance!.compliance })),
-    ...(current.attendance ? [{ month: current.month, value: current.attendance.compliance }] : []),
-  ];
-  const qualitySeries = [
-    ...[...history].reverse().filter((row) => row.quality).map((row) => ({ month: row.month, value: row.quality!.score })),
-    ...(current.quality ? [{ month: current.month, value: current.quality!.score }] : []),
-  ];
+  const { history, career } = data;
 
   return (
     <div className="space-y-5">
-      {/* ═══ A. Current Month Overview (الشهر الحالي) ═══ */}
-      <Card className="bg-slate-800/40 border border-slate-700/30 backdrop-blur-sm">
-        <CardContent className="p-5 space-y-4">
-          <div className="flex items-center justify-between flex-wrap gap-2">
-            <h3 className="text-white font-semibold flex items-center gap-2">
-              <div className="w-7 h-7 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center">
-                <CalendarDays className="size-4 text-emerald-400" />
-              </div>
-              <T>نظرة الشهر الحالي</T>
-            </h3>
-            <Badge variant="outline" className="border-emerald-500/30 text-emerald-400 bg-emerald-500/5 text-xs rounded-lg">
-              {currentScopeLabel}
-            </Badge>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            {/* Attendance — stored canonical result */}
-            <DomainCard title={translateUIText('الحضور', locale)} icon={<Clock className="size-4 text-emerald-400" />} scopeLabel={translateUIText('الشهر الحالي', locale)}>
-              {current.attendance ? (
-                <>
-                  <p className={`text-2xl font-bold ${scoreColor(current.attendance.compliance)}`}>
-                    {current.attendance.compliance}%
-                    <span className="text-slate-500 text-xs font-normal mr-1.5"><T>نسبة الالتزام</T></span>
-                  </p>
-                  <div className="text-xs text-slate-400 space-y-1">
-                    <p><T>مؤشر أداء الحضور (KPI): </T><span className="text-white font-semibold">{current.attendance.compliance} / 100</span></p>
-                    <p><T>خصم أيام الحضور: </T><span className="text-white font-semibold">{current.attendance.attendanceDeductionDays}</span><T> يوم</T></p>
-                    <p>حضور {current.attendance.presentDays} · تأخير {current.attendance.lateDays} · غياب {current.attendance.absentDays}</p>
-                  </div>
-                </>
-              ) : (
-                <EmptyState text={NO_ATTENDANCE_RESULT} />
-              )}
-            </DomainCard>
-
-            {/* Quality — stored month snapshot entry */}
-            <DomainCard title={translateUIText('الجودة', locale)} icon={<Award className="size-4 text-orange-400" />} scopeLabel={translateUIText('الشهر الحالي', locale)}>
-              {current.quality ? (
-                <>
-                  <p className={`text-2xl font-bold ${scoreColor(current.quality.score)}`}>
-                    {current.quality.score}
-                    <Badge variant="outline" className={`text-[10px] px-1.5 mr-2 rounded-md ${
-                      current.quality.snapshotStatus === 'closed'
-                        ? 'border-slate-500/40 text-slate-400'
-                        : 'border-yellow-500/40 text-yellow-400 bg-yellow-500/5'
-                    }`}>
-                      {current.quality.snapshotStatus === 'closed' ? 'لقطة مغلقة' : 'لقطة مفتوحة'}
-                    </Badge>
-                  </p>
-                  <div className="text-xs text-slate-400 space-y-1">
-                    <p><T>نقاط الخصم: </T><span className="text-white font-semibold">{current.quality.deductionPoints}</span></p>
-                    <p><T>عدد الملاحظات: </T><span className="text-white font-semibold">{current.quality.observationCount}</span></p>
-                  </div>
-                </>
-              ) : (
-                <EmptyState text={translateUIText('لا توجد لقطة جودة مخزنة لهذا الشهر — الجودة المباشرة تُعرض في تبويب الجودة', locale)} />
-              )}
-            </DomainCard>
-
-            {/* HR deductions — own attributable domain */}
-            <DomainCard title={translateUIText('خصومات HR', locale)} icon={<Banknote className="size-4 text-pink-400" />} scopeLabel={translateUIText('الشهر الحالي', locale)}>
-              {current.hr ? (
-                <>
-                  <p className="text-2xl font-bold text-white">
-                    {current.hr.deductionDays}
-                    <span className="text-slate-500 text-xs font-normal mr-1.5"><T>يوم خصم</T></span>
-                  </p>
-                  <div className="text-xs text-slate-400 space-y-1">
-                    <p><T>عدد الخصومات: </T><span className="text-white font-semibold">{current.hr.deductionCount}</span></p>
-                    {current.hr.deductionAmount > 0 && (
-                      <p><T>خصم مالي: </T><span className="text-white font-semibold">{current.hr.deductionAmount}</span><T> جنيه</T></p>
-                    )}
-                  </div>
-                </>
-              ) : (
-                <EmptyState text={translateUIText('لا توجد خصومات HR لهذا الشهر', locale)} />
-              )}
-            </DomainCard>
-          </div>
-
-          <p className="text-slate-600 text-[10px]">
-            <T>قيم الشهر الحالي من النتائج المخزنة فقط — لا تُنقل قيم الشهور السابقة إلى الشهر الحالي، ولا يُعرض مؤشر أداء نهائي (عمل مستقبلي).</T>
-          </p>
-        </CardContent>
-      </Card>
-
       {/* ═══ B + C. Scope selector + monthly history list ═══ */}
       <Card className="bg-slate-800/40 border border-slate-700/30 backdrop-blur-sm">
         <CardContent className="p-5 space-y-4">
@@ -616,31 +449,6 @@ export function EmployeePerformanceSection({ employeeId }: { employeeId: string 
         </CardContent>
       </Card>
 
-      {/* ═══ E. Performance development view — historical progression ═══ */}
-      {(attendanceSeries.length > 0 || qualitySeries.length > 0) && (
-        <Card className="bg-slate-800/40 border border-slate-700/30 backdrop-blur-sm">
-          <CardContent className="p-5 space-y-4">
-            <div className="flex items-center justify-between flex-wrap gap-2">
-              <h3 className="text-white font-semibold flex items-center gap-2">
-                <div className="w-7 h-7 rounded-lg bg-blue-500/10 border border-blue-500/20 flex items-center justify-center">
-                  <TrendingUp className="size-4 text-blue-400" />
-                </div>
-                <T>تطور الأداء (عرض تاريخي)</T>
-              </h3>
-              <Badge variant="outline" className="border-slate-600/40 text-slate-400 text-[10px] rounded-md">
-                <T>قيم شهرية مخزنة — من الأقدم إلى الأحدث</T>
-              </Badge>
-            </div>
-
-            <DevelopmentBars title={translateUIText('نسبة الالتزام بالحضور (نتائج مخزنة)', locale)} points={attendanceSeries} unit="%" />
-            <DevelopmentBars title={translateUIText('درجة الجودة (لقطات مخزنة)', locale)} points={qualitySeries} unit="" />
-
-            <p className="text-slate-600 text-[10px]">
-              <T>عرض تاريخي للقيم الشهرية الموثقة فقط — بدون نظام تقييم جديد وبدون مؤشر أداء نهائي (عمل مستقبلي).</T>
-            </p>
-          </CardContent>
-        </Card>
-      )}
     </div>
   );
 }

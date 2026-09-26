@@ -23,6 +23,10 @@ import {
 /** The data blocks the Employee 360 profile API can withhold. */
 export interface Employee360SectionGate {
   basicInfo: boolean;
+  /** Executive KPI evaluation + trend (canonical KPI engine). */
+  performance: boolean;
+  /** Deal performance (CREATED/CLOSED/TRAVEL dimensions). */
+  deals: boolean;
   attendance: boolean;
   quality: boolean;
   observations: boolean;
@@ -33,11 +37,18 @@ export interface Employee360SectionGate {
   complaints: boolean;
   capa: boolean;
   risk: boolean;
+  /** HR decision-support projection (deterministic, HR-safe). */
+  decisionSupport: boolean;
+  /** Organization-tree context (chain, manager). */
+  organization: boolean;
+  /** The generic event journal (events of visible sections only). */
+  timeline: boolean;
 }
 
 const SECTION_IDS = [
-  'basicInfo', 'attendance', 'quality', 'observations', 'hrDeductions',
-  'requests', 'followUps', 'travel', 'complaints', 'capa', 'risk',
+  'basicInfo', 'performance', 'deals', 'attendance', 'quality', 'observations',
+  'hrDeductions', 'requests', 'followUps', 'travel', 'complaints', 'capa',
+  'risk', 'decisionSupport', 'organization', 'timeline',
 ] as const;
 
 /**
@@ -86,3 +97,21 @@ export function filterTimelineByGate<T extends { type?: string }>(
 
 /** Registered section ids this gate enforces (stable contract). */
 export const EMPLOYEE360_SECTION_IDS: ReadonlyArray<string> = SECTION_IDS;
+
+/**
+ * HR decision-support factor/scorecard category → the Employee 360
+ * section that OWNS the underlying signals. A decision-support
+ * viewer without that section must not receive the dimension's
+ * factor lines or scorecard metrics (same no-leak rule as the
+ * timeline). The overall status stays visible under the
+ * decisionSupport section itself.
+ */
+export const HR_FACTOR_SECTION_BY_CATEGORY: Readonly<Record<string, keyof Employee360SectionGate>> = {
+  KPI: 'performance',
+  TREND: 'performance',
+  FOLLOW_UP: 'followUps',
+  PRODUCTIVITY: 'deals',
+  QUALITY: 'quality',
+  ATTENDANCE: 'attendance',
+  HR_DISCIPLINARY: 'hrDeductions',
+};

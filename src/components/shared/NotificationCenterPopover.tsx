@@ -1,66 +1,62 @@
 'use client';
 
 // ══════════════════════════════════════════════════════════════
-//  NotificationCenterPopover — the redesigned notification window (§5)
+//  NotificationCenterPopover — the GLOBAL notification center
+//  (§UX-STRUCTURE PART 9).
 //
-//  ROOT CAUSES FIXED vs the old hand-rolled Header panel:
-//   • It was an absolutely-positioned div INSIDE the header (no
-//     portal): z-order fights with dialogs and it clipped at the
-//     viewport edge in RTL. → Now a Radix POPOVER (portal +
-//     collision detection + aria wiring + Escape to close).
-//   • Clicking a notification REMOVED it from the panel — read items
-//     vanished instead of showing as read. → The panel reads its own
-//     recent-notifications query; items STAY and flip to read.
-//   • Delete had no confirmation (unlike the page). → Uses the ONE
-//     unified ConfirmDialog (§4).
-//   • "تعليم الكل كمقروء" fanned out one PATCH per notification. →
-//     One POST /api/notifications/mark-all-read round-trip.
+//  A control-center surface, NOT a page: bounded height, internal
+//  scroll (the shared thin-scrollbar system), compact rows.
 //
-//  Density contract (§5): compact rows — type icon · title ·
-//  priority badge · line-clamped description · time · employee —
-//  with the LIST as the only scrollable region
-//  (max-h min(70vh,600px) + overscroll-contain: no background scroll).
+//  Architecture (data layer UNCHANGED — §PART 15):
+//    • Same `/api/notifications?limit=` query (the bounded,
+//      visibility-filtered list) — no new polling, no extra
+//      listeners, no duplicate unread counters.
+//    • The badge count is the SERVER unreadCount — the canonical
+//      backend state (§9E). Mark read/unread PATCHes the record;
+//      mark-all uses the single POST round-trip.
+//    • Deep navigation reuses navigateTo + sourceRecordId — the
+//      destination page locates + highlights the record via the
+//      existing useRecordHighlight machinery (§9F). Authorization
+//      is revalidated server-side on the destination data fetch.
+//
+//  UX (§9A/§9B/§9C/§9D/§9H/§9I):
+//    • Tabs: الكل · غير مقروء (n) · هام (high+critical).
+//    • Repeated same-event items collapse into one group row
+//      (expandable) via lib/notifications/presentation.
+//    • Five-step severity model derived from existing fields.
+//    • Row click = primary action (open). Secondary actions live
+//      in the row ⋮ menu: open · mark read/unread · delete.
+//    • Skeleton loading, compact empty states, compact error retry.
 // ══════════════════════════════════════════════════════════════
 
-import { useEffect, useMemo, useState } from 'react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { motion, AnimatePresence } from 'framer-motion';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
 import {
-  Bell, CheckCheck, ExternalLink, Eye, Loader2, Trash2,
+  Bell, BellOff, CheckCheck, Check, ExternalLink, Eye,
+  Loader2, RotateCcw, Trash2,
 } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import { Button } from '@/components/ui/button';
+import { OverflowMenu, type OverflowMenuItem } from '@/components/shared/OverflowMenu';
+import { ScrollableSurface } from '@/components/shared/ScrollableSurface';
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
+import { Skeleton } from '@/components/ui/skeleton';
 import { useAppStore } from '@/lib/store';
 import { apiFetch } from '@/lib/query-provider';
 import { toast } from 'sonner';
+import { T } from '@/lib/i18n/T';
+import { translateUIText } from '@/lib/i18n/ui-text';
+import { useLanguage } from '@/lib/i18n/language-context';
+import { useNotificationContext } from '@/contexts/NotificationContext';
 import type { AppNotification } from '@/types';
-
-// ── Category → icon/color (single compact map for the popover) ──
-const CATEGORY_ICONS: Record<string, { emoji: string; tint: string }> = {
-  attendance: { emoji: '⏰', tint: 'bg-blue-500/10' },
-  biometric: { emoji: '👆', tint: 'bg-brand-500/10' },
-  requests: { emoji: '📋', tint: 'bg-cyan-500/10' },
-  quality: { emoji: '🏆', tint: 'bg-orange-500/10' },
-  hr: { emoji: '💰', tint: 'bg-pink-500/10' },
-  risk: { emoji: '⚠️', tint: 'bg-red-500/10' },
-  followUp: { emoji: '📝', tint: 'bg-brand-500/10' },
-  employee: { emoji: '👤', tint: 'bg-emerald-500/10' },
-  travel: { emoji: '✈️', tint: 'bg-sky-500/10' },
-  system: { emoji: '⚙️', tint: 'bg-slate-500/10' },
-  automation: { emoji: '🤖', tint: 'bg-amber-500/10' },
-  complaint: { emoji: '💬', tint: 'bg-rose-500/10' },
-  capa: { emoji: '🛡️', tint: 'bg-brand-500/10' },
-};
-const DEFAULT_ICON = { emoji: '🔔', tint: 'bg-slate-500/10' };
-
-const PRIORITY_BADGE: Record<string, { label: string; className: string }> = {
-  critical: { label: 'حرج', className: 'bg-red-500/15 text-red-400' },
-  high: { label: 'مرتفع', className: 'bg-orange-500/15 text-orange-400' },
-  medium: { label: 'متوسط', className: 'bg-amber-500/15 text-amber-400' },
-  low: { label: 'منخفض', className: 'bg-slate-500/15 text-slate-400' },
-};
+import { buildNotificationNavParams } from '@/lib/notifications/navigation';
+import {
+  deriveNotificationSeverity,
+  groupNotifications,
+  SEVERITY_DOT,
+  timeAgo,
+  type NotificationRowModel,
+} from '@/lib/notifications/presentation';
 
 const PAGE_MAP: Record<string, string> = {
   attendance: 'attendance', biometric: 'biometric', requests: 'requests',
@@ -86,39 +82,33 @@ function resolveTargetPage(notif: AppNotification): string {
   return PAGE_MAP[notif.category] || MODULE_PAGE_MAP[notif.sourceModule] || 'home';
 }
 
-function timeAgo(dateStr: string): string {
-  const diff = Date.now() - new Date(dateStr).getTime();
-  const minutes = Math.floor(diff / 60000);
-  if (minutes < 1) return 'الآن';
-  if (minutes < 60) return `منذ ${minutes} د`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `منذ ${hours} س`;
-  const days = Math.floor(hours / 24);
-  return `منذ ${days} يوم`;
-}
+const PAGE_SIZE = 30;
 
-const PAGE_SIZE = 25;
+type TabKey = 'all' | 'unread' | 'important';
 
 export function NotificationCenterPopover({ children }: { children: React.ReactNode }) {
+  const { locale } = useLanguage();
   const navigateTo = useAppStore((s) => s.navigateTo);
   const openEmployee360 = useAppStore((s) => s.openEmployee360);
+  const { markAllReadLocal, refresh: refreshNotificationFeed } = useNotificationContext();
   // §NOTIFICATIONS-V2 — cross-cutting "open the bell panel" requests
   // (legacy navigateTo('notifications') callers, AOCC bell, etc.)
   // arrive through the store flag; it is consumed and cleared here.
   const panelOpenRequest = useAppStore((s) => s.notificationPanelOpen);
   const setPanelOpenRequest = useAppStore((s) => s.setNotificationPanelOpen);
   const qc = useQueryClient();
-  // §NOTIFICATIONS-V2 — `open` DERIVES from the store request so an
-  // external open request needs no setState-in-effect mirror. Clearing
-  // the request IS the effect's external-system update (zustand).
+  // `open` DERIVES from the store request so an external open request
+  // needs no setState-in-effect mirror. Clearing the request IS the
+  // effect's external-system update (zustand).
   const [openLocal, setOpenLocal] = useState(false);
   const open = openLocal || panelOpenRequest;
-  // §16 — the bell primarily surfaces UNREAD/recent actionable items;
-  // a compact switch gives access to the full history (read + unread).
-  const [tab, setTab] = useState<'unread' | 'all'>('unread');
+  const [tab, setTab] = useState<TabKey>('unread');
   const [deleting, setDeleting] = useState<AppNotification | null>(null);
   const [deletingNow, setDeletingNow] = useState(false);
-  const [markAllPending, setMarkAllPending] = useState(false);
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
+  // §NOTIFICATIONS-UX — one mark-all in flight at a time (duplicate
+  // concurrent operations are no-ops, never double-persisted).
+  const markAllInFlightRef = useRef(false);
 
   useEffect(() => {
     if (panelOpenRequest) setPanelOpenRequest(false);
@@ -130,38 +120,42 @@ export function NotificationCenterPopover({ children }: { children: React.ReactN
   };
 
   // The panel owns its data: the LATEST notifications (any status, so
-  // items stay visible after being marked read) — NOT the unread-only
-  // context feed whose items vanish on read.
-  const { data, isLoading, refetch, isRefetching } = useQuery({
+  // items stay visible after being marked read) — the server applies
+  // recipient visibility + returns the canonical unreadCount.
+  const { data, isLoading, isError, refetch, isRefetching } = useQuery({
     queryKey: ['notification-popover'],
-    queryFn: () => apiFetch<{ data: AppNotification[]; unreadCount?: number }>('/api/notifications?limit=25'),
+    queryFn: () => apiFetch<{ data: AppNotification[]; unreadCount?: number }>('/api/notifications?limit=30'),
     staleTime: 30_000,
     enabled: open,
   });
-  // §16 — the badge uses the SERVER unreadCount (accurate beyond the
-  // 25-item page); the list applies the active tab.
   const serverUnreadCount = typeof data?.unreadCount === 'number' ? data.unreadCount : null;
-  const items = useMemo(
-    () => [...(data?.data ?? [])]
-      .filter((n) => (tab === 'unread' ? n.status === 'unread' : true))
-      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-      .slice(0, PAGE_SIZE),
-    [data, tab],
-  );
   const unreadCount = serverUnreadCount ?? (data?.data ?? []).filter((n) => n.status === 'unread').length;
+
+  const rows = useMemo<NotificationRowModel[]>(() => {
+    const list = [...(data?.data ?? [])]
+      .filter((n) => (tab === 'unread' ? n.status === 'unread' : true))
+      .filter((n) => (tab === 'important' ? n.priority === 'high' || n.priority === 'critical' : true))
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+      .slice(0, PAGE_SIZE);
+    return groupNotifications(list);
+  }, [data, tab]);
 
   const invalidateFeeds = () => {
     qc.invalidateQueries({ queryKey: ['notification-popover'] });
     qc.invalidateQueries({ queryKey: ['notifications'] });
   };
 
+  const setStatus = (notif: AppNotification, status: 'read' | 'unread', onError: string) => {
+    return apiFetch(`/api/notifications/${notif.id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ status }),
+    })
+      .then(invalidateFeeds)
+      .catch(() => toast.error(onError));
+  };
+
   const handleOpen = (notif: AppNotification) => {
-    if (notif.status === 'unread') {
-      void apiFetch(`/api/notifications/${notif.id}`, {
-        method: 'PATCH',
-        body: JSON.stringify({ status: 'read' }),
-      }).then(invalidateFeeds).catch(() => { /* non-fatal */ });
-    }
+    if (notif.status === 'unread') void setStatus(notif, 'read', 'تعذر تعليم الإشعار');
     const page = resolveTargetPage(notif);
     if (page === 'employee360') {
       const id = notif.actionUrl?.startsWith('employee360:')
@@ -169,30 +163,73 @@ export function NotificationCenterPopover({ children }: { children: React.ReactN
         : notif.employeeId;
       if (id) openEmployee360(id); else navigateTo('employees');
     } else {
-      navigateTo(page, notif.sourceRecordId || undefined);
+      // §NOTIFICATIONS-DEEPLINK — the notification's structured context
+      // (WHAT/WHO/WHERE + stored navParams) flows through the canonical
+      // navigateTo(page, highlightId, navParams) channel. The destination
+      // page (e.g. Risk Center: employeeId + month + level) owns how it
+      // consumes each param — no second deep-link system.
+      navigateTo(page, notif.sourceRecordId || undefined, buildNotificationNavParams(notif));
     }
     setOpenLocal(false);
   };
 
-  const handleMarkRead = (notif: AppNotification, e: React.MouseEvent) => {
-    e.stopPropagation();
-    void apiFetch(`/api/notifications/${notif.id}`, {
-      method: 'PATCH',
-      body: JSON.stringify({ status: 'read' }),
-    }).then(invalidateFeeds).catch(() => toast.error('تعذر تعليم الإشعار'));
-  };
-
-  const handleMarkAllRead = async () => {
-    setMarkAllPending(true);
-    try {
-      const res = await apiFetch<{ updated: number }>('/api/notifications/mark-all-read', { method: 'POST' });
-      toast.success(`تم تعليم ${res.updated} إشعار كمقروء`);
+  // ═══ §NOTIFICATIONS-UX — Mark All as Read ═══
+  // ONE authoritative server operation (POST /api/notifications/
+  // mark-all-read — itself a single RTDB multi-path write), wrapped in
+  // an OPTIMISTIC client update so the panel, the unread counter and
+  // the header badge respond instantly. Server correctness is never
+  // sacrificed: the snapshot is restored on failure, the error is
+  // surfaced honestly, and the feeds are re-validated afterwards to
+  // reconcile with the server result.
+  const markAllMutation = useMutation({
+    mutationFn: () => apiFetch<{ updated: number }>('/api/notifications/mark-all-read', { method: 'POST' }),
+    onMutate: async () => {
+      await qc.cancelQueries({ queryKey: ['notification-popover'] });
+      const previous = qc.getQueryData<{ data: AppNotification[]; unreadCount?: number }>(['notification-popover']);
+      const readAt = new Date().toISOString();
+      qc.setQueryData<{ data: AppNotification[]; unreadCount?: number }>(
+        ['notification-popover'],
+        (old) => old
+          ? {
+              ...old,
+              unreadCount: 0,
+              data: old.data.map((n) => (n.status === 'unread' ? { ...n, status: 'read' as const, readAt } : n)),
+            }
+          : old,
+      );
+      // The header badge lives in NotificationContext — zero it now too.
+      markAllReadLocal();
+      return { previous };
+    },
+    onError: (_err, _vars, context) => {
+      // Persistence failed → restore the exact pre-operation snapshot
+      // and re-sync the badge from the server; never report success.
+      if (context?.previous) {
+        qc.setQueryData(['notification-popover'], context.previous);
+      }
+      void refreshNotificationFeed();
+      toast.error(translateUIText('تعذر تعليم الإشعارات', locale));
+    },
+    onSuccess: (res) => {
+      toast.success(
+        locale === 'en'
+          ? `Marked ${res.updated} notification(s) as read`
+          : `تم تعليم ${res.updated} إشعار كمقروء`,
+      );
+    },
+    onSettled: () => {
+      // Reconcile with the server result (marks the queries stale;
+      // mounted ones refetch, the rest refresh on next mount).
       invalidateFeeds();
-    } catch {
-      toast.error('تعذر تعليم الإشعارات');
-    } finally {
-      setMarkAllPending(false);
-    }
+    },
+  });
+
+  const handleMarkAllRead = () => {
+    if (markAllInFlightRef.current) return; // duplicate concurrent op → no-op
+    markAllInFlightRef.current = true;
+    markAllMutation.mutate(undefined, {
+      onSettled: () => { markAllInFlightRef.current = false; },
+    });
   };
 
   const confirmDelete = async () => {
@@ -200,14 +237,122 @@ export function NotificationCenterPopover({ children }: { children: React.ReactN
     setDeletingNow(true);
     try {
       await apiFetch(`/api/notifications/${deleting.id}`, { method: 'DELETE' });
-      toast.success('تم حذف الإشعار');
+      toast.success(translateUIText('تم حذف الإشعار', locale));
       setDeleting(null);
       invalidateFeeds();
     } catch {
-      toast.error('تعذر حذف الإشعار');
+      toast.error(translateUIText('تعذر حذف الإشعار', locale));
     } finally {
       setDeletingNow(false);
     }
+  };
+
+  const toggleGroup = (key: string) => {
+    setExpandedGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
+    });
+  };
+
+  const rowMenuItems = (notif: AppNotification): OverflowMenuItem[] => {
+    const isUnread = notif.status === 'unread';
+    return [
+      {
+        key: 'open',
+        label: translateUIText('فتح السجل', locale),
+        icon: <ExternalLink className="size-3.5" />,
+        onSelect: () => handleOpen(notif),
+      },
+      {
+        key: 'read',
+        label: isUnread ? translateUIText('تعليم كمقروء', locale) : translateUIText('تعليم كغير مقروء', locale),
+        icon: isUnread ? <Eye className="size-3.5" /> : <Check className="size-3.5" />,
+        onSelect: () => void setStatus(notif, isUnread ? 'read' : 'unread', isUnread ? 'تعذر تعليم الإشعار' : 'تعذر التراجع عن القراءة'),
+      },
+      {
+        key: 'delete',
+        label: translateUIText('حذف', locale),
+        icon: <Trash2 className="size-3.5" />,
+        destructive: true,
+        separatorBefore: true,
+        onSelect: () => setDeleting(notif),
+      },
+    ];
+  };
+
+  const renderRow = (notif: AppNotification, indented = false) => {
+    const isUnread = notif.status === 'unread';
+    const severity = deriveNotificationSeverity(notif);
+    return (
+      <div
+        key={notif.id}
+        role="button"
+        tabIndex={0}
+        onClick={() => handleOpen(notif)}
+        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleOpen(notif); } }}
+        aria-label={notif.title}
+        className={`group relative flex items-start gap-2 py-2 cursor-pointer transition-colors hover:bg-surface-hover ${indented ? 'ps-8 pe-2.5' : 'px-3'}`}
+      >
+        {/* §9E unread accent — inline-START (RTL-safe), brand-tinted row */}
+        {isUnread && <span aria-hidden="true" className="absolute inset-y-1.5 start-0 w-0.5 rounded-full bg-brand-500" />}
+        {/* severity dot — the small consistent severity model (§9C) */}
+        <span aria-hidden="true" className={`mt-1.5 size-1.5 rounded-full shrink-0 ${SEVERITY_DOT[severity]}`} />
+
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2">
+            <p className={`text-xs truncate leading-tight flex-1 ${isUnread ? 'font-semibold text-foreground' : 'font-medium text-foreground/75'}`}>
+              {notif.title}
+            </p>
+            <span className="text-[10px] text-text-muted shrink-0" dir="ltr">{timeAgo(notif.createdAt, locale)}</span>
+          </div>
+          {notif.description && (
+            <p className="text-[11px] text-text-muted line-clamp-1 leading-relaxed mt-0.5">{notif.description}</p>
+          )}
+          {isUnread && <span className="sr-only">{locale === 'en' ? 'unread' : 'غير مقروء'}</span>}
+        </div>
+
+        {/* §9D — secondary actions in the row ⋮ menu, never a button fan */}
+        <div className="shrink-0 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
+          <OverflowMenu items={rowMenuItems(notif)} label={`إجراءات: ${notif.title}`} />
+        </div>
+      </div>
+    );
+  };
+
+  const renderGroupRow = (group: Extract<NotificationRowModel, { kind: 'group' }>) => {
+    const expanded = expandedGroups.has(group.key);
+    return (
+      <div key={group.key} className="border-b border-border/40 last:border-b-0">
+        <button
+          type="button"
+          onClick={() => toggleGroup(group.key)}
+          aria-expanded={expanded}
+          className="relative w-full flex items-start gap-2 px-3 py-2 text-start cursor-pointer transition-colors hover:bg-surface-hover"
+        >
+          {group.unreadCount > 0 && (
+            <span aria-hidden="true" className="absolute inset-y-1.5 start-0 w-0.5 rounded-full bg-brand-500" />
+          )}
+          <span aria-hidden="true" className={`mt-1.5 size-1.5 rounded-full shrink-0 ${SEVERITY_DOT[group.severity]}`} />
+          <span className="flex-1 min-w-0 text-xs font-semibold text-foreground truncate">
+            {group.title}
+            <span className="text-text-muted font-normal"> — {group.count} {locale === 'en' ? 'notifications' : 'إشعارات'}</span>
+          </span>
+          {group.unreadCount > 0 && (
+            <span className="shrink-0 text-[9px] font-bold text-brand-300 bg-brand-500/15 rounded-full px-1.5 py-0.5" aria-label={`${group.unreadCount} ${locale === 'en' ? 'unread' : 'غير مقروء'}`}>
+              {group.unreadCount}
+            </span>
+          )}
+          <span className="text-[10px] text-text-muted shrink-0" dir="ltr">{timeAgo(group.newestAt, locale)}</span>
+          <span className={`text-text-muted text-[10px] shrink-0 transition-transform ${expanded ? 'rotate-90' : ''}`} aria-hidden="true">▸</span>
+        </button>
+        {expanded && (
+          <div role="list" aria-label={group.title}>
+            {group.items.map((n) => renderRow(n, true))}
+          </div>
+        )}
+      </div>
+    );
   };
 
   return (
@@ -217,51 +362,56 @@ export function NotificationCenterPopover({ children }: { children: React.ReactN
           {children}
         </PopoverTrigger>
         <PopoverContent
-         
           align="end"
           sideOffset={8}
           onOpenAutoFocus={(e) => e.preventDefault()}
-          className="w-[420px] max-w-[calc(100vw-2rem)] p-0 rounded-2xl border-slate-700/60 bg-slate-900 shadow-2xl shadow-black/50 overflow-hidden"
+          className="w-[400px] max-w-[calc(100vw-2rem)] p-0 rounded-xl border-border bg-popover text-popover-foreground shadow-xl shadow-black/20 overflow-hidden"
         >
-          {/* ── FIXED header (§5.1): title · unread count · mark-all ── */}
-          <div className="flex items-center justify-between px-4 py-3 border-b border-slate-700/50 shrink-0">
-            <div className="flex items-center gap-2.5 min-w-0">
-              <div className="flex items-center justify-center size-8 rounded-lg bg-emerald-500/15 border border-emerald-500/25 shrink-0">
-                <Bell className="size-4 text-emerald-400" />
-              </div>
-              <div className="min-w-0">
-                <h3 className="text-sm font-bold text-white leading-tight">الإشعارات</h3>
-                <p className="text-[10px] text-slate-500 leading-tight mt-0.5">
-                  {unreadCount > 0 ? `${unreadCount} غير مقروء` : 'كل الإشعارات مقروءة'}
-                </p>
-              </div>
+          {/* ── FIXED header: title · unread count · mark-all ── */}
+          <div className="flex items-center justify-between px-3.5 py-2.5 border-b border-border/60 shrink-0">
+            <div className="flex items-center gap-2 min-w-0">
+              <Bell className="size-4 text-brand-400 shrink-0" aria-hidden="true" />
+              <h3 className="text-sm font-bold leading-tight"><T>الإشعارات</T></h3>
+              {unreadCount > 0 ? (
+                <span
+                  className="text-[10px] font-bold text-brand-300 bg-brand-500/15 border border-brand-500/25 rounded-full px-1.5 py-0.5 leading-none"
+                  aria-label={`${unreadCount} غير مقروء`}
+                >
+                  {unreadCount > 99 ? '+99' : unreadCount}
+                </span>
+              ) : (
+                <span className="text-[10px] text-text-muted"><T>كلها مقروءة</T></span>
+              )}
             </div>
             <button
               type="button"
-              onClick={() => void handleMarkAllRead()}
-              disabled={markAllPending || unreadCount === 0}
-              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 hover:bg-emerald-500/20 transition-all disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
-              title="تعليم الكل كمقروء"
+              onClick={handleMarkAllRead}
+              disabled={markAllMutation.isPending || unreadCount === 0}
+              className="flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-semibold text-emerald-500 hover:bg-emerald-500/10 transition-colors disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
+              title={translateUIText('تعليم الكل كمقروء', locale)}
             >
-              {markAllPending ? <Loader2 className="size-3.5 animate-spin" /> : <CheckCheck className="size-3.5" />}
-              تعليم الكل كمقروء
+              {markAllMutation.isPending ? <Loader2 className="size-3.5 animate-spin" /> : <CheckCheck className="size-3.5" />}
+              <T>تعليم الكل</T>
             </button>
           </div>
 
-          {/* ── §16 tab switch — unread (default) vs full history ── */}
-          <div className="flex items-center gap-1 px-4 py-2 border-b border-slate-700/40 shrink-0">
+          {/* ── tabs: الكل · غير مقروء · هام (§9A) ── */}
+          <div className="flex items-center gap-1 px-3 py-1.5 border-b border-border/40 shrink-0" role="tablist" aria-label={translateUIText('تصفية الإشعارات', locale)}>
             {([
-              { key: 'unread' as const, label: `غير مقروء${serverUnreadCount ? ` (${serverUnreadCount})` : ''}` },
-              { key: 'all' as const, label: 'السجل الكامل' },
+              { key: 'unread' as const, label: `${translateUIText('غير مقروء', locale)}${serverUnreadCount ? ` (${serverUnreadCount})` : ''}` },
+              { key: 'all' as const, label: translateUIText('الكل', locale) },
+              { key: 'important' as const, label: translateUIText('هام', locale) },
             ]).map((t) => (
               <button
                 key={t.key}
                 type="button"
+                role="tab"
+                aria-selected={tab === t.key}
                 onClick={() => setTab(t.key)}
                 className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition-colors ${
                   tab === t.key
                     ? 'bg-brand-500/15 text-brand-300'
-                    : 'text-slate-500 hover:text-slate-300'
+                    : 'text-text-muted hover:text-foreground'
                 }`}
               >
                 {t.label}
@@ -269,109 +419,62 @@ export function NotificationCenterPopover({ children }: { children: React.ReactN
             ))}
           </div>
 
-          {/* ── LIST — the ONLY scrollable region (§5.2) ── */}
-          <ScrollArea className="h-[min(70vh,600px)] [&>[data-radix-scroll-area-viewport]]:overscroll-contain">
+          {/* ── LIST — the ONLY scrollable region (§9G): bounded height,
+              shared thin scrollbar, contained overscroll. ── */}
+          <ScrollableSurface maxHeight="min(60vh, 480px)" label={translateUIText('قائمة الإشعارات', locale)} className="border-0">
             {isLoading ? (
-              <div className="flex flex-col items-center justify-center py-16 px-4">
-                <Loader2 className="size-7 text-brand-500 animate-spin mb-3" />
-                <p className="text-slate-400 text-sm">جاري تحميل الإشعارات...</p>
+              /* §9H loading — quiet skeleton, same row rhythm */
+              <div className="py-1 divide-y divide-border/40" aria-busy="true">
+                {[0, 1, 2, 3].map((i) => (
+                  <div key={i} className="flex items-start gap-2 px-3 py-2.5">
+                    <Skeleton className="size-1.5 rounded-full mt-1.5 shrink-0" />
+                    <div className="flex-1 min-w-0 space-y-1.5">
+                      <Skeleton className="h-3 w-3/4" />
+                      <Skeleton className="h-2.5 w-1/2" />
+                    </div>
+                  </div>
+                ))}
               </div>
-            ) : items.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-16 px-4">
-                <div className="flex items-center justify-center size-14 rounded-2xl bg-slate-800 border border-slate-700/50 mb-3">
-                  <Bell className="size-7 text-slate-600" />
-                </div>
-                <p className="text-slate-400 text-sm font-medium">{tab === 'unread' ? 'لا يوجد إشعارات غير مقروءة' : 'لا توجد إشعارات'}</p>
-                <p className="text-slate-600 text-xs mt-1">{tab === 'unread' ? 'كل الإشعارات قرأت — السجل الكامل متاح في التبويب الثاني' : 'ستتلقى إشعارات فورية عند حدوث أحداث جديدة'}</p>
+            ) : isError ? (
+              /* §9H error — compact retry, no giant box */
+              <div className="flex flex-col items-center justify-center py-10 px-4 text-center">
+                <p className="text-xs text-text-muted mb-2"><T>تعذر تحميل الإشعارات</T></p>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-7 gap-1.5 text-[11px] border-border"
+                  onClick={() => void refetch()}
+                  disabled={isRefetching}
+                >
+                  {isRefetching ? <Loader2 className="size-3 animate-spin" /> : <RotateCcw className="size-3" />}
+                  <T>إعادة المحاولة</T>
+                </Button>
+              </div>
+            ) : rows.length === 0 ? (
+              /* §9H empty — small icon + concise message per tab */
+              <div className="flex flex-col items-center justify-center py-10 px-4 text-center">
+                <BellOff className="size-5 text-text-muted/60 mb-2" aria-hidden="true" />
+                <p className="text-xs font-medium text-foreground/80">
+                  {tab === 'unread' ? translateUIText('لا توجد إشعارات جديدة', locale) : tab === 'important' ? translateUIText('لا توجد إشعارات هامة', locale) : translateUIText('لا توجد إشعارات', locale)}
+                </p>
+                {tab !== 'all' && (
+                  <button
+                    type="button"
+                    onClick={() => setTab('all')}
+                    className="text-[11px] text-brand-400 hover:text-brand-300 mt-1"
+                  >
+                    <T>عرض الكل</T>
+                  </button>
+                )}
               </div>
             ) : (
-              <div className="py-1 divide-y divide-slate-800/60">
-                <AnimatePresence initial={false}>
-                  {items.map((notif) => {
-                    const cat = CATEGORY_ICONS[notif.category] ?? DEFAULT_ICON;
-                    const pri = PRIORITY_BADGE[notif.priority] ?? PRIORITY_BADGE.low;
-                    const isUnread = notif.status === 'unread';
-                    return (
-                      <motion.div
-                        key={notif.id}
-                        layout
-                        initial={{ opacity: 0, y: 4 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0 }}
-                        transition={{ duration: 0.15 }}
-                        role="button"
-                        tabIndex={0}
-                        onClick={() => handleOpen(notif)}
-                        onKeyDown={(e) => { if (e.key === 'Enter') handleOpen(notif); }}
-                        className={`group relative flex items-start gap-2.5 px-3 py-2.5 cursor-pointer transition-colors ${isUnread ? 'bg-brand-500/[0.07] hover:bg-brand-500/[0.12]' : 'hover:bg-slate-800/50'}`}
-                      >
-                        {/* §16 unread accent — clear but subtle BRAND emphasis */}
-                        {isUnread && <span className="absolute inset-y-1 right-0 w-0.5 rounded-full bg-brand-500" />}
-
-                        {/* type icon */}
-                        <span className={`flex items-center justify-center size-8 rounded-lg text-sm shrink-0 ${cat.tint}`}>{cat.emoji}</span>
-
-                        {/* body */}
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-1.5">
-                            <p className={`text-xs font-semibold truncate leading-tight ${isUnread ? 'text-white' : 'text-slate-300'}`}>
-                              {notif.title}
-                            </p>
-                            {notif.priority !== 'low' && (
-                              <span className={`shrink-0 px-1.5 py-0 rounded text-[9px] font-bold rounded-full ${pri.className}`}>
-                                {pri.label}
-                              </span>
-                            )}
-                          </div>
-                          {notif.description && (
-                            <p className="text-[11px] text-slate-500 line-clamp-2 leading-relaxed mt-0.5">{notif.description}</p>
-                          )}
-                          <div className="flex items-center gap-2 mt-1 text-[10px] text-slate-600">
-                            <span dir="ltr">{timeAgo(notif.createdAt)}</span>
-                            {notif.employeeName && (
-                              <span className="truncate max-w-28">👤 {notif.employeeName}</span>
-                            )}
-                            {notif.status === 'resolved' && <span className="text-emerald-500">✔ تمت المعالجة</span>}
-                            {notif.status === 'acknowledged' && <span className="text-cyan-500">✔ تم الإقرار</span>}
-                          </div>
-                        </div>
-
-                        {/* hover actions — compact, don't crowd the row */}
-                        <div className="hidden group-hover:flex flex-col gap-0.5 shrink-0">
-                          <button
-                            type="button"
-                            onClick={(e) => { e.stopPropagation(); handleOpen(notif); }}
-                            className="p-1.5 rounded-md text-emerald-400 hover:bg-emerald-500/15 transition-colors"
-                            title="فتح السجل"
-                          >
-                            <ExternalLink className="size-3.5" />
-                          </button>
-                          {isUnread && (
-                            <button
-                              type="button"
-                              onClick={(e) => handleMarkRead(notif, e)}
-                              className="p-1.5 rounded-md text-blue-400 hover:bg-blue-500/15 transition-colors"
-                              title="تعليم كمقروء"
-                            >
-                              <Eye className="size-3.5" />
-                            </button>
-                          )}
-                          <button
-                            type="button"
-                            onClick={(e) => { e.stopPropagation(); setDeleting(notif); }}
-                            className="p-1.5 rounded-md text-slate-500 hover:bg-red-500/15 hover:text-red-400 transition-colors"
-                            title="حذف"
-                          >
-                            <Trash2 className="size-3.5" />
-                          </button>
-                        </div>
-                      </motion.div>
-                    );
-                  })}
-                </AnimatePresence>
+              <div className="divide-y divide-border/40">
+                {rows.map((row) =>
+                  row.kind === 'group' ? renderGroupRow(row) : renderRow(row.item),
+                )}
               </div>
             )}
-          </ScrollArea>
+          </ScrollableSurface>
         </PopoverContent>
       </Popover>
 
@@ -379,7 +482,7 @@ export function NotificationCenterPopover({ children }: { children: React.ReactN
       <ConfirmDialog
         open={!!deleting}
         onOpenChange={(o) => { if (!o) setDeleting(null); }}
-        description="سيتم حذف هذا الإشعار نهائياً."
+        description={translateUIText('سيتم حذف هذا الإشعار نهائياً.', locale)}
         itemName={deleting?.title}
         loading={deletingNow}
         onConfirm={confirmDelete}

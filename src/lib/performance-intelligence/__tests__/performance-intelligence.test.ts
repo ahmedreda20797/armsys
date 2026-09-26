@@ -965,6 +965,7 @@ describe('§DEAL-DATES — dimension separation in deal aggregation', () => {
       monthByDealId: new Map(deals.map((d) => [d.id, monthKey(d)])),
       allDeals: deals,
       closedMonthByDealId: new Map(deals.map((d) => [d.id, closedKey(d)])),
+      createdMonthByDealId: new Map(deals.map((d) => [d.id, createdKey(d)])),
       windowMonths: WINDOW,
       periodMonthKey: period,
     });
@@ -974,6 +975,7 @@ describe('§DEAL-DATES — dimension separation in deal aggregation', () => {
     return m >= 8 && m <= 10 ? `2026-${String(m).padStart(2, '0')}` : null;
   };
   const closedKey = (d: TravelDeal) => (d.closedAt ? d.closedAt.slice(0, 7) : null);
+  const createdKey = (d: TravelDeal) => (d.createdAt ? d.createdAt.slice(0, 7) : null);
 
   it('§17.14 — the same deal counts in August for closures and September for travel', () => {
     const august = aggregate([closedAugTravelsSep], '2026-08');

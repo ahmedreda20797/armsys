@@ -46,19 +46,22 @@ import { HomeQuickActionHost } from '@/components/shared/HomeQuickActionHost';
 import { AttentionPanel, type AttentionItem } from '@/components/shared/AttentionPanel';
 import { Skeleton } from '@/components/ui/skeleton';
 import { toast } from 'sonner';
-import { isUrgent, getRequestTypeLabel } from '@/lib/date-utils';
+import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
+import { SaveStateIndicator, type SaveState } from '@/components/shared/SaveStateIndicator';
+import { getRequestTypeLabel } from '@/lib/date-utils';
+import { getDepartureUrgency, travelDaysUntil } from '@/lib/travel-status';
 import {
   Clock, FileText, Plane, AlertTriangle, CheckCircle2,
   RefreshCw, Eye, EyeOff,
   Users, Zap,
   Award, Fingerprint,
   ExternalLink, ClipboardList, Gauge,
-  GripVertical, Inbox, Star, Pin as PinIcon, X, Save,
+  GripVertical, Inbox, Star, Pin as PinIcon, X, Save, RotateCcw,
   History, Database,
 } from 'lucide-react';
 import { playNotificationSound } from '@/lib/sounds';
 import { DASHBOARD_WIDGETS } from '@/config/dashboard-widgets';
-import { resolveWidgetLayout } from '@/lib/personalization';
+import { resolveWidgetLayout, effectiveHiddenWidgets } from '@/lib/personalization';
 import { useLanguage } from '@/lib/i18n/language-context';
 import { formatDate, formatInteger, formatMonthKey, formatTime, displayLocale } from '@/lib/i18n/format';
 import type { Locale } from '@/lib/i18n/dictionary';
@@ -67,6 +70,13 @@ import {
   useSaveUserPreferences,
 } from '@/hooks/use-user-preferences';
 import type { ReactNode } from 'react';
+
+// §TRAVEL-THRESHOLD — the canonical عاجل departure window (today..+3d,
+// from lib/travel-status — the ONE threshold module shared with the
+// travel page and the Operations Center), never a page-local copy.
+function isUrgentDeparture(departureDate: string | null | undefined): boolean {
+  return !!departureDate && getDepartureUrgency(travelDaysUntil(departureDate)) === 'critical';
+}
 
 /* ═══════════════════════════════════════════════════════════
    TYPES (data contracts — /api/home/stats)
@@ -162,7 +172,7 @@ interface HomeStats {
   deptTodayStats: DeptTodayStat[];
   pendingRequests: number; pendingRequestsDetails: PendingRequestDetail[];
   requestTypeSummary: RequestTypeSummary[];
-  activeTravel: number; completedTravelCount: number; inProgressTravelCount: number;
+  activeTravel: number; completedTravelCount: number; completedTravelThisMonth?: number; inProgressTravelCount: number;
   upcomingTravel: TravelAlertItem[];
   lateEmployees: { id: string; employeeName: string; department: string; checkIn: string | null; minutesLate: number }[];
   lastMonthPerformance: MonthlyPerformance;
@@ -371,16 +381,14 @@ export default function HomePage() {
 
   // ── Recent activity stream (the user's OWN notifications) ──
   // /api/notifications returns an envelope { data, … } — unwrap once.
+  // Routed through the unified fetcher (Bearer + 401 auto-retry) —
+  // the previous raw fetch silently failed on expired access tokens.
   const { data: recentNotifications } = useQuery({
     queryKey: ['home-recent-activity'],
     queryFn: () =>
-      fetch('/api/notifications?limit=8', {
-        headers: { Authorization: `Bearer ${localStorage.getItem('erp_access_token')}` },
-      }).then(async (r) => {
-        if (!r.ok) return [];
-        const body = await r.json();
-        return Array.isArray(body) ? body : Array.isArray(body?.data) ? body.data : [];
-      }),
+      apiFetch<any>('/api/notifications?limit=8').then((body) =>
+        Array.isArray(body) ? body : Array.isArray(body?.data) ? body.data : [],
+      ),
     staleTime: 60_000,
   });
 
@@ -397,7 +405,7 @@ export default function HomePage() {
     if (stats && !soundRef.current) {
       soundRef.current = true;
       if (stats.pendingRequests > 0) playNotificationSound('request');
-      if (stats.upcomingTravel.some((tr) => isUrgent(tr.departureDate))) {
+      if (stats.upcomingTravel.some((tr) => isUrgentDeparture(tr.departureDate))) {
         setTimeout(() => playNotificationSound('travel'), 800);
       }
     }
@@ -424,7 +432,13 @@ export default function HomePage() {
   }, [updateRequestMutation]);
 
   // ── Personalization (§17) — SAME keys, SECTION granularity ──
-  const { data: userPreferences } = useUserPreferences();
+  // §UX-STRUCTURE 12C — the layout lifecycle is:
+  //   authenticated user → load persisted prefs (isLoading gates the
+  //   editor) → apply PERSISTED_USER_LAYOUT → fallback to
+  //   DEFAULT_LAYOUT only when nothing valid is persisted. Editing
+  //   is impossible until hydration finished, so a draft can never
+  //   be seeded from defaults and saved back over the real layout.
+  const { data: userPreferences, isLoading: prefsLoading } = useUserPreferences();
   const savePrefs = useSaveUserPreferences();
 
   const permittedWidgets = useMemo(
@@ -442,18 +456,27 @@ export default function HomePage() {
   const [draftHidden, setDraftHidden] = useState<Set<string>>(new Set());
   const [dragId, setDragId] = useState<string | null>(null);
   const [overId, setOverId] = useState<string | null>(null);
+  // §12D — honest save states: idle → unsaved → saving → saved|error.
+  // "تم الحفظ" renders ONLY after the server confirmed the write.
   const [savingLayout, setSavingLayout] = useState(false);
+  const [saveState, setSaveState] = useState<SaveState>('idle');
+  const [confirmReset, setConfirmReset] = useState(false);
 
   const enterEditMode = useCallback(() => {
-    const hiddenSet = new Set(userPreferences?.dashboard?.hiddenWidgets ?? []);
+    // §12B/§12C — never seed a draft from DEFAULTS while the persisted
+    // record is still loading (that race is what overwrote saved
+    // layouts with a default-derived order).
+    if (prefsLoading) return;
+    const hiddenSet = effectiveHiddenWidgets(DASHBOARD_WIDGETS, userPreferences);
     const visibleIds = widgetLayout.map((w) => w.id);
     const hiddenIds = permittedWidgets.filter((w) => hiddenSet.has(w.id)).map((w) => w.id);
     setDraftOrder([...visibleIds, ...hiddenIds]);
     setDraftHidden(hiddenSet);
     setDragId(null);
     setOverId(null);
+    setSaveState('unsaved');
     setEditMode(true);
-  }, [userPreferences, widgetLayout, permittedWidgets]);
+  }, [prefsLoading, userPreferences, widgetLayout, permittedWidgets]);
 
   const exitEditMode = useCallback(() => {
     setEditMode(false);
@@ -461,22 +484,50 @@ export default function HomePage() {
     setDraftHidden(new Set());
     setDragId(null);
     setOverId(null);
+    setSaveState('idle');
   }, []);
 
   const saveLayout = useCallback(async () => {
     setSavingLayout(true);
+    setSaveState('saving');
     try {
+      // mutateAsync resolves ONLY after the server persisted and
+      // responded with the merged record (the hook caches it).
       await savePrefs.mutateAsync({
         dashboard: { widgetOrder: draftOrder, hiddenWidgets: [...draftHidden] },
       });
+      setSaveState('saved');
       toast.success('تم حفظ تخطيط لوحة القيادة');
       exitEditMode();
     } catch {
+      setSaveState('error');
       toast.error('تعذر حفظ التخطيط');
     } finally {
       setSavingLayout(false);
     }
   }, [savePrefs, draftOrder, draftHidden, exitEditMode]);
+
+  // §12D — Reset to Default destroys the user's customization:
+  // explicit confirmation, then persists the cleared layout
+  // (empty order/hidden = DEFAULT_LAYOUT) server-side.
+  const resetLayout = useCallback(async () => {
+    setConfirmReset(false);
+    setSavingLayout(true);
+    setSaveState('saving');
+    try {
+      await savePrefs.mutateAsync({
+        dashboard: { widgetOrder: [], hiddenWidgets: [] },
+      });
+      setSaveState('saved');
+      toast.success('تمت إعادة التخطيط للوضع الافتراضي');
+      exitEditMode();
+    } catch {
+      setSaveState('error');
+      toast.error('تعذر إعادة التخطيط');
+    } finally {
+      setSavingLayout(false);
+    }
+  }, [savePrefs, exitEditMode]);
 
   const handleDropOn = useCallback((targetId: string) => {
     if (!dragId || dragId === targetId) { setDragId(null); setOverId(null); return; }
@@ -528,13 +579,16 @@ export default function HomePage() {
 
     if (editMode) {
       actions.push({ id: 'cancel-edit', label: 'إلغاء', icon: <X className="size-4" />, display: 'icon', onClick: exitEditMode });
+      actions.push({ id: 'reset-layout', label: 'الافتراضي', icon: <RotateCcw className="size-4" />, display: 'icon', onClick: () => setConfirmReset(true), disabled: savingLayout });
       actions.push({ id: 'save-layout', label: 'حفظ', icon: <Save className="size-4" />, display: 'icon', onClick: () => void saveLayout(), disabled: savingLayout });
     } else {
-      actions.push({ id: 'customize', label: 'تخصيص', icon: <GripVertical className="size-4" />, display: 'icon', onClick: enterEditMode });
+      // §12C — the editor only opens once the persisted layout is
+      // hydrated, so drafts can never be seeded from defaults.
+      actions.push({ id: 'customize', label: 'تخصيص', icon: <GripVertical className="size-4" />, display: 'icon', onClick: enterEditMode, disabled: prefsLoading });
       actions.push({ id: 'refresh', label: 'تحديث', icon: <RefreshCw className={`size-4 ${refreshing ? 'animate-spin' : ''}`} />, display: 'icon', onClick: () => void refetch(), active: refreshing });
     }
     return actions;
-  }, [canDoAction, activeQuickAction, editMode, exitEditMode, saveLayout, savingLayout, enterEditMode, refreshing, refetch]);
+  }, [canDoAction, activeQuickAction, editMode, exitEditMode, saveLayout, savingLayout, enterEditMode, prefsLoading, refreshing, refetch]);
   usePageHeaderActions(headerActions);
 
   const quickActionHostRef = useRef<HTMLDivElement>(null);
@@ -611,7 +665,7 @@ export default function HomePage() {
      Each row answers WHAT / WHO / WHY / URGENCY / NEXT ACTION.
      Decisions happen inline (overflow on request rows); the row
      click navigates to the EXACT record via the Qnalys highlight. */
-  const urgentTravels = stats.upcomingTravel.filter((tr) => isUrgent(tr.departureDate));
+  const urgentTravels = stats.upcomingTravel.filter((tr) => isUrgentDeparture(tr.departureDate));
   const FUTYPE_LABELS: Record<string, string> = { quality: 'جودة', behavior: 'سلوك', attendance: 'حضور', productivity: 'إنتاجية', training: 'تدريب', customerHandling: 'التعامل مع العملاء' };
   const queueItems: AttentionItem[] = [];
 
@@ -812,16 +866,28 @@ export default function HomePage() {
       label: t('home.closedDeals'),
       value: formatInteger(closedDeals?.closedThisMonth ?? 0, locale),
       period: formatMonthKey(closedDeals?.monthKey ?? currentMonthKey, locale),
-      scope: L('الصفقات المكتملة ضمن نطاق صلاحياتك', 'Completed deals within your authorized scope'),
+      scope: L('الصفقات ضمن نطاق صلاحياتك', 'Deals within your authorized scope'),
       businessRule: L(
-        'الصفقات المكتملة التي سُجّل إغلاقها (closedAt) خلال هذا الشهر — تاريخ الإغلاق هو المرجع، وليس تاريخ السفر ولا تاريخ الإنشاء.',
-        'Completed deals whose closure (closedAt) falls in this month — the CLOSED date is the reference, not the travel or creation date.'),
-      source: L('travelDeals — status=completed + closedAt', 'travelDeals — status "completed" + closedAt'),
+        'الصفقات التي تم تقفيلها مع الموظف (تاريخ تقفيل الديل) خلال هذا الشهر — بغضّ النظر عن حالتها الحالية. تاريخ تقفيل الديل هو المرجع، وليس تاريخ السفر ولا تاريخ الاكتمال ولا تاريخ التسجيل.',
+        'Deals closed with the employee (deal-closed date) during this month — regardless of their current status. The deal-closed date is the reference, not the travel, completion or record-creation date.'),
+      source: L('travelDeals — dealClosedAt في الشهر (كل الحالات)', 'travelDeals — dealClosedAt within the month (any status)'),
       freshness: closedDeals?.lastUpdated ?? null,
       breakdown: (closedDeals?.closedUnknown ?? 0) > 0
         ? [{ label: t('home.closedUnknown'), value: formatInteger(closedDeals!.closedUnknown, locale) }]
         : undefined,
-      navigateTo: { page: 'travel', params: { month: closedDeals?.monthKey ?? currentMonthKey } },
+      // §DEAL-DATES — the DEAL_CLOSED dimension deep-links with an
+      // EXPLICIT date basis + period + status so the Travel page
+      // resolves the SAME canonical dataset this count came from
+      // (never the departure-month filter, never status=completed —
+      // "closed with the employee" is independent of travel status).
+      navigateTo: {
+        page: 'travel',
+        params: {
+          dateBasis: 'dealClosedAt',
+          month: closedDeals?.monthKey ?? currentMonthKey,
+          status: 'all',
+        },
+      },
     }),
     qualityCases: () => setInsight({
       key: 'quality-cases',
@@ -953,7 +1019,10 @@ export default function HomePage() {
             </div>
           )}
           <TodayStat value={`${formatInteger(pp?.followUpCompletionRate ?? 0, locale)}%`} label={t('home.followUpCompletion')} onClick={() => navigateTo('followUps')} />
-          <TodayStat value={formatInteger(pp?.completedWork ?? stats.completedTravelCount, locale)} label={t('home.completedWork')} onClick={() => navigateTo('travel', undefined, { month: currentMonthKey })} />
+          {/* §DEAL-DATES — month-scoped completed trips (TRAVEL dimension,
+              matching the departure-month filter of its deep link). The
+              all-time snapshot count is never shown in this period slot. */}
+          <TodayStat value={formatInteger(pp?.completedWork ?? stats.completedTravelThisMonth ?? 0, locale)} label={t('home.completedWork')} onClick={() => navigateTo('travel', undefined, { month: currentMonthKey })} />
           <TodayStat value={(pp?.qualityDeductionsPerEmployee ?? 0).toFixed(2)} label={t('home.qualityPerEmployee')} onClick={() => navigateTo('quality', undefined, { month: currentMonthKey })} />
           {kpiSummary?.valueBasis && !kpiDenied && (
             <span className="text-[9px] px-1.5 py-0.5 rounded-md border border-slate-500/20 text-text-muted">
@@ -1002,7 +1071,7 @@ export default function HomePage() {
         ) : (
           <div className="divide-y divide-slate-500/8">
             {stats.upcomingTravel.slice(0, 6).map((tr) => {
-              const urgent = isUrgent(tr.departureDate);
+              const urgent = isUrgentDeparture(tr.departureDate);
               return (
                 <button key={tr.id} type="button" onClick={() => navigateTo('travel', tr.id)}
                   className="group w-full flex items-center gap-3 py-2 -mx-2 px-2 rounded-lg text-start hover:bg-surface-hover/70 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/40">
@@ -1243,7 +1312,7 @@ export default function HomePage() {
               <span className="block text-xs font-semibold text-foreground truncate">{tr.employeeName} → {tr.destination}</span>
               <span className="block text-[10px] text-text-muted">{tr.departureDate}{tr.returnDate ? ` — ${L('العودة', 'return')} ${tr.returnDate}` : ''}</span>
             </span>
-            {isUrgent(tr.departureDate) && <span className="size-2 rounded-full bg-rose-500 shrink-0" aria-label={L('عاجلة', 'urgent')} />}
+            {isUrgentDeparture(tr.departureDate) && <span className="size-2 rounded-full bg-rose-500 shrink-0" aria-label={L('عاجلة', 'urgent')} />}
           </button>
         ))}
       </div>
@@ -1272,9 +1341,24 @@ export default function HomePage() {
       {editMode && (
         <div className="flex items-center gap-2 rounded-lg border border-brand-500/30 bg-brand-500/10 px-3.5 py-2 mb-6 text-xs text-brand-300">
           <GripVertical className="size-3.5 shrink-0" />
-          {L('وضع التخصيص: اسحب الأقسام لإعادة ترتيبها، وأخفِ ما لا تحتاجه — ثم «حفظ».', 'Customize: drag sections to reorder, hide what you do not need — then Save.')}
+          <span className="flex-1 min-w-0">
+            {L('وضع التخصيص: اسحب الأقسام لإعادة ترتيبها، وأخفِ ما لا تحتاجه — ثم «حفظ».', 'Customize: drag sections to reorder, hide what you do not need — then Save.')}
+          </span>
+          {/* §12D — honest save-state feedback (idle renders nothing). */}
+          <SaveStateIndicator state={saveState} />
         </div>
       )}
+
+      {/* §12D — Reset-to-default destroys the customization: confirmed. */}
+      <ConfirmDialog
+        open={confirmReset}
+        onOpenChange={setConfirmReset}
+        title="إعادة التخطيط الافتراضي"
+        description="سيتم مسح ترتيب الأقسام وإظهار/إخفاء ما اعتمدته سابقاً والعودة للترتيب الافتراضي. لا يمكن التراجع."
+        confirmLabel="إعادة للافتراضي"
+        loading={savingLayout}
+        onConfirm={() => void resetLayout()}
+      />
 
       {/* quick-create inline form host (existing behavior) */}
       <div ref={quickActionHostRef} style={{ scrollMarginTop: '56px' }}>

@@ -1,25 +1,37 @@
 'use client';
 
-import React, { useState, useCallback } from 'react';
+import React, { useState } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { DEFAULT_STALE_TIME_MS, DEFAULT_GC_TIME_MS } from '@/lib/cache/cache-policy';
+import { attachCacheDiagnostics } from '@/lib/cache/cache-diagnostics';
 
-// ═══════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════════
 //  React Query Configuration — Optimized for ERP
-// ═══════════════════════════════════════════════════
+//
+//  The QueryClient IS the canonical client data cache (§CACHE):
+//  cache keys, stale-while-revalidate, deduplication, race
+//  sequencing, bounded memory and error states are all owned here.
+//  Freshness numbers live in lib/cache/cache-policy.ts — the
+//  defaults below cover every hook that doesn't declare its own.
+// ══════════════════════════════════════════════════════════════
 
 function makeQueryClient() {
-  return new QueryClient({
+  const client = new QueryClient({
     defaultOptions: {
       queries: {
-        // Data is considered fresh for 10 seconds (matches server cache TTL)
-        staleTime: 30_000,
-        // Keep data in cache for 5 minutes after becoming stale
-        gcTime: 5 * 60 * 1000,
+        // Data is considered fresh for 30s — no refetch while fresh,
+        // stale-while-revalidate afterwards (§10).
+        staleTime: DEFAULT_STALE_TIME_MS,
+        // Unused entries survive 30 minutes after their last observer
+        // unmounts: navigating back to a page restores the snapshot
+        // instead of re-downloading (§9/§28), and memory stays
+        // bounded by what was actually visited (§29).
+        gcTime: DEFAULT_GC_TIME_MS,
         // Retry failed requests once (not 3x default — faster UX)
         retry: 1,
         // Refetch on window focus for live updates across users
         refetchOnWindowFocus: true,
-        // Don't refetch on reconnect (server cache handles this)
+        // Refetch on reconnect (server handles its own TTLs)
         refetchOnReconnect: true,
       },
       mutations: {
@@ -28,6 +40,10 @@ function makeQueryClient() {
       },
     },
   });
+
+  // Development-only HIT/MISS/REVALIDATING/UPDATED/INVALIDATED log.
+  attachCacheDiagnostics(client);
+  return client;
 }
 
 // Singleton query client — survives across re-renders
@@ -55,102 +71,10 @@ export function QueryProvider({ children }: { children: React.ReactNode }) {
   );
 }
 
-// ═══════════════════════════════════════════════════
-//  Token Refresh Mutex — prevents concurrent refreshes
-// ═══════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════════
+//  Generic API Fetcher — canonical implementation lives in
+//  lib/api-fetch.ts (shared token-refresh mutex with authFetch).
+//  Re-exported here to keep every existing import path stable.
+// ══════════════════════════════════════════════════════════════
 
-let refreshPromise: Promise<string | null> | null = null;
-
-async function refreshAccessTokenLocked(): Promise<string | null> {
-  // If a refresh is already in-flight, piggyback on it
-  if (refreshPromise) return refreshPromise;
-
-  refreshPromise = (async () => {
-    try {
-      const refreshToken = localStorage.getItem('erp_refresh_token');
-      if (!refreshToken) return null;
-
-      const res = await fetch('/api/auth/refresh', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ refreshToken }),
-      });
-
-      if (!res.ok) {
-        // Refresh failed — clear tokens (AuthContext will handle full logout)
-        localStorage.removeItem('erp_access_token');
-        localStorage.removeItem('erp_refresh_token');
-        localStorage.removeItem('erp_user');
-        return null;
-      }
-
-      const data = await res.json();
-      localStorage.setItem('erp_access_token', data.accessToken);
-      localStorage.setItem('erp_refresh_token', data.refreshToken);
-
-      // Dispatch a custom event so AuthContext syncs the new token
-      window.dispatchEvent(new CustomEvent('erp:token-refreshed', { detail: data }));
-
-      return data.accessToken;
-    } catch {
-      return null;
-    } finally {
-      refreshPromise = null;
-    }
-  })();
-
-  return refreshPromise;
-}
-
-// ═══════════════════════════════════════════════════
-//  Generic API Fetcher with 401 auto-retry
-// ═══════════════════════════════════════════════════
-
-export async function apiFetch<T>(url: string, options?: RequestInit): Promise<T> {
-  const headers = new Headers(options?.headers);
-
-  // Add Authorization Bearer token if not already present
-  if (!headers.has('Authorization') && typeof window !== 'undefined') {
-    try {
-      const token = localStorage.getItem('erp_access_token');
-      if (token) {
-        headers.set('Authorization', `Bearer ${token}`);
-      }
-    } catch {
-      // ignore
-    }
-  }
-
-  let res = await fetch(url, { ...options, headers });
-
-  // ─── 401 Auto-Retry with Token Refresh ─────────
-  if (res.status === 401 && typeof window !== 'undefined') {
-    const newToken = await refreshAccessTokenLocked();
-
-    if (newToken) {
-      // Retry the original request with the fresh token
-      headers.set('Authorization', `Bearer ${newToken}`);
-      res = await fetch(url, { ...options, headers });
-    }
-  }
-
-  if (!res.ok) {
-    const error = await res.json().catch(() => ({ error: 'Request failed' }));
-    throw new Error(error.error || `HTTP ${res.status}`);
-  }
-
-  return res.json();
-}
-
-// ═══════════════════════════════════════════════════
-//  Optimistic Update Helper
-// ═══════════════════════════════════════════════════
-
-export function useOptimisticUpdate() {
-  const utils = useCallback(() => {
-    // Return a no-op rollback for now
-    return { rollback: () => {} };
-  }, []);
-
-  return utils;
-}
+export { apiFetch } from '@/lib/api-fetch';

@@ -13,7 +13,12 @@ function ScrollArea({
   return (
     <ScrollAreaPrimitive.Root
       data-slot="scroll-area"
-      className={cn("relative", className)}
+      // §UX-STRUCTURE PART 6 — containment: without overflow-hidden the
+      // viewport (height:100% resolves to auto against a max-h'd auto-
+      // height root) escapes the root's max-height and stretches the
+      // PAGE behind the bordered surface (the "user list grows past
+      // its surface" bug). The root must clip its own scroll region.
+      className={cn("relative overflow-hidden", className)}
       {...props}
     >
       <ScrollAreaPrimitive.Viewport

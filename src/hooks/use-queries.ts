@@ -1,70 +1,21 @@
 'use client';
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { apiFetch } from '@/lib/query-provider';
+import { apiFetch } from '@/lib/api-fetch';
 import { useCallback } from 'react';
 import type { CAPACase } from '@/types';
 import type { OrgAssignmentNode } from '@/lib/organization/assignment';
+import { queryKeys } from '@/lib/cache/query-keys';
+import { freshnessFor } from '@/lib/cache/cache-policy';
+import { invalidateDomain, invalidateDomains, REFRESH_ALL_DOMAINS, type MutationDomain } from '@/lib/cache/invalidation';
 
+// ═════════════════════════════════════════════════════════════
+//  Query Key Factory — canonical definitions live in
+//  lib/cache/query-keys.ts (§CACHE-KEYS); re-exported here so every
+//  existing import path keeps working.
 // ═══════════════════════════════════════════════════
-//  Query Key Factory — Centralized, consistent keys
-// ═══════════════════════════════════════════════════
 
-export const queryKeys = {
-  // Home / Dashboard
-  homeStats: ['home', 'stats'] as const,
-  
-  // Employees
-  employees: ['employees'] as const,
-  employee: (id: string) => ['employees', id] as const,
-  // Minimal org-node list powering the employee form's assignment
-  // picker (department → dependent team). Separate key from the
-  // organization PAGE query ('organization') on purpose: this is the
-  // lightweight employees-workflow slice, cached independently.
-  orgNodesForAssignment: ['employees', 'org-nodes'] as const,
-  
-  // Attendance
-  attendance: ['attendance'] as const,
-  attendanceByDate: (date: string) => ['attendance', date] as const,
-  
-  // Requests
-  requests: ['requests'] as const,
-  
-  // Rules
-  rules: ['rules'] as const,
-  
-  // Quality
-  quality: ['quality'] as const,
-  
-  // Travel
-  travel: ['travel'] as const,
-  
-  // Biometrics
-  biometrics: ['biometrics'] as const,
-  
-  // Reports
-  reports: (month?: string) => ['reports', month] as const,
-  
-  // Notifications
-  notifications: ['notifications'] as const,
-
-  // Follow-Ups
-  followUps: ['followUps'] as const,
-  followUpsByEmployee: (employeeId: string) => ['followUps', 'employee', employeeId] as const,
-
-  // CAPA
-  capaCases: ['capaCases'] as const,
-  capaCase: (id: string) => ['capaCases', id] as const,
-
-  // Complaints
-  complaints: ['complaints'] as const,
-
-  // Knowledge Base
-  knowledgeBase: ['knowledgeBase'] as const,
-
-  // Risk Center
-  riskCenter: ['riskCenter'] as const,
-};
+export { queryKeys };
 
 // ═══════════════════════════════════════════════════
 //  HOME STATS HOOK
@@ -83,11 +34,13 @@ export function useHomeStats() {
 //  EMPLOYEES HOOKS
 // ═══════════════════════════════════════════════════
 
-export function useEmployees() {
+export function useEmployees(enabled = true) {
   return useQuery({
     queryKey: queryKeys.employees,
     queryFn: () => apiFetch<any[]>('/api/employees'),
     staleTime: 30_000, // Employees rarely change
+    gcTime: freshnessFor('employees').gcTime,
+    enabled,
   });
 }
 
@@ -96,8 +49,8 @@ export function useCreateEmployee() {
   return useMutation({
     mutationFn: (data: Record<string, any>) =>
       apiFetch('/api/employees', { method: 'POST', body: JSON.stringify(data) }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: queryKeys.employees });
+    onSuccess: (_res, data) => {
+      invalidateDomain(qc, 'employees', { employeeId: data?.employeeId });
     },
   });
 }
@@ -107,8 +60,8 @@ export function useUpdateEmployee() {
   return useMutation({
     mutationFn: ({ id, data }: { id: string; data: Record<string, any> }) =>
       apiFetch(`/api/employees/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: queryKeys.employees });
+    onSuccess: (_res, vars) => {
+      invalidateDomain(qc, 'employees', { employeeId: vars.id });
     },
   });
 }
@@ -118,8 +71,8 @@ export function useDeleteEmployee() {
   return useMutation({
     mutationFn: (id: string) =>
       apiFetch(`/api/employees/${id}`, { method: 'DELETE' }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: queryKeys.employees });
+    onSuccess: (_res, id) => {
+      invalidateDomain(qc, 'employees', { employeeId: id });
     },
   });
 }
@@ -154,8 +107,7 @@ export function useMoveEmployeeOrg() {
         body: JSON.stringify({ employeeId, orgNodeId }),
       }),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: queryKeys.employees });
-      qc.invalidateQueries({ queryKey: ['organization'] });
+      invalidateDomains(qc, ['employees', 'organization']);
     },
   });
 }
@@ -177,9 +129,8 @@ export function useCreateAttendance() {
   return useMutation({
     mutationFn: (data: Record<string, any>) =>
       apiFetch('/api/attendance', { method: 'POST', body: JSON.stringify(data) }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: queryKeys.attendance });
-      qc.invalidateQueries({ queryKey: queryKeys.homeStats });
+    onSuccess: (_res, data) => {
+      invalidateDomain(qc, 'attendance', { employeeId: data?.employeeId });
     },
   });
 }
@@ -189,9 +140,8 @@ export function useUpdateAttendance() {
   return useMutation({
     mutationFn: ({ id, data }: { id: string; data: Record<string, any> }) =>
       apiFetch(`/api/attendance/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: queryKeys.attendance });
-      qc.invalidateQueries({ queryKey: queryKeys.homeStats });
+    onSuccess: (_res, vars) => {
+      invalidateDomain(qc, 'attendance', { employeeId: vars.data?.employeeId });
     },
   });
 }
@@ -202,8 +152,7 @@ export function useDeleteAttendance() {
     mutationFn: (id: string) =>
       apiFetch(`/api/attendance/${id}`, { method: 'DELETE' }),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: queryKeys.attendance });
-      qc.invalidateQueries({ queryKey: queryKeys.homeStats });
+      invalidateDomain(qc, 'attendance');
     },
   });
 }
@@ -226,8 +175,7 @@ export function useUpdateRequest() {
     mutationFn: ({ id, data }: { id: string; data: Record<string, any> }) =>
       apiFetch(`/api/requests/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: queryKeys.requests });
-      qc.invalidateQueries({ queryKey: queryKeys.homeStats });
+      invalidateDomain(qc, 'requests');
     },
   });
 }
@@ -250,7 +198,7 @@ export function useCreateRule() {
     mutationFn: (data: Record<string, any>) =>
       apiFetch('/api/rules', { method: 'POST', body: JSON.stringify(data) }),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: queryKeys.rules });
+      invalidateDomain(qc, 'rules');
     },
   });
 }
@@ -261,7 +209,7 @@ export function useDeleteRule() {
     mutationFn: (id: string) =>
       apiFetch(`/api/rules/${id}`, { method: 'DELETE' }),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: queryKeys.rules });
+      invalidateDomain(qc, 'rules');
     },
   });
 }
@@ -292,6 +240,15 @@ export interface TravelPageParams {
   /** §TRAVEL-TOMORROW — real server-side filters (mutually combinable). */
   tomorrowDeparture?: boolean;
   tomorrowReturn?: boolean;
+  /** §DEAL-DATES — closure-month filter (CLOSED dimension / closedAt). */
+  closedMonth?: string;
+  /** §DEAL-DATES — which canonical date the `month` period applies to
+   *  (dealClosedAt = closed with the employee, createdAt, departureDate,
+   *  closedAt). Default: departureDate (the operational travel view). */
+  dateBasis?: string;
+  /** §9 — independent current-status filter (all|upcoming|in_progress|
+   *  completed|canceled). Orthogonal to the tab and the date basis. */
+  status?: string;
 }
 
 export interface TravelApiResponse {
@@ -300,15 +257,21 @@ export interface TravelApiResponse {
   counts: { all: number; upcoming: number; in_progress: number; returned: number };
   availableMonths: string[];
   urgentTrips: any[];
+  /** Echo of the resolved date basis the period filter used. */
+  dateBasis?: string;
 }
 
 export function useTravel(params: TravelPageParams = {}) {
   const {
     tab = 'all', employeeId = '', month = '', search = '', page = 1, pageSize = 50,
     tomorrowDeparture = false, tomorrowReturn = false,
+    // §DEAL-DATES — closure-month filter (CLOSED dimension / closedAt).
+    closedMonth = '',
+    // §DEAL-DATES — explicit date basis + independent status filter.
+    dateBasis = 'departureDate', status = 'all',
   } = params;
   return useQuery({
-    queryKey: [...queryKeys.travel, tab, employeeId, month, search, page, pageSize, tomorrowDeparture, tomorrowReturn],
+    queryKey: [...queryKeys.travel, tab, employeeId, month, search, page, pageSize, tomorrowDeparture, tomorrowReturn, closedMonth, dateBasis, status],
     queryFn: () => {
       const sp = new URLSearchParams();
       if (tab !== 'all') sp.set('tab', tab);
@@ -319,6 +282,11 @@ export function useTravel(params: TravelPageParams = {}) {
       if (pageSize !== 50) sp.set('pageSize', String(pageSize));
       if (tomorrowDeparture) sp.set('tomorrowDeparture', '1');
       if (tomorrowReturn) sp.set('tomorrowReturn', '1');
+      if (closedMonth) sp.set('closedMonth', closedMonth);
+      // §DEAL-DATES — the basis ALWAYS travels with the period so the
+      // server and the page can never disagree about what `month` means.
+      if (dateBasis && dateBasis !== 'departureDate') sp.set('dateBasis', dateBasis);
+      if (status && status !== 'all') sp.set('status', status);
       const qs = sp.toString();
       return apiFetch<TravelApiResponse>(`/api/travel${qs ? `?${qs}` : ''}`);
     },
@@ -331,8 +299,8 @@ export function useCreateTravel() {
   return useMutation({
     mutationFn: (data: Record<string, any>) =>
       apiFetch('/api/travel', { method: 'POST', body: JSON.stringify(data) }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: queryKeys.travel });
+    onSuccess: (_res, data) => {
+      invalidateDomain(qc, 'travel', { employeeId: data?.employeeId });
     },
   });
 }
@@ -342,8 +310,10 @@ export function useUpdateTravel() {
   return useMutation({
     mutationFn: ({ id, data }: { id: string; data: Record<string, any> }) =>
       apiFetch(`/api/travel/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
-    onSettled: () => {
-      qc.invalidateQueries({ queryKey: ['travel'] });
+    // onSettled (existing semantics): refresh deal surfaces even when
+    // the mutation errors — status transitions drive closedAt.
+    onSettled: (_res, _err, vars) => {
+      invalidateDomain(qc, 'travel', { employeeId: vars?.data?.employeeId });
     },
   });
 }
@@ -354,7 +324,7 @@ export function useDeleteTravel() {
     mutationFn: (id: string) =>
       apiFetch(`/api/travel/${id}`, { method: 'DELETE' }),
     onSettled: () => {
-      qc.invalidateQueries({ queryKey: ['travel'] });
+      invalidateDomain(qc, 'travel');
     },
   });
 }
@@ -422,8 +392,8 @@ export function useCreateFollowUp() {
   return useMutation({
     mutationFn: (data: Record<string, any>) =>
       apiFetch('/api/follow-ups', { method: 'POST', body: JSON.stringify(data) }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: queryKeys.followUps });
+    onSuccess: (_res, data) => {
+      invalidateDomain(qc, 'followUps', { employeeId: data?.employeeId });
     },
   });
 }
@@ -433,8 +403,8 @@ export function useUpdateFollowUp() {
   return useMutation({
     mutationFn: ({ id, data }: { id: string; data: Record<string, any> }) =>
       apiFetch(`/api/follow-ups/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
-    onSettled: () => {
-      qc.invalidateQueries({ queryKey: ['followUps'] });
+    onSettled: (_res, _err, vars) => {
+      invalidateDomain(qc, 'followUps', { employeeId: vars?.data?.employeeId });
     },
   });
 }
@@ -445,7 +415,7 @@ export function useDeleteFollowUp() {
     mutationFn: (id: string) =>
       apiFetch(`/api/follow-ups/${id}`, { method: 'DELETE' }),
     onSettled: () => {
-      qc.invalidateQueries({ queryKey: ['followUps'] });
+      invalidateDomain(qc, 'followUps');
     },
   });
 }
@@ -485,8 +455,8 @@ export function useCreateCAPACase() {
   return useMutation({
     mutationFn: (data: Record<string, any>) =>
       apiFetch('/api/capa-cases', { method: 'POST', body: JSON.stringify(data) }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: queryKeys.capaCases });
+    onSuccess: (_res, data) => {
+      invalidateDomain(qc, 'capaCases', { employeeId: data?.employeeId });
     },
   });
 }
@@ -496,8 +466,8 @@ export function useUpdateCAPACase() {
   return useMutation({
     mutationFn: ({ id, data }: { id: string; data: Record<string, any> }) =>
       apiFetch(`/api/capa-cases/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
-    onSettled: () => {
-      qc.invalidateQueries({ queryKey: ['capaCases'] });
+    onSettled: (_res, _err, vars) => {
+      invalidateDomain(qc, 'capaCases', { employeeId: vars?.data?.employeeId });
     },
   });
 }
@@ -508,7 +478,7 @@ export function useDeleteCAPACase() {
     mutationFn: (id: string) =>
       apiFetch(`/api/capa-cases/${id}`, { method: 'DELETE' }),
     onSettled: () => {
-      qc.invalidateQueries({ queryKey: ['capaCases'] });
+      invalidateDomain(qc, 'capaCases');
     },
   });
 }
@@ -557,8 +527,8 @@ export function useCreateComplaint() {
   return useMutation({
     mutationFn: (data: Record<string, any>) =>
       apiFetch('/api/complaints', { method: 'POST', body: JSON.stringify(data) }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: queryKeys.complaints });
+    onSuccess: (_res, data) => {
+      invalidateDomain(qc, 'complaints', { employeeId: data?.employeeId });
     },
   });
 }
@@ -568,8 +538,8 @@ export function useUpdateComplaint() {
   return useMutation({
     mutationFn: ({ id, data }: { id: string; data: Record<string, any> }) =>
       apiFetch(`/api/complaints/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
-    onSettled: () => {
-      qc.invalidateQueries({ queryKey: ['complaints'] });
+    onSettled: (_res, _err, vars) => {
+      invalidateDomain(qc, 'complaints', { employeeId: vars?.data?.employeeId });
     },
   });
 }
@@ -580,7 +550,7 @@ export function useDeleteComplaint() {
     mutationFn: (id: string) =>
       apiFetch(`/api/complaints/${id}`, { method: 'DELETE' }),
     onSettled: () => {
-      qc.invalidateQueries({ queryKey: ['complaints'] });
+      invalidateDomain(qc, 'complaints');
     },
   });
 }
@@ -621,7 +591,7 @@ export function useCreateKnowledgeArticle() {
     mutationFn: (data: Record<string, any>) =>
       apiFetch('/api/knowledge-base', { method: 'POST', body: JSON.stringify(data) }),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: queryKeys.knowledgeBase });
+      invalidateDomain(qc, 'knowledgeBase');
     },
   });
 }
@@ -632,7 +602,7 @@ export function useUpdateKnowledgeArticle() {
     mutationFn: ({ id, data }: { id: string; data: Record<string, any> }) =>
       apiFetch(`/api/knowledge-base/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
     onSettled: () => {
-      qc.invalidateQueries({ queryKey: ['knowledgeBase'] });
+      invalidateDomain(qc, 'knowledgeBase');
     },
   });
 }
@@ -643,7 +613,7 @@ export function useDeleteKnowledgeArticle() {
     mutationFn: (id: string) =>
       apiFetch(`/api/knowledge-base/${id}`, { method: 'DELETE' }),
     onSettled: () => {
-      qc.invalidateQueries({ queryKey: ['knowledgeBase'] });
+      invalidateDomain(qc, 'knowledgeBase');
     },
   });
 }
@@ -664,4 +634,224 @@ export function useInvalidateQueries() {
   }, [qc]);
 
   return { invalidate, invalidateAll };
+}
+
+// ═════════════════════════════════════════════════════════════
+//  DOMAIN LIST HOOKS — the operational pages that previously
+//  fetched with useEffect + authFetch + local state (no caching,
+//  no dedup, full download on every navigation). They now flow
+//  through the canonical cache: first visit fetches, return visits
+//  restore the snapshot instantly and revalidate in the background
+//  when stale (§9/§28). Page state (filters/sort/pagination) stays
+//  in usePageState — only DATA STATE lives here (§4).
+//
+//  `enabled` carries the page's existing canView gate — non-viewers
+//  never trigger a request.
+// ═════════════════════════════════════════════════════════════
+
+/** dashboard/users — full management payload or the basic dept-filter
+ *  variant. Variants are distinct cache entries (§43). */
+export function useDashboardUsers(variant: 'basic' | 'full' = 'full', enabled = true) {
+  return useQuery({
+    queryKey: queryKeys.dashboardUsers(variant),
+    queryFn: () => apiFetch<any[]>(
+      variant === 'basic' ? '/api/dashboard/users?basic=1' : '/api/dashboard/users',
+    ),
+    staleTime: freshnessFor('dashboardUsers').staleTime,
+    gcTime: freshnessFor('dashboardUsers').gcTime,
+    enabled,
+  });
+}
+
+/** Full follow-up list + per-employee risk scores (single endpoint). */
+export function useFollowUpsList(enabled = true) {
+  return useQuery({
+    queryKey: queryKeys.followUpsList,
+    queryFn: () => apiFetch<{ data?: any[]; employeeRiskScores?: Record<string, number> } | any[]>('/api/follow-ups'),
+    select: (payload) => {
+      const items = Array.isArray(payload) ? payload : payload?.data || [];
+      return {
+        followUps: Array.isArray(items) ? items : [],
+        employeeRiskScores: (Array.isArray(payload) ? {} : payload?.employeeRiskScores) || {},
+      };
+    },
+    staleTime: freshnessFor('followUps').staleTime,
+    enabled,
+  });
+}
+
+/** Legacy quality-deduction list. `includeArchived` is key identity. */
+export function useQualityList(includeArchived: boolean, enabled = true) {
+  return useQuery({
+    queryKey: queryKeys.qualityList(includeArchived),
+    queryFn: () => apiFetch<any[]>(
+      includeArchived ? '/api/quality?includeArchived=1' : '/api/quality',
+    ),
+    staleTime: freshnessFor('quality').staleTime,
+    enabled,
+  });
+}
+
+export function useAttendanceList(enabled = true) {
+  return useQuery({
+    queryKey: queryKeys.attendanceList,
+    queryFn: () => apiFetch<any[]>('/api/attendance'),
+    staleTime: freshnessFor('attendance').staleTime,
+    enabled,
+  });
+}
+
+export function useRequestsList(enabled = true) {
+  return useQuery({
+    queryKey: queryKeys.requestsList,
+    queryFn: () => apiFetch<any[]>('/api/requests'),
+    staleTime: freshnessFor('requests').staleTime,
+    enabled,
+  });
+}
+
+export function useHrDeductionsList(includeArchived: boolean, enabled = true) {
+  return useQuery({
+    queryKey: queryKeys.hrDeductionsList(includeArchived),
+    queryFn: () => apiFetch<any[]>(
+      includeArchived ? '/api/hr-deductions?includeArchived=1' : '/api/hr-deductions',
+    ),
+    staleTime: freshnessFor('hrDeductions').staleTime,
+    enabled,
+  });
+}
+
+export function useBiometricsList(enabled = true) {
+  return useQuery({
+    queryKey: queryKeys.biometricsList,
+    queryFn: () => apiFetch<any[]>('/api/biometric'),
+    staleTime: freshnessFor('biometrics').staleTime,
+    enabled,
+  });
+}
+
+/** CAPA cases, unpaginated (the page needs the whole operational set). */
+export function useCapaList(enabled = true) {
+  return useQuery({
+    queryKey: queryKeys.capaList,
+    queryFn: () => apiFetch<{ data?: any[]; total?: number }>('/api/capa-cases'),
+    staleTime: freshnessFor('capaCases').staleTime,
+    enabled,
+  });
+}
+
+export function useRepetitionAlerts(enabled = true) {
+  return useQuery({
+    queryKey: ['repetition-alerts'] as const,
+    queryFn: () => apiFetch<{ alerts?: any[]; generatedAt?: string }>('/api/repetition-alerts'),
+    staleTime: freshnessFor('aoccOperational').staleTime,
+    enabled,
+  });
+}
+
+/** Rules engine dataset — `fresh=1` cache-bypass semantics are
+ *  preserved as part of the key identity. */
+export function useRulesList(enabled = true) {
+  return useQuery({
+    queryKey: queryKeys.rulesList,
+    queryFn: () => apiFetch<{ data?: any[]; total?: number; stats?: any }>(
+      '/api/rules?limit=100&fresh=1',
+    ),
+    staleTime: freshnessFor('rules').staleTime,
+    enabled,
+  });
+}
+
+export function useRuleLogs(enabled = true) {
+  return useQuery({
+    queryKey: [...queryKeys.ruleLogs, 'recent'] as const,
+    queryFn: () => apiFetch<any>('/api/rule-logs?limit=50'),
+    staleTime: freshnessFor('ruleLogs').staleTime,
+    enabled,
+  });
+}
+
+/** Deduction rules (RulesPage — distinct from the rules engine). */
+export function useDeductionRules(enabled = true) {
+  return useQuery({
+    queryKey: ['deductionRules'] as const,
+    queryFn: () => apiFetch<{ data?: any[] }>('/api/deduction-rules'),
+    staleTime: freshnessFor('rules').staleTime,
+    enabled,
+  });
+}
+
+/** Risk-center snapshot for a reporting month — period-aware key (§16). */
+export function useRiskCenterMonth(month: string, enabled = true) {
+  return useQuery({
+    queryKey: queryKeys.riskCenterMonth(month),
+    queryFn: () => apiFetch<any>(`/api/risk-center${month ? `?month=${month}` : ''}`),
+    staleTime: freshnessFor('riskCenter').staleTime,
+    enabled,
+  });
+}
+
+/** Employee 360 aggregate — subject-scoped key (§39). Section
+ *  permissions stay server-enforced; the cache only avoids re-download.
+ *  The REPORTING PERIOD is part of the cache identity: switching month
+ *  selects another identity (cached snapshots render instantly, §16).
+ *  The route's deterministic 404 body ('الموظف غير موجود') is surfaced
+ *  as a not-found sentinel so callers keep their not-found UI. */
+export function useEmployee360(employeeId: string, month = '', enabled = true) {
+  return useQuery({
+    queryKey: month
+      ? [...queryKeys.employee360(employeeId), month] as const
+      : queryKeys.employee360(employeeId),
+    queryFn: async () => {
+      try {
+        const suffix = month ? `?month=${encodeURIComponent(month)}` : '';
+        return await apiFetch<any>(`/api/employee-360/${employeeId}${suffix}`);
+      } catch (err: any) {
+        if (err?.message === 'الموظف غير موجود') {
+          return { __notFound: true as const };
+        }
+        throw err;
+      }
+    },
+    staleTime: freshnessFor('employee360').staleTime,
+    enabled: enabled && !!employeeId,
+  });
+}
+
+export function useEmployeePerformance(
+  employeeId: string,
+  options?: { scope?: string; month?: string; enabled?: boolean },
+) {
+  const { scope = 'career', month = '', enabled = true } = options ?? {};
+  return useQuery({
+    // Scope + month are part of the identity — different metric
+    // dimensions never collide (§16/§43).
+    queryKey: [...queryKeys.employeePerformance(employeeId), scope, month] as const,
+    queryFn: () => {
+      const params = new URLSearchParams({ scope });
+      if (scope === 'selected_month' && month) params.set('month', month);
+      return apiFetch<any>(`/api/employee-performance/${employeeId}?${params.toString()}`);
+    },
+    staleTime: freshnessFor('employeePerformance').staleTime,
+    enabled: enabled && !!employeeId,
+  });
+}
+
+/** Manual refresh that keeps the current snapshot on screen (§26):
+ *  force-revalidates the given domains without clearing anything. */
+export function useRefreshDomains() {
+  const qc = useQueryClient();
+  return useCallback((domains: readonly MutationDomain[], ctx?: { employeeId?: string }) => {
+    invalidateDomains(qc, domains, ctx);
+  }, [qc]);
+}
+
+/** Employee documents (Employee 360 documents tab) — subject-scoped. */
+export function useEmployeeDocuments(employeeId: string, enabled = true) {
+  return useQuery({
+    queryKey: ['employee-documents', employeeId] as const,
+    queryFn: () => apiFetch<any[]>(`/api/employee-documents?employeeId=${employeeId}`),
+    staleTime: freshnessFor('employee360').staleTime,
+    enabled: enabled && !!employeeId,
+  });
 }

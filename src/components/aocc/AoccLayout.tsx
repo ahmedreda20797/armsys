@@ -2,6 +2,7 @@
 
 import { useMemo, useCallback, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
+import { invalidateDomains, REFRESH_ALL_DOMAINS } from '@/lib/cache/invalidation';
 import {
   useHomeStats,
   useCAPACases,
@@ -137,13 +138,12 @@ export default function AoccLayout() {
   const onlineUsersQuery = useOnlineUsers(2);
   const activityLogsQuery = useActivityLogs();
 
-  // ── Refresh handler — invalidate all AOCC queries ──
+  // ── Refresh handler — explicit full-refresh opt-in (§26/§23) via the
+  //  canonical domain map; keeps working keys consistent (['home'] is
+  //  the live ['home','stats'] prefix, riskCenter both the AOCC poll
+  //  key and the period-scoped page keys).
   const handleRefresh = useCallback(() => {
-    queryClient.invalidateQueries({ queryKey: ['home'] });
-    queryClient.invalidateQueries({ queryKey: ['capaCases'] });
-    queryClient.invalidateQueries({ queryKey: ['complaints'] });
-    queryClient.invalidateQueries({ queryKey: ['followUps'] });
-    queryClient.invalidateQueries({ queryKey: ['riskCenter'] });
+    invalidateDomains(queryClient, REFRESH_ALL_DOMAINS);
     queryClient.invalidateQueries({ queryKey: ['notification-stats'] });
     queryClient.invalidateQueries({ queryKey: ['activity-logs'] });
   }, [queryClient]);

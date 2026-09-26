@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import { usePermissions } from '@/hooks/usePermissions';
 import { Card, CardContent } from '@/components/ui/card';
@@ -42,7 +42,10 @@ import { SmartActionMenu } from '@/components/shared/SmartActionMenu';
 import { PageIdentity } from '@/components/shared/PageIdentity';
 import type { DeductionRule } from '@/types';
 import { logCreate, logUpdate, logDelete } from '@/lib/activity-logger';
-import { authFetch } from '@/lib/api-fetch';
+import { apiFetch } from '@/lib/api-fetch';
+import { useQueryClient } from '@tanstack/react-query';
+import { useDeductionRules } from '@/hooks/use-queries';
+import { DataFreshnessIndicator } from '@/components/shared/DataFreshnessIndicator';
 
 interface RuleFormData {
   key: string;
@@ -82,39 +85,31 @@ function getUnitDisplay(unit: string, amount: number): string {
 
 export default function RulesPage() {
   const { canEdit, canCreate, canUpdate, canDelete } = usePermissions('rules');
-  const [rules, setRules] = useState<DeductionRule[]>([]);
-  const [loading, setLoading] = useState(true);
+  // ═══ DATA STATE (cache-backed, §4) — snapshot restore + background
+  //  revalidation (§9/§28). Deduction rules are reference data (§12):
+  //  long freshness, long retention.
+  const queryClient = useQueryClient();
+  const rulesQuery = useDeductionRules();
+  const rules = (rulesQuery.data?.data ?? []) as DeductionRule[];
+  const loading = rulesQuery.isLoading;
+  const revalidating = rulesQuery.isFetching && !loading;
+
+  // ═══ Manual refresh / mutation revalidation (§26).
+  const refreshRules = useCallback(async () => {
+    await queryClient.invalidateQueries({ queryKey: ['deductionRules'] });
+  }, [queryClient]);
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [editingRule, setEditingRule] = useState<DeductionRule | null>(null);
   const [form, setForm] = useState<RuleFormData>(emptyForm);
   const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
-  useEffect(() => {
-    fetchRules();
-  }, []);
-
-  async function fetchRules() {
-    try {
-      const res = await authFetch('/api/deduction-rules');
-      if (res.ok) {
-        const data = await res.json();
-        setRules(Array.isArray(data.data) ? data.data : Array.isArray(data) ? data : []);
-      }
-    } catch {
-      setRules([]);
-    } finally {
-      setLoading(false);
-    }
-  }
-
   const handleSave = async () => {
     setSaving(true);
     try {
       if (editingRule) {
-        const res = await authFetch(`/api/deduction-rules/${editingRule.id}`, {
+        await apiFetch(`/api/deduction-rules/${editingRule.id}`, {
           method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             key: form.key,
             label: form.label,
@@ -122,14 +117,11 @@ export default function RulesPage() {
             unit: form.unit,
           }),
         });
-        if (res.ok) {
-          logUpdate('rules', 'قاعدة خصم', form.label);
-          await fetchRules();
-        }
+        logUpdate('rules', 'قاعدة خصم', form.label);
+        await refreshRules();
       } else {
-        const res = await authFetch('/api/deduction-rules', {
+        await apiFetch('/api/deduction-rules', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             key: form.key,
             label: form.label,
@@ -137,10 +129,8 @@ export default function RulesPage() {
             unit: form.unit,
           }),
         });
-        if (res.ok) {
-          logCreate('rules', 'قاعدة خصم', form.label);
-          await fetchRules();
-        }
+        logCreate('rules', 'قاعدة خصم', form.label);
+        await refreshRules();
       }
     } catch {
       // Error handled silently
@@ -157,12 +147,10 @@ export default function RulesPage() {
     setDeleteLoading(true);
     try {
       const rule = rules.find((r: any) => r.id === id);
-      const res = await authFetch(`/api/deduction-rules/${id}`, { method: 'DELETE' });
-      if (res.ok) {
-        if (rule) logDelete('rules', 'قاعدة خصم', rule.label);
-        setRules((prev) => prev.filter((r) => r.id !== id));
-        setDeletingId(null);
-      }
+      await apiFetch(`/api/deduction-rules/${id}`, { method: 'DELETE' });
+      if (rule) logDelete('rules', 'قاعدة خصم', rule.label);
+      await refreshRules();
+      setDeletingId(null);
     } catch {
       // Error handled silently
     } finally {
@@ -174,7 +162,7 @@ export default function RulesPage() {
     try {
       // The GET /api/rules endpoint auto-syncs canonical amounts
       // Just re-fetch to trigger sync and refresh UI
-      await fetchRules();
+      await refreshRules();
     } catch {
       // Error handled silently
     }
@@ -310,6 +298,9 @@ export default function RulesPage() {
           </>
         }
       />
+
+      {/* Subtle background-revalidation state (§32) */}
+      <DataFreshnessIndicator revalidating={revalidating} />
 
       {/* Loading */}
       {loading ? (

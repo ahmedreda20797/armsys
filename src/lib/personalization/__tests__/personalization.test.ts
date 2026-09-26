@@ -17,6 +17,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   reconcileSidebarOrder, resolveWidgetLayout, sanitizeUserPreferencesInput,
+  effectiveHiddenWidgets,
 } from '@/lib/personalization';
 import { DASHBOARD_WIDGETS, type WidgetConfig } from '@/config/dashboard-widgets';
 
@@ -48,9 +49,25 @@ describe('sidebar order reconciliation', () => {
 describe('dashboard widget layout', () => {
   const all = () => true;
 
-  it('default layout: registry order, everything visible', () => {
+  it('default layout: registry order, registry default visibility (§12C DEFAULT_LAYOUT)', () => {
+    // Sections folded into the queue (defaultVisible: false) are
+    // hidden until the user explicitly personalizes.
     const layout = resolveWidgetLayout(DASHBOARD_WIDGETS, null, all);
-    assert.deepEqual(layout.map((w) => w.id), DASHBOARD_WIDGETS.map((w) => w.id));
+    const expected = DASHBOARD_WIDGETS.filter((w) => w.defaultVisible).map((w) => w.id);
+    assert.deepEqual(layout.map((w) => w.id), expected);
+  });
+
+  it('effectiveHiddenWidgets: registry defaults until an explicit customization exists, then the saved set ALONE', () => {
+    const defaults = effectiveHiddenWidgets(DASHBOARD_WIDGETS, null);
+    assert.ok(defaults.has('pendingRequests'));
+    assert.ok(!defaults.has('attentionRequired'));
+    // Any explicit hidden/order replaces defaults entirely.
+    const explicit = effectiveHiddenWidgets(
+      DASHBOARD_WIDGETS,
+      { dashboard: { widgetOrder: ['attentionRequired'], hiddenWidgets: ['quickAccess'] } },
+    );
+    assert.ok(explicit.has('quickAccess'));
+    assert.ok(!explicit.has('pendingRequests'));
   });
 
   it('user order + hidden widgets apply within the permitted set', () => {
@@ -92,21 +109,24 @@ describe('dashboard widget layout', () => {
   });
 
   it('permission loss reconciliation: widget hidden after permission revocation stays gone; regrant + unhide restores', () => {
-    const prefs = { dashboard: { hiddenWidgets: ['attendanceToday'] as string[] } };
-    const withoutAttendance = (w: WidgetConfig) => w.permissionKey !== 'attendance';
-    let layout = resolveWidgetLayout(DASHBOARD_WIDGETS, prefs, withoutAttendance);
-    assert.ok(!layout.some((w) => w.id === 'attendanceToday')); // revoked → dropped
+    // travelAlerts is defaultVisible: true — after an explicit
+    // customization it obeys ONLY the saved hidden set.
+    const prefs = { dashboard: { hiddenWidgets: ['travelAlerts'] as string[] } };
+    const withoutTravel = (w: WidgetConfig) => w.permissionKey !== 'travel';
+    let layout = resolveWidgetLayout(DASHBOARD_WIDGETS, prefs, withoutTravel);
+    assert.ok(!layout.some((w) => w.id === 'travelAlerts')); // revoked → dropped
     layout = resolveWidgetLayout(DASHBOARD_WIDGETS, prefs, () => true);
-    assert.ok(!layout.some((w) => w.id === 'attendanceToday')); // still user-hidden
+    assert.ok(!layout.some((w) => w.id === 'travelAlerts')); // still user-hidden
+    // Cleared preferences → DEFAULT_LAYOUT → default-visible widget back.
     layout = resolveWidgetLayout(DASHBOARD_WIDGETS, { dashboard: {} }, () => true);
-    assert.ok(layout.some((w) => w.id === 'attendanceToday'));  // reset restores
+    assert.ok(layout.some((w) => w.id === 'travelAlerts'));
   });
 
-  it('reset (empty preferences) restores defaults — Personal Workspace Recovery', () => {
+  it('reset (explicit empty hidden set) hides nothing; cleared preferences restore defaults — Personal Workspace Recovery', () => {
     const layout = resolveWidgetLayout(DASHBOARD_WIDGETS, { dashboard: { hiddenWidgets: DASHBOARD_WIDGETS.map((w) => w.id) } }, all);
     assert.equal(layout.length, 0);
-    const reset = resolveWidgetLayout(DASHBOARD_WIDGETS, {}, all);
-    assert.equal(reset.length, DASHBOARD_WIDGETS.length);
+    const reset = resolveWidgetLayout(DASHBOARD_WIDGETS, { dashboard: {} }, all);
+    assert.deepEqual(reset.map((w) => w.id), DASHBOARD_WIDGETS.filter((w) => w.defaultVisible).map((w) => w.id));
   });
 
   it('stale widget ids in the saved order are ignored, new widgets append', () => {

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { usePermissions } from '@/hooks/usePermissions';
 import { usePageState } from '@/hooks/use-page-state';
@@ -55,7 +55,12 @@ import {
   DEDUCTION_STATUS_LABELS,
 } from '@/lib/quality-deductions/domain';
 import { logCreate, logUpdate, logDelete } from '@/lib/activity-logger';
-import { authFetch } from '@/lib/api-fetch';
+import { apiFetch } from '@/lib/api-fetch';
+import { useQueryClient } from '@tanstack/react-query';
+import { useQualityList, useEmployees, useDashboardUsers } from '@/hooks/use-queries';
+import { invalidateDomain } from '@/lib/cache/invalidation';
+import { queryKeys } from '@/lib/cache/query-keys';
+import { DataFreshnessIndicator } from '@/components/shared/DataFreshnessIndicator';
 import { toast } from 'sonner';
 import { useAppStore } from '@/lib/store';
 import { useLanguage } from '@/lib/i18n/language-context';
@@ -217,10 +222,6 @@ export default function QualityPage() {
   // opens the shared inline CAPA form HERE (gated by the CAPA page's
   // own create permission); it NEVER navigates away from Quality.
   const { canCreate: canCreateCapa } = usePermissions('capa');
-  const [deductions, setDeductions] = useState<QualityWithEmployee[]>([]);
-  const [employees, setEmployees] = useState<Employee[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   // Phase 6.3 (§8): filter context persists per user (session-scoped).
   // Milestone 7 §12: the period DEFAULT is the CURRENT MONTH (applies
   // only when the user has no persisted filter state — §27) — 'all'
@@ -250,8 +251,26 @@ export default function QualityPage() {
   const showArchived = qualityView.showArchived === true;
   const setShowArchived = (v: boolean) => {
     setQualityView((s) => ({ ...s, showArchived: v }));
-    void fetchData(v);
+    // The archive flag is part of the cache key — switching views
+    // restores the other snapshot instantly (fetch only if absent).
   };
+  // ═══ DATA STATE (cache-backed, §4) — archived and live views are
+  //  DISTINCT cache entries (§43); toggling the archive view restores
+  //  whichever snapshot exists and fetches only if missing/stale.
+  const queryClient = useQueryClient();
+  const qualityQuery = useQualityList(showArchived);
+  const employeesQuery = useEmployees();
+  const systemUsersQuery = useDashboardUsers('basic');
+  const deductions = qualityQuery.data ?? [];
+  const employees = employeesQuery.data ?? [];
+  const systemUsers = systemUsersQuery.data ?? [];
+  // Full skeleton only without a snapshot (§11); revalidation is subtle.
+  const loading = qualityQuery.isLoading || employeesQuery.isLoading;
+  const revalidating = (qualityQuery.isFetching || employeesQuery.isFetching) && !loading;
+  // Blocking error only without a snapshot (§33).
+  const error = qualityQuery.isError && !qualityQuery.data
+    ? 'تعذّر تحميل بيانات الخصومات'
+    : null;
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -267,8 +286,7 @@ export default function QualityPage() {
   // second click on another note always starts from the NEW prefill.
   const [capaPrefill, setCapaPrefill] = useState<{ empId: string; defaults: Partial<CapaInlineFormState> } | null>(null);
   // System users for the CAPA form's "مُسند إليه" field (same source the
-  // CAPA page and dashboard quick action use).
-  const [systemUsers, setSystemUsers] = useState<{ id: string; name: string; email?: string; role?: string }[]>([]);
+  // CAPA page and dashboard quick action use) — cache-backed now.
   const [addForm, setAddForm] = useState({
     employeeId: '',
     date: '',
@@ -281,39 +299,11 @@ export default function QualityPage() {
     month: '',
   });
 
-  useEffect(() => {
-    fetchData();
-    // System users for the inline CAPA form (assigned-to field).
-    authFetch('/api/dashboard/users?basic=1')
-      .then((r) => (r.ok ? r.json() : []))
-      .then((list) => setSystemUsers(Array.isArray(list) ? list : []))
-      .catch(() => setSystemUsers([]));
-  }, []);
-
-  async function fetchData(withArchived?: boolean) {
-    const includeArchived = withArchived ?? showArchived;
-    setError(null);
-    try {
-      const [qRes, empRes] = await Promise.all([
-        authFetch(`/api/quality${includeArchived ? '?includeArchived=1' : ''}`),
-        authFetch('/api/employees'),
-      ]);
-      if (qRes.ok) {
-        const qData = await qRes.json();
-        setDeductions(qData);
-      }
-      if (empRes.ok) {
-        const empData = await empRes.json();
-        setEmployees(empData);
-      }
-    } catch {
-      setError('تعذّر تحميل بيانات الخصومات');
-      setDeductions([]);
-      setEmployees([]);
-    } finally {
-      setLoading(false);
-    }
-  }
+  // ═══ Manual refresh / retry (§26) — revalidates the live list
+  //  through the cache; the visible snapshot stays put.
+  const refreshData = useCallback(async () => {
+    await invalidateDomain(queryClient, 'quality');
+  }, [queryClient]);
 
   const handleDateChange = (date: string) => {
     const month = parseDateToMonth(date);
@@ -332,9 +322,8 @@ export default function QualityPage() {
     try {
       if (editingDeduction) {
         // Edit mode
-        const res = await authFetch(`/api/quality/${editingDeduction.id}`, {
+        await apiFetch(`/api/quality/${editingDeduction.id}`, {
           method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             date: addForm.date,
             type: addForm.type,
@@ -345,29 +334,26 @@ export default function QualityPage() {
             month: addForm.month,
           }),
         });
-        if (res.ok) {
-          const empName = employees.find((e: any) => e.id === addForm.employeeId)?.name || '';
-          logUpdate('quality', 'خصم جودة', `${empName} - ${addForm.description}`);
-          await fetchData();
-          setIsAddOpen(false);
-          setEditingDeduction(null);
-          setAddForm({
-            employeeId: '',
-            date: '',
-            type: 'quality_issue',
-            description: '',
-            dayPreset: '0.25',
-            customDays: '',
-            deductionAmount: '',
-            evidence: '',
-            month: '',
-          });
-        }
+        const empName = employees.find((e: any) => e.id === addForm.employeeId)?.name || '';
+        logUpdate('quality', 'خصم جودة', `${empName} - ${addForm.description}`);
+        await invalidateDomain(queryClient, 'quality', { employeeId: addForm.employeeId });
+        setIsAddOpen(false);
+        setEditingDeduction(null);
+        setAddForm({
+          employeeId: '',
+          date: '',
+          type: 'quality_issue',
+          description: '',
+          dayPreset: '0.25',
+          customDays: '',
+          deductionAmount: '',
+          evidence: '',
+          month: '',
+        });
       } else {
         // Create mode
-        const res = await authFetch('/api/quality', {
+        await apiFetch('/api/quality', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             employeeId: addForm.employeeId,
             date: addForm.date,
@@ -379,24 +365,22 @@ export default function QualityPage() {
             month: addForm.month,
           }),
         });
-        if (res.ok) {
-          const empName = employees.find((e: any) => e.id === addForm.employeeId)?.name || '';
-          logCreate('quality', 'خصم جودة', `${empName} - ${addForm.description}`);
-          await fetchData();
-          setIsAddOpen(false);
-          setEditingDeduction(null);
-          setAddForm({
-            employeeId: '',
-            date: '',
-            type: 'quality_issue',
-            description: '',
-            dayPreset: '0.25',
-            customDays: '',
-            deductionAmount: '',
-            evidence: '',
-            month: '',
-          });
-        }
+        const empName = employees.find((e: any) => e.id === addForm.employeeId)?.name || '';
+        logCreate('quality', 'خصم جودة', `${empName} - ${addForm.description}`);
+        await invalidateDomain(queryClient, 'quality', { employeeId: addForm.employeeId });
+        setIsAddOpen(false);
+        setEditingDeduction(null);
+        setAddForm({
+          employeeId: '',
+          date: '',
+          type: 'quality_issue',
+          description: '',
+          dayPreset: '0.25',
+          customDays: '',
+          deductionAmount: '',
+          evidence: '',
+          month: '',
+        });
       }
     } catch {
       // Error handled silently
@@ -447,12 +431,10 @@ export default function QualityPage() {
     setDeleteLoading(true);
     try {
       const ded = deductions.find((d: any) => d.id === id);
-      const res = await authFetch(`/api/quality/${id}`, { method: 'DELETE' });
-      if (res.ok) {
-        if (ded) logDelete('quality', 'خصم جودة', `${ded.employee?.name || ''} - ${ded.description || ''}`);
-        setDeductions((prev) => prev.filter((d) => d.id !== id));
-        setDeletingId(null);
-      }
+      await apiFetch(`/api/quality/${id}`, { method: 'DELETE' });
+      if (ded) logDelete('quality', 'خصم جودة', `${ded.employee?.name || ''} - ${ded.description || ''}`);
+      await invalidateDomain(queryClient, 'quality', { employeeId: ded?.employeeId });
+      setDeletingId(null);
     } catch {
       // Error handled silently
     } finally {
@@ -465,23 +447,27 @@ export default function QualityPage() {
   const handleArchive = async (id: string, archived: boolean) => {
     setArchiveLoadingId(id);
     try {
-      const res = await authFetch(`/api/quality/${id}`, {
+      await apiFetch(`/api/quality/${id}`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ archived }),
       });
-      if (res.ok) {
-        setDeductions((prev) =>
-          prev.filter((d) => (archived ? d.id !== id || showArchived : true)).map((d) =>
-            d.id === id ? { ...d, archived, archivedAt: archived ? new Date().toISOString() : null } : d,
-          ),
-        );
-        toast.success(archived ? translateUIText('تم أرشفة الخصم — لن يأثر على الإجماليات النشطة', locale) : translateUIText('تم استعادة الخصم من الأرشيف', locale));
-        setArchivingId(null);
-      } else {
-        const data = await res.json().catch(() => null);
-        toast.error(data?.error || translateUIText('تعذّر تغيير حالة الأرشيف', locale));
-      }
+      // Same instant local update as before, now applied to the cached
+      // snapshot; a targeted invalidation then confirms against the
+      // server (which stays authoritative).
+      queryClient.setQueryData<QualityWithEmployee[]>(
+        queryKeys.qualityList(showArchived),
+        (prev) => {
+          const rows = prev ?? deductions;
+          return rows
+            .filter((d) => (archived ? d.id !== id || showArchived : true))
+            .map((d) =>
+              d.id === id ? { ...d, archived, archivedAt: archived ? new Date().toISOString() : null } : d,
+            );
+        },
+      );
+      invalidateDomain(queryClient, 'quality');
+      toast.success(archived ? translateUIText('تم أرشفة الخصم — لن يأثر على الإجماليات النشطة', locale) : translateUIText('تم استعادة الخصم من الأرشيف', locale));
+      setArchivingId(null);
     } catch {
       toast.error(translateUIText('تعذّر الاتصال بالخادم', locale));
     } finally {
@@ -502,20 +488,14 @@ export default function QualityPage() {
     }
     setApprovalLoadingId(id);
     try {
-      const res = await authFetch(`/api/quality/${id}/${action}`, {
+      await apiFetch(`/api/quality/${id}/${action}`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       });
-      if (res.ok) {
-        toast.success(action === 'approve' ? translateUIText('تم اعتماد الخصم — أصبح ساريًا في الحسابات', locale) : translateUIText('تم رفض الخصم', locale));
-        await fetchData();
-      } else {
-        const data = await res.json().catch(() => null);
-        toast.error(data?.error || translateUIText('تعذّر تنفيذ الإجراء', locale));
-      }
-    } catch {
-      toast.error(translateUIText('تعذّر تنفيذ الإجراء', locale));
+      toast.success(action === 'approve' ? translateUIText('تم اعتماد الخصم — أصبح ساريًا في الحسابات', locale) : translateUIText('تم رفض الخصم', locale));
+      await refreshData();
+    } catch (err: any) {
+      toast.error(err?.message || translateUIText('تعذّر تنفيذ الإجراء', locale));
     } finally {
       setApprovalLoadingId(null);
     }
@@ -881,6 +861,9 @@ export default function QualityPage() {
         </motion.section>
       )}
 
+      {/* Subtle background-revalidation state (§32) */}
+      <DataFreshnessIndicator revalidating={revalidating} />
+
       {/* ═══ Loading ═══ */}
       {loading ? (
         <div className="space-y-2.5">
@@ -895,7 +878,7 @@ export default function QualityPage() {
               <AlertTriangle className="size-6 text-rose-400" />
             </div>
             <p className="text-rose-300 text-sm font-medium">{error && <T>{error}</T>}</p>
-            <Button variant="outline" size="sm" className="mt-4" onClick={() => fetchData()}><T>إعادة المحاولة</T></Button>
+            <Button variant="outline" size="sm" className="mt-4" onClick={() => void refreshData()}><T>إعادة المحاولة</T></Button>
           </CardContent>
         </Card>
       ) : statusFiltered.length === 0 ? (
@@ -1295,7 +1278,7 @@ export default function QualityPage() {
                                 onClose={() => setCapaPrefill(null)}
                                 onCreated={() => {
                                   setCapaPrefill(null);
-                                  void fetchData();
+                                  void refreshData();
                                 }}
                                 employees={employees}
                                 systemUsers={systemUsers}

@@ -91,6 +91,7 @@ function makeDataset(overrides?: {
       outcomeStatus: 'RESOLVED',
       message: null,
       scheme: { schemeId: 'sch_1', schemeName: 'مخطط جودة الحجوزات', schemeVersion: 3, qualityWeight: 15, frozen: false },
+      components: [],
       quality: {
         componentId: 'quality',
         name: 'الجودة',
@@ -251,6 +252,13 @@ function makeDataset(overrides?: {
       closedTotal: 7,
       closedMonthly: [{ month: '2026-08', count: 7 }],
       closedUnknownMonth: 5,
+      createdTotal: 9,
+      createdMonthly: [{ month: '2026-08', count: 9 }],
+      closedWithEmployeeTotal: 22,
+      closedWithEmployeeInPeriod: 9,
+      closedWithEmployeeMonthly: [{ month: '2026-08', count: 9 }],
+      closedWithEmployeeUnknownMonth: 3,
+      statusAllTime: { upcoming: 5, in_progress: 3, completed: 12, canceled: 2 },
     },
     attendance:
       overrides?.attendance ?? {

@@ -20,6 +20,7 @@
 
 import { useState, useMemo } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
+import { invalidateDomain } from '@/lib/cache/invalidation';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -157,8 +158,9 @@ export function EmployeeInlineForm({ onClose, employees, onCreated }: {
       if (res.ok) {
         logCreate('employees', 'موظف', form.name);
         toast.success('تم إضافة الموظف بنجاح');
-        qc.invalidateQueries({ queryKey: ['employees'] });
-        qc.invalidateQueries({ queryKey: ['home-stats'] });
+        // Canonical invalidation (fixes the old ['home-stats'] dead key):
+        // employees surfaces + the Home aggregate update together.
+        invalidateDomain(qc, 'employees');
         onCreated();
       } else {
         toast.error('فشل في إضافة الموظف');
@@ -299,8 +301,8 @@ export function ComplaintInlineForm({ onClose, employees, systemUsers, onCreated
       if (res.ok) {
         logCreate('complaints', 'شكوى عميل', `${form.customerName} - ${form.description.substring(0, 50)}`);
         toast.success('تم إضافة الشكوى بنجاح');
-        qc.invalidateQueries({ queryKey: ['complaints'] });
-        qc.invalidateQueries({ queryKey: ['home-stats'] });
+        // Canonical invalidation (fixes the old ['home-stats'] dead key).
+        invalidateDomain(qc, 'complaints');
         onCreated();
       } else {
         toast.error('فشل في إضافة الشكوى');
@@ -442,8 +444,9 @@ export function FollowUpInlineForm({ onClose, employees, systemUsers, onCreated 
       if (res.ok) {
         logCreate('followUps', 'متابعة', form.subject);
         toast.success('تم إضافة المتابعة بنجاح');
-        qc.invalidateQueries({ queryKey: ['followUps'] });
-        qc.invalidateQueries({ queryKey: ['home-stats'] });
+        // Canonical invalidation (fixes the old ['home-stats'] dead key):
+        // Home's today's-follow-ups metric updates (§18/§38).
+        invalidateDomain(qc, 'followUps', { employeeId: form.employeeId });
         onCreated();
       } else {
         toast.error('فشل في إضافة المتابعة');
@@ -561,8 +564,8 @@ export function RequestInlineForm({ onClose, employees, onCreated }: {
       if (res.ok) {
         logCreate('requests', 'طلب', form.type);
         toast.success('تم تقديم الطلب بنجاح');
-        qc.invalidateQueries({ queryKey: ['requests'] });
-        qc.invalidateQueries({ queryKey: ['home-stats'] });
+        // Canonical invalidation (fixes the old ['home-stats'] dead key).
+        invalidateDomain(qc, 'requests');
         onCreated();
       } else {
         toast.error('فشل في تقديم الطلب');
@@ -675,9 +678,10 @@ export function ObservationInlineForm({ onClose, employees, categories, onCreate
       if (res.ok) {
         logCreate('observations', 'ملاحظة', form.employeeId);
         toast.success('تم إنشاء الملاحظة بنجاح');
-        qc.invalidateQueries({ queryKey: ['observations'] });
-        qc.invalidateQueries({ queryKey: ['quality'] });
-        qc.invalidateQueries({ queryKey: ['home-stats'] });
+        // Canonical invalidation (fixes the old ['observations'] and
+        // ['home-stats'] dead keys): KPI surfaces, legacy quality view,
+        // Home aggregate, risk + this employee's 360 (§20).
+        invalidateDomain(qc, 'qualityObservations', { employeeId: form.employeeId });
         onCreated();
       } else {
         toast.error('فشل في إنشاء الملاحظة');
@@ -831,10 +835,9 @@ export function CAPAInlineForm({ onClose, employees, systemUsers, onCreated, def
         const newId = (created && typeof created.id === 'string' ? created.id : undefined) as string | undefined;
         logCreate('capa', 'حالة كابا', form.title);
         toast.success('تم إنشاء حالة كابا بنجاح');
-        qc.invalidateQueries({ queryKey: ['capa'] });
-        qc.invalidateQueries({ queryKey: ['capaCases'] });
-        qc.invalidateQueries({ queryKey: ['kpi', 'reports'] });
-        qc.invalidateQueries({ queryKey: ['risk-center'] });
+        // Canonical invalidation (fixes the old ['capa'] and
+        // ['risk-center'] dead keys).
+        invalidateDomain(qc, 'capaCases', { employeeId: form.employeeId });
         onCreated(newId);
       } else {
         toast.error('فشل في إنشاء الحالة');

@@ -60,7 +60,11 @@ import { EmployeeSearchInput } from '@/components/shared/EmployeeSearchInput';
 import type { Employee } from '@/types';
 import { logCreate, logUpdate, logDelete } from '@/lib/activity-logger';
 import { toast } from 'sonner';
-import { authFetch } from '@/lib/api-fetch';
+import { apiFetch } from '@/lib/api-fetch';
+import { useQueryClient } from '@tanstack/react-query';
+import { useAttendanceList, useEmployees } from '@/hooks/use-queries';
+import { invalidateDomain } from '@/lib/cache/invalidation';
+import { DataFreshnessIndicator } from '@/components/shared/DataFreshnessIndicator';
 
 interface AttendanceRecord {
   id: string;
@@ -124,9 +128,16 @@ function isLate(minutesLate: number): boolean {
 export default function AttendancePage() {
   const { canEdit, canCreate, canUpdate, canDelete, canExport } = usePermissions('attendance');
   const { locale } = useLanguage();
-  const [records, setRecords] = useState<AttendanceRecord[]>([]);
-  const [employees, setEmployees] = useState<Employee[]>([]);
-  const [loading, setLoading] = useState(true);
+  // ═══ DATA STATE (cache-backed, §4) — snapshot restore on return
+  //  visits + background revalidation when stale (§9/§28).
+  const queryClient = useQueryClient();
+  const attendanceQuery = useAttendanceList();
+  const employeesQuery = useEmployees();
+  const records = attendanceQuery.data ?? [];
+  const employees = employeesQuery.data ?? [];
+  // Full skeleton only without a snapshot; background refresh is subtle.
+  const loading = attendanceQuery.isLoading || employeesQuery.isLoading;
+  const revalidating = (attendanceQuery.isFetching || employeesQuery.isFetching) && !loading;
   // Phase 6.3 (§8): filter context persists per user (session-scoped).
   // Milestone 7 §11: attendance/check-in/check-out DEFAULT = TODAY.
   // Filter vocabulary: 'all' | 'MM/YYYY' (month) | 'd:DD/MM/YYYY' (day).
@@ -195,31 +206,11 @@ export default function AttendancePage() {
     notes: '',
   });
 
-  useEffect(() => {
-    fetchData();
-  }, []);
-
-  async function fetchData() {
-    try {
-      const [attRes, empRes] = await Promise.all([
-        authFetch('/api/attendance'),
-        authFetch('/api/employees'),
-      ]);
-      if (attRes.ok) {
-        const attData = await attRes.json();
-        setRecords(attData);
-      }
-      if (empRes.ok) {
-        const empData = await empRes.json();
-        setEmployees(empData);
-      }
-    } catch {
-      setRecords([]);
-      setEmployees([]);
-    } finally {
-      setLoading(false);
-    }
-  }
+  // ═══ Manual refresh / mutation revalidation (§26) — the visible
+  //  snapshot stays on screen while the fresh data arrives.
+  const refreshData = useCallback(async () => {
+    await queryClient.invalidateQueries({ queryKey: ['attendance'] });
+  }, [queryClient]);
 
   // ═══ Excel Upload Handler ═══
   const handleUploadExcel = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -233,18 +224,18 @@ export default function AttendancePage() {
       const formData = new FormData();
       formData.append('file', file);
 
-      const res = await authFetch('/api/attendance/upload', {
+      const res = await apiFetch('/api/attendance/upload', {
         method: 'POST',
         body: formData,
-      });
+      }) as any;
 
-      const data = await res.json();
+      const data = res;
 
-      if (res.ok && data.success) {
+      if (data.success) {
         setUploadResult({ created: data.created, skipped: data.skipped, errors: data.errors || [] });
         logCreate('attendance', 'رفع شيت اكسيل', `تم رفع ${data.created} سجل حضور من ملف ${file.name}`);
         toast.success(`${translateUIText('تم رفع', locale)} ${formatInteger(data.created, locale)} ${translateUIText('سجل حضور بنجاح', locale)}${data.skipped > 0 ? ` — ${formatInteger(data.skipped, locale)} ${translateUIText('تم تخطيها', locale)}` : ''}`);
-        await fetchData();
+        await refreshData();
       } else {
         toast.error(data.error || translateUIText('فشل رفع الملف', locale));
       }
@@ -282,9 +273,8 @@ export default function AttendancePage() {
 
     setSaving(true);
     try {
-      const res = await authFetch('/api/attendance', {
+      await apiFetch('/api/attendance', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           employeeId: addForm.employeeId,
           date: addForm.date,
@@ -295,19 +285,17 @@ export default function AttendancePage() {
           notes: addForm.notes || null,
         }),
       });
-      if (res.ok) {
-        const empName = employees.find((e: any) => e.id === addForm.employeeId)?.name || '';
-        logCreate('attendance', 'سجل حضور', `${empName} - ${addForm.date}`);
-        await fetchData();
-        setIsAddOpen(false);
-        setAddForm({
-          employeeId: '',
-          date: getTodayDate(),
-          checkIn: '',
-          status: '',
-          notes: '',
-        });
-      }
+      const empName = employees.find((e: any) => e.id === addForm.employeeId)?.name || '';
+      logCreate('attendance', 'سجل حضور', `${empName} - ${addForm.date}`);
+      await invalidateDomain(queryClient, 'attendance', { employeeId: addForm.employeeId });
+      setIsAddOpen(false);
+      setAddForm({
+        employeeId: '',
+        date: getTodayDate(),
+        checkIn: '',
+        status: '',
+        notes: '',
+      });
     } catch {
       // Error handled silently
     } finally {
@@ -320,20 +308,17 @@ export default function AttendancePage() {
 
     setSaving(true);
     try {
-      const res = await authFetch(`/api/attendance/${checkoutRecord.id}`, {
+      await apiFetch(`/api/attendance/${checkoutRecord.id}`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           checkOut: editForm.checkOut.trim(),
         }),
       });
-      if (res.ok) {
-        const empName = employees.find((e: any) => e.id === checkoutRecord.employeeId)?.name || '';
-        logUpdate('attendance', 'تسجيل خروج', `${empName} - ${checkoutRecord.date}`);
-        await fetchData();
-        setCheckoutRecord(null);
-        setEditForm({ checkOut: '' });
-      }
+      const empName = employees.find((e: any) => e.id === checkoutRecord.employeeId)?.name || '';
+      logUpdate('attendance', 'تسجيل خروج', `${empName} - ${checkoutRecord.date}`);
+      await invalidateDomain(queryClient, 'attendance', { employeeId: checkoutRecord.employeeId });
+      setCheckoutRecord(null);
+      setEditForm({ checkOut: '' });
     } catch {
       // Error handled silently
     } finally {
@@ -346,9 +331,8 @@ export default function AttendancePage() {
 
     setSaving(true);
     try {
-      const res = await authFetch(`/api/attendance/${editingRecord.id}`, {
+      await apiFetch(`/api/attendance/${editingRecord.id}`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           date: editAttendanceForm.date,
           checkIn: editAttendanceForm.checkIn || null,
@@ -357,13 +341,11 @@ export default function AttendancePage() {
           notes: editAttendanceForm.notes || null,
         }),
       });
-      if (res.ok) {
-        const empName = editingRecord.employee?.name || '';
-        logUpdate('attendance', 'تعديل سجل حضور', `${empName} - ${editAttendanceForm.date}`);
-        toast.success(translateUIText('تم تعديل سجل الحضور بنجاح', locale));
-        await fetchData();
-        setEditingRecord(null);
-      }
+      const empName = editingRecord.employee?.name || '';
+      logUpdate('attendance', 'تعديل سجل حضور', `${empName} - ${editAttendanceForm.date}`);
+      toast.success(translateUIText('تم تعديل سجل الحضور بنجاح', locale));
+      await invalidateDomain(queryClient, 'attendance', { employeeId: editingRecord.employeeId });
+      setEditingRecord(null);
     } catch {
       toast.error(translateUIText('حدث خطأ أثناء تعديل السجل', locale));
     } finally {
@@ -384,13 +366,11 @@ export default function AttendancePage() {
 
   const handleDelete = async (id: string) => {
     try {
-      const res = await authFetch(`/api/attendance/${id}`, { method: 'DELETE' });
-      if (res.ok) {
-        const rec = records.find((r) => r.id === id);
-        if (rec) logDelete('attendance', 'سجل حضور', `${rec.employee?.name || ''} - ${rec.date}`);
-        setRecords((prev) => prev.filter((r) => r.id !== id));
-        setDeletingId(null);
-      }
+      const rec = records.find((r) => r.id === id);
+      await apiFetch(`/api/attendance/${id}`, { method: 'DELETE' });
+      if (rec) logDelete('attendance', 'سجل حضور', `${rec.employee?.name || ''} - ${rec.date}`);
+      await invalidateDomain(queryClient, 'attendance', { employeeId: rec?.employeeId });
+      setDeletingId(null);
     } catch {
       // Error handled silently
     }
@@ -673,6 +653,9 @@ export default function AttendancePage() {
           </SelectContent>
         </Select>
       </div>
+
+      {/* Subtle background-revalidation state (§32) — never blocks */}
+      <DataFreshnessIndicator revalidating={revalidating} />
 
       {/* Loading */}
       {loading ? (

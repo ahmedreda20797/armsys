@@ -664,7 +664,9 @@ export default function ControlPanelPage() {
             </Select>
           </div>
 
-          {/* Table */}
+          {/* Table — §PART 5: the user collection lives in a BOUNDED
+              internal-scroll region (sticky header row); the browser
+              page never grows with the dataset. */}
           <Card className="border-slate-700/30 bg-slate-800/30 backdrop-blur-sm overflow-hidden">
             {usersLoading ? (
               <div className="p-6 space-y-3">{[1,2,3,4].map(i => <Skeleton key={i} className="h-14 rounded-lg bg-slate-800/60" />)}</div>
@@ -674,9 +676,9 @@ export default function ControlPanelPage() {
                 <p className="text-slate-400 font-medium">لا يوجد مستخدمون</p>
               </div>
             ) : (
-              <div className="overflow-x-auto">
+              <div className="arm-scroll max-h-[60vh] overflow-x-auto">
                 <Table>
-                  <TableHeader>
+                  <TableHeader className="sticky top-0 z-10 bg-slate-900/95 backdrop-blur-sm">
                     <TableRow className="border-slate-700/40 hover:bg-transparent">
                       <TableHead className="text-slate-400 text-xs font-semibold">المستخدم</TableHead>
                       <TableHead className="text-slate-400 text-xs font-semibold hidden lg:table-cell">البريد</TableHead>

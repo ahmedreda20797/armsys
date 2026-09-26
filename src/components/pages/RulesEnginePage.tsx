@@ -20,7 +20,11 @@ import { SmartActionMenu } from '@/components/shared/SmartActionMenu';
 import { Zap, Plus, Pencil, Trash2, Play, Pause, Eye, Clock, Search, X, CheckCircle2, AlertTriangle, Settings, ArrowUpDown, Filter, ShieldAlert, Activity, AlertOctagon, ChevronDown, ChevronUp, RotateCcw, History, Beaker, Wrench, Brain, Workflow, Timer, ArrowRight } from 'lucide-react';
 import { PageIdentity } from '@/components/shared/PageIdentity';
 import type { AutomationRule, RuleConditionGroup, RuleCondition, RuleAction, EscalationStep, RuleExecutionLog } from '@/types';
-import { authFetch } from '@/lib/api-fetch';
+import { authFetch, apiFetch } from '@/lib/api-fetch';
+import { useQueryClient } from '@tanstack/react-query';
+import { useRulesList, useRuleLogs } from '@/hooks/use-queries';
+import { queryKeys } from '@/lib/cache/query-keys';
+import { DataFreshnessIndicator } from '@/components/shared/DataFreshnessIndicator';
 import { toast } from 'sonner';
 import { useLanguage } from '@/lib/i18n/language-context';
 import { formatDate as localeDate, displayLocale } from '@/lib/i18n/format';
@@ -228,11 +232,6 @@ export default function RulesEnginePage() {
   const { locale } = useLanguage();
 
   // ── State ──
-  const [rules, setRules] = useState<AutomationRule[]>([]);
-  const [logs, setLogs] = useState<RuleExecutionLog[]>([]);
-  const [loading, setLoading] = useState(!canView); // start settled when the user lacks view permission
-  const [logsLoading, setLogsLoading] = useState(false);
-
   // Filters
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
@@ -261,56 +260,48 @@ export default function RulesEnginePage() {
   // Expanded conditions
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set(['root']));
 
-  // ── Data Fetching ──
-  const [serverStats, setServerStats] = useState<any>(null);
+  // ── Data Fetching — cache-backed (§4): first visit fetches, return
+  //  visits restore the snapshot and revalidate in the background.
+  //  Logs stay lazy: fetched only while the logs panel is open.
+  const queryClient = useQueryClient();
+  const rulesQuery = useRulesList(canView);
+  const logsQuery = useRuleLogs(canView && logsOpen);
+  const rules = (rulesQuery.data?.data ?? []) as AutomationRule[];
+  const logs = (logsQuery.data?.data ?? []) as RuleExecutionLog[];
+  const logsLoading = logsQuery.isFetching;
+  // Full skeleton only without a snapshot (§11); revalidation is subtle.
+  const loading = canView && rulesQuery.isLoading;
+  const revalidating = canView && rulesQuery.isFetching && !loading;
+
+  // ── Data Fetching (mutation revalidation, §26) ──
+  // §RULES-CREATE-APPEARANCE — fresh reads: after a create/patch/delete
+  // the invalidation refetches through `fresh=1` so the list reflects
+  // the change, never a stale server-side cache snapshot. The visible
+  // snapshot stays on screen while the fresh data arrives.
+
+  /** Prepend/replace a rule in the cached list instantly (server's own
+   *  201 response — never a client fabrication). */
+  const upsertRuleInCache = useCallback((created: AutomationRule) => {
+    queryClient.setQueryData<{ data?: AutomationRule[]; total?: number; stats?: any }>(
+      queryKeys.rulesList,
+      (prev) => {
+        const rows = prev?.data ?? [];
+        if (rows.some((r) => r.id === created.id)) return prev;
+        return { ...(prev ?? {}), data: [created, ...rows] };
+      },
+    );
+  }, [queryClient]);
 
   const fetchRules = useCallback(async () => {
-    try {
-      // §RULES-CREATE-APPEARANCE — fresh reads: the list must reflect
-      // the create/patch/delete the user just performed, never a stale
-      // server-side cache snapshot.
-      const res = await authFetch('/api/rules?limit=100&fresh=1');
-      if (res.ok) {
-        const data = await res.json();
-        setRules(Array.isArray(data.data) ? data.data : Array.isArray(data) ? data : []);
-        // §15 — the server computes stats over the FULL authorized
-        // dataset; the page never counts a paginated slice again.
-        if (data.stats) setServerStats(data.stats);
-      }
-    } catch {
-      setRules([]);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  const fetchLogs = useCallback(async () => {
-    setLogsLoading(true);
-    try {
-      const res = await authFetch('/api/rule-logs?limit=50');
-      if (res.ok) {
-        const data = await res.json();
-        setLogs(Array.isArray(data.data) ? data.data : Array.isArray(data) ? data : []);
-      }
-    } catch {
-      setLogs([]);
-    } finally {
-      setLogsLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (!canView) return; // loading initialized to false for non-viewers
-    // Async boundary: state updates happen after the first await, never
-    // synchronously within the effect body.
-    void (async () => { await fetchRules(); })();
-  }, [canView, fetchRules]);
+    await queryClient.invalidateQueries({ queryKey: queryKeys.rulesList });
+  }, [queryClient]);
 
   // ── Stats ──
   // §15 — server-side aggregate over the full authorized rule set.
   // successRate/lastExecutedAt are NULL when no execution has ever
   // happened — the cards render — / لم يتم التنفيذ بعد (no fake 94%).
   const stats = useMemo(() => {
+    const serverStats = rulesQuery.data?.stats ?? null;
     if (serverStats) {
       return {
         total: serverStats.total ?? 0,
@@ -330,7 +321,7 @@ export default function RulesEnginePage() {
     const successExec = rules.reduce((sum, r) => sum + r.successCount, 0);
     const failedExec = rules.reduce((sum, r) => sum + r.failCount, 0);
     return { total, active, inactive, triggeredToday, successExec, failedExec, successRate: null as number | null, lastExecutedAt: null as string | null };
-  }, [serverStats, rules]);
+  }, [rulesQuery.data?.stats, rules]);
 
   // ── Filtered Rules ──
   const filteredRules = useMemo(() => {
@@ -412,37 +403,26 @@ export default function RulesEnginePage() {
       };
 
       if (editingRule) {
-        const res = await authFetch(`/api/rules/${editingRule.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-        if (res.ok) {
-          toast.success('تم تحديث القاعدة بنجاح');
-          setFormOpen(false);
-          fetchRules();
-        } else {
-          const err = await res.json().catch(() => ({}));
-          toast.error(err.error || 'فشل في تحديث القاعدة');
-        }
+        await apiFetch(`/api/rules/${editingRule.id}`, { method: 'PATCH', body: JSON.stringify(payload) });
+        toast.success('تم تحديث القاعدة بنجاح');
+        setFormOpen(false);
+        await fetchRules();
       } else {
-        const res = await authFetch('/api/rules', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-        if (res.ok) {
-          const created = await res.json().catch(() => null);
-          toast.success('تم إنشاء القاعدة بنجاح');
-          setFormOpen(false);
-          // §RULES-CREATE-APPEARANCE — the created rule (the server's OWN
-          // 201 response, not a client fabrication) enters the list
-          // immediately, so the list can never miss it even if the
-          // follow-up refetch races or is blocked. The refetch below
-          // then reconciles with the authoritative server state.
-          if (created && created.id) {
-            setRules((prev) => (prev.some((r) => r.id === created.id) ? prev : [created, ...prev]));
-          }
-          fetchRules();
-        } else {
-          const err = await res.json().catch(() => ({}));
-          toast.error(err.error || 'فشل في إنشاء القاعدة');
+        const created = await apiFetch<any>('/api/rules', { method: 'POST', body: JSON.stringify(payload) });
+        toast.success('تم إنشاء القاعدة بنجاح');
+        setFormOpen(false);
+        // §RULES-CREATE-APPEARANCE — the created rule (the server's OWN
+        // 201 response, not a client fabrication) enters the cached list
+        // immediately, so the list can never miss it even if the
+        // follow-up refetch races or is blocked. The invalidation below
+        // then reconciles with the authoritative server state.
+        if (created && created.id) {
+          upsertRuleInCache(created);
         }
+        await fetchRules();
       }
-    } catch {
-      toast.error('حدث خطأ أثناء الحفظ');
+    } catch (err: any) {
+      toast.error(err?.message || 'حدث خطأ أثناء الحفظ');
     } finally {
       setSaving(false);
     }
@@ -452,15 +432,16 @@ export default function RulesEnginePage() {
   const handleDelete = async (id: string) => {
     setDeletingId(id);
     try {
-      const res = await authFetch(`/api/rules/${id}`, { method: 'DELETE' });
-      if (res.ok) {
-        toast.success('تم حذف القاعدة بنجاح');
-        setRules(prev => prev.filter(r => r.id !== id));
-      } else {
-        toast.error('فشل في حذف القاعدة');
-      }
-    } catch {
-      toast.error('حدث خطأ أثناء الحذف');
+      await apiFetch(`/api/rules/${id}`, { method: 'DELETE' });
+      toast.success('تم حذف القاعدة بنجاح');
+      // Remove from the cached snapshot, then reconcile with the server.
+      queryClient.setQueryData<{ data?: AutomationRule[]; total?: number; stats?: any }>(
+        queryKeys.rulesList,
+        (prev) => (prev ? { ...prev, data: (prev.data ?? []).filter((r) => r.id !== id) } : prev),
+      );
+      await fetchRules();
+    } catch (err: any) {
+      toast.error(err?.message || 'فشل في حذف القاعدة');
     } finally {
       setDeletingId(null);
     }
@@ -470,15 +451,11 @@ export default function RulesEnginePage() {
     setTogglingId(rule.id);
     try {
       const newStatus = rule.status === 'active' ? 'inactive' : 'active';
-      const res = await authFetch(`/api/rules/${rule.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: newStatus }) });
-      if (res.ok) {
-        toast.success(newStatus === 'active' ? 'تم تفعيل القاعدة' : 'تم إيقاف القاعدة');
-        fetchRules();
-      } else {
-        toast.error('فشل في تغيير حالة القاعدة');
-      }
-    } catch {
-      toast.error('حدث خطأ');
+      await apiFetch(`/api/rules/${rule.id}`, { method: 'PATCH', body: JSON.stringify({ status: newStatus }) });
+      toast.success(newStatus === 'active' ? 'تم تفعيل القاعدة' : 'تم إيقاف القاعدة');
+      await fetchRules();
+    } catch (err: any) {
+      toast.error(err?.message || 'فشل في تغيير حالة القاعدة');
     } finally {
       setTogglingId(null);
     }
@@ -487,16 +464,11 @@ export default function RulesEnginePage() {
   const handleExecute = async (id: string) => {
     setExecutingId(id);
     try {
-      const res = await authFetch(`/api/rules/execute/${id}`, { method: 'POST' });
-      if (res.ok) {
-        toast.success('تم تشغيل القاعدة بنجاح');
-        fetchRules();
-      } else {
-        const err = await res.json().catch(() => ({}));
-        toast.error(err.error || 'فشل في تشغيل القاعدة');
-      }
-    } catch {
-      toast.error('حدث خطأ أثناء التشغيل');
+      await apiFetch(`/api/rules/execute/${id}`, { method: 'POST' });
+      toast.success('تم تشغيل القاعدة بنجاح');
+      await fetchRules();
+    } catch (err: any) {
+      toast.error(err?.message || 'فشل في تشغيل القاعدة');
     } finally {
       setExecutingId(null);
     }
@@ -854,7 +826,7 @@ export default function RulesEnginePage() {
               <Beaker className="size-4 ml-1" />
               اختبار
             </Button>
-            <Button variant="ghost" size="sm" onClick={() => { setLogsOpen(true); fetchLogs(); }} className="text-slate-400 hover:text-white">
+            <Button variant="ghost" size="sm" onClick={() => setLogsOpen(true)} className="text-slate-400 hover:text-white">
               <History className="size-4 ml-1" />
               سجل التنفيذ
             </Button>
@@ -968,6 +940,9 @@ export default function RulesEnginePage() {
           </div>
         </CardContent>
       </Card>
+
+      {/* Subtle background-revalidation state (§32) */}
+      <DataFreshnessIndicator revalidating={revalidating} />
 
       {/* ═══ Loading ═══ */}
       {loading ? (

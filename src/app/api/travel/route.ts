@@ -1,52 +1,26 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getAll, getAllBatch, withEmployee } from '@/lib/db';
+import { getAll, withEmployee } from '@/lib/db';
 import { verifyPermission, requireAuth } from '@/lib/verify-permission';
 import { asScopeViewer, employeeInScope, authScopeViewer, filterRowsByEmployeeScope, resolveEmployeeScopeFromDb } from '@/lib/scope/server';
-import { isDepartureAttention, isReturnAttention, isTomorrow } from '@/lib/travel-status';
-
-/** Parse DD/MM/YYYY to a comparable number YYYYMMDD for sorting */
-function parseDateToSortable(dateStr: string): number {
-  const parts = dateStr.split('/');
-  if (parts.length !== 3) return 0;
-  const year = parseInt(parts[2], 10) || 0;
-  const month = parseInt(parts[1], 10) || 0;
-  const day = parseInt(parts[0], 10) || 0;
-  return year * 10000 + month * 100 + day;
-}
-
-/** Calculate days remaining from today for DD/MM/YYYY */
-function getDaysRemaining(dateStr: string): number {
-  try {
-    const parts = dateStr.split('/');
-    const day = parseInt(parts[0], 10);
-    const month = parseInt(parts[1], 10) - 1;
-    const year = parseInt(parts[2], 10);
-    const target = new Date(year, month, day);
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    return Math.ceil((target.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-  } catch {
-    return 0;
-  }
-}
-
-/** §TRAVEL-TOMORROW — tomorrow matcher lives in lib/travel-status.ts
- *  (canonical, tested); the route consumes it directly. */
-
-function getMonthKey(dateStr: string): string {
-  if (!dateStr) return 'غير محدد';
-  const p = dateStr.split('/');
-  if (p.length !== 3) return 'غير محدد';
-  const month = p[1].padStart(2, '0');
-  return `${p[2]}-${month}`;
-}
-
-function getTripCategory(depDate: string, retDate: string | null): 'upcoming' | 'in_progress' | 'returned' {
-  const retDays = retDate ? getDaysRemaining(retDate) : null;
-  if (retDays !== null && retDays < 0) return 'returned';
-  if (getDaysRemaining(depDate) < 0) return 'in_progress';
-  return 'upcoming';
-}
+// §TRAVEL-THRESHOLD — the ONE canonical DD/MM/YYYY day-delta helper
+// (DST-safe); the route must not keep its own copy.
+import { getDaysRemaining } from '@/lib/date-utils';
+import { isDepartureAttention, isReturnAttention } from '@/lib/travel-status';
+// §DEAL-DATES — canonical deal date dimensions + the DEFAULT DATE =
+// TODAY doctrine (dealClosedAt default).
+import { todayDisplayDate, isValidDisplayDate } from '@/lib/date-utils';
+// §TRAVEL-FILTERS — the ONE canonical Travel filter pipeline (Home and
+// Travel answer the same question through the same pure functions).
+import {
+  applyTravelFilters,
+  availableMonthsForBasis,
+  getTripCategory,
+  isCanceledDeal,
+  parseTravelQueryFilters,
+  sortTravelDeals,
+} from '@/lib/travel-filters';
+// §BOOKING-ITEMS — canonical dynamic booking model + legacy projection.
+import { normalizeBookingItems, projectLegacyServiceFields, sanitizeBookingItems } from '@/lib/booking-items';
 
 export async function GET(request: NextRequest) {
   try {
@@ -56,15 +30,10 @@ export async function GET(request: NextRequest) {
     }
 
     const { searchParams } = new URL(request.url);
-
-    // ── Server-side filtering parameters ──
-    const tab = searchParams.get('tab') || 'all';           // all | upcoming | in_progress | returned | canceled
-    const employeeId = searchParams.get('employeeId') || '';
-    const month = searchParams.get('month') || '';
-    const search = searchParams.get('search') || '';
-    const page = parseInt(searchParams.get('page') || '1', 10);
-    const pageSize = parseInt(searchParams.get('pageSize') || '50', 10);
     const countsOnly = searchParams.get('counts') === 'true';
+
+    // ── Canonical filters (fail-closed parsing) ──
+    const filters = parseTravelQueryFilters(searchParams);
 
     // ── Fetch all travel deals + employees in parallel ──
     let travelDeals = await getAll('travelDeals');
@@ -82,25 +51,16 @@ export async function GET(request: NextRequest) {
 
     travelDeals = await withEmployee(travelDeals as any[]);
 
-    // ── Pre-compute category for all trips (single pass) ──
-    const tripsWithCategory = travelDeals.map((t: any) => ({
-      ...t,
-      _category: getTripCategory(t.departureDate, t.returnDate),
-      _daysLeft: getDaysRemaining(t.departureDate),
-      _retDays: t.returnDate ? getDaysRemaining(t.returnDate) : null,
-      _monthKey: getMonthKey(t.departureDate),
-    }));
-
     // ── Compute tab counts (needed for UI badges) ──
     // Separate canceled trips — excluded from main counts
-    const isCanceled = (t: any) => t.status === 'canceled';
     let tabCounts = { all: 0, upcoming: 0, in_progress: 0, returned: 0, canceled: 0 };
-    for (const t of tripsWithCategory) {
-      if (isCanceled(t)) {
+    for (const t of travelDeals as any[]) {
+      if (isCanceledDeal(t)) {
         tabCounts.canceled++;
       } else {
-        if (t._category === 'upcoming') tabCounts.upcoming++;
-        else if (t._category === 'in_progress') tabCounts.in_progress++;
+        const category = getTripCategory(t.departureDate, t.returnDate);
+        if (category === 'upcoming') tabCounts.upcoming++;
+        else if (category === 'in_progress') tabCounts.in_progress++;
         else tabCounts.returned++;
       }
       tabCounts.all++; // 'all' includes everything
@@ -111,95 +71,16 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ counts: tabCounts });
     }
 
-    // ── Apply filters ──
-    let filtered = tripsWithCategory;
+    // ── THE canonical filter pipeline (dedup → filters) ──
+    const filtered = applyTravelFilters(travelDeals as any[], filters);
 
-    // Tab filter
-    if (tab === 'upcoming') {
-      filtered = filtered.filter((t) => t._category === 'upcoming' && !isCanceled(t));
-    } else if (tab === 'in_progress') {
-      filtered = filtered.filter((t) => t._category === 'in_progress' && !isCanceled(t));
-    } else if (tab === 'returned') {
-      filtered = filtered.filter((t) => t._category === 'returned' && !isCanceled(t));
-    } else if (tab === 'canceled') {
-      filtered = filtered.filter((t) => isCanceled(t));
-    } else {
-      // 'all' — include everything (upcoming + in_progress + returned + canceled)
-      // no filter applied
-    }
+    // ── Sort: nearest travel first (canonical, tab-aware) ──
+    const sorted = sortTravelDeals(filtered, filters.tab, (t) => getTripCategory(t.departureDate, t.returnDate));
 
-    // Employee filter
-    if (employeeId) {
-      filtered = filtered.filter((t) => t.employeeId === employeeId);
-    }
+    // ── §DEAL-DATES — months WITH data on the SELECTED basis (no
+    // fabricated months; unattributable deals contribute no bucket) ──
+    const availableMonths = availableMonthsForBasis(travelDeals as any[], filters.dateBasis);
 
-    // Month filter
-    if (month && month !== 'all') {
-      filtered = filtered.filter((t) => t._monthKey === month);
-    }
-
-    // §TRAVEL-TOMORROW filters (real server-side filters, combinable
-    // with every other filter; canceled trips excluded from "tomorrow"
-    // results since a canceled trip is not traveling).
-    const tomorrowDeparture = searchParams.get('tomorrowDeparture') === '1';
-    const tomorrowReturn = searchParams.get('tomorrowReturn') === '1';
-    if (tomorrowDeparture) {
-      filtered = filtered.filter((t) => !isCanceled(t) && isTomorrow(t.departureDate));
-    }
-    if (tomorrowReturn) {
-      filtered = filtered.filter((t) => !isCanceled(t) && isTomorrow(t.returnDate));
-    }
-
-    // Search filter
-    if (search.trim()) {
-      const q = search.trim().toLowerCase();
-      filtered = filtered.filter((t) =>
-        [t.employeeName, t.destination, t.dealerName || '', t.customerNames || '', t.departureDate, t.returnDate || '', t.notes || '']
-          .some((f) => String(f).toLowerCase().includes(q))
-      );
-    }
-
-    // ── Sort: nearest travel first ──
-    filtered.sort((a, b) => {
-      if (tab === 'returned' || tab === 'canceled') {
-        // Most recently returned/canceled first
-        return parseDateToSortable(b.returnDate || b.departureDate) - parseDateToSortable(a.returnDate || a.departureDate);
-      }
-      if (tab === 'in_progress') {
-        // Soonest return date first
-        const retA = a._retDays || a._daysLeft;
-        const retB = b._retDays || b._daysLeft;
-        return retA - retB;
-      }
-      // For 'all' and 'upcoming' tabs: upcoming/in_progress first (nearest), then canceled, then returned
-      const categoryOrder: Record<string, number> = { upcoming: 0, in_progress: 1, canceled: 2, returned: 3 };
-      const getCatOrder = (t: any) => isCanceled(t) ? categoryOrder.canceled : (categoryOrder[t._category] ?? 3);
-      const catA = getCatOrder(a);
-      const catB = getCatOrder(b);
-      if (catA !== catB) return catA - catB;
-      // Within same category: nearest first
-      return a._daysLeft - b._daysLeft;
-    });
-
-    // ── Compute available months from ALL trips (before pagination) ──
-    const monthSet = new Set<string>();
-    for (const t of tripsWithCategory) {
-      if (t._monthKey !== 'غير محدد') monthSet.add(t._monthKey);
-    }
-    const availableMonths = Array.from(monthSet).sort((a, b) => {
-      const now = new Date();
-      const cy = now.getFullYear(), cm = now.getMonth() + 1;
-      const distA = Math.abs((parseInt(a.split('-')[0]) - cy) * 12 + parseInt(a.split('-')[1]) - cm);
-      const distB = Math.abs((parseInt(b.split('-')[0]) - cy) * 12 + parseInt(b.split('-')[1]) - cm);
-      return distA - distB;
-    });
-
-    // ── Urgent trips (Phase 6 §6) — include BOTH upcoming DEPARTURES
-    //     (within 14 days) and upcoming RETURNS (within 14 days of
-    //     returnDate, even when departure already passed — a return
-    //     in 2 days IS a real attention item, not a "long future
-    //     event"). Each urgent entry carries `urgentType: 'departure' | 'return'`
-    //     so the consumer labels the event correctly. ──
     // ── Urgent trips (Phase 6 §6 + §TRAVEL-THRESHOLD) — include BOTH
     //     upcoming DEPARTURES and upcoming RETURNS, each with its OWN
     //     independent attention window from src/lib/travel-status.ts:
@@ -209,37 +90,35 @@ export async function GET(request: NextRequest) {
     //                   item even when the departure already passed).
     //     Each urgent entry carries `urgentType: 'departure' | 'return'`
     //     so the consumer labels the event correctly. ──
-    const urgentTripsRaw = tripsWithCategory
-      .filter((t) => !isCanceled(t))
+    const urgentTripsRaw = (travelDeals as any[])
+      .filter((t) => !isCanceledDeal(t))
       .flatMap((t) => {
+        const daysLeft = getDaysRemaining(t.departureDate);
+        const retDays = t.returnDate ? getDaysRemaining(t.returnDate) : null;
         const out: Array<{ t: any; daysLeft: number; urgentType: 'departure' | 'return' }> = [];
-        if (isDepartureAttention(t._daysLeft)) {
-          out.push({ t, daysLeft: t._daysLeft, urgentType: 'departure' });
+        if (isDepartureAttention(daysLeft)) {
+          out.push({ t, daysLeft, urgentType: 'departure' });
         }
-        if (typeof t._retDays === 'number' && isReturnAttention(t._retDays)) {
-          out.push({ t, daysLeft: t._retDays, urgentType: 'return' });
+        if (typeof retDays === 'number' && isReturnAttention(retDays)) {
+          out.push({ t, daysLeft: retDays, urgentType: 'return' });
         }
         return out;
       })
       .sort((a, b) => a.daysLeft - b.daysLeft);
 
-    const urgentTrips = urgentTripsRaw.map(({ t, urgentType }) => {
-      const { _category, _daysLeft, _retDays, _monthKey, ...rest } = t;
-      return { ...rest, urgentType };
-    });
+    const urgentTrips = urgentTripsRaw.map(({ t, urgentType }) => ({ ...t, urgentType }));
 
     // ── Pagination ──
-    const totalFiltered = filtered.length;
+    const page = parseInt(searchParams.get('page') || '1', 10);
+    const pageSize = parseInt(searchParams.get('pageSize') || '50', 10);
+    const totalFiltered = sorted.length;
     const totalPages = Math.max(1, Math.ceil(totalFiltered / pageSize));
     const safePage = Math.min(page, totalPages);
     const startIdx = (safePage - 1) * pageSize;
-    const pageData = filtered.slice(startIdx, startIdx + pageSize);
-
-    // Clean internal fields before sending
-    const cleanData = pageData.map(({ _category, _daysLeft, _retDays, _monthKey, ...rest }: any) => rest);
+    const pageData = sorted.slice(startIdx, startIdx + pageSize);
 
     return NextResponse.json({
-      data: cleanData,
+      data: pageData,
       pagination: {
         page: safePage,
         pageSize,
@@ -248,6 +127,7 @@ export async function GET(request: NextRequest) {
       },
       counts: tabCounts,
       availableMonths,
+      dateBasis: filters.dateBasis,
       urgentTrips,
     });
   } catch (error) {
@@ -296,6 +176,45 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Employee ID, destination, and departure date are required' }, { status: 400 });
     }
 
+    // ── §DEAL-DATES (DEAL_CLOSED) — تاريخ تقفيل الديل ──
+    // The business date the deal was closed with the employee and
+    // entered into Qnalys. Defaults to TODAY (the DEFAULT DATE = TODAY
+    // doctrine); an explicit client value must be a real display date.
+    // NOT derived from createdAt/departureDate/closedAt.
+    let dealClosedAt = todayDisplayDate();
+    if (body.dealClosedAt != null && body.dealClosedAt !== '') {
+      if (typeof body.dealClosedAt !== 'string' || !isValidDisplayDate(body.dealClosedAt)) {
+        return NextResponse.json({ error: 'تاريخ تقفيل الديل غير صالح — الصيغة DD/MM/YYYY' }, { status: 400 });
+      }
+      dealClosedAt = body.dealClosedAt;
+    }
+
+    // ── §BOOKING-ITEMS — canonical items from the payload; legacy
+    // six-field payloads normalize into items (old clients keep working).
+    // The stored legacy fields are the PROJECTION of the items (first
+    // item per legacy-backed type), so every existing reader stays correct.
+    let bookingItemsResult = normalizeBookingItems({
+      hasInternationalFlight: hasInternationalFlight ?? hasFlight ?? false,
+      hasDomesticFlight: hasDomesticFlight ?? false,
+      hasHotel: hasHotel ?? false,
+      hasVisa: hasVisa ?? false,
+      hasTours: hasTours ?? false,
+      hasTransportation: hasTransportation ?? false,
+      internationalFlightStatus: internationalFlightStatus ?? flightStatus ?? null,
+      domesticFlightStatus: domesticFlightStatus ?? null,
+      hotelStatus: hotelStatus ?? null,
+      visaStatus: visaStatus ?? null,
+      toursStatus: toursStatus ?? null,
+      transportationStatus: transportationStatus ?? null,
+    } as any);
+    if (body.bookingItems !== undefined) {
+      const sanitized = sanitizeBookingItems(body.bookingItems);
+      if (!sanitized.ok) {
+        return NextResponse.json({ error: sanitized.error }, { status: 400 });
+      }
+      bookingItemsResult = sanitized.items;
+    }
+
     // ── TARGET-EMPLOYEE SCOPE (M0.4) ──
     // Travel deals are employee-linked records: the target employee
     // (body.employeeId) must be inside the caller's employee scope
@@ -317,11 +236,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: empValidation.error }, { status: 400 });
     }
 
-    // Support legacy flight fields → map to internationalFlight
-    const finalHasIntlFlight = hasInternationalFlight ?? hasFlight ?? false;
-    const finalIntlFlightStatus = internationalFlightStatus ?? flightStatus ?? null;
-    const finalHasDomFlight = hasDomesticFlight ?? false;
-    const finalDomFlightStatus = domesticFlightStatus ?? null;
+    const legacyProjection = projectLegacyServiceFields(bookingItemsResult);
 
     const { createRecord } = await import('@/lib/db');
     const travelDeal = await createRecord('travelDeals', {
@@ -331,20 +246,23 @@ export async function POST(request: NextRequest) {
       returnDate: returnDate || null,
       dealerName: dealerName || null,
       customerNames: customerNames || null,
-      hasInternationalFlight: finalHasIntlFlight || false,
-      hasDomesticFlight: finalHasDomFlight || false,
-      hasHotel: hasHotel || false,
-      hasVisa: hasVisa || false,
-      hasTours: hasTours || false,
-      hasTransportation: hasTransportation || false,
-      internationalFlightStatus: finalIntlFlightStatus || null,
-      domesticFlightStatus: finalDomFlightStatus || null,
-      hotelStatus: hotelStatus || null,
-      visaStatus: visaStatus || null,
-      toursStatus: toursStatus || null,
-      transportationStatus: transportationStatus || null,
+      hasInternationalFlight: legacyProjection.hasInternationalFlight ?? false,
+      hasDomesticFlight: legacyProjection.hasDomesticFlight ?? false,
+      hasHotel: legacyProjection.hasHotel ?? false,
+      hasVisa: legacyProjection.hasVisa ?? false,
+      hasTours: legacyProjection.hasTours ?? false,
+      hasTransportation: legacyProjection.hasTransportation ?? false,
+      internationalFlightStatus: legacyProjection.internationalFlightStatus ?? null,
+      domesticFlightStatus: legacyProjection.domesticFlightStatus ?? null,
+      hotelStatus: legacyProjection.hotelStatus ?? null,
+      visaStatus: legacyProjection.visaStatus ?? null,
+      toursStatus: legacyProjection.toursStatus ?? null,
+      transportationStatus: legacyProjection.transportationStatus ?? null,
+      bookingItems: bookingItemsResult,
       notes: notes || null,
       status: status || 'upcoming',
+      // §DEAL-DATES (DEAL_CLOSED) — تاريخ تقفيل الديل (defaults to today).
+      dealClosedAt,
       // §DEAL-DATES — creation is the CREATED dimension; even a
       // created-as-completed record has no trustworthy closure
       // moment, so closedAt starts null (unknown, never fabricated).

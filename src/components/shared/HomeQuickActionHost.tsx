@@ -26,6 +26,7 @@
 
 import { useState, useEffect } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
+import { invalidateDomains, type MutationDomain } from '@/lib/cache/invalidation';
 import { AnimatePresence } from 'framer-motion';
 import { Plus } from 'lucide-react';
 import {
@@ -37,8 +38,8 @@ import {
   RequestInlineForm,
 } from '@/components/shared/inline-forms';
 import { InlineFormPanel } from '@/components/shared/InlineFormPanel';
-import { useEmployees } from '@/hooks/use-queries';
-import { authFetch } from '@/lib/api-fetch';
+import { useEmployees, useDashboardUsers } from '@/hooks/use-queries';
+import { useObservationCategories } from '@/hooks/use-kpi-queries';
 
 export type HomeQuickActionId =
   | 'employees'
@@ -82,8 +83,11 @@ export function HomeQuickActionHost({ activeAction, onClose }: HomeQuickActionHo
 // ── Body switcher — each branch mounts a REAL create form ──
 function QuickActionBody({ id, onClose }: { id: HomeQuickActionId; onClose: () => void }) {
   const qc = useQueryClient();
-  const closeAndInvalidate = (keys: string[][]) => () => {
-    keys.forEach((k) => qc.invalidateQueries({ queryKey: k }));
+  // The inline forms themselves run the canonical domain invalidations
+  // on success (§CACHE); this close handler only marks the affected
+  // domains stale once more (no-op refetch when nothing is mounted).
+  const closeAndInvalidate = (domains: readonly MutationDomain[]) => () => {
+    invalidateDomains(qc, domains);
     onClose();
   };
 
@@ -91,75 +95,41 @@ function QuickActionBody({ id, onClose }: { id: HomeQuickActionId; onClose: () =
     case 'capa':
       return <CapaInline onClose={onClose} />;
     case 'observations':
-      return <ObservationsInline onClose={closeAndInvalidate([['observations'], ['quality'], ['home-stats']])} />;
+      return <ObservationsInline onClose={closeAndInvalidate(['qualityObservations'])} />;
     case 'complaints':
-      return <ComplaintsInline onClose={closeAndInvalidate([['complaints'], ['home-stats']])} />;
+      return <ComplaintsInline onClose={closeAndInvalidate(['complaints'])} />;
     case 'employees':
-      return <EmployeesInline onClose={closeAndInvalidate([['employees'], ['home-stats']])} />;
+      return <EmployeesInline onClose={closeAndInvalidate(['employees'])} />;
     case 'followUps':
-      return <FollowUpsInline onClose={closeAndInvalidate([['followUps'], ['home-stats']])} />;
+      return <FollowUpsInline onClose={closeAndInvalidate(['followUps'])} />;
     case 'requests':
-      return <RequestsInline onClose={closeAndInvalidate([['requests'], ['home-stats']])} />;
+      return <RequestsInline onClose={closeAndInvalidate(['requests'])} />;
   }
 }
 
 // ── shared hooks/data for the body branches ──
+// All picker inputs flow through the canonical cache (§24): several
+// quick actions request the SAME users/categories datasets — one
+// request, one cache entry, many consumers.
 function useCapaInputs() {
   const { data: employees } = useEmployees();
-  const [usersList, setUsersList] = useState<{ id: string; name: string; email?: string; role?: string }[]>([]);
-  useEffect(() => {
-    let cancelled = false;
-    authFetch('/api/dashboard/users?basic=1')
-      .then((r) => (r.ok ? r.json() : []))
-      .then((list) => {
-        if (cancelled) return;
-        setUsersList(
-          (list as { id: string; name: string; email?: string; role?: string }[]).map((u) => ({
-            id: u.id,
-            name: u.name,
-            email: u.email,
-            role: u.role,
-          })),
-        );
-      })
-      .catch(() => {});
-    return () => { cancelled = true; };
-  }, []);
-  return { employees: (employees ?? []) as never[], systemUsers: usersList };
+  const { data: users } = useDashboardUsers('basic');
+  return {
+    employees: (employees ?? []) as never[],
+    systemUsers: (users ?? []) as { id: string; name: string; email?: string; role?: string }[],
+  };
 }
 
 function useSystemUsers(): { id: string; name: string; email?: string; role?: string }[] {
-  const [usersList, setUsersList] = useState<{ id: string; name: string; email?: string; role?: string }[]>([]);
-  useEffect(() => {
-    let cancelled = false;
-    authFetch('/api/dashboard/users?basic=1')
-      .then((r) => (r.ok ? r.json() : []))
-      .then((list) => {
-        if (cancelled) return;
-        setUsersList((list as { id: string; name: string; email?: string; role?: string }[]) ?? []);
-      })
-      .catch(() => {});
-    return () => { cancelled = true; };
-  }, []);
-  return usersList;
+  const { data: users } = useDashboardUsers('basic');
+  return (users ?? []) as { id: string; name: string; email?: string; role?: string }[];
 }
 
-function useObservationCategories(): Array<{ id: string; name: string; defaultPointValue: number; isBonusDefault: boolean }> {
-  const [cats, setCats] = useState<Array<{ id: string; name: string; defaultPointValue: number; isBonusDefault: boolean }>>([]);
-  useEffect(() => {
-    let cancelled = false;
-    fetch('/api/observation-categories', {
-      headers: { Authorization: `Bearer ${localStorage.getItem('erp_access_token')}` },
-    })
-      .then((r) => (r.ok ? r.json() : []))
-      .then((list) => {
-        if (cancelled) return;
-        setCats((list as Array<{ id: string; name: string; defaultPointValue: number; isBonusDefault: boolean }>) ?? []);
-      })
-      .catch(() => {});
-    return () => { cancelled = true; };
-  }, []);
-  return cats;
+function useQuickActionCategories(): Array<{ id: string; name: string; defaultPointValue: number; isBonusDefault: boolean }> {
+  // Same endpoint the KPI suite uses — reuse ITS cached query instead
+  // of a second raw fetch (also regains the 401 token-refresh retry).
+  const { data } = useObservationCategories();
+  return (data ?? []) as Array<{ id: string; name: string; defaultPointValue: number; isBonusDefault: boolean }>;
 }
 
 // ── Inline form branches — ALL use the same inline pattern ──
@@ -177,7 +147,7 @@ function CapaInline({ onClose }: { onClose: () => void }) {
 
 function ObservationsInline({ onClose }: { onClose: () => void }) {
   const { data: employees = [] } = useEmployees();
-  const categories = useObservationCategories();
+  const categories = useQuickActionCategories();
   return (
     <ObservationInlineForm
       onClose={onClose}

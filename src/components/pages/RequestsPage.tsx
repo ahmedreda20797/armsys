@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { usePermissions } from '@/hooks/usePermissions';
 import { usePageState } from '@/hooks/use-page-state';
@@ -64,7 +64,11 @@ import { PageHeaderBar } from '@/components/shared/PageHeaderBar';
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
 import { logCreate, logApprove, logDelete } from '@/lib/activity-logger';
 import { toast } from 'sonner';
-import { authFetch } from '@/lib/api-fetch';
+import { apiFetch } from '@/lib/api-fetch';
+import { useQueryClient } from '@tanstack/react-query';
+import { useRequestsList, useEmployees } from '@/hooks/use-queries';
+import { invalidateDomain } from '@/lib/cache/invalidation';
+import { DataFreshnessIndicator } from '@/components/shared/DataFreshnessIndicator';
 
 interface RequestWithEmployee extends RequestRecord {
   employeeName: string;
@@ -77,9 +81,15 @@ export default function RequestsPage() {
   const { locale } = useLanguage();
   // Field selectors — a selectorless useAppStore() re-renders the page
   // on EVERY store write (same loop hazard as EmployeesPage §loop).
-  const [requests, setRequests] = useState<RequestWithEmployee[]>([]);
-  const [employees, setEmployees] = useState<Employee[]>([]);
-  const [loading, setLoading] = useState(true);
+  // ═══ DATA STATE (cache-backed, §4) — snapshot restore + background
+  //  revalidation (§9/§28); page state below stays in usePageState.
+  const queryClient = useQueryClient();
+  const requestsQuery = useRequestsList();
+  const employeesQuery = useEmployees();
+  const requests = requestsQuery.data ?? [];
+  const employees = employeesQuery.data ?? [];
+  const loading = requestsQuery.isLoading || employeesQuery.isLoading;
+  const revalidating = (requestsQuery.isFetching || employeesQuery.isFetching) && !loading;
   // §QNALYS-HIGHLIGHT — the ONE canonical deep-link receiver (exact
   // [data-record-id] resolution, shared Qnalys highlight, no local timers).
   useRecordHighlight({ ready: !loading });
@@ -132,31 +142,11 @@ export default function RequestsPage() {
     reason: '',
   });
 
-  useEffect(() => {
-    fetchData();
-  }, []);
-
-  async function fetchData() {
-    try {
-      const [reqRes, empRes] = await Promise.all([
-        authFetch('/api/requests'),
-        authFetch('/api/employees'),
-      ]);
-      if (reqRes.ok) {
-        const reqData = await reqRes.json();
-        setRequests(reqData);
-      }
-      if (empRes.ok) {
-        const empData = await empRes.json();
-        setEmployees(empData);
-      }
-    } catch {
-      setRequests([]);
-      setEmployees([]);
-    } finally {
-      setLoading(false);
-    }
-  }
+  // ═══ Manual refresh / mutation revalidation (§26) — the visible
+  //  snapshot stays on screen while the fresh data arrives.
+  const refreshData = useCallback(async () => {
+    await queryClient.invalidateQueries({ queryKey: ['requests'] });
+  }, [queryClient]);
 
   // ═══ Excel Upload Handler ═══
   const handleUploadExcel = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -170,18 +160,18 @@ export default function RequestsPage() {
       const formData = new FormData();
       formData.append('file', file);
 
-      const res = await authFetch('/api/requests/upload', {
+      const res = await apiFetch('/api/requests/upload', {
         method: 'POST',
         body: formData,
-      });
+      }) as any;
 
-      const data = await res.json();
+      const data = res;
 
-      if (res.ok && data.success) {
+      if (data.success) {
         setUploadResult({ created: data.created, skipped: data.skipped, errors: data.errors || [] });
         logCreate('requests', 'رفع شيت اكسيل', `تم رفع ${data.created} طلب من ملف ${file.name}`);
         toast.success(`${translateUIText('تم رفع', locale)} ${formatInteger(data.created, locale)} ${translateUIText('طلب بنجاح', locale)}${data.skipped > 0 ? ` — ${formatInteger(data.skipped, locale)} ${translateUIText('تم تخطيها', locale)}` : ''}`);
-        await fetchData();
+        await refreshData();
       } else {
         toast.error(data.error || translateUIText('فشل رفع الملف', locale));
       }
@@ -208,18 +198,15 @@ export default function RequestsPage() {
     if (!addForm.employeeId || !addForm.date || !addForm.reason) return;
     setSaving(true);
     try {
-      const res = await authFetch('/api/requests', {
+      await apiFetch('/api/requests', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(addForm),
       });
-      if (res.ok) {
-        const empName = employees.find((e: any) => e.id === addForm.employeeId)?.name || '';
-        logCreate('requests', 'طلب', `${getRequestTypeLabel(addForm.type)} - ${empName}`);
-        await fetchData();
-        setIsAddOpen(false);
-        setAddForm({ employeeId: '', type: 'leave', date: '', reason: '' });
-      }
+      const empName = employees.find((e: any) => e.id === addForm.employeeId)?.name || '';
+      logCreate('requests', 'طلب', `${getRequestTypeLabel(addForm.type)} - ${empName}`);
+      await invalidateDomain(queryClient, 'requests', { employeeId: addForm.employeeId });
+      setIsAddOpen(false);
+      setAddForm({ employeeId: '', type: 'leave', date: '', reason: '' });
     } catch {
       // Error handled silently
     } finally {
@@ -231,9 +218,8 @@ export default function RequestsPage() {
     if (!editForm.employeeId || !editForm.date || !editForm.reason) return;
     setSaving(true);
     try {
-      const res = await authFetch(`/api/requests/${editForm.id}`, {
+      await apiFetch(`/api/requests/${editForm.id}`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           employeeId: editForm.employeeId,
           type: editForm.type,
@@ -241,10 +227,8 @@ export default function RequestsPage() {
           reason: editForm.reason,
         }),
       });
-      if (res.ok) {
-        await fetchData();
-        setIsEditOpen(false);
-      }
+      await invalidateDomain(queryClient, 'requests', { employeeId: editForm.employeeId });
+      setIsEditOpen(false);
     } catch {
       // Error handled silently
     } finally {
@@ -257,12 +241,10 @@ export default function RequestsPage() {
     setDeleteLoading(true);
     try {
       const req = requests.find((r: any) => r.id === id);
-      const res = await authFetch(`/api/requests/${id}`, { method: 'DELETE' });
-      if (res.ok) {
-        if (req) logDelete('requests', 'طلب', `${req.employeeName || ''} - ${getRequestTypeLabel(req.type)}`);
-        setRequests((prev) => prev.filter((r) => r.id !== id));
-        setDeletingId(null);
-      }
+      await apiFetch(`/api/requests/${id}`, { method: 'DELETE' });
+      if (req) logDelete('requests', 'طلب', `${req.employeeName || ''} - ${getRequestTypeLabel(req.type)}`);
+      await invalidateDomain(queryClient, 'requests', { employeeId: req?.employeeId });
+      setDeletingId(null);
     } catch {
       // Error handled silently
     } finally {
@@ -273,16 +255,13 @@ export default function RequestsPage() {
   const handleReview = async (id: string, status: 'approved' | 'rejected') => {
     setReviewing(true);
     try {
-      const res = await authFetch(`/api/requests/${id}`, {
+      const req = requests.find((r: any) => r.id === id);
+      await apiFetch(`/api/requests/${id}`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status, reviewedBy: user?.id }),
       });
-      if (res.ok) {
-        const req = requests.find((r: any) => r.id === id);
-        if (req) logApprove('requests', 'طلب', `${req.employeeName || ''} - ${getRequestTypeLabel(req.type)}`, status);
-        await fetchData();
-      }
+      if (req) logApprove('requests', 'طلب', `${req.employeeName || ''} - ${getRequestTypeLabel(req.type)}`, status);
+      await invalidateDomain(queryClient, 'requests', { employeeId: req?.employeeId });
     } catch {
       // Error handled silently
     } finally {
@@ -439,6 +418,9 @@ export default function RequestsPage() {
           </SelectContent>
         </Select>
       </div>
+
+      {/* Subtle background-revalidation state (§32) */}
+      <DataFreshnessIndicator revalidating={revalidating} />
 
       {/* Loading */}
       {loading ? (

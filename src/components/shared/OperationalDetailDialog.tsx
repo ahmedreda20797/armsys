@@ -16,6 +16,7 @@
 
 import { useMemo, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
+import { invalidateDomain } from '@/lib/cache/invalidation';
 import {
   CheckCircle2, FileText, Loader2, XCircle, ChevronLeft, UserRound, CalendarDays,
 } from 'lucide-react';
@@ -96,10 +97,10 @@ function ApproveRequestsDetail({ onClose }: { onClose: () => void }) {
       });
       if (res.ok) {
         toast.success(status === 'approved' ? 'تم اعتماد الطلب' : 'تم رفض الطلب');
-        // Live refresh — the hook's query keys, same as the Requests page.
-        await qc.invalidateQueries({ queryKey: ['requests'] });
-        await qc.invalidateQueries({ queryKey: ['home-stats'] });
-        await qc.invalidateQueries({ queryKey: ['homeStats'] });
+        // Canonical keys — the old ['home-stats'] / ['homeStats'] keys
+        // never matched the live ['home','stats'] entry (§CACHE-KEYS).
+        await invalidateDomain(qc, 'requests');
+        await invalidateDomain(qc, 'homeStats');
       } else {
         const err = await res.json().catch(() => ({}));
         toast.error(err?.error || 'تعذر تنفيذ القرار');

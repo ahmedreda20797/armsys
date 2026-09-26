@@ -262,9 +262,16 @@ export async function POST(request: NextRequest) {
         (f: any) => f.employeeId === employeeId && f.date >= thirtyDaysAgoStr && f.id !== (followUp as any).id
       );
       if (recentCases.length >= 2) { // 2 existing + 1 new = 3
+        // §NOTIFICATIONS-DEEPLINK — the risk alert carries its real
+        // case count (never a hardcoded "3") plus the structured
+        // context the Risk Center consumes: WHO (employeeId), WHICH
+        // period (the current risk month), WHY (case count).
+        const riskCaseCount = recentCases.length + 1;
+        const nowForMonth = new Date();
+        const riskMonth = `${nowForMonth.getFullYear()}-${String(nowForMonth.getMonth() + 1).padStart(2, '0')}`;
         await createSmartNotification({
-          title: 'تنبيه مخاطر - 3 حالات للموظف',
-          description: `الموظف "${empName}" لديه ${recentCases.length + 1} حالات متابعة خلال آخر 30 يوم. يرجى المراجعة.`,
+          title: `تنبيه مخاطر - ${riskCaseCount} حالات للموظف`,
+          description: `الموظف "${empName}" لديه ${riskCaseCount} حالات متابعة خلال آخر 30 يوم. يرجى المراجعة.`,
           priority: 'high',
           category: 'risk',
           sourceModule: 'riskCenter',
@@ -273,6 +280,13 @@ export async function POST(request: NextRequest) {
           employeeId: employeeId,
           employeeName: empName,
           sourceType: 'manual',
+          navParams: {
+            employeeId,
+            employeeName: empName,
+            month: riskMonth,
+            caseCount: String(riskCaseCount),
+            source: 'followUps',
+          },
         });
       }
     } catch (notifError) {

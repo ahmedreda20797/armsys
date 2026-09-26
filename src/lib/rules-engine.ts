@@ -730,6 +730,10 @@ export async function createSmartNotification(
     ruleId: data.ruleId || null,
     ruleName: data.ruleName || null,
     actionUrl: resolvedActionUrl,
+    // §NOTIFICATIONS-DEEPLINK — structured navigation context carried
+    // verbatim (string values only); consumed by the canonical
+    // buildNotificationNavParams resolver at click time.
+    navParams: data.navParams ?? null,
   });
 
   return notification;

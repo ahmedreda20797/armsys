@@ -14,6 +14,7 @@ import {
   isApprovedStatus,
   isPendingStatus,
   isRejectedStatus,
+  latestApprovalDecision,
 } from '../approval-history';
 import type { ApprovalEvent } from '../types';
 
@@ -131,5 +132,34 @@ describe('status helpers', () => {
   it('isRejectedStatus', () => {
     assert.equal(isRejectedStatus('rejected'), true);
     assert.equal(isRejectedStatus('approved'), false);
+  });
+});
+
+// ══════════════════════════════════════════════════════════════
+//  §UX-STRUCTURE PART 10 — the decision event behind the status
+//  (feeds the UI summary: who decided · when · rejection reason).
+// ══════════════════════════════════════════════════════════════
+
+describe('latestApprovalDecision', () => {
+  it('returns the latest approve/reject event with its actor + notes', () => {
+    const approve = evt('approve', { actorName: 'مدير الجودة', notes: 'موافقة' });
+    const h = [evt('submit'), approve];
+    assert.equal(latestApprovalDecision(h), approve);
+  });
+
+  it('newest decision wins (approve then reject → the reject event)', () => {
+    const reject = evt('reject', { actorName: 'مدير', notes: 'سبب الرفض' });
+    const h = [evt('approve'), reject];
+    assert.equal(latestApprovalDecision(h), reject);
+  });
+
+  it('reopen resets to null (pending — nothing to show)', () => {
+    const h = [evt('approve'), evt('reopen')];
+    assert.equal(latestApprovalDecision(h), null);
+  });
+
+  it('override/submit only → null (no decision yet)', () => {
+    assert.equal(latestApprovalDecision([evt('submit'), evt('override')]), null);
+    assert.equal(latestApprovalDecision([]), null);
   });
 });

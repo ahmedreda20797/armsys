@@ -32,6 +32,7 @@ import {
   followUpOverdueDays,
 } from '@/lib/metrics/followUpMetrics';
 import { roundTo2 } from '@/lib/kpi-framework/validation';
+import { buildDealMetrics } from '@/lib/deal-dates';
 import { displayDateOrderKey } from './month-attribution';
 import type {
   CapaFacts,
@@ -288,14 +289,22 @@ export function aggregateFollowUps(args: {
 
 /**
  * Aggregate the employee's travel deals with EXPLICIT date
- * dimensions (§DEAL-DATES):
+ * dimensions (§DEAL-DATES). The counting core DELEGATES to the ONE
+ * canonical builder (buildDealMetrics in lib/deal-dates.ts) — this
+ * module projects the builder's result onto the employee-dataset
+ * fact shape and adds the period-scope operational snapshot:
  *
- *   TRAVEL — departure-month attribution → travel volume, status
- *            snapshot, active/canceled, monthly series.
- *   CLOSED — closedAt attribution → completed sales for
- *            productivity; completed deals without a trustworthy
- *            closure timestamp are surfaced as UNKNOWN and never
- *            attributed to a month (no departureDate fallback).
+ *   DEAL_CLOSED — dealClosedAt attribution → closed WITH the
+ *                 employee (الصفقات المغلقة): all-time total,
+ *                 in-period count, monthly series; legacy records
+ *                 without the field surface as UNKNOWN (never
+ *                 attributed, never derived).
+ *   TRAVEL      — departure-month attribution → travel volume,
+ *                 status snapshot, active/canceled, monthly series.
+ *   CLOSED      — closedAt attribution → completed sales for
+ *                 productivity; completed deals without a
+ *                 trustworthy closure timestamp surface as UNKNOWN.
+ *   CREATED     — createdAt attribution → intake activity.
  *
  * The stored status vocabulary is used verbatim ('canceled'
  * spelling included); no sales TARGET is invented — closure counts
@@ -308,42 +317,28 @@ export function aggregateTravelDeals(args: {
   windowDeals: ReadonlyArray<TravelDeal>;
   /** Attributed TRAVEL month (departureDate) per deal id (null = unattributed). */
   monthByDealId: ReadonlyMap<string, string | null>;
-  /** All the employee's deals — the CLOSED-dimension population. */
+  /** All the employee's deals — the period-dimension population. */
   allDeals: ReadonlyArray<TravelDeal>;
   /** Attributed CLOSED month (closedAt) per deal id (null = unknown). */
   closedMonthByDealId: ReadonlyMap<string, string | null>;
+  /** Attributed CREATED month (createdAt) per deal id (null = unattributable). */
+  createdMonthByDealId: ReadonlyMap<string, string | null>;
   windowMonths: ReadonlyArray<string>;
-  /** The reported period's YYYY-MM key (CLOSED attribution target). */
+  /** The reported period's YYYY-MM key (attribution target). */
   periodMonthKey: string;
 }): TravelDealFacts {
-  const { deals, windowDeals, monthByDealId, allDeals, closedMonthByDealId, windowMonths, periodMonthKey } = args;
-  const windowSet = new Set(windowMonths);
+  const { deals, allDeals, windowMonths, periodMonthKey } = args;
+
+  // ONE canonical counting core (§CANONICAL-DEAL-METRICS) — the same
+  // builder Home stats and the Travel detail view count through.
+  // (monthByDealId / closedMonthByDealId / createdMonthByDealId stay
+  // in the signature for the caller's evidence graph; the counting
+  // core derives month keys through the SAME canonical functions.)
+  const metrics = buildDealMetrics(allDeals, { periodMonthKey, windowMonths });
 
   const byStatus: TravelDealFacts['byStatus'] = { upcoming: 0, in_progress: 0, completed: 0, canceled: 0 };
-  const monthly = new Map<string, number>();
-  const closedMonthly = new Map<string, number>();
-
   for (const deal of deals) {
     if (byStatus[deal.status] !== undefined) byStatus[deal.status] += 1;
-  }
-  for (const deal of windowDeals) {
-    const month = monthByDealId.get(deal.id) ?? null;
-    if (month && windowSet.has(month)) monthly.set(month, (monthly.get(month) ?? 0) + 1);
-  }
-
-  // CLOSED dimension — observed closures only; a completed deal with
-  // no trustworthy closedAt stays UNKNOWN (never attributed).
-  let closedTotal = 0;
-  let closedUnknownMonth = 0;
-  for (const deal of allDeals) {
-    if (deal.status !== 'completed') continue;
-    const month = closedMonthByDealId.get(deal.id) ?? null;
-    if (!month) {
-      closedUnknownMonth += 1;
-      continue;
-    }
-    if (month === periodMonthKey) closedTotal += 1;
-    if (windowSet.has(month)) closedMonthly.set(month, (closedMonthly.get(month) ?? 0) + 1);
   }
 
   const completed = byStatus.completed;
@@ -355,13 +350,22 @@ export function aggregateTravelDeals(args: {
     canceled: byStatus.canceled,
     active: byStatus.upcoming + byStatus.in_progress,
     completionRate: deals.length > 0 ? roundTo2((completed / deals.length) * 100) : null,
-    monthly: [...monthly.entries()]
-      .map(([month, count]) => ({ month, count }))
-      .sort((a, b) => a.month.localeCompare(b.month)),
-    closedTotal,
-    closedMonthly: [...closedMonthly.entries()]
-      .map(([month, count]) => ({ month, count }))
-      .sort((a, b) => a.month.localeCompare(b.month)),
-    closedUnknownMonth,
+    // TRAVEL window series — from the same canonical core (months with
+    // departures inside the window, no fabricated months).
+    monthly: metrics.travelMonthly,
+    // CLOSED dimension (closedAt) — the completion-period family.
+    closedTotal: metrics.completedInPeriod,
+    closedMonthly: metrics.completedMonthly,
+    closedUnknownMonth: metrics.completedUnknownMonth,
+    // CREATED dimension (createdAt) — the intake family.
+    createdTotal: metrics.createdInPeriod,
+    createdMonthly: metrics.createdMonthly,
+    // DEAL_CLOSED dimension (dealClosedAt) — closed WITH the employee.
+    closedWithEmployeeTotal: metrics.closedWithEmployeeTotal,
+    closedWithEmployeeInPeriod: metrics.closedWithEmployeeInPeriod,
+    closedWithEmployeeMonthly: metrics.closedWithEmployeeMonthly,
+    closedWithEmployeeUnknownMonth: metrics.closedWithEmployeeUnknownMonth,
+    // All-time current-status snapshot.
+    statusAllTime: metrics.byStatus,
   };
 }

@@ -4,6 +4,7 @@ import * as XLSX from 'xlsx';
 import { requireAuth, verifyPermission } from '@/lib/verify-permission';
 import { asScopeViewer, hasUnrestrictedEmployeeScope } from '@/lib/scope/server';
 import { DEFAULT_EMPLOYEE_STATUS } from '@/lib/organization';
+import { todayDisplayDate } from '@/lib/date-utils';
 
 export async function POST(request: NextRequest) {
   try {
@@ -195,8 +196,12 @@ export async function POST(request: NextRequest) {
           customerNames: customerNames || null,
           notes: notes || null,
           status,
-          // §DEAL-DATES — the source sheet has no closure timestamp;
-          // completed rows stay closedAt=null (unknown closure month).
+          // §DEAL-DATES (DEAL_CLOSED) — importing the sheet IS the moment
+          // the deal is closed with the employee and entered into Qnalys:
+          // dealClosedAt = the import date (today). The sheet has no
+          // closure timestamp, so completed rows stay closedAt=null
+          // (unknown completion month — never fabricated).
+          dealClosedAt: todayDisplayDate(),
           closedAt: null,
           hasFlight: false,
           hasHotel: false,

@@ -275,6 +275,13 @@ export function monthOfDealCreated(record: TravelDeal): string | null {
   return getDealMonthKey(record, 'CREATED');
 }
 
+/** Deal DEAL_CLOSED attribution — the month the deal was closed with
+ *  the employee (dealClosedAt, تاريخ تقفيل الديل). Null for legacy
+ *  records without the field — never fabricated from another date. */
+export function monthOfDealClosedWithEmployee(record: TravelDeal): string | null {
+  return getDealMonthKey(record, 'DEAL_CLOSED');
+}
+
 function monthOfIsoOrDisplay(value: string): string | null {
   if (typeof value !== 'string') return null;
   if (value.includes('/')) return monthKeyOfDisplayDate(value);

@@ -83,14 +83,52 @@ export const DICTIONARY = {
   'sidebar.orderReset': { ar: 'تمت إعادة القائمة للوضع الافتراضي', en: 'Menu reset to default' },
   'sidebar.orderResetFailed': { ar: 'تعذر إعادة الترتيب الافتراضي', en: 'Failed to reset menu order' },
   'sidebar.prefSaveFailed': { ar: 'تعذر حفظ تفضيل القائمة', en: 'Failed to save menu preference' },
-  'sidebar.editOrderAria': { ar: 'ترتيب الصفحات — وضع التحرير', en: 'Page order — edit mode' },
-  'sidebar.editHint': { ar: 'اسحب الصفوف (أو استخدم الأسهم) لإعادة الترتيب — الترتيب فقط؛ الصفحة تبقى دائماً داخل مجموعتها.', en: 'Drag rows (or use the arrows) to reorder — order only; a page always stays inside its group.' },
+  'sidebar.editOrderAria': { ar: 'مساحة التنقل — وضع التحرير', en: 'Navigation workspace — edit mode' },
+  // §SIDEBAR-WORKSPACE — the old order-only hint is replaced by the
+  // workspace edit hint (the old text claimed "order only", which is
+  // no longer true).
+  'sidebar.editHint': { ar: 'اسحب العناصر من المقبض لإعادة الترتيب أو النقل بين المجموعات — التغييرات تُطبّق عند الحفظ.', en: 'Drag items by the handle to reorder or move them between groups — changes apply when you save.' },
   'sidebar.moveUp': { ar: 'نقل لأعلى', en: 'Move up' },
   'sidebar.moveDown': { ar: 'نقل لأسفل', en: 'Move down' },
   'sidebar.awaitingApproval': { ar: 'بانتظار الاعتماد', en: 'awaiting approval' },
   'sidebar.newItems': { ar: 'عنصر جديد', en: 'new item(s)' },
   'sidebar.newItemsHint': { ar: 'عنصر جديد لم تشاهده بعد', en: 'new item(s) you have not seen yet' },
   'sidebar.qualityDeductionPending': { ar: 'خصم جودة بانتظار الاعتماد', en: 'quality deduction(s) awaiting approval' },
+  // ── §SIDEBAR-WORKSPACE — the Personalizable Navigation Workspace ──
+  // The system-generated MAIN group carries a localized UI label;
+  // user-created group names are USER CONTENT and never pass through
+  // localization (§32).
+  'sidebar.mainGroup': { ar: 'الرئيسية', en: 'Main' },
+  'sidebar.editSidebar': { ar: 'تحرير القائمة', en: 'Edit sidebar' },
+  'sidebar.editDone': { ar: 'تم', en: 'Done' },
+  'sidebar.newGroup': { ar: 'مجموعة جديدة', en: 'New group' },
+  'sidebar.groupNameLabel': { ar: 'اسم المجموعة', en: 'Group name' },
+  'sidebar.groupNamePlaceholder': { ar: 'اسم المجموعة الجديدة', en: 'Name of the new group' },
+  'sidebar.groupNameEmpty': { ar: 'أدخل اسماً للمجموعة', en: 'Enter a group name' },
+  'sidebar.groupNameTooLong': { ar: 'الاسم طويل جداً', en: 'The name is too long' },
+  'sidebar.groupNameDuplicate': { ar: 'توجد مجموعة بنفس الاسم', en: 'A group with this name already exists' },
+  'sidebar.renameGroup': { ar: 'إعادة تسمية المجموعة', en: 'Rename group' },
+  'sidebar.deleteGroup': { ar: 'حذف المجموعة', en: 'Delete group' },
+  'sidebar.deleteGroupDescription': { ar: 'سيتم حذف المجموعة فقط — تنتقل صفحاتها إلى مجموعة الرئيسية تلقائياً ولن يُفقد أي عنصر.', en: 'Only the group is deleted — its pages move to the Main group automatically; no navigation item is lost.' },
+  'sidebar.resetLayout': { ar: 'إعادة ضبط القائمة', en: 'Reset sidebar layout' },
+  'sidebar.resetLayoutDescription': { ar: 'تعود القائمة إلى التنظيم الافتراضي (مجموعة رئيسية واحدة). لا تتأثر صلاحياتك أو تفضيلاتك الأخرى.', en: 'The sidebar returns to the default organization (one Main group). Your permissions and other preferences are unaffected.' },
+  'sidebar.layoutSaved': { ar: 'تم حفظ تنظيم القائمة', en: 'Sidebar layout saved' },
+  'sidebar.layoutSaveFailed': { ar: 'تعذر حفظ تنظيم القائمة', en: 'Failed to save sidebar layout' },
+  'sidebar.itemHandle': { ar: 'سحب العنصر — Alt مع الأسهم للترتيب بلوحة المفاتيح', en: 'Drag item — Alt+Arrow keys to reorder' },
+  'sidebar.groupHandle': { ar: 'سحب المجموعة — Alt مع الأسهم للترتيب بلوحة المفاتيح', en: 'Drag group — Alt+Arrow keys to reorder' },
+  'sidebar.groupActions': { ar: 'إجراءات المجموعة', en: 'Group actions' },
+  'sidebar.emptyGroup': { ar: 'مجموعة فارغة — أفلت عنصراً هنا', en: 'Empty group — drop items here' },
+  'sidebar.moveGroupUp': { ar: 'نقل المجموعة لأعلى', en: 'Move group up' },
+  'sidebar.moveGroupDown': { ar: 'نقل المجموعة لأسفل', en: 'Move group down' },
+  'sidebar.announceItemMoved': { ar: 'تم نقل العنصر', en: 'Item moved' },
+  'sidebar.announceGroupMoved': { ar: 'تم نقل المجموعة', en: 'Group moved' },
+  'sidebar.announceGroupCreated': { ar: 'تم إنشاء المجموعة', en: 'Group created' },
+  'sidebar.announceGroupRenamed': { ar: 'تمت إعادة تسمية المجموعة', en: 'Group renamed' },
+  'sidebar.announceGroupDeleted': { ar: 'تم حذف المجموعة ونقل عناصرها إلى الرئيسية', en: 'Group deleted and its items moved to Main' },
+  'sidebar.announceLayoutReset': { ar: 'أُعيد ضبط تنظيم القائمة — يُحفظ عند الحفظ', en: 'Sidebar layout reset — saved on Done' },
+  // §27 SHOW-ALL — the navigation overflow control (both surfaces).
+  'sidebar.showAll': { ar: 'عرض الكل', en: 'Show all' },
+  'sidebar.showLess': { ar: 'عرض أقل', en: 'Show less' },
 
   // ── §I18N-ORG-TREE — organization tree workspace (shared surface) ──
   'org.tree.empty': { ar: 'لا يوجد هيكل تنظيمي لعرضه', en: 'No organization structure to display' },

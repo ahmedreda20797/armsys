@@ -1,1503 +1,357 @@
 'use client';
 
-import { useState, useEffect, useRef, useCallback } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { toast } from 'sonner';
+// ══════════════════════════════════════════════════════════════
+//  Employee 360 — Executive Employee Profile (REBUILD)
+//
+//  ONE page, ONE data model, ONE authorization model:
+//    • the API (/api/employee-360/[id]) returns the canonical
+//      Employee360ViewModel — every metric is a canonical service
+//      output (KPI engine, performance-intelligence dataset, HR
+//      decision support, org tree, stored attendance results);
+//      section gating + field redaction are enforced server-side.
+//    • the page is a presentation layer: sections, hierarchy,
+//      period control, drill-downs — zero business calculations.
+//    • the reporting period is explicit and part of the cache
+//      identity (instant cached restore + background revalidate).
+//    • data states are never conflated: no-data ≠ zero ≠ unknown
+//      ≠ no-permission ≠ configuration-required.
+// ══════════════════════════════════════════════════════════════
+
+import { useEffect, useMemo, useState } from 'react';
+import { motion } from 'framer-motion';
+import { AlertCircle, ArrowRight, Loader2, UserCircle, XCircle } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Skeleton } from '@/components/ui/skeleton';
 import { usePermissions } from '@/hooks/usePermissions';
 import { useAppStore } from '@/lib/store';
-import { authFetch } from '@/lib/api-fetch';
-import { Card, CardContent } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Skeleton } from '@/components/ui/skeleton';
-import { Badge } from '@/components/ui/badge';
-import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from '@/components/ui/select';
-import {
-  UserCircle,
-  ArrowRight,
-  Clock,
-  FileText,
-  Award,
-  Banknote,
-  ClipboardCheck,
-  Plane,
-  AlertTriangle,
-  ShieldCheck,
-  Lightbulb,
-  Loader2,
-  XCircle,
-  BarChart3,
-  MessageSquareWarning,
-  Eye,
-  Calendar,
-  TrendingUp,
-  CheckCircle,
-  XCircle as XCircleIcon,
-  AlertCircle,
-  Activity,
-  ChevronLeft,
-  X,
-  Phone,
-  Building2,
-  Briefcase,
-  Hash,
-  Timer,
-  ShieldAlert,
-  ExternalLink,
-  Plus,
-  RotateCcw,
-  Users,
-  UserCheck,
-  Archive,
-} from 'lucide-react';
-import { EmployeeQualityKpiPanel } from '@/components/pages/quality-kpi/EmployeeQualityKpiPanel';
-import { EmployeePerformanceSection } from '@/components/pages/employee360/EmployeePerformanceSection';
+import { useEmployee360 } from '@/hooks/use-queries';
+import { queryKeys } from '@/lib/cache/query-keys';
+import { useQueryClient } from '@tanstack/react-query';
+import { DataFreshnessIndicator } from '@/components/shared/DataFreshnessIndicator';
 import { T } from '@/lib/i18n/T';
-import { translateUIText } from '@/lib/i18n/ui-text';
 import { useLanguage } from '@/lib/i18n/language-context';
+import { formatMonthKey } from '@/lib/i18n/format';
+import { PeriodBar } from '@/components/pages/employee360/PeriodBar';
+import { Employee360Header } from '@/components/pages/employee360/Employee360Header';
+import { ExecutiveSummary } from '@/components/pages/employee360/ExecutiveSummary';
+import { PerformanceSection } from '@/components/pages/employee360/PerformanceSection';
+import { DealsSection } from '@/components/pages/employee360/DealsSection';
+import { EmployeePerformanceSection } from '@/components/pages/employee360/EmployeePerformanceSection';
 import {
-  DOCUMENT_TYPES,
-  DOCUMENT_STATUS_LABELS,
-  documentStatus,
-  documentTypeLabel,
-} from '@/lib/employee-documents';
+  QualitySection,
+  AttendanceSection,
+  FollowUpsSection,
+  ComplaintsCapaSection,
+  HrDeductionsSection,
+  RequestsSection,
+  ObservationsSummarySection,
+} from '@/components/pages/employee360/OpsSections';
+import { DecisionSupportSection, AttentionSection } from '@/components/pages/employee360/DecisionSupportSection';
+import { OrganizationSection, EmployeeDetailsSection } from '@/components/pages/employee360/OrgDetailsSection';
+import { TimelineSection } from '@/components/pages/employee360/TimelineSection';
+import { NoPermissionState } from '@/components/pages/employee360/ui';
+import type { Employee360Data } from '@/lib/employee-360/client-types';
 
-// ══════════════════════════════════════════════════════════════
-//  Types
-// ══════════════════════════════════════════════════════════════
-interface Employee360Data {
-  employee: {
-    id: string;
-    name: string;
-    code: string | null;
-    department: string | null;
-    position: string | null;
-    shiftStart: string | null;
-    shiftEnd: string | null;
-    hireDate: string | null;
-    mobile: string | null;
-    createdById: string | null;
-    // §2 — full identity + org
-    status?: string;
-    residence?: string | null;
-    orgNodeId?: string | null;
-    archivedAt?: string | null;
-    archiveReason?: string | null;
-  };
-  // §2 — Organization section (tree authority) + observations.
-  organization?: {
-    node: { id: string; name: string; type: string } | null;
-    department: string | null;
-    team: string | null;
-    reportingLine: Array<{ id: string; name: string }>;
-  };
-  observations?: {
-    total: number;
-    currentMonth: number;
-    byStatus: Record<string, number>;
-  };
-  activity?: Record<string, { last90Days: number; lastEventAt: string | null }>;
-  stats: {
-    attendance: { totalPresent: number; totalLate: number; totalAbsent: number; totalExempt: number; totalMinutesLate: number };
-    quality: { totalDeductions: number; deductionDays: number; deductionAmount: number };
-    hrDeductions: { totalDeductions: number; deductionDays: number; deductionAmount: number };
-    requests: { total: number; pending: number; approved: number; rejected: number };
-    followUps: { total: number; open: number; critical: number };
-    travel: { total: number; active: number; completed: number };
-    complaints: { total: number; open: number };
-    capa: { total: number; open: number; closed: number; overdue: number; critical: number; reopened: number; effectiveness: number };
-  };
-  // breakdown is canonical shape: one { count, points } entry per factor.
-  risk: { score: number; level: 'low' | 'medium' | 'high' | 'critical'; breakdown?: Record<string, { count: number; points: number }> };
-  healthScore: number;
-  timeline: any[];
-  recommendations: string[];
-  capaDetails?: any[];
-}
+// ─── Animated page shell ─────────────────────────────────────
 
-type TabId = 'overview' | 'attendance' | 'requests' | 'quality' | 'hr' | 'followups' | 'risk' | 'performance' | 'documents' | 'capa';
-
-// ══════════════════════════════════════════════════════════════
-//  Cinematic Animation Variants
-// ══════════════════════════════════════════════════════════════
-const pageEnterVariants = {
-  hidden: { opacity: 0 },
-  visible: {
-    opacity: 1,
-    transition: { staggerChildren: 0.07, delayChildren: 0.12 },
-  },
-} as const;
-
-const slideUpFade = {
-  hidden: { opacity: 0, y: 30, filter: 'blur(6px)' },
-  visible: {
-    opacity: 1,
-    y: 0,
-    filter: 'blur(0px)',
-    transition: { type: 'spring' as const, stiffness: 200, damping: 24, mass: 0.8 },
-  },
-} as const;
-
-const scaleIn = {
-  hidden: { opacity: 0, scale: 0.85, filter: 'blur(4px)' },
-  visible: {
-    opacity: 1,
-    scale: 1,
-    filter: 'blur(0px)',
-    transition: { type: 'spring' as const, stiffness: 260, damping: 20 },
-  },
-} as const;
-
-const staggerGrid = {
-  hidden: { opacity: 0 },
-  visible: {
-    opacity: 1,
-    transition: { staggerChildren: 0.05, delayChildren: 0.2 },
-  },
-} as const;
-
-const gridItem = {
-  hidden: { opacity: 0, y: 20, scale: 0.95 },
-  visible: {
-    opacity: 1,
-    y: 0,
-    scale: 1,
-    transition: { type: 'spring' as const, stiffness: 300, damping: 25 },
-  },
-} as const;
-
-const tabContentVariants = {
-  hidden: { opacity: 0, x: 40, filter: 'blur(4px)' },
-  visible: {
-    opacity: 1,
-    x: 0,
-    filter: 'blur(0px)',
-    transition: { type: 'spring' as const, stiffness: 220, damping: 26 },
-  },
-  exit: {
-    opacity: 0,
-    x: -40,
-    filter: 'blur(4px)',
-    transition: { duration: 0.2, ease: 'easeIn' as const },
-  },
-} as const;
-
-const headerFloat = {
-  hidden: { opacity: 0, y: -20, filter: 'blur(8px)' },
-  visible: {
-    opacity: 1,
-    y: 0,
-    filter: 'blur(0px)',
-    transition: { type: 'spring' as const, stiffness: 160, damping: 18, mass: 1 },
-  },
-} as const;
-
-// ══════════════════════════════════════════════════════════════
-//  Helpers
-// ══════════════════════════════════════════════════════════════
-function getRiskColor(level: string) {
-  switch (level) {
-    case 'low': return 'text-emerald-400';
-    case 'medium': return 'text-yellow-400';
-    case 'high': return 'text-orange-400';
-    case 'critical': return 'text-red-400';
-    default: return 'text-slate-400';
-  }
-}
-
-function getRiskBg(level: string) {
-  switch (level) {
-    case 'low': return 'bg-emerald-500/8 border-emerald-500/20';
-    case 'medium': return 'bg-yellow-500/8 border-yellow-500/20';
-    case 'high': return 'bg-orange-500/8 border-orange-500/20';
-    case 'critical': return 'bg-red-500/8 border-red-500/20';
-    default: return 'bg-slate-500/8 border-slate-500/20';
-  }
-}
-
-function getRiskGlow(level: string) {
-  switch (level) {
-    case 'low': return 'shadow-emerald-500/10';
-    case 'medium': return 'shadow-yellow-500/10';
-    case 'high': return 'shadow-orange-500/10';
-    case 'critical': return 'shadow-red-500/10';
-    default: return '';
-  }
-}
-
-function getRiskLabel(level: string, locale: 'ar' | 'en' = 'ar') {
-  // system risk vocabulary — application-owned status labels
-  const table: Record<string, [string, string]> = {
-    low: ['منخفض', 'Low'], medium: ['متوسط', 'Medium'], high: ['مرتفع', 'High'], critical: ['حرج', 'Critical'],
-  };
-  const pair = table[level];
-  if (pair) return locale === 'en' ? pair[1] : pair[0];
-  return 'غير محدد';
-}
-
-function getHealthColor(score: number) {
-  if (score >= 80) return 'text-emerald-400';
-  if (score >= 60) return 'text-yellow-400';
-  if (score >= 40) return 'text-orange-400';
-  return 'text-red-400';
-}
-
-function getHealthStroke(score: number) {
-  if (score >= 80) return 'stroke-emerald-500';
-  if (score >= 60) return 'stroke-yellow-500';
-  if (score >= 40) return 'stroke-orange-500';
-  return 'stroke-red-500';
-}
-
-function getHealthRingColor(score: number) {
-  if (score >= 80) return '#10b981';
-  if (score >= 60) return '#eab308';
-  if (score >= 40) return '#f97316';
-  return '#ef4444';
-}
-
-function getHealthRingBg(score: number) {
-  if (score >= 80) return '#10b98120';
-  if (score >= 60) return '#eab30820';
-  if (score >= 40) return '#f9731620';
-  return '#ef444420';
-}
-
-function formatMinutes(total: number): string {
-  const h = Math.floor(total / 60);
-  const m = total % 60;
-  if (h === 0) return `${m}د`;
-  return m > 0 ? `${h}س ${m}د` : `${h}س`;
-}
-
-const tabs: { id: TabId; label: string; icon: React.ReactNode }[] = [
-  { id: 'overview', label: 'نظرة عامة', icon: <Eye className="size-4" /> },
-  { id: 'attendance', label: 'الحضور', icon: <Clock className="size-4" /> },
-  { id: 'requests', label: 'الطلبات', icon: <FileText className="size-4" /> },
-  { id: 'quality', label: 'الجودة', icon: <Award className="size-4" /> },
-  { id: 'hr', label: 'HR', icon: <Banknote className="size-4" /> },
-  { id: 'followups', label: 'المتابعة', icon: <ClipboardCheck className="size-4" /> },
-  { id: 'capa', label: 'CAPA', icon: <ShieldAlert className="size-4" /> },
-  { id: 'risk', label: 'المخاطر', icon: <AlertTriangle className="size-4" /> },
-  { id: 'performance', label: 'الأداء', icon: <BarChart3 className="size-4" /> },
-  { id: 'documents', label: 'المستندات', icon: <ShieldCheck className="size-4" /> },
-];
-
-const containerVariants = {
-  hidden: { opacity: 0 },
-  visible: {
-    opacity: 1,
-    transition: { staggerChildren: 0.06 },
-  },
-} as const;
-
-const itemVariants = {
-  hidden: { opacity: 0, y: 12 },
-  visible: { opacity: 1, y: 0 },
-} as const;
-
-// ══════════════════════════════════════════════════════════════
-//  Animated Health Score Circle
-// ══════════════════════════════════════════════════════════════
-function HealthCircle({ score, size = 100, animated = true }: { score: number; size?: number; animated?: boolean }) {
-  const radius = size * 0.38;
-  const circumference = 2 * Math.PI * radius;
-  const [offset, setOffset] = useState(animated ? circumference : circumference - (score / 100) * circumference);
-
-  useEffect(() => {
-    if (!animated) return;
-    const timer = setTimeout(() => {
-      setOffset(circumference - (score / 100) * circumference);
-    }, 300);
-    return () => clearTimeout(timer);
-  }, [score, circumference, animated]);
-
+function PageSkeleton() {
   return (
-    <div className="relative flex items-center justify-center" style={{ width: size, height: size }}>
-      {/* Subtle glow behind circle */}
-      <div
-        className="absolute inset-0 rounded-full blur-xl opacity-30"
-        style={{ backgroundColor: getHealthRingColor(score) }}
-      />
-      <svg width={size} height={size} className="-rotate-90">
-        <circle
-          cx={size / 2} cy={size / 2} r={radius}
-          fill="none" className="stroke-slate-700/30" strokeWidth="7"
-        />
-        <circle
-          cx={size / 2} cy={size / 2} r={radius}
-          fill="none"
-          stroke={getHealthRingColor(score)}
-          strokeWidth="7"
-          strokeLinecap="round"
-          strokeDasharray={circumference}
-          strokeDashoffset={offset}
-          style={{ transition: 'stroke-dashoffset 1.5s cubic-bezier(0.22, 1, 0.36, 1), stroke 0.5s ease' }}
-        />
-      </svg>
-      <div className="absolute flex flex-col items-center">
-        <motion.span
-          className={`font-bold ${size >= 100 ? 'text-xl' : 'text-sm'} ${getHealthColor(score)}`}
-          initial={{ opacity: 0, scale: 0.5 }}
-          animate={{ opacity: 1, scale: 1 }}
-          transition={{ delay: 0.5, type: 'spring', stiffness: 300 }}
-        >
-          {score}
-        </motion.span>
-        <span className="text-[9px] text-slate-500 mt-0.5"><T>درجة الصحة</T></span>
+    <div className="space-y-5" aria-busy>
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <Skeleton className="size-10 rounded-lg" />
+          <Skeleton className="h-7 w-44 rounded-lg" />
+        </div>
+        <Skeleton className="size-9 rounded-xl" />
+      </div>
+      <Skeleton className="h-36 rounded-2xl" />
+      <Skeleton className="h-10 rounded-xl" />
+      <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-6">
+        {Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-24 rounded-xl" />)}
+      </div>
+      <Skeleton className="h-52 rounded-2xl" />
+      <Skeleton className="h-40 rounded-2xl" />
+    </div>
+  );
+}
+
+function EmployeeNotFound({ onBack }: { onBack: () => void }) {
+  return (
+    <div className="flex flex-col items-center justify-center py-20">
+      <div className="mb-6 flex size-20 items-center justify-center rounded-full border border-border bg-muted/50">
+        <UserCircle className="size-10 text-muted-foreground/60" />
+      </div>
+      <h2 className="mb-2 text-xl font-bold text-foreground"><T>الموظف غير موجود</T></h2>
+      <p className="mb-6 text-muted-foreground"><T>لم يتم العثور على بيانات الموظف المطلوب</T></p>
+      <Button onClick={onBack} className="bg-linear-to-r from-brand-600 to-brand-700 text-white">
+        <ArrowRight className="me-2 size-4" />
+        <T>رجوع</T>
+      </Button>
+    </div>
+  );
+}
+
+function ErrorState({ message, onRetry, onBack }: { message: string; onRetry: () => void; onBack: () => void }) {
+  return (
+    <div className="flex flex-col items-center justify-center py-20">
+      <div className="mb-6 flex size-16 items-center justify-center rounded-full border border-amber-500/30 bg-amber-500/10">
+        <AlertCircle className="size-8 text-amber-500" />
+      </div>
+      <h2 className="mb-2 text-xl font-bold text-foreground"><T>خطأ</T></h2>
+      <p className="mb-6 text-muted-foreground">{message}</p>
+      <div className="flex gap-3">
+        <Button onClick={onRetry} className="bg-linear-to-r from-brand-600 to-brand-700 text-white">
+          <Loader2 className="me-1 size-4" />
+          <T>إعادة المحاولة</T>
+        </Button>
+        <Button onClick={onBack} variant="outline" className="border-border">
+          <ArrowRight className="me-2 size-4" />
+          <T>رجوع</T>
+        </Button>
       </div>
     </div>
   );
 }
 
-// ══════════════════════════════════════════════════════════════
-//  Animated Loading Skeleton
-// ══════════════════════════════════════════════════════════════
-function ProfileSkeleton() {
-  return (
-    <motion.div
-      variants={pageEnterVariants}
-      initial="hidden"
-      animate="visible"
-      className="space-y-6"
-    >
-      <motion.div variants={slideUpFade} className="flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <Skeleton className="h-10 w-10 rounded-lg bg-slate-800/60" />
-          <Skeleton className="h-8 w-48 rounded-lg bg-slate-800/60" />
-        </div>
-        <Skeleton className="h-10 w-10 rounded-full bg-slate-800/60" />
-      </motion.div>
-      <Skeleton className="h-48 rounded-2xl bg-slate-800/40" />
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-        {Array.from({ length: 8 }).map((_, i) => (
-          <Skeleton key={i} className="h-[90px] rounded-xl bg-slate-800/40" />
-        ))}
-      </div>
-      <Skeleton className="h-12 rounded-xl bg-slate-800/30" />
-      <Skeleton className="h-[400px] rounded-2xl bg-slate-800/40" />
-    </motion.div>
-  );
-}
+// ─── Main page ───────────────────────────────────────────────
 
-// ══════════════════════════════════════════════════════════════
-//  Not Found Component
-// ══════════════════════════════════════════════════════════════
-function EmployeeNotFound({ onBack }: { onBack: () => void }) {
-  return (
-    <motion.div
-      initial={{ opacity: 0, scale: 0.9 }}
-      animate={{ opacity: 1, scale: 1 }}
-      transition={{ type: 'spring', stiffness: 200 }}
-      className="flex flex-col items-center justify-center py-20"
-    >
-      <motion.div
-        initial={{ scale: 0, rotate: -180 }}
-        animate={{ scale: 1, rotate: 0 }}
-        transition={{ type: 'spring', stiffness: 200, delay: 0.1 }}
-        className="w-20 h-20 rounded-full bg-slate-800/80 border border-slate-700/50 flex items-center justify-center mb-6"
-      >
-        <UserCircle className="size-10 text-slate-600" />
-      </motion.div>
-      <h2 className="text-xl font-bold text-white mb-2"><T>الموظف غير موجود</T></h2>
-      <p className="text-slate-400 mb-6"><T>لم يتم العثور على بيانات الموظف المطلوب</T></p>
-      <Button
-        onClick={onBack}
-        className="bg-gradient-to-l from-emerald-600 to-cyan-600 hover:from-emerald-700 hover:to-cyan-700 text-white shadow-lg shadow-emerald-500/20"
-      >
-        <ArrowRight className="size-4 ml-2" />
-        <T>رجوع</T>
-      </Button>
-    </motion.div>
-  );
-}
-
-// ══════════════════════════════════════════════════════════════
-//  Glass Card Wrapper
-// ══════════════════════════════════════════════════════════════
-function GlassCard({ children, className = '', glow = '' }: { children: React.ReactNode; className?: string; glow?: string }) {
-  return (
-    <Card className={`bg-slate-800/40 border border-slate-700/30 backdrop-blur-sm ${glow} ${className}`}>
-      <CardContent className="p-4">{children}</CardContent>
-    </Card>
-  );
-}
-
-// ══════════════════════════════════════════════════════════════
-//  Documents section — Milestone 7 §17
-//  Metadata-only documents (type/title/expiry/uploader/status +
-//  optional URL). The API enforces employees permission + scope;
-//  the component never invents a status — expired is derived from
-//  the stored expiry date only.
-// ══════════════════════════════════════════════════════════════
-
-const DOC_TYPE_LABELS: Record<string, string> = Object.fromEntries(
-  DOCUMENT_TYPES.map((t) => [t.value, t.label]),
-);
-
-interface DocRow {
-  id: string;
-  employeeId: string;
-  docType: string;
-  title: string;
-  url: string | null;
-  expiryDate: string | null;
-  uploadedByName: string | null;
-  uploadedAt: string;
-}
-
-function documentStatusOf(expiryDate: string | null): { label: string; cls: string } {
-  const status = documentStatus(expiryDate);
-  const cls =
-    status === 'expired'
-      ? 'bg-red-500/15 text-red-400 border-red-500/30'
-      : status === 'valid'
-        ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30'
-        : 'bg-slate-600/20 text-slate-300 border-slate-500/30';
-  return { label: DOCUMENT_STATUS_LABELS[status], cls };
-}
-
-function EmployeeDocumentsSection({ employeeId }: { employeeId: string }) {
-  const { locale } = useLanguage();
-  const { canUpdate } = usePermissions('employees');
-  const [docs, setDocs] = useState<DocRow[] | null>(null);
-  const [error, setError] = useState(false);
-  const [adding, setAdding] = useState(false);
-  const [form, setForm] = useState({ title: '', docType: 'identity', url: '', expiryDate: '' });
-  const [saving, setSaving] = useState(false);
-
-  const loadDocs = useCallback(async () => {
-    setError(false);
-    try {
-      const res = await authFetch(`/api/employee-documents?employeeId=${employeeId}`);
-      setDocs(res.ok ? await res.json() : null);
-      if (!res.ok) setError(true);
-    } catch {
-      setError(true);
-      setDocs([]);
-    }
-  }, [employeeId]);
-
-  useEffect(() => {
-    // Async boundary: the fetcher sets loading state before its first
-    // await — deferring keeps the effect body free of setState.
-    void (async () => { await loadDocs(); })();
-  }, [loadDocs]);
-
-  const handleAdd = async () => {
-    if (!form.title.trim()) return;
-    setSaving(true);
-    try {
-      const res = await authFetch('/api/employee-documents', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          employeeId,
-          title: form.title.trim(),
-          docType: form.docType,
-          url: form.url.trim() || null,
-          expiryDate: form.expiryDate || null,
-        }),
-      });
-      if (res.ok) {
-        toast.success('تم إضافة المستند');
-        setAdding(false);
-        setForm({ title: '', docType: 'identity', url: '', expiryDate: '' });
-        await loadDocs();
-      } else {
-        const data = await res.json().catch(() => null);
-        toast.error(data?.error || 'فشل إضافة المستند');
-      }
-    } catch {
-      toast.error('فشل إضافة المستند');
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const handleDelete = async (id: string) => {
-    try {
-      const res = await authFetch(`/api/employee-documents/${id}`, { method: 'DELETE' });
-      if (res.ok) {
-        toast.success('تم حذف المستند');
-        await loadDocs();
-      }
-    } catch {
-      toast.error('فشل حذف المستند');
-    }
-  };
-
-  return (
-    <GlassCard className="p-5 space-y-4">
-      <div className="flex items-center justify-between">
-        <h3 className="text-white font-semibold flex items-center gap-2">
-          <div className="w-7 h-7 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center">
-            <ShieldCheck className="size-4 text-emerald-400" />
-          </div>
-          <T>مستندات الموظف</T>
-        </h3>
-        {canUpdate && (
-          <Button size="sm" variant="outline" className="border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10 h-8 text-xs"
-            onClick={() => setAdding((v) => !v)}>
-            <Plus className="size-3.5 ml-1" />
-            <T>إضافة مستند</T>
-          </Button>
-        )}
-      </div>
-
-      {adding && canUpdate && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 rounded-xl border border-slate-700/30 bg-slate-900/40 p-4">
-          <div className="space-y-1">
-            <Label className="text-xs text-slate-400"><T>العنوان *</T></Label>
-            <Input value={form.title} onChange={(e) => setForm((p) => ({ ...p, title: e.target.value }))}
-              className="bg-slate-800 border-slate-600 text-white h-9 text-sm" placeholder={translateUIText('مثال: صورة البطاقة', locale)} />
-          </div>
-          <div className="space-y-1">
-            <Label className="text-xs text-slate-400"><T>النوع</T></Label>
-            <Select value={form.docType} onValueChange={(v) => setForm((p) => ({ ...p, docType: v }))}>
-              <SelectTrigger className="bg-slate-800 border-slate-600 text-white h-9 text-sm"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                {Object.entries(DOC_TYPE_LABELS).map(([k, label]) => (
-                  <SelectItem key={k} value={k} className="text-white">{label}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-1">
-            <Label className="text-xs text-slate-400"><T>تاريخ الانتهاء (اختياري)</T></Label>
-            <Input type="date" value={form.expiryDate} onChange={(e) => setForm((p) => ({ ...p, expiryDate: e.target.value }))}
-              className="bg-slate-800 border-slate-600 text-white h-9 text-sm" dir="ltr" />
-          </div>
-          <div className="space-y-1">
-            <Label className="text-xs text-slate-400"><T>رابط المستند (اختياري)</T></Label>
-            <Input value={form.url} onChange={(e) => setForm((p) => ({ ...p, url: e.target.value }))}
-              className="bg-slate-800 border-slate-600 text-white h-9 text-sm" placeholder="https://..." dir="ltr" />
-          </div>
-          <div className="sm:col-span-2 flex justify-end">
-            <Button size="sm" onClick={handleAdd} disabled={saving || !form.title.trim()}
-              className="bg-emerald-600 hover:bg-emerald-700 text-white">
-              {saving ? <Loader2 className="size-3.5 animate-spin" /> : 'حفظ'}
-            </Button>
-          </div>
-        </div>
-      )}
-
-      {docs === null ? (
-        error ? (
-          <p className="text-slate-500 text-sm text-center py-6"><T>تعذر تحميل المستندات</T></p>
-        ) : (
-          <div className="space-y-2">{[1, 2].map((i) => <Skeleton key={i} className="h-12 rounded-lg bg-slate-800/50" />)}</div>
-        )
-      ) : docs.length === 0 ? (
-        <p className="text-slate-500 text-sm text-center py-6"><T>لا توجد مستندات مسجلة لهذا الموظف</T></p>
-      ) : (
-        <div className="space-y-2">
-          {docs.map((doc) => {
-            const status = documentStatusOf(doc.expiryDate);
-            return (
-              <div key={doc.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-700/30 bg-slate-900/40 px-3 py-2.5">
-                <div className="min-w-0">
-                  <p className="text-white text-sm font-medium truncate">{doc.title}</p>
-                  <p className="text-slate-500 text-[11px]">
-                    {documentTypeLabel(doc.docType)}
-                    {doc.expiryDate && <span dir="ltr"> · ينتهي: {doc.expiryDate}</span>}
-                    {doc.uploadedByName && ` · رفعها: ${doc.uploadedByName}`}
-                  </p>
-                </div>
-                <div className="flex items-center gap-2 shrink-0">
-                  <Badge variant="outline" className={`text-[10px] ${status.cls}`}>{status.label}</Badge>
-                  {doc.url && (
-                    <a href={doc.url} target="_blank" rel="noopener noreferrer"
-                      className="text-cyan-400 hover:text-cyan-300 text-xs flex items-center gap-1">
-                      <ExternalLink className="size-3" /> فتح
-                    </a>
-                  )}
-                  {canUpdate && (
-                    <button onClick={() => void handleDelete(doc.id)}
-                      className="p-1.5 rounded-md text-slate-600 hover:text-red-400 hover:bg-red-500/10 transition-colors"
-                      title={translateUIText('حذف المستند', locale)} aria-label={`حذف ${doc.title}`}>
-                      <XCircle className="size-3.5" />
-                    </button>
-                  )}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
-    </GlassCard>
-  );
-}
-
-// ══════════════════════════════════════════════════════════════
-//  Main Employee360Page
-// ══════════════════════════════════════════════════════════════
-export default function Employee360Page({ employeeId: propEmployeeId, onClose }: { employeeId?: string; onClose?: () => void } = {}) {
+export default function Employee360Page({ employeeId: propEmployeeId, onClose }: {
+  employeeId?: string;
+  onClose?: () => void;
+} = {}) {
   const { locale } = useLanguage();
   const { canView } = usePermissions('employees');
   const storeNavParams = useAppStore((s) => s.navParams);
   const storeGoBack = useAppStore((s) => s.goBack);
   const employeeId = propEmployeeId || storeNavParams.employeeId || '';
   const handleClose = onClose || storeGoBack;
-  const [data, setData] = useState<Employee360Data | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [notFound, setNotFound] = useState(false);
-  const [activeTab, setActiveTab] = useState<TabId>('overview');
-  const mountedRef = useRef(true);
-  const fetchingRef = useRef(false);
 
-  // ══════════════════════════════════════════════════════════
-  //  Fetch employee data
-  // ══════════════════════════════════════════════════════════
-  const fetchEmployeeData = useCallback(async () => {
-    if (!employeeId) {
-      handleClose();
-      return;
-    }
+  const queryClient = useQueryClient();
+  const [month, setMonth] = useState<string>(() => {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  });
 
-    if (fetchingRef.current) return;
-    fetchingRef.current = true;
-
-    setLoading(true);
-    setError(null);
-
-    try {
-      const res = await authFetch(`/api/employee-360/${employeeId}`);
-
-      if (!mountedRef.current) return;
-
-      if (res.status === 404) {
-        setNotFound(true);
-        return;
-      }
-
-      if (!res.ok) {
-        const errData = await res.json().catch(() => null);
-        setError(errData?.error || 'فشل في تحميل بيانات الموظف');
-        return;
-      }
-
-      const json = await res.json();
-
-      if (!mountedRef.current) return;
-
-      setData(json);
-    } catch (e) {
-      if (mountedRef.current) {
-        setError('خطأ في الاتصال بالخادم');
-        console.error('[employee-360] fetch failed:', e);
-      }
-    } finally {
-      if (mountedRef.current) {
-        setLoading(false);
-      }
-      fetchingRef.current = false;
-    }
-  }, [employeeId, handleClose]);
+  // ── Cache-backed profile snapshot (§27): cached data renders
+  //    immediately and revalidates when stale; nothing blanks. ──
+  const e360Query = useEmployee360(employeeId, month, canView);
+  const data = (e360Query.data && !('__notFound' in e360Query.data)
+    ? e360Query.data
+    : null) as Employee360Data | null;
+  const notFound = Boolean(e360Query.data && (e360Query.data as { __notFound?: boolean }).__notFound === true);
+  const loading = canView && !!employeeId && e360Query.isLoading && !e360Query.data;
+  const error = canView && e360Query.isError && !e360Query.data
+    ? (e360Query.error instanceof Error ? e360Query.error.message : 'فشل في تحميل بيانات الموظف')
+    : null;
 
   useEffect(() => {
-    mountedRef.current = true;
-    // Async boundary: the fetcher sets loading state before its first await;
-    // deferring keeps the effect body free of synchronous setState.
-    void (async () => { await fetchEmployeeData(); })();
-    return () => {
-      mountedRef.current = false;
-    };
-  }, [fetchEmployeeData]);
+    if (!employeeId) handleClose();
+  }, [employeeId, handleClose]);
+
+  const refresh = useMemo(() => async () => {
+    if (!employeeId) return;
+    await queryClient.invalidateQueries({ queryKey: queryKeys.employee360(employeeId) });
+  }, [queryClient, employeeId]);
+
+  const periodLabel = formatMonthKey(data?.period.monthKey ?? month, locale);
 
   // ═══ Permission denied ═══
   if (!canView) {
     return (
-      <motion.div
-        variants={pageEnterVariants}
-        initial="hidden"
-        animate="visible"
-        className="flex flex-col items-center justify-center py-20"
-      >
-        <motion.div variants={scaleIn} className="w-16 h-16 rounded-full bg-red-500/10 border border-red-500/20 flex items-center justify-center mb-6">
-          <XCircle className="size-8 text-red-400" />
-        </motion.div>
-        <motion.h2 variants={slideUpFade} className="text-xl font-bold text-white mb-2"><T>ليس لديك صلاحية</T></motion.h2>
-        <motion.p variants={slideUpFade} className="text-slate-400 mb-6"><T>لا تملك صلاحية عرض ملف الموظف</T></motion.p>
-        <motion.div variants={slideUpFade}>
-          <Button
-            onClick={handleClose}
-            className="bg-gradient-to-l from-emerald-600 to-cyan-600 hover:from-emerald-700 hover:to-cyan-700 text-white shadow-lg shadow-emerald-500/20"
-          >
-            <ArrowRight className="size-4 ml-2" />
-            <T>رجوع</T>
-          </Button>
-        </motion.div>
-      </motion.div>
-    );
-  }
-
-  // ═══ Loading state ═══
-  if (loading) {
-    return <ProfileSkeleton />;
-  }
-
-  // ═══ Not found ═══
-  if (notFound) {
-    return <EmployeeNotFound onBack={handleClose} />;
-  }
-
-  // ═══ Error state ═══
-  if (error || !data) {
-    return (
-      <motion.div
-        variants={pageEnterVariants}
-        initial="hidden"
-        animate="visible"
-        className="flex flex-col items-center justify-center py-20"
-      >
-        <motion.div variants={scaleIn} className="w-16 h-16 rounded-full bg-orange-500/10 border border-orange-500/20 flex items-center justify-center mb-6">
-          <AlertCircle className="size-8 text-orange-400" />
-        </motion.div>
-        <motion.h2 variants={slideUpFade} className="text-xl font-bold text-white mb-2"><T>خطأ</T></motion.h2>
-        <motion.p variants={slideUpFade} className="text-slate-400 mb-6">{error || 'لا توجد بيانات'}</motion.p>
-        <motion.div variants={slideUpFade} className="flex gap-3">
-          <Button
-            onClick={fetchEmployeeData}
-            className="bg-gradient-to-l from-emerald-600 to-cyan-600 hover:from-emerald-700 hover:to-cyan-700 text-white shadow-lg shadow-emerald-500/20"
-          >
-            <Loader2 className="size-4 ml-1" />
-            <T>إعادة المحاولة</T>
-          </Button>
-          <Button onClick={handleClose} variant="outline" className="border-slate-700/50 text-slate-300 hover:bg-slate-800">
-            <ArrowRight className="size-4 ml-2" />
-            <T>رجوع</T>
-          </Button>
-        </motion.div>
-      </motion.div>
-    );
-  }
-
-  const { employee, stats, risk, healthScore, timeline, recommendations } = data;
-  const employeeData = data; // §2 — organization/observations/activity blocks
-
-  // ═══ Filtered timeline by tab ═══
-  const getFilteredTimeline = (tabId: TabId) => {
-    switch (tabId) {
-      case 'attendance': return timeline.filter((t) => t.type === 'attendance');
-      case 'requests': return timeline.filter((t) => t.type === 'request');
-      case 'quality': return timeline.filter((t) => t.type === 'quality');
-      case 'hr': return timeline.filter((t) => t.type === 'hrDeduction');
-      case 'followups': return timeline.filter((t) => t.type === 'followUp');
-      case 'capa': return timeline.filter((t) => t.type === 'capa');
-      case 'documents': return [];
-      default: return timeline;
-    }
-  };
-
-  // ═══ Tab content renderers ═══
-  const renderOverviewTab = () => (
-    <motion.div variants={containerVariants} initial="hidden" animate="visible" className="space-y-5">
-      {/* Quick stats grid */}
-      <motion.div variants={staggerGrid} initial="hidden" animate="visible" className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-        {[
-          { label: 'حضور', value: stats.attendance.totalPresent, suffix: 'يوم', icon: <CheckCircle className="size-5 text-emerald-400" />, bg: 'bg-emerald-500/10', border: 'border-emerald-500/20' },
-          { label: 'تأخير', value: stats.attendance.totalLate, suffix: `(${formatMinutes(stats.attendance.totalMinutesLate)})`, icon: <Clock className="size-5 text-yellow-400" />, bg: 'bg-yellow-500/10', border: 'border-yellow-500/20' },
-          { label: 'غياب', value: stats.attendance.totalAbsent, suffix: 'يوم', icon: <XCircleIcon className="size-5 text-red-400" />, bg: 'bg-red-500/10', border: 'border-red-500/20' },
-          { label: 'خصم جودة', value: stats.quality.deductionDays, suffix: 'يوم', icon: <Award className="size-5 text-orange-400" />, bg: 'bg-orange-500/10', border: 'border-orange-500/20' },
-          { label: 'متابعات مفتوحة', value: stats.followUps.open, suffix: '', icon: <ClipboardCheck className="size-5 text-brand-400" />, bg: 'bg-brand-500/10', border: 'border-brand-500/20' },
-          { label: 'CAPA مفتوحة', value: stats.capa.open, suffix: '', icon: <ShieldAlert className="size-5 text-cyan-400" />, bg: 'bg-cyan-500/10', border: 'border-cyan-500/20' },
-        ].map((stat, i) => (
-          <motion.div key={i} variants={gridItem}>
-            <GlassCard className="flex items-center gap-3">
-              <div className={`w-10 h-10 rounded-xl ${stat.bg} border ${stat.border} flex items-center justify-center`}>
-                {stat.icon}
-              </div>
-              <div>
-                <p className="text-slate-400 text-xs">{stat.label}</p>
-                <p className="text-white font-bold text-sm">
-                  {stat.value}
-                  {stat.suffix && <span className="text-xs text-slate-500 mr-1">{stat.suffix}</span>}
-                </p>
-              </div>
-            </GlassCard>
-          </motion.div>
-        ))}
-      </motion.div>
-
-      {/* Recommendations */}
-      {recommendations.length > 0 && (
-        <motion.div variants={slideUpFade}>
-          <Card className={`border ${getRiskBg(risk.level)} ${getRiskGlow(risk.level)} shadow-lg`}>
-            <CardContent className="p-5">
-              <h3 className="text-white font-semibold mb-3 flex items-center gap-2">
-                <div className="w-7 h-7 rounded-lg bg-yellow-500/10 border border-yellow-500/20 flex items-center justify-center">
-                  <Lightbulb className="size-4 text-yellow-400" />
-                </div>
-                <T>توصيات ذكية</T>
-              </h3>
-              <ul className="space-y-2.5">
-                {recommendations.map((rec, i) => (
-                  <motion.li
-                    key={i}
-                    initial={{ opacity: 0, x: 20 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    transition={{ delay: 0.3 + i * 0.08, type: 'spring', stiffness: 200 }}
-                    className="text-slate-300 text-sm flex items-start gap-2.5"
-                  >
-                    <ChevronLeft className="size-3.5 text-yellow-400 mt-0.5 flex-shrink-0" />
-                    {rec}
-                  </motion.li>
-                ))}
-              </ul>
-            </CardContent>
-          </Card>
-        </motion.div>
-      )}
-
-      {/* Recent Timeline */}
-      <motion.div variants={slideUpFade}>
-        <GlassCard className="p-5">
-          <h3 className="text-white font-semibold mb-4 flex items-center gap-2">
-            <div className="w-7 h-7 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center">
-              <Activity className="size-4 text-emerald-400" />
-            </div>
-            <T>آخر الأنشطة</T>
-          </h3>
-          <div className="space-y-3">
-            {timeline.slice(0, 10).map((item, i) => (
-              <motion.div
-                key={i}
-                initial={{ opacity: 0, x: -10 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ delay: 0.4 + i * 0.04, type: 'spring', stiffness: 200 }}
-                className="flex items-start gap-3 text-sm"
-              >
-                <div className={`w-2 h-2 rounded-full mt-1.5 flex-shrink-0 ${
-                  item.type === 'attendance' ? (item.status === 'present' ? 'bg-emerald-400' : item.status === 'late' ? 'bg-yellow-400' : 'bg-red-400') :
-                  item.type === 'quality' ? 'bg-orange-400' :
-                  item.type === 'followUp' ? 'bg-brand-400' :
-                  item.type === 'request' ? 'bg-blue-400' :
-                  item.type === 'complaint' ? 'bg-red-400' :
-                  item.type === 'capa' ? 'bg-cyan-400' :
-                  'bg-slate-400'
-                }`} />
-                <div className="flex-1 min-w-0">
-                  <p className="text-white font-medium">{item.title}</p>
-                  <p className="text-slate-400 text-xs truncate">{item.description}</p>
-                </div>
-                <span className="text-slate-500 text-xs flex-shrink-0" dir="ltr">{item.date}</span>
-              </motion.div>
-            ))}
-            {timeline.length === 0 && (
-              <p className="text-slate-500 text-sm text-center py-6"><T>لا توجد أنشطة مسجلة هذا الشهر</T></p>
-            )}
-          </div>
-        </GlassCard>
-      </motion.div>
-    </motion.div>
-  );
-
-  const renderRiskTab = () => (
-    <motion.div variants={containerVariants} initial="hidden" animate="visible" className="space-y-5">
-      {/* Risk Score Card */}
-      <motion.div variants={scaleIn}>
-        <Card className={`border ${getRiskBg(risk.level)} ${getRiskGlow(risk.level)} shadow-xl`}>
-          <CardContent className="p-6">
-            <div className="flex flex-col sm:flex-row items-center gap-6">
-              <HealthCircle score={healthScore} size={130} animated={true} />
-              <div className="flex-1 text-center sm:text-right">
-                <h3 className="text-white text-lg font-bold"><T>تقييم المخاطر</T></h3>
-                <div className="flex items-center justify-center sm:justify-start gap-2 mt-2">
-                  <motion.span
-                    className={`text-3xl font-bold ${getRiskColor(risk.level)}`}
-                    initial={{ opacity: 0, scale: 0.5 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    transition={{ delay: 0.6, type: 'spring', stiffness: 300 }}
-                  >
-                    {risk.score}
-                  </motion.span>
-                  <span className={`text-sm ${getRiskColor(risk.level)}`}>({getRiskLabel(risk.level, locale)})</span>
-                </div>
-                <div className="mt-3 space-y-1.5 text-sm text-slate-400">
-                  {/* Render directly from the canonical risk.breakdown returned by the API.
-                      No client-side re-derivation — the breakdown already reflects every
-                      factor (delay, absence, quality, hr, follow-ups, complaints, CAPA). */}
-                  {risk.breakdown && [
-                    { label: 'تأخير حضور', key: 'delay' },
-                    { label: 'غياب', key: 'absence' },
-                    { label: 'الجودة', key: 'quality' },
-                    { label: 'مخالفات موارد بشرية', key: 'hr' },
-                    { label: 'المتابعات المفتوحة', key: 'openFollowUp' },
-                    { label: 'متابعة أولوية عالية', key: 'highPriorityFollowUp' },
-                    { label: 'الحالات الحرجة', key: 'criticalFollowUp' },
-                    { label: 'الشكاوى', key: 'complaint' },
-                    { label: 'مشكلة متكررة', key: 'repeatedIssue' },
-                    { label: 'CAPA مفتوحة', key: 'openCapa' },
-                    { label: 'CAPA متأخرة', key: 'overdueCapa' },
-                    { label: 'CAPA حرجة', key: 'criticalCapa' },
-                    { label: 'CAPA معاد فتحها', key: 'reopenedCapa' },
-                  ].map((item) => {
-                    const factor = risk.breakdown![item.key];
-                    if (!factor || factor.count === 0) return null;
-                    return <p key={item.key}>{item.label}: +{factor.points} نقطة <span className="text-slate-600">(×{factor.count})</span></p>;
-                  })}
-                </div>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      </motion.div>
-
-      {/* Risk Level Legend */}
-      <motion.div variants={staggerGrid} initial="hidden" animate="visible">
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          {([
-            { level: 'low', label: 'منخفض', range: '0-10' },
-            { level: 'medium', label: 'متوسط', range: '11-25' },
-            { level: 'high', label: 'مرتفع', range: '26-50' },
-            { level: 'critical', label: 'حرج', range: '51+' },
-          ] as const).map((item) => (
-            <motion.div key={item.level} variants={gridItem}>
-              <Card className={`border ${item.level === risk.level ? getRiskBg(item.level) : 'border-slate-700/30 bg-slate-800/30'} transition-all`}>
-                <CardContent className="p-3 text-center">
-                  <p className={`font-bold ${getRiskColor(item.level)}`}>{item.label}</p>
-                  <p className="text-slate-500 text-xs" dir="ltr">{item.range}</p>
-                </CardContent>
-              </Card>
-            </motion.div>
-          ))}
+      <div className="flex flex-col items-center justify-center py-20">
+        <div className="mb-6 flex size-16 items-center justify-center rounded-full border border-red-500/30 bg-red-500/10">
+          <XCircle className="size-8 text-red-500" />
         </div>
-      </motion.div>
-    </motion.div>
-  );
-
-  // ═══ Performance tab — Milestone 5 scoped layers first ═══
-  // The raw current-month attendance-rate calculation and the mixed
-  // quality+HR deductions sum were replaced by the canonical scoped
-  // section (stored attendanceResults / monthSnapshots / separate
-  // HR domain). The non-attendance indicators below are unchanged
-  // and now carry an explicit الشهر الحالي scope label.
-  const renderPerformanceTab = () => {
-    const requestApprovalRate = stats.requests.total > 0 ? Math.round((stats.requests.approved / stats.requests.total) * 100) : 0;
-
-    return (
-      <motion.div variants={containerVariants} initial="hidden" animate="visible" className="space-y-5">
-        {/* Scoped performance history: current month / monthly history / career */}
-        <motion.div variants={slideUpFade}>
-          <EmployeePerformanceSection employeeId={employeeId} />
-        </motion.div>
-
-        {/* Current-month indicators (non-attendance, unchanged calculations) */}
-        <motion.div variants={slideUpFade}>
-          <GlassCard className="p-6">
-            <div className="flex items-center justify-between flex-wrap gap-2 mb-5">
-              <h3 className="text-white font-semibold flex items-center gap-2">
-                <div className="w-7 h-7 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center">
-                  <TrendingUp className="size-4 text-emerald-400" />
-                </div>
-                <T>مؤشرات إضافية</T>
-              </h3>
-              <Badge variant="outline" className="border-emerald-500/30 text-emerald-400 bg-emerald-500/5 text-xs rounded-lg">
-                <T>الشهر الحالي</T>
-              </Badge>
-            </div>
-            <div className="space-y-5">
-              {[
-                { label: 'نسبة قبول الطلبات', value: requestApprovalRate, color: 'bg-blue-500', textColor: getHealthColor(requestApprovalRate) },
-                { label: 'درجة الصحة العامة', value: healthScore, color: healthScore >= 80 ? 'bg-emerald-500' : healthScore >= 60 ? 'bg-yellow-500' : healthScore >= 40 ? 'bg-orange-500' : 'bg-red-500', textColor: getHealthColor(healthScore) },
-              ].map((bar, i) => (
-                <motion.div
-                  key={i}
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  transition={{ delay: 0.3 + i * 0.1 }}
-                >
-                  <div className="flex justify-between text-sm mb-1.5">
-                    <span className="text-slate-400">{bar.label}</span>
-                    <span className={`font-semibold ${bar.textColor}`}>{bar.value}%</span>
-                  </div>
-                  <div className="h-3 rounded-full bg-slate-700/50 overflow-hidden">
-                    <motion.div
-                      className={`h-full rounded-full ${bar.color}`}
-                      initial={{ width: 0 }}
-                      animate={{ width: `${Math.min(bar.value, 100)}%` }}
-                      transition={{ delay: 0.4 + i * 0.1, duration: 1, ease: [0.22, 1, 0.36, 1] }}
-                    />
-                  </div>
-                </motion.div>
-              ))}
-              <div className="bg-slate-700/20 border border-slate-700/20 rounded-xl p-3.5 text-center">
-                <p className="text-slate-400 text-xs mb-1"><T>الرحلات النشطة — الشهر الحالي</T></p>
-                <p className="text-white font-bold text-lg">{stats.travel.active}</p>
-              </div>
-            </div>
-          </GlassCard>
-        </motion.div>
-      </motion.div>
+        <h2 className="mb-2 text-xl font-bold text-foreground"><T>ليس لديك صلاحية</T></h2>
+        <p className="mb-6 text-muted-foreground"><T>لا تملك صلاحية عرض ملف الموظف</T></p>
+        <Button onClick={handleClose} className="bg-linear-to-r from-brand-600 to-brand-700 text-white">
+          <ArrowRight className="me-2 size-4" />
+          <T>رجوع</T>
+        </Button>
+      </div>
     );
-  };
+  }
 
-  const renderTimelineContent = (tabId: TabId) => {
-    const items = getFilteredTimeline(tabId);
-    const tabLabel = tabId === 'overview' ? 'الأنشطة' : tabs.find(t => t.id === tabId)?.label || 'الأنشطة';
+  if (loading) return <PageSkeleton />;
+  if (notFound) return <EmployeeNotFound onBack={handleClose} />;
+  if (error || !data) {
+    return <ErrorState message={error || 'لا توجد بيانات'} onRetry={() => void refresh()} onBack={handleClose} />;
+  }
 
-    return (
-      <motion.div variants={staggerGrid} initial="hidden" animate="visible" className="space-y-3">
-        {items.length === 0 ? (
-          <GlassCard className="flex flex-col items-center justify-center py-16">
-            <motion.div
-              initial={{ scale: 0, rotate: -90 }}
-              animate={{ scale: 1, rotate: 0 }}
-              transition={{ type: 'spring', stiffness: 200 }}
-            >
-              <Calendar className="size-10 text-slate-600 mb-3" />
-            </motion.div>
-            <p className="text-slate-400">لا توجد {tabLabel} مسجلة هذا الشهر</p>
-          </GlassCard>
-        ) : (
-          items.map((item, i) => (
-            <motion.div key={i} variants={gridItem}
-              className="flex items-start gap-3 p-3.5 rounded-xl bg-slate-800/40 border border-slate-700/20 hover:bg-slate-800/60 hover:border-slate-700/40 transition-all duration-200"
-            >
-              <div className={`w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 border ${
-                item.type === 'attendance' ? (item.status === 'present' ? 'bg-emerald-500/10 border-emerald-500/20' : item.status === 'late' ? 'bg-yellow-500/10 border-yellow-500/20' : 'bg-red-500/10 border-red-500/20') :
-                item.type === 'quality' ? 'bg-orange-500/10 border-orange-500/20' :
-                item.type === 'followUp' ? 'bg-brand-500/10 border-brand-500/20' :
-                item.type === 'request' ? 'bg-blue-500/10 border-blue-500/20' :
-                item.type === 'complaint' ? 'bg-red-500/10 border-red-500/20' :
-                item.type === 'hrDeduction' ? 'bg-pink-500/10 border-pink-500/20' :
-                item.type === 'travel' ? 'bg-cyan-500/10 border-cyan-500/20' :
-                item.type === 'capa' ? 'bg-cyan-500/10 border-cyan-500/20' :
-                'bg-slate-500/10 border-slate-500/20'
-              }`}>
-                {item.type === 'attendance' && <Clock className={`size-4 ${item.status === 'present' ? 'text-emerald-400' : item.status === 'late' ? 'text-yellow-400' : 'text-red-400'}`} />}
-                {item.type === 'quality' && <Award className="size-4 text-orange-400" />}
-                {item.type === 'followUp' && <ClipboardCheck className="size-4 text-brand-400" />}
-                {item.type === 'request' && <FileText className="size-4 text-blue-400" />}
-                {item.type === 'complaint' && <MessageSquareWarning className="size-4 text-red-400" />}
-                {item.type === 'hrDeduction' && <Banknote className="size-4 text-pink-400" />}
-                {item.type === 'travel' && <Plane className="size-4 text-cyan-400" />}
-                {item.type === 'capa' && <ShieldAlert className="size-4 text-cyan-400" />}
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-white text-sm font-medium">{item.title}</p>
-                {item.description && <p className="text-slate-400 text-xs mt-0.5 truncate">{item.description}</p>}
-              </div>
-              <div className="flex flex-col items-end gap-1 flex-shrink-0">
-                <span className="text-slate-500 text-xs" dir="ltr">{item.date}</span>
-                {item.status && (
-                  <Badge variant="outline" className={`text-[10px] px-1.5 py-0 rounded-md ${
-                    item.status === 'present' || item.status === 'approved' || item.status === 'completed' ? 'border-emerald-500/30 text-emerald-400 bg-emerald-500/5' :
-                    item.status === 'late' || item.status === 'pending' || item.status === 'open' || item.status === 'under_review' ? 'border-yellow-500/50 text-yellow-400 bg-yellow-500/5' :
-                    item.status === 'absent' || item.status === 'rejected' ? 'border-red-500/50 text-red-400 bg-red-500/5' :
-                    'border-slate-500/50 text-slate-400'
-                  }`}>
-                    {item.status === 'present' ? 'حاضر' :
-                     item.status === 'late' ? 'متأخر' :
-                     item.status === 'absent' ? 'غائب' :
-                     item.status === 'approved' ? 'مقبول' :
-                     item.status === 'rejected' ? 'مرفوض' :
-                     item.status === 'pending' ? 'معلق' :
-                     item.status === 'open' ? 'مفتوح' :
-                     item.status === 'completed' ? 'مكتمل' :
-                     item.status === 'deduction' ? 'خصم' :
-                     item.status}
-                  </Badge>
-                )}
-              </div>
-            </motion.div>
-          ))
-        )}
-      </motion.div>
-    );
-  };
-
-  const renderCapaTab = () => (
-    <motion.div variants={containerVariants} initial="hidden" animate="visible" className="space-y-5">
-      {/* CAPA Stats Grid */}
-      <motion.div variants={staggerGrid} initial="hidden" animate="visible" className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-        {[
-          { label: 'مفتوحة', value: stats.capa.open, icon: <AlertTriangle className="size-4 text-yellow-400" />, bg: 'bg-yellow-500/10', border: 'border-yellow-500/20' },
-          { label: 'مغلقة', value: stats.capa.closed, icon: <CheckCircle className="size-4 text-emerald-400" />, bg: 'bg-emerald-500/10', border: 'border-emerald-500/20' },
-          { label: 'متأخرة', value: stats.capa.overdue, icon: <Clock className="size-4 text-red-400" />, bg: 'bg-red-500/10', border: 'border-red-500/20' },
-          { label: 'حرجة', value: stats.capa.critical, icon: <AlertCircle className="size-4 text-orange-400" />, bg: 'bg-orange-500/10', border: 'border-orange-500/20' },
-          { label: 'معاد فتحها', value: stats.capa.reopened, icon: <RotateCcw className="size-4 text-brand-400" />, bg: 'bg-brand-500/10', border: 'border-brand-500/20' },
-          { label: 'فعّالة', value: stats.capa.effectiveness, icon: <ShieldCheck className="size-4 text-cyan-400" />, bg: 'bg-cyan-500/10', border: 'border-cyan-500/20' },
-        ].map((stat, i) => (
-          <motion.div key={i} variants={gridItem}>
-            <GlassCard className="flex items-center gap-3">
-              <div className={`w-9 h-9 rounded-lg ${stat.bg} border ${stat.border} flex items-center justify-center`}>
-                {stat.icon}
-              </div>
-              <div>
-                <p className="text-slate-400 text-xs">{stat.label}</p>
-                <p className="text-white font-bold text-sm">{stat.value}</p>
-              </div>
-            </GlassCard>
-          </motion.div>
-        ))}
-      </motion.div>
-
-      {/* CAPA Effectiveness — effectiveness is a percentage (0-100) from calcCAPAEffectiveness */}
-      {stats.capa.closed > 0 && (
-        <motion.div variants={slideUpFade}>
-          <GlassCard className="p-5">
-            <h3 className="text-white font-semibold mb-3 flex items-center gap-2">
-              <div className="w-7 h-7 rounded-lg bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center">
-                <TrendingUp className="size-4 text-cyan-400" />
-              </div>
-              <T>فعالية CAPA</T>
-            </h3>
-            <div className="h-3 rounded-full bg-slate-700/50 overflow-hidden">
-              <motion.div
-                className="h-full rounded-full bg-cyan-500"
-                initial={{ width: 0 }}
-                animate={{ width: `${Math.min(Math.max(stats.capa.effectiveness, 0), 100)}%` }}
-                transition={{ delay: 0.4, duration: 1, ease: [0.22, 1, 0.36, 1] }}
-              />
-            </div>
-            <p className="text-slate-400 text-xs mt-2">
-              {Math.min(Math.max(stats.capa.effectiveness, 0), 100)}% من الحالات المغلقة فعّالة
-            </p>
-          </GlassCard>
-        </motion.div>
-      )}
-
-      {/* CAPA Timeline Events */}
-      <motion.div variants={slideUpFade}>
-        <GlassCard className="p-5">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-white font-semibold flex items-center gap-2">
-              <div className="w-7 h-7 rounded-lg bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center">
-                <Activity className="size-4 text-cyan-400" />
-              </div>
-              <T>سجل CAPA</T>
-            </h3>
-            <Button
-              size="sm"
-              className="bg-gradient-to-l from-cyan-600 to-blue-600 hover:from-cyan-700 hover:to-blue-700 text-white text-xs shadow-lg shadow-cyan-500/20"
-              onClick={() => useAppStore.getState().navigateTo('capa', undefined, { employeeId: employee.id })}
-            >
-              <ExternalLink className="size-3.5 ml-1" />
-              <T>فتح صفحة CAPA</T>
-            </Button>
-          </div>
-          <div className="space-y-3">
-            {getFilteredTimeline('capa').length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-10">
-                <ShieldAlert className="size-8 text-slate-600 mb-2" />
-                <p className="text-slate-400 text-sm"><T>لا توجد حالات CAPA مسجلة</T></p>
-              </div>
-            ) : (
-              getFilteredTimeline('capa').slice(0, 20).map((item, i) => (
-                <motion.div
-                  key={i}
-                  initial={{ opacity: 0, x: -10 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ delay: 0.3 + i * 0.04, type: 'spring', stiffness: 200 }}
-                  className="flex items-start gap-3 p-3 rounded-xl bg-slate-800/40 border border-slate-700/20 hover:bg-slate-800/60 hover:border-cyan-500/20 transition-all duration-200"
-                >
-                  <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 border ${
-                    item.status === 'created' ? 'bg-cyan-500/10 border-cyan-500/20' :
-                    item.status === 'closed' || item.status === 'verified' ? 'bg-emerald-500/10 border-emerald-500/20' :
-                    item.status === 'reopened' ? 'bg-brand-500/10 border-brand-500/20' :
-                    'bg-slate-500/10 border-slate-500/20'
-                  }`}>
-                    <ShieldAlert className={`size-4 ${
-                      item.status === 'created' ? 'text-cyan-400' :
-                      item.status === 'closed' || item.status === 'verified' ? 'text-emerald-400' :
-                      item.status === 'reopened' ? 'text-brand-400' :
-                      'text-slate-400'
-                    }`} />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-white text-sm font-medium">{item.title}</p>
-                    {item.description && <p className="text-slate-400 text-xs mt-0.5 truncate">{item.description}</p>}
-                    {item.user && <p className="text-slate-500 text-xs mt-0.5">{item.user}</p>}
-                  </div>
-                  <div className="flex flex-col items-end gap-1 flex-shrink-0">
-                    <span className="text-slate-500 text-xs" dir="ltr">{item.date}</span>
-                    {item.priority && (
-                      <Badge variant="outline" className={`text-[10px] px-1.5 py-0 rounded-md ${
-                        item.priority === 'critical' ? 'border-red-500/30 text-red-400 bg-red-500/5' :
-                        item.priority === 'high' ? 'border-orange-500/30 text-orange-400 bg-orange-500/5' :
-                        item.priority === 'medium' ? 'border-yellow-500/30 text-yellow-400 bg-yellow-500/5' :
-                        'border-slate-500/30 text-slate-400'
-                      }`}>{item.priority}</Badge>
-                    )}
-                  </div>
-                </motion.div>
-              ))
-            )}
-          </div>
-        </GlassCard>
-      </motion.div>
-    </motion.div>
-  );
-
-  const renderTabContent = () => {
-    switch (activeTab) {
-      case 'overview': return renderOverviewTab();
-      case 'capa': return renderCapaTab();
-      case 'risk': return renderRiskTab();
-      case 'performance': return renderPerformanceTab();
-      case 'attendance':
-      case 'requests':
-      case 'hr':
-      case 'followups':
-        return renderTimelineContent(activeTab);
-      case 'quality':
-        return (
-          <motion.div variants={staggerGrid} initial="hidden" animate="visible" className="space-y-4">
-            <EmployeeQualityKpiPanel employeeId={employeeId} />
-            {renderTimelineContent('quality')}
-          </motion.div>
-        );
-      case 'documents':
-        return (
-          <motion.div variants={scaleIn} initial="hidden" animate="visible">
-            <EmployeeDocumentsSection employeeId={employeeId} />
-          </motion.div>
-        );
-      default: return renderOverviewTab();
-    }
-  };
+  const s = data.sections;
 
   return (
     <motion.div
-      variants={pageEnterVariants}
-      initial="hidden"
-      animate="visible"
-     
-      className="space-y-5"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      // Deterministic subtree exit — without an explicit exit the
+      // overlay panel's unmount (AnimatePresence) can hang, leaving an
+      // invisible pointer-blocking layer over the workspace.
+      exit={{ opacity: 0, transition: { duration: 0.15 } }}
+      className="space-y-4 print:space-y-3"
     >
-      {/* ═══ Floating Header with Close Button ═══ */}
-      <motion.div
-        variants={headerFloat}
-        className="sticky top-0 z-10 -mx-4 md:-mx-6 lg:-mx-8 px-4 md:px-6 lg:px-8 py-3 bg-gradient-to-b from-slate-900 via-slate-900/95 to-transparent backdrop-blur-sm"
-      >
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-emerald-500 to-cyan-600 flex items-center justify-center shadow-lg shadow-emerald-500/20">
-              <UserCircle className="size-5 text-white" />
+      {/* Sticky context bar — stays useful while scrolling */}
+      <div className="sticky top-0 z-10 -mx-1 bg-background/85 px-1 py-2 backdrop-blur-sm print:static">
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex min-w-0 items-center gap-3">
+            <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-linear-to-br from-brand-600 to-brand-800 text-white">
+              <UserCircle className="size-5" />
             </div>
-            <div>
-              <h1 className="text-lg font-bold text-white"><T>ملف الموظف 360°</T></h1>
-              <p className="text-slate-500 text-xs"><T>عرض شامل لجميع بيانات الموظف</T></p>
+            <div className="min-w-0">
+              <h1 className="truncate text-base font-bold leading-tight text-foreground">
+                {data.employee?.name ?? <T>ملف الموظف 360°</T>}
+              </h1>
+              <p className="text-[11px] text-muted-foreground">
+                <T>ملف الموظف 360°</T> · {periodLabel}
+                {data.executiveSummary?.overall.state === 'value' && data.executiveSummary.overall.weightedTotal !== null && (
+                  <> · <span className="font-semibold text-foreground" dir="ltr">
+                    <T>التقييم</T> {data.executiveSummary.overall.weightedTotal}
+                  </span></>
+                )}
+              </p>
             </div>
           </div>
-          <motion.button
+          <button
+            type="button"
             onClick={handleClose}
-            whileHover={{ scale: 1.1, rotate: 90 }}
-            whileTap={{ scale: 0.9 }}
-            transition={{ type: 'spring', stiffness: 400, damping: 15 }}
-            className="w-9 h-9 rounded-xl bg-slate-800/80 border border-slate-700/50 flex items-center justify-center text-slate-400 hover:text-white hover:bg-slate-700/80 hover:border-slate-600/50 transition-colors duration-200"
+            className="flex size-9 shrink-0 items-center justify-center rounded-xl border border-border/60 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            aria-label="close"
           >
-            <X className="size-4" />
-          </motion.button>
+            <XCircle className="size-4" />
+          </button>
         </div>
-      </motion.div>
+      </div>
 
-      {/* ═══ Employee Hero Card ═══ */}
-      <motion.div variants={scaleIn}>
-        <Card className={`border ${getRiskBg(risk.level)} ${getRiskGlow(risk.level)} shadow-xl overflow-hidden`}>
-          <CardContent className="p-6">
-            {/* Decorative gradient bar */}
-            <div className="absolute top-0 right-0 left-0 h-1 bg-gradient-to-l from-emerald-500/60 via-cyan-500/40 to-transparent" />
-            <div className="flex flex-col sm:flex-row items-start sm:items-center gap-6">
-              {/* Animated Avatar */}
-              <motion.div
-                initial={{ scale: 0, rotate: -180 }}
-                animate={{ scale: 1, rotate: 0 }}
-                transition={{ type: 'spring', stiffness: 200, damping: 15, delay: 0.15 }}
-                className="relative"
-              >
-                <div className="w-18 h-18 rounded-2xl bg-gradient-to-br from-emerald-500 to-cyan-600 flex items-center justify-center text-white text-3xl font-bold shadow-xl shadow-emerald-500/20 p-[18px]">
-                  {employee.name.charAt(0)}
-                </div>
-                <div className="absolute -bottom-1 -right-1 w-5 h-5 rounded-full bg-emerald-500 border-2 border-slate-900 flex items-center justify-center">
-                  <CheckCircle className="size-2.5 text-white" />
-                </div>
-              </motion.div>
+      {/* Reporting period — explicit, above everything period-sensitive */}
+      <div className="e360-noprint"><PeriodBar
+        month={month}
+        onChange={setMonth}
+        isFetching={e360Query.isFetching && !e360Query.isLoading}
+        freshness={<DataFreshnessIndicator revalidating={e360Query.isFetching && !e360Query.isLoading} />}
+      /></div>
 
-              {/* Info */}
-              <div className="flex-1 min-w-0">
-                <motion.div
-                  initial={{ opacity: 0, x: 20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ delay: 0.25, type: 'spring', stiffness: 200 }}
-                  className="flex items-center gap-3 flex-wrap"
-                >
-                  <h2 className="text-xl font-bold text-white">{employee.name}</h2>
-                  <Badge className={`border ${getRiskBg(risk.level)} ${getRiskColor(risk.level)} text-xs rounded-lg`}>
-                    <AlertTriangle className="size-3 ml-1" />
-                    <T>مخاطر: </T>{risk.score} ({getRiskLabel(risk.level, locale)})
-                  </Badge>
-                </motion.div>
-                <motion.div
-                  initial={{ opacity: 0, x: 20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ delay: 0.35, type: 'spring', stiffness: 200 }}
-                  className="flex flex-wrap gap-x-5 gap-y-2 mt-3"
-                >
-                  {employee.code && (
-                    <span className="flex items-center gap-1.5 text-sm text-slate-400">
-                      <Hash className="size-3.5 text-slate-500" />
-                      <span className="text-white font-mono" dir="ltr">{employee.code}</span>
-                    </span>
-                  )}
-                  {employee.department && (
-                    <span className="flex items-center gap-1.5 text-sm text-slate-400">
-                      <Building2 className="size-3.5 text-slate-500" />
-                      <span className="text-white">{employee.department}</span>
-                    </span>
-                  )}
-                  {employee.position && (
-                    <span className="flex items-center gap-1.5 text-sm text-slate-400">
-                      <Briefcase className="size-3.5 text-slate-500" />
-                      <span className="text-white">{employee.position}</span>
-                    </span>
-                  )}
-                  {employee.mobile && (
-                    <span className="flex items-center gap-1.5 text-sm text-slate-400">
-                      <Phone className="size-3.5 text-slate-500" />
-                      <span className="text-white" dir="ltr">{employee.mobile}</span>
-                    </span>
-                  )}
-                  {(employee as any).residence && (
-                    <span className="flex items-center gap-1.5 text-sm text-slate-400">
-                      <Building2 className="size-3.5 text-slate-500" />
-                      <span className="text-white">الإقامة: {(employee as any).residence}</span>
-                    </span>
-                  )}
-                  {employee.shiftStart && employee.shiftEnd && (
-                    <span className="flex items-center gap-1.5 text-sm text-slate-400">
-                      <Timer className="size-3.5 text-slate-500" />
-                      <span className="text-white" dir="ltr">{employee.shiftStart} - {employee.shiftEnd}</span>
-                    </span>
-                  )}
-                  {/* §2 — real team + reporting line from the org tree */}
-                  {(employeeData as any).organization?.team && (
-                    <span className="flex items-center gap-1.5 text-sm text-slate-400">
-                      <Users className="size-3.5 text-slate-500" />
-                      <span className="text-white">{(employeeData as any).organization.team}</span>
-                    </span>
-                  )}
-                  {(employeeData as any).organization?.reportingLine?.length > 0 && (
-                    <span className="flex items-center gap-1.5 text-sm text-slate-400">
-                      <UserCheck className="size-3.5 text-slate-500" />
-                      <span className="text-white">المدير: {(employeeData as any).organization.reportingLine[0].name}</span>
-                    </span>
-                  )}
-                  {/* §2 — lifecycle state (archive preserves history) */}
-                  {employee.status === 'archived' && (
-                    <span className="flex items-center gap-1.5 text-sm text-slate-400">
-                      <Archive className="size-3.5 text-slate-500" />
-                      <span className="text-slate-300">مؤرشف{(employee as any).archivedAt ? ` — ${new Date((employee as any).archivedAt).toLocaleDateString('ar-EG')}` : ''}</span>
-                    </span>
-                  )}
-                  {employee.status === 'inactive' && (
-                    <span className="flex items-center gap-1.5 text-sm text-slate-400">
-                      <span className="text-amber-300"><T>غير نشط</T></span>
-                    </span>
-                  )}
-                </motion.div>
-              </div>
+      {/* ── WHO + WHERE ── identity header (basicInfo gate) ── */}
+      {data.employee ? (
+        <Employee360Header employee={data.employee} organization={data.organization} />
+      ) : (
+        <section className="rounded-2xl border border-border/60 bg-card/80 px-5 py-6">
+          <NoPermissionState />
+        </section>
+      )}
 
-              {/* Health Score */}
-              <motion.div
-                initial={{ opacity: 0, scale: 0.5 }}
-                animate={{ opacity: 1, scale: 1 }}
-                transition={{ delay: 0.4, type: 'spring', stiffness: 200 }}
-                className="flex-shrink-0"
-              >
-                <HealthCircle score={healthScore} />
-              </motion.div>
-            </div>
-          </CardContent>
-        </Card>
-      </motion.div>
+      {/* ── HOW IS THE EMPLOYEE PERFORMING + first signals ── */}
+      {data.executiveSummary && data.employee && (
+        <ExecutiveSummary data={data.executiveSummary} monthKey={data.period.monthKey} employeeId={data.employee.id} />
+      )}
 
-      {/* ═══ Summary Stats Cards ═══ */}
-      <motion.div
-        variants={staggerGrid}
-        initial="hidden"
-        animate="visible"
-        className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2.5"
-      >
-        {[
-          { label: 'الحضور', value: stats.attendance.totalPresent, icon: <CheckCircle className="size-3.5 text-emerald-400" />, bg: 'bg-emerald-500/10', border: 'border-emerald-500/15' },
-          { label: 'التأخير', value: stats.attendance.totalLate, icon: <Clock className="size-3.5 text-yellow-400" />, bg: 'bg-yellow-500/10', border: 'border-yellow-500/15' },
-          { label: 'الغياب', value: stats.attendance.totalAbsent, icon: <XCircleIcon className="size-3.5 text-red-400" />, bg: 'bg-red-500/10', border: 'border-red-500/15' },
-          { label: 'الطلبات', value: stats.requests.pending, icon: <FileText className="size-3.5 text-blue-400" />, bg: 'bg-blue-500/10', border: 'border-blue-500/15' },
-          { label: 'خصم الجودة', value: stats.quality.deductionDays, icon: <Award className="size-3.5 text-orange-400" />, bg: 'bg-orange-500/10', border: 'border-orange-500/15', suffix: 'يوم' },
-          { label: 'خصم HR', value: stats.hrDeductions.deductionDays, icon: <Banknote className="size-3.5 text-pink-400" />, bg: 'bg-pink-500/10', border: 'border-pink-500/15', suffix: 'يوم' },
-          { label: 'المتابعات', value: stats.followUps.open, icon: <ClipboardCheck className="size-3.5 text-brand-400" />, bg: 'bg-brand-500/10', border: 'border-brand-500/15' },
-          { label: 'الشكاوى', value: stats.complaints.open, icon: <MessageSquareWarning className="size-3.5 text-red-400" />, bg: 'bg-red-500/10', border: 'border-red-500/15' },
-          { label: 'CAPA مفتوحة', value: stats.capa.open, icon: <ShieldAlert className="size-3.5 text-cyan-400" />, bg: 'bg-cyan-500/10', border: 'border-cyan-500/15' },
-        ].map((stat, i) => (
-          <motion.div key={i} variants={gridItem}>
-            <div className={`rounded-xl ${stat.bg} border ${stat.border} p-3 text-center transition-all hover:scale-105 cursor-default`}>
-              <div className="flex justify-center mb-1.5">{stat.icon}</div>
-              <motion.p
-                className="text-lg font-bold text-white"
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.5 + i * 0.05, type: 'spring', stiffness: 300 }}
-              >
-                {stat.value}{stat.suffix ? ` ${stat.suffix}` : ''}
-              </motion.p>
-              <p className="text-slate-500 text-[10px] mt-0.5">{stat.label}</p>
-            </div>
-          </motion.div>
-        ))}
-      </motion.div>
+      {/* ── Needs attention (canonical risk gate) ── */}
+      {s.risk && <AttentionSection items={data.attention} />}
 
-      {/* ═══ Tabs Navigation ═══ */}
-      <motion.div
-        variants={slideUpFade}
-        className="border-b border-slate-700/50"
-      >
-        <div className="flex gap-0.5 overflow-x-auto pb-px scrollbar-hide">
-          {tabs.map((tab, i) => (
-            <motion.button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              whileHover={{ y: -1 }}
-              whileTap={{ scale: 0.97 }}
-              transition={{ type: 'spring', stiffness: 400, damping: 20 }}
-              className={`relative flex items-center gap-2 px-4 py-2.5 text-sm whitespace-nowrap transition-all duration-200 ${
-                activeTab === tab.id
-                  ? 'text-emerald-400'
-                  : 'text-slate-400 hover:text-slate-300'
-              }`}
-            >
-              {activeTab === tab.id && (
-                <motion.div
-                  layoutId="active-tab-indicator"
-                  className="absolute bottom-0 right-0 left-0 h-0.5 bg-gradient-to-l from-emerald-500 to-cyan-500 rounded-full"
-                  transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-                />
-              )}
-              {tab.icon}
-              {tab.label}
-            </motion.button>
-          ))}
-        </div>
-      </motion.div>
+      {/* ── PERFORMANCE OVERVIEW ── canonical KPI engine ── */}
+      {s.performance && data.kpi && data.trend ? (
+        <PerformanceSection
+          kpi={data.kpi}
+          trend={data.trend}
+          targetScore={data.executiveSummary?.overall.targetScore ?? null}
+          periodLabel={periodLabel}
+        />
+      ) : s.performance ? (
+        <section className="rounded-2xl border border-border/60 bg-card/80 px-5 py-6">
+          <NoPermissionState />
+        </section>
+      ) : null}
 
-      {/* ═══ Tab Content with Cinematic Transition ═══ */}
-      <AnimatePresence mode="wait">
-        <motion.div
-          key={activeTab}
-          variants={tabContentVariants}
-          initial="hidden"
-          animate="visible"
-          exit="exit"
-        >
-          {renderTabContent()}
-        </motion.div>
-      </AnimatePresence>
+      {/* ── Stored monthly history + career (progressive disclosure,
+          its own cache identity via the employee-performance reader) ── */}
+      {s.performance && data.employee && (
+        <details className="group rounded-2xl border border-border/60 bg-card/80">
+          <summary className="flex cursor-pointer list-none items-center justify-between px-5 py-3.5">
+            <span className="text-sm font-semibold text-foreground"><T>السجل الشهري المخزن والمسار الوظيفي</T></span>
+            <span className="text-[11px] text-muted-foreground"><T>نتائج الحضور / الجودة / HR المخزنة</T></span>
+          </summary>
+          <div className="border-t border-border/50 px-5 py-4">
+            <EmployeePerformanceSection employeeId={employeeId} />
+          </div>
+        </details>
+      )}
+
+      {/* ── DEAL PERFORMANCE ── §DEAL-DATES dimensions ── */}
+      {s.deals && data.deals && data.employee && (
+        <DealsSection
+          deals={data.deals}
+          employeeId={data.employee.id}
+          monthKey={data.period.monthKey}
+          periodLabel={periodLabel}
+        />
+      )}
+
+      {/* ── OPERATIONAL SECTIONS ── */}
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+        {s.attendance && data.attendance && (
+          <div className="xl:col-span-2"><AttendanceSection attendance={data.attendance} periodLabel={periodLabel} /></div>
+        )}
+        {s.quality && data.quality && (
+          <div className="xl:col-span-2">
+            <QualitySection quality={data.quality} periodLabel={periodLabel} />
+          </div>
+        )}
+        {s.observations && data.quality && (
+          <div className="xl:col-span-2">
+            <ObservationsSummarySection
+              observations={data.quality.observations}
+              employeeId={employeeId}
+              monthKey={data.period.monthKey}
+              periodLabel={periodLabel}
+            />
+          </div>
+        )}
+        {s.followUps && data.followUps && data.employee && (
+          <FollowUpsSection followUps={data.followUps} employeeId={data.employee.id} periodLabel={periodLabel} />
+        )}
+        {s.requests && data.requests && <RequestsSection requests={data.requests} periodLabel={periodLabel} />}
+        {s.complaints && s.capa && data.complaints && data.capa && data.employee && (
+          <div className="xl:col-span-2">
+            <ComplaintsCapaSection
+              complaints={data.complaints}
+              capa={data.capa}
+              employeeId={data.employee.id}
+              periodLabel={periodLabel}
+            />
+          </div>
+        )}
+        {s.hrDeductions && data.hrDeductions && (
+          <div className="xl:col-span-2"><HrDeductionsSection hr={data.hrDeductions} monthKey={data.period.monthKey} /></div>
+        )}
+      </div>
+
+      {/* ── DECISION SUPPORT ── canonical HR-safe projection ── */}
+      {s.decisionSupport && data.decisionSupport && (
+        <DecisionSupportSection decision={data.decisionSupport} />
+      )}
+
+      {/* ── ORGANIZATION CONTEXT + DETAILS (progressive disclosure) ── */}
+      <div className="space-y-4">
+        {s.organization && data.organization && data.employee && (
+          <OrganizationSection organization={data.organization} employeeId={data.employee.id} />
+        )}
+        {data.employee && <EmployeeDetailsSection employee={data.employee} />}
+      </div>
+
+      {/* ── EVIDENCE / TIMELINE ── */}
+      {s.timeline && <TimelineSection events={data.timeline} periodLabel={periodLabel} />}
+
+      {/* Debug data-source map (§26 diagnostics — dev only) */}
+      {process.env.NODE_ENV === 'development' && (
+        <details className="rounded-xl border border-dashed border-border/60 px-4 py-3 text-[11px] text-muted-foreground">
+          <summary className="cursor-pointer font-medium">Data source map (dev diagnostics)</summary>
+          <pre className="mt-2 overflow-x-auto whitespace-pre-wrap" dir="ltr">{JSON.stringify({
+            period: data.period,
+            sections: data.sections,
+            activity: data.activity,
+            evidence: 'performance-intelligence dataset + hr-decision report',
+          }, null, 2)}</pre>
+        </details>
+      )}
     </motion.div>
   );
 }

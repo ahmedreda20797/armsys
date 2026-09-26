@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { usePermissions } from '@/hooks/usePermissions';
 import { usePageState } from '@/hooks/use-page-state';
@@ -32,10 +32,13 @@ import {
 import { SmartActionMenu } from '@/components/shared/SmartActionMenu';
 import { toast } from 'sonner';
 import { logDelete } from '@/lib/activity-logger';
-import { authFetch } from '@/lib/api-fetch';
+import { apiFetch, authFetch } from '@/lib/api-fetch';
+import { useQueryClient } from '@tanstack/react-query';
+import { useCapaList, useRepetitionAlerts, useEmployees, useDashboardUsers } from '@/hooks/use-queries';
+import { invalidateDomain } from '@/lib/cache/invalidation';
+import { DataFreshnessIndicator } from '@/components/shared/DataFreshnessIndicator';
 import { useAppStore } from '@/lib/store';
 import type { CAPACase, Employee } from '@/types';
-import type { RepetitionAlert } from '@/lib/repetition-detection';
 import { buildCapaPrefillFromAlert } from '@/lib/repetition-detection';
 import { capaDefaultsFromNavParams, hasCreateIntent } from '@/lib/record-prefill';
 import { FavoriteToggle, PinToggle } from '@/components/shared/NavigationMarks';
@@ -91,11 +94,24 @@ function CAPAListPage() {
   const { locale } = useLanguage();
 
   // ═══ State ═══
-  const [cases, setCases] = useState<CAPACase[]>([]);
-  const [employees, setEmployees] = useState<Employee[]>([]);
-  const [systemUsers, setSystemUsers] = useState<{ id: string; name: string; email?: string; role?: string }[]>([]);
-  const [loading, setLoading] = useState(!canView); // start settled when the user lacks view permission
-  const [error, setError] = useState<string | null>(null);
+  // ═══ DATA STATE (cache-backed, §4) — snapshot restore + background
+  //  revalidation (§9/§28); non-viewers never trigger a request.
+  const queryClient = useQueryClient();
+  const capaQuery = useCapaList(canView);
+  const employeesQuery = useEmployees(canView);
+  const systemUsersQuery = useDashboardUsers('full', canView);
+  const repetitionAlertsQuery = useRepetitionAlerts(canView);
+  const cases = capaQuery.data?.data ?? [];
+  const employees = employeesQuery.data ?? [];
+  const systemUsers = systemUsersQuery.data ?? [];
+  const repetitionAlerts = repetitionAlertsQuery.data?.alerts ?? [];
+  // Full skeleton only without a snapshot (§11); revalidation is subtle.
+  const loading = canView && (capaQuery.isLoading || employeesQuery.isLoading);
+  const revalidating = canView && (capaQuery.isFetching || employeesQuery.isFetching) && !loading;
+  // Blocking error only without a snapshot (§33).
+  const error = canView && capaQuery.isError && !capaQuery.data
+    ? 'تعذّر تحميل حالات CAPA'
+    : null;
   // Phase 6.3 (§8): filter context persists per user (session-scoped).
   const [capaView, setCapaView] = usePageState<{
     search: string;
@@ -138,20 +154,8 @@ function CAPAListPage() {
     capaDefaultsFromNavParams(navParams),
   );
 
-  // ═══ Milestone 7 §8 — Repetition → CAPA alerts ═══
-  // Deterministic server detection (same employee + same issue key
-  // within the 30-day window, thresholds documented in
-  // lib/repetition-detection). Per-domain permissions + employee
-  // scope are enforced server-side; the banner only ever shows
-  // alerts this caller is entitled to see.
-  const [repetitionAlerts, setRepetitionAlerts] = useState<RepetitionAlert[]>([]);
-  useEffect(() => {
-    if (!canView) return;
-    authFetch('/api/repetition-alerts')
-      .then((r) => (r.ok ? r.json() : { alerts: [] }))
-      .then((d) => setRepetitionAlerts(Array.isArray(d?.alerts) ? d.alerts : []))
-      .catch(() => setRepetitionAlerts([]));
-  }, [canView]);
+  // ═══ Milestone 7 §8 — Repetition → CAPA alerts are served by the
+  //  repetitionAlertsQuery above (cache-backed, on-mount enabled).
 
   // §12 — when the inline create card opens (alert row, overflow menu,
   // navParams intent), bring it into view so the user sees the form
@@ -173,11 +177,10 @@ function CAPAListPage() {
   const [reportLoading, setReportLoading] = useState(false);
   const [exporting, setExporting] = useState(false);
 
-  // ═══ Fetch ═══
-  useEffect(() => {
-    if (!canView) return; // loading initialized to false for non-viewers
-    fetchData();
-  }, []);
+  // ═══ Manual refresh / mutation revalidation (§26).
+  const refreshData = useCallback(async () => {
+    await invalidateDomain(queryClient, 'capaCases');
+  }, [queryClient]);
 
   // Listen for navParams changes WHILE the page is mounted (the
   // mount-time intent is handled by the useState initializers above).
@@ -189,30 +192,6 @@ function CAPAListPage() {
       setCreateDefaults(capaDefaultsFromNavParams(navParams));
       setIsCreateOpen(true);
     }
-  }
-
-  async function fetchData() {
-    setError(null);
-    try {
-      const [capaRes, empRes, usrRes] = await Promise.allSettled([
-        authFetch('/api/capa-cases'),
-        authFetch('/api/employees'),
-        authFetch('/api/dashboard/users'),
-      ]);
-      if (capaRes.status === 'fulfilled' && capaRes.value.ok) {
-        const d = await capaRes.value.json();
-        setCases(Array.isArray(d.data) ? d.data : Array.isArray(d) ? d : []);
-      }
-      if (empRes.status === 'fulfilled' && empRes.value.ok) {
-        const e = await empRes.value.json();
-        setEmployees(Array.isArray(e) ? e : []);
-      }
-      if (usrRes.status === 'fulfilled' && usrRes.value.ok) {
-        const u = await usrRes.value.json();
-        setSystemUsers(Array.isArray(u) ? u : []);
-      }
-    } catch { setError('تعذّر تحميل حالات CAPA'); setCases([]); setEmployees([]); }
-    finally { setLoading(false); }
   }
 
   // ═══ Filtering ═══
@@ -273,12 +252,11 @@ function CAPAListPage() {
   const handleDelete = async (id: string) => {
     setDeleting(true);
     try {
-      const res = await authFetch(`/api/capa-cases/${id}`, { method: 'DELETE' });
-      if (res.ok) {
-        logDelete('capa', 'حالة كابا', '');
-        toast.success(translateUIText('تم حذف الحالة', locale));
-        setCases((p) => p.filter((c) => c.id !== id));
-      }
+      const target = cases.find((c) => c.id === id);
+      await apiFetch(`/api/capa-cases/${id}`, { method: 'DELETE' });
+      logDelete('capa', 'حالة كابا', '');
+      toast.success(translateUIText('تم حذف الحالة', locale));
+      await invalidateDomain(queryClient, 'capaCases', { employeeId: target?.employeeId });
     } catch { toast.error(translateUIText('فشل في الحذف', locale)); }
     setDeleting(false);
     setDeletingId(null);
@@ -286,7 +264,7 @@ function CAPAListPage() {
 
   // ═══ After Quick Create ═══
   const handleCreated = (newId: string) => {
-    fetchData();
+    void refreshData();
     // Navigate to the new detail page
     navigateTo('capa', newId, { id: newId });
   };
@@ -513,6 +491,9 @@ function CAPAListPage() {
         </div>
       </div>
 
+      {/* Subtle background-revalidation state (§32) */}
+      <DataFreshnessIndicator revalidating={revalidating} />
+
       {/* ═══ Loading / Error / Empty ═══ */}
       {loading ? (
         <div className="space-y-2.5">{[1, 2, 3].map((i) => (<Skeleton key={i} className="h-28 rounded-lg bg-slate-800/50" />))}</div>
@@ -521,7 +502,7 @@ function CAPAListPage() {
           <CardContent className="flex flex-col items-center justify-center py-14">
             <div className="size-12 rounded-full bg-rose-500/10 flex items-center justify-center mb-3"><AlertTriangle className="size-6 text-rose-400" /></div>
             <p className="text-rose-300 text-sm font-medium">{error && <T>{error}</T>}</p>
-            <Button variant="outline" size="sm" className="mt-4" onClick={() => fetchData()}><T>إعادة المحاولة</T></Button>
+            <Button variant="outline" size="sm" className="mt-4" onClick={() => void refreshData()}><T>إعادة المحاولة</T></Button>
           </CardContent>
         </Card>
       ) : displayed.length === 0 ? (

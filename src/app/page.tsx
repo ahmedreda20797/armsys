@@ -15,6 +15,7 @@ import { AppShell } from '@/components/shell/AppShell';
 import LoginPage from '@/components/pages/LoginPage';
 import { ShieldX } from 'lucide-react';
 import { useMarkSeen } from '@/hooks/use-unseen';
+import { QueryCacheIdentityGate } from '@/lib/cache/cache-identity';
 
 // ─── Page skeleton ────────────────────────────────────────────────────────────
 function PageSkeleton() {
@@ -205,6 +206,10 @@ function AppContent() {
 
   return (
     <>
+      {/* §CACHE-IDENTITY — user isolation + authorization-context
+          invalidation for the singleton query cache. Must render on
+          BOTH sides of the login transition to catch logout. */}
+      <QueryCacheIdentityGate />
       <PreloadPages />
 
       {/* Login overlay — fades in/out above the persistent background */}

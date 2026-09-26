@@ -130,6 +130,17 @@ stubbedDb.updateRecord = async (t: string, id: string, data: Record<string, any>
   return row ? { ...row } : null;
 };
 
+stubbedDb.updateRecords = async (t: string, updatesById: Record<string, Record<string, unknown>>) => {
+  // §NOTIFICATIONS-UX — bulk multi-path patch: ONE call applies every
+  // patch (never a per-id fan-out). Tests assert the call SHAPE.
+  calls.push({ fn: 'updateRecords', args: [t, Object.keys(updatesById).length] });
+  for (const [id, patch] of Object.entries(updatesById)) {
+    const row = table(t).find((r) => r.id === id);
+    if (row) Object.assign(row, patch, { updatedAt: new Date().toISOString() });
+  }
+  return Object.keys(updatesById).length;
+};
+
 stubbedDb.deleteRecord = async (t: string, id: string) => {
   calls.push({ fn: 'deleteRecord', args: [t, id] });
 };

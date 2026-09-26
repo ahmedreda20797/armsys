@@ -32,7 +32,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { PageIdentity } from '@/components/shared/PageIdentity';
 import { UserAvatar } from '@/components/shared/UserAvatar';
 import { useAuth } from '@/contexts/AuthContext';
-import { authFetch } from '@/lib/api-fetch';
+import { authFetch, apiFetch } from '@/lib/api-fetch';
 import { EMPLOYEE_STATUS_LABELS_AR, type EmployeeStatus } from '@/lib/organization';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
@@ -287,11 +287,7 @@ export default function ProfilePage() {
   const qc = useQueryClient();
   const { data, isLoading } = useQuery<ProfileData>({
     queryKey: ['profile'],
-    queryFn: async () => {
-      const res = await authFetch('/api/profile');
-      if (!res.ok) throw new Error('تعذر تحميل الملف الشخصي');
-      return res.json() as Promise<ProfileData>;
-    },
+    queryFn: () => apiFetch<ProfileData>('/api/profile'),
     staleTime: 60_000,
   });
 

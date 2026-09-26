@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { usePermissions } from '@/hooks/usePermissions';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -12,7 +12,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { AttentionPanel, type AttentionSeverity } from '@/components/shared/AttentionPanel';
 import { CAPAInlineForm } from '@/components/shared/inline-forms';
-import { useEmployees } from '@/hooks/use-queries';
+import { useEmployees, useRiskCenterMonth, useDashboardUsers } from '@/hooks/use-queries';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
@@ -26,7 +26,11 @@ import {
 import { PageIdentity } from '@/components/shared/PageIdentity';
 import { toast } from 'sonner';
 import { authFetch } from '@/lib/api-fetch';
+import { useQueryClient } from '@tanstack/react-query';
+import { invalidateDomain } from '@/lib/cache/invalidation';
+import { DataFreshnessIndicator } from '@/components/shared/DataFreshnessIndicator';
 import { useAppStore } from '@/lib/store';
+import { useRecordHighlight } from '@/hooks/use-record-highlight';
 import { T } from '@/lib/i18n/T';
 import { translateUIText } from '@/lib/i18n/ui-text';
 import { useLanguage } from '@/lib/i18n/language-context';
@@ -171,13 +175,58 @@ export default function RiskCenterPage() {
   const { canView } = usePermissions('riskCenter');
   const { locale } = useLanguage();
 
-  const [employees, setEmployees] = useState<EmployeeRisk[]>([]);
-  const [summary, setSummary] = useState<SummaryStats | null>(null);
-  const [deptAnalysis, setDeptAnalysis] = useState<Record<string, any>>({});
-  const [loading, setLoading] = useState(!canView); // start settled when the user lacks view permission
-  const [error, setError] = useState<string | null>(null);
+  // ═══ DEEP-LINK CONTEXT (§NOTIFICATIONS-DEEPLINK) — a risk
+  //  notification ("تنبيه مخاطر — N حالات للموظف") lands here with
+  //  employeeId + month + level: the destination opens on that period,
+  //  scoped to that employee, with the row highlighted and the details
+  //  (the relevant risk records) opened. Canonical channel only:
+  //  navigateTo(page, highlightId, navParams).
+  //
+  //  Consumed BOTH at mount (first render seed) and REACTIVELY: a
+  //  deep-link into the ALREADY-MOUNTED page (risk notification →
+  //  riskCenter while riskCenter is open) does not remount, so the
+  //  store subscription below re-applies every navParams change.
+  const navParams = useAppStore.getState().navParams;
+  const navEmployeeId = typeof navParams?.employeeId === 'string' && navParams.employeeId ? navParams.employeeId : null;
+  const navMonth = typeof navParams?.month === 'string' && /^\d{4}-\d{2}$/.test(navParams.month) ? navParams.month : null;
+  const navLevel = typeof navParams?.level === 'string' && ['low', 'medium', 'high', 'critical'].includes(navParams.level) ? navParams.level : null;
+  const deepLinkEmployeeName = typeof navParams?.employeeName === 'string' ? navParams.employeeName : null;
+  // Identity of the CURRENT deep-link intent (new navigation → new
+  // object → new signature → the effect re-applies it).
+  const deepLinkSignature = useAppStore(
+    (s) => `${s.navParams?.employeeId ?? ''}|${s.navParams?.month ?? ''}|${s.navParams?.level ?? ''}`,
+  );
+
+  // ═══ PAGE STATE — period selection. The Risk Center opens on the
+  //  CURRENT MONTH (traceable, month-attributed factors); the user may
+  //  explicitly pick another month or 'كل الفترات' (all-time rolling
+  //  view); historical analysis remains available either way. A
+  //  deep-link month (risk notification) wins for that mount.
+  const [month, setMonth] = useState<string>(() => {
+    if (navMonth) return navMonth;
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  });
+
+  // ═══ DATA STATE (cache-backed, §4) — the month is part of the cache
+  //  key (§16): August and September never collide, and switching the
+  //  period selects the matching snapshot (fetching only if absent).
+  const queryClient = useQueryClient();
+  const riskQuery = useRiskCenterMonth(month, canView);
+  const employees = (riskQuery.data?.employees ?? []) as EmployeeRisk[];
+  const summary = (riskQuery.data?.summary ?? null) as SummaryStats | null;
+  const deptAnalysis = (riskQuery.data?.departmentAnalysis ?? {}) as Record<string, any>;
+  const basis: 'rolling' | 'month' = riskQuery.data?.basis === 'month' ? 'month' : 'rolling';
+  const basisLabel = riskQuery.data?.basisLabel || translateUIText('الفترة المحددة', locale);
+  // Full skeleton only without a snapshot (§11); revalidation is subtle.
+  const loading = canView && riskQuery.isLoading;
+  const revalidating = canView && riskQuery.isFetching && !loading;
+  // Blocking error only without a snapshot (§33).
+  const error = canView && riskQuery.isError && !riskQuery.data
+    ? translateUIText('تعذر تحميل بيانات المخاطر', locale)
+    : null;
   const [search, setSearch] = useState('');
-  const [levelFilter, setLevelFilter] = useState('all');
+  const [levelFilter, setLevelFilter] = useState(navLevel ?? 'all');
   // §7.1 DEEP-LINK SCOPE — a department deep link (Operations Center
   // risk detail) seeds the department filter so the destination shows
   // the SAME scope the manager was inspecting. navParams is read once
@@ -185,6 +234,10 @@ export default function RiskCenterPage() {
   const [deptFilter, setDeptFilter] = useState(
     () => useAppStore.getState().navParams?.department || 'all',
   );
+  // §NOTIFICATIONS-DEEPLINK — employee focus: the notification's
+  // subject employee scopes the table (exposing the relevant risk
+  // records) and auto-opens the details dialog once the data lands.
+  const [employeeFocus, setEmployeeFocus] = useState<string | null>(navEmployeeId);
   const [selectedEmployee, setSelectedEmployee] = useState<EmployeeRisk | null>(null);
   // §VIEWPORT-MODAL — the details view is now a Radix Dialog, which
   // owns ESC + click-outside + backdrop closing itself; no manual
@@ -195,72 +248,32 @@ export default function RiskCenterPage() {
   // selected employee, no page nav). We prefill the dialog with the
   // employee's risk context so the operator doesn't re-enter them.
   const [capaCreateOpen, setCapaCreateOpen] = useState(false);
-  const { data: employeesData } = useEmployees();
-  // NOTE: not named `employees` because the page already has a local
-  // `employees` state of type `EmployeeRisk[]` (the risk-data list).
+  const { data: employeesData } = useEmployees(canView);
+  // NOTE: not named `employees` because the page derives the
+  // risk-data list (EmployeeRisk[]) from the cache-backed risk query.
   const employeesList = (employeesData ?? []) as { id: string; name: string; department?: string | null }[];
-  const [usersList, setUsersList] = useState<{ id: string; name: string; email?: string; role?: string }[]>([]);
-  useEffect(() => {
-    let cancelled = false;
-    authFetch('/api/dashboard/users?basic=1')
-      .then((r) => (r.ok ? r.json() : []))
-      .then((list) => {
-        if (cancelled) return;
-        setUsersList(list as { id: string; name: string; email?: string; role?: string }[]);
-      })
-      .catch(() => {});
-    return () => { cancelled = true; };
-  }, []);
-  // §PERIOD-DEFAULT — the Risk Center opens on the CURRENT MONTH
-  // (traceable, month-attributed factors). The user may explicitly
-  // pick another month or 'كل الفترات' (all-time rolling view);
-  // historical analysis remains available either way.
-  const [basis, setBasis] = useState<'rolling' | 'month'>('month');
-  const [basisLabel, setBasisLabel] = useState<string>(() => translateUIText('الشهر الحالي', locale));
-  const [month, setMonth] = useState<string>(() => {
-    const now = new Date();
-    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-  });
+  const usersListQuery = useDashboardUsers('basic', canView);
+  const usersList = (usersListQuery.data ?? []) as { id: string; name: string; email?: string; role?: string }[];
   const [compareRows, setCompareRows] = useState<Record<string, number> | null>(null);
   const [compareLabel, setCompareLabel] = useState<string | null>(null);
   const [compareState, setCompareState] = useState<'idle' | 'loading' | 'ready' | 'insufficient'>('idle');
-
-  useEffect(() => {
-    if (!canView) return; // loading initialized to false for non-viewers
-    fetchRiskData();
-  }, []);
-
-  async function fetchRiskData() {
-    setLoading(true);
-    setError(null);
+  // A period switch invalidates the previous month comparison — deltas
+  // from another period must never leak into the new view. Uses the
+  // compiler-endorsed "adjust state during render" guard (a month
+  // change is a one-shot reaction, not an external-system sync).
+  const [compareMonth, setCompareMonth] = useState(month);
+  if (month !== compareMonth) {
+    setCompareMonth(month);
     setCompareRows(null);
     setCompareState('idle');
     setCompareLabel(null);
-    try {
-      const qs = month ? `?month=${month}` : '';
-      const res = await authFetch(`/api/risk-center${qs}`);
-      if (res.ok) {
-        const data = await res.json();
-        setEmployees(data.employees || []);
-        setSummary(data.summary || null);
-        setDeptAnalysis(data.departmentAnalysis || {});
-        setBasis(data.basis === 'month' ? 'month' : 'rolling');
-        setBasisLabel(data.basisLabel || translateUIText('الفترة المحددة', locale));
-      } else {
-        setError(translateUIText('تعذر تحميل بيانات المخاطر', locale));
-        setEmployees([]);
-        setSummary(null);
-        setDeptAnalysis({});
-      }
-    } catch {
-      setError(translateUIText('تعذر تحميل بيانات المخاطر', locale));
-      setEmployees([]);
-      setSummary(null);
-      setDeptAnalysis({});
-    } finally {
-      setLoading(false);
-    }
   }
+
+  // ═══ Manual refresh / mutation revalidation (§26) — the visible
+  //  snapshot stays on screen while the fresh data arrives.
+  const refreshData = useCallback(async () => {
+    await queryClient.invalidateQueries({ queryKey: ['riskCenter'] });
+  }, [queryClient]);
 
   const previousMonthKeyOf = (key: string): string => {
     const [y, m] = key.split('-').map(Number);
@@ -327,6 +340,9 @@ export default function RiskCenterPage() {
   // ── Filtered data ──
   const filtered = useMemo(() => {
     return employees.filter(emp => {
+      // §NOTIFICATIONS-DEEPLINK — employee focus first (the notification
+      // subject): the destination exposes THAT employee's risk state.
+      if (employeeFocus && emp.employeeId !== employeeFocus) return false;
       if (levelFilter !== 'all' && emp.riskLevel !== levelFilter) return false;
       if (deptFilter !== 'all' && emp.department !== deptFilter) return false;
       if (search) {
@@ -335,7 +351,51 @@ export default function RiskCenterPage() {
       }
       return true;
     });
-  }, [employees, levelFilter, deptFilter, search]);
+  }, [employees, levelFilter, deptFilter, search, employeeFocus]);
+
+  // §NOTIFICATIONS-DEEPLINK — the canonical record-highlight receiver:
+  // the notification's sourceRecordId (the employee id) resolves against
+  // the table rows' [data-record-id] — scroll + pulse, same visual
+  // language as every other page (§QNALYS-HIGHLIGHT).
+  useRecordHighlight({ ready: !loading });
+
+  // §NOTIFICATIONS-DEEPLINK — reactive deep-link params (a deep link
+  // into the ALREADY-MOUNTED page does not remount, so the params are
+  // subscribed, not just read once at mount).
+  const navEmployeeIdParam = useAppStore((s) =>
+    typeof s.navParams?.employeeId === 'string' && s.navParams.employeeId ? s.navParams.employeeId : null);
+  const navMonthParam = useAppStore((s) =>
+    typeof s.navParams?.month === 'string' && /^\d{4}-\d{2}$/.test(s.navParams.month) ? s.navParams.month : null);
+  const navLevelParam = useAppStore((s) =>
+    typeof s.navParams?.level === 'string' && ['low', 'medium', 'high', 'critical'].includes(s.navParams.level)
+      ? s.navParams.level
+      : null);
+
+  // Apply a NEW deep-link intent with the compiler-endorsed "adjust
+  // state during render" pattern (same as the month-compare reset
+  // above): a signature change is a one-shot reaction, applied exactly
+  // once per intent. The mount-time initializers already consumed the
+  // first intent, so `appliedIntent` starts at the current signature.
+  const [appliedIntent, setAppliedIntent] = useState(deepLinkSignature);
+  if (deepLinkSignature !== appliedIntent) {
+    setAppliedIntent(deepLinkSignature);
+    setEmployeeFocus(navEmployeeIdParam);
+    if (navMonthParam) setMonth(navMonthParam);
+    if (navLevelParam) setLevelFilter(navLevelParam);
+  }
+
+  // Auto-open the details dialog for the deep-linked employee once
+  // their risk row exists — the details ARE the relevant risk records
+  // (breakdown factors, open cases, CAPA actions). One-shot PER
+  // deep-link intent; closing the dialog manually never fights back.
+  const [dialogOpenedForIntent, setDialogOpenedForIntent] = useState<string | null>(null);
+  if (employeeFocus && dialogOpenedForIntent !== deepLinkSignature && !loading && employees.length > 0) {
+    const emp = employees.find((e) => e.employeeId === employeeFocus);
+    if (emp) {
+      setDialogOpenedForIntent(deepLinkSignature);
+      setSelectedEmployee(emp);
+    }
+  }
 
   // ── Top risky employees (need action) — DATA INTEGRITY: the alert
   // panel uses the SERVER's own risk level (RISK_LEVEL_BANDS.high = 26),
@@ -356,7 +416,7 @@ export default function RiskCenterPage() {
       .sort((a, b) => b.avgScore - a.avgScore);
   }, [deptAnalysis]);
 
-  const hasFilters = search || levelFilter !== 'all' || deptFilter !== 'all';
+  const hasFilters = search || levelFilter !== 'all' || deptFilter !== 'all' || !!employeeFocus;
 
   // ── Permission guard ──
   if (!canView) {
@@ -410,7 +470,7 @@ export default function RiskCenterPage() {
               </Button>
             )}
             {compareState === 'loading' && <Loader2 className="size-4 animate-spin text-slate-400" />}
-            <Button variant="ghost" size="sm" onClick={fetchRiskData} className="text-slate-400 hover:text-white">
+            <Button variant="ghost" size="sm" onClick={() => void refreshData()} className="text-slate-400 hover:text-white">
               <Activity className="size-4 ml-1" />
               <T>تحديث</T>
             </Button>
@@ -544,11 +604,29 @@ export default function RiskCenterPage() {
               </SelectContent>
             </Select>
             {hasFilters && (
-              <Button variant="ghost" size="sm" onClick={() => { setSearch(''); setLevelFilter('all'); setDeptFilter('all'); }} className="text-slate-400 hover:text-white h-9 px-3">
+              <Button variant="ghost" size="sm" onClick={() => { setSearch(''); setLevelFilter('all'); setDeptFilter('all'); setEmployeeFocus(null); }} className="text-slate-400 hover:text-white h-9 px-3">
                 <X className="size-3.5 ml-1" /> <T>مسح</T>
               </Button>
             )}
           </div>
+          {/* §NOTIFICATIONS-DEEPLINK — the active employee focus is a
+              visible, removable scope chip (never a hidden filter). */}
+          {employeeFocus && (
+            <div className="flex items-center gap-2 mt-2">
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-brand-500/30 bg-brand-500/10 text-brand-300 text-[11px] font-medium">
+                <UserCheck className="size-3.5" />
+                {translateUIText('مركّز على:', locale)} {deepLinkEmployeeName || employeeFocus}
+                <button
+                  type="button"
+                  aria-label={translateUIText('إزالة التركيز', locale)}
+                  onClick={() => setEmployeeFocus(null)}
+                  className="hover:text-white"
+                >
+                  <X className="size-3" />
+                </button>
+              </span>
+            </div>
+          )}
         </CardContent>
       </Card>
 
@@ -565,21 +643,41 @@ export default function RiskCenterPage() {
             </div>
             <p className="text-rose-300 text-sm font-medium">{error}</p>
             <p className="text-slate-600 text-xs mt-1"><T>تعذّر الاتصال بقاعدة البيانات</T></p>
-            <Button variant="outline" size="sm" className="mt-4" onClick={fetchRiskData}>
+            <Button variant="outline" size="sm" className="mt-4" onClick={() => void refreshData()}>
               <T>إعادة المحاولة</T>
             </Button>
           </CardContent>
         </Card>
       ) : filtered.length === 0 ? (
-        <Card className="border-slate-700/40 bg-slate-800/30">
-          <CardContent className="flex flex-col items-center justify-center py-14">
-            <div className="size-12 rounded-full bg-slate-800 flex items-center justify-center mb-3">
-              <ShieldCheck className="size-6 text-emerald-500/60" />
-            </div>
-            <p className="text-slate-400 text-sm font-medium"><T>لا توجد مخاطر حالياً</T></p>
-            <p className="text-slate-600 text-xs mt-1"><T>جميع الموظفين في المستوى الطبيعي — الفترة: </T>{basisLabel}</p>
-          </CardContent>
-        </Card>
+        employeeFocus ? (
+          /* §NOTIFICATIONS-DEEPLINK — honest empty state: the focused
+              employee has no risk row in THIS period's snapshot. Never a
+              generic "no risks" that contradicts the notification. */
+          <Card className="border-slate-700/40 bg-slate-800/30">
+            <CardContent className="flex flex-col items-center justify-center py-14">
+              <div className="size-12 rounded-full bg-slate-800 flex items-center justify-center mb-3">
+                <UserCheck className="size-6 text-brand-400/60" />
+              </div>
+              <p className="text-slate-400 text-sm font-medium">
+                <T>لا توجد مخاطر مسجلة لهذا الموظف في الفترة المحددة</T>
+              </p>
+              <p className="text-slate-600 text-xs mt-1">{deepLinkEmployeeName || employeeFocus} — {basisLabel}</p>
+              <Button variant="outline" size="sm" className="mt-4 border-slate-700/70 text-slate-300 hover:bg-slate-800" onClick={() => setEmployeeFocus(null)}>
+                <T>عرض كل الموظفين</T>
+              </Button>
+            </CardContent>
+          </Card>
+        ) : (
+          <Card className="border-slate-700/40 bg-slate-800/30">
+            <CardContent className="flex flex-col items-center justify-center py-14">
+              <div className="size-12 rounded-full bg-slate-800 flex items-center justify-center mb-3">
+                <ShieldCheck className="size-6 text-emerald-500/60" />
+              </div>
+              <p className="text-slate-400 text-sm font-medium"><T>لا توجد مخاطر حالياً</T></p>
+              <p className="text-slate-600 text-xs mt-1"><T>جميع الموظفين في المستوى الطبيعي — الفترة: </T>{basisLabel}</p>
+            </CardContent>
+          </Card>
+        )
       ) : (
         /* ═══ Employees Risk Table ═══ */
         <motion.div variants={containerVariants} initial="hidden" animate="visible">
@@ -616,6 +714,10 @@ export default function RiskCenterPage() {
                         <motion.tr
                           key={emp.employeeId}
                           variants={itemVariants}
+                          // §QNALYS-HIGHLIGHT — canonical record identity on
+                          // the row; the notification deep-link highlight
+                          // resolves and pulses this exact row.
+                          data-record-id={emp.employeeId}
                           className={`border-b border-slate-700/20 hover:bg-slate-800/50 transition-colors cursor-pointer ${emp.riskLevel === 'critical' ? 'bg-red-500/3' : ''}`}
                           onClick={() => setSelectedEmployee(emp)}
                         >
@@ -886,7 +988,14 @@ export default function RiskCenterPage() {
                       <div className="p-4">
                         <CAPAInlineForm
                           onClose={() => setCapaCreateOpen(false)}
-                          onCreated={() => { setCapaCreateOpen(false); fetchRiskData(); }}
+                          onCreated={() => {
+                            setCapaCreateOpen(false);
+                            // The new CAPA is a risk factor for this
+                            // employee — refresh the risk snapshot and
+                            // the CAPA surfaces (§19/§44).
+                            void invalidateDomain(queryClient, 'capaCases');
+                            void refreshData();
+                          }}
                           employees={employeesList as never}
                           systemUsers={usersList}
                           defaultValues={{

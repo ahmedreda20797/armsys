@@ -3,6 +3,13 @@
 
 /**
  * Parse DD/MM/YYYY date string and calculate days remaining from today.
+ *
+ * §DEAL-DATES DST SAFETY — both dates are anchored to LOCAL NOON before
+ * diffing (and rounded, not ceiled): a midnight-anchored millisecond
+ * difference is 35d+1h across a fall-back DST boundary, so `Math.ceil`
+ * produced a phantom extra day and every travel threshold (قريب/عاجل)
+ * drifted for a whole DST season. Noon-anchoring absorbs the 1h clock
+ * shift into the rounding — deltas stay exact calendar-day deltas.
  */
 export function getDaysRemaining(dateStr: string): number {
   try {
@@ -10,10 +17,11 @@ export function getDaysRemaining(dateStr: string): number {
     const day = parseInt(parts[0], 10);
     const month = parseInt(parts[1], 10) - 1;
     const year = parseInt(parts[2], 10);
-    const target = new Date(year, month, day);
+    if (!day || Number.isNaN(month) || !year) return 0;
+    const target = new Date(year, month, day, 12, 0, 0, 0);
     const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    return Math.ceil((target.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+    today.setHours(12, 0, 0, 0);
+    return Math.round((target.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
   } catch {
     return 0;
   }
@@ -90,6 +98,24 @@ export function todayDayKey(now: Date = new Date()): string {
 /** Today in the app's display format "DD/MM/YYYY" (manual date inputs). */
 export function todayDisplayDate(now: Date = new Date()): string {
   return `${String(now.getDate()).padStart(2, '0')}/${String(now.getMonth() + 1).padStart(2, '0')}/${now.getFullYear()}`;
+}
+
+/**
+ * Strict validator for the app's display date contract "DD/MM/YYYY" —
+ * a real calendar date (no 31/02, no garbage parts). Used by every
+ * server write-path that accepts a display date from a client
+ * (fail-closed: anything else is rejected).
+ */
+export function isValidDisplayDate(value: unknown): value is string {
+  if (typeof value !== 'string') return false;
+  const m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(value.trim());
+  if (!m) return false;
+  const day = Number(m[1]);
+  const month = Number(m[2]);
+  const year = Number(m[3]);
+  if (month < 1 || month > 12 || day < 1) return false;
+  const daysInMonth = new Date(year, month, 0).getDate();
+  return day <= daysInMonth;
 }
 
 /** Current calendar month as a period key "YYYY-MM" (period filters). */

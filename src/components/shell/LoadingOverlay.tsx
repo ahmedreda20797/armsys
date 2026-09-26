@@ -22,7 +22,7 @@ export const LoadingOverlay = memo(function LoadingOverlay() {
   const { t } = useLanguage();
   return (
     <motion.div
-      className="fixed inset-0 z-20 flex items-center justify-center"
+      className="pointer-events-none fixed inset-0 z-20 flex items-center justify-center"
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}

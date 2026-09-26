@@ -1,0 +1,19 @@
+✖ 24. highlight integration: palette navigates through navigateTo with highlightId, pages consume the shared hook 
+✖ AI section is mounted in the Smart Report in the reserved "التحليل الذكي" spot 
+✖ AI section — mounting & failure isolation (§23/§24/§53) 
+✖ AI §68 period rule — the AI section displays the period 
+✖ C:\Users\Target\Desktop\arm-erp-project\src\lib\__tests__\find-user-by-email.test.mts 
+✖ KPI Reports view persistence + period visibility (§38/§39/§50) 
+✖ N. stats contract unchanged + both reads use the POLL tier 
+✖ Phase 5.3 — target pages make the record REACHABLE (spec §27) 
+✖ Phase 6.1 — exact navigation contract (§8/§9, §30-21/22/23) 
+✖ QualityPage deep-link container handling (§25, §49-33/34) 
+✖ READY view always names the period and marks MTD as not finalized (§21/§68) 
+✖ Travel: month filter seeded + record-id rendered on the card 
+✖ failing tests:
+✖ observations page — period visibility contracts (§68) 
+✖ shows the current period with MTD/FINALIZED distinction (§39) 
+✖ the ACTIVE period is always visible in the toolbar (not only inside the collapsed panel) 
+✖ the empty state NAMES the active period (§10/§56) 
+✖ the empty state NAMES the period — never a bare misleading zero state (§68) 
+✖ §DOWNLOAD-OPT — GET /api/notification-stats (30s AOCC poll path) 

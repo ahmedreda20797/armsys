@@ -175,43 +175,42 @@ export function AppLayout({ children }: AppLayoutProps) {
       {/* ══════════════════════════════════════════════════════════
           Employee 360 Overlay — Cinematic slide-in with 3D perspective
           ══════════════════════════════════════════════════════════ */}
-      <AnimatePresence>
-        {employee360Open && employee360Id && (
-          <>
-            {/* Cinematic Backdrop */}
-            <motion.div
-              key="e360-backdrop"
-              variants={backdropVariants}
-              initial="hidden"
-              animate="visible"
-              exit="exit"
-              className="fixed inset-0 z-[55] bg-gradient-to-b from-black/60 via-slate-950/70 to-black/60"
-              onClick={closeEmployee360}
-            />
-            {/* Cinematic Panel — §EMPLOYEE360-COMPOSITION: the panel hugs
-                the content (no wide empty background strip on desktop),
-                anchored to the right edge. */}
-            <motion.div
-              key="e360-panel"
-              variants={panelVariants}
-              initial="hidden"
-              animate="visible"
-              exit="exit"
-              className="fixed inset-y-0 right-0 z-[60] w-full lg:w-[88%] xl:w-[76%] 2xl:w-[68%] bg-gradient-to-b from-slate-900 via-slate-950 to-slate-900 shadow-2xl shadow-black/80 border-l border-emerald-500/10 overflow-y-auto"
-             
-            >
-              {/* Subtle top glow accent line */}
-              <div className="absolute top-0 right-0 left-0 h-[2px] bg-gradient-to-l from-transparent via-emerald-500/60 to-transparent" />
-              <div className="p-4 md:p-6 lg:p-8 max-w-5xl mx-auto">
-                <Employee360Overlay
-                  employeeId={employee360Id}
-                  onClose={closeEmployee360}
-                />
-              </div>
-            </motion.div>
-          </>
-        )}
-      </AnimatePresence>
+      {/* §EMPLOYEE360-CLOSE — instant unmount (no AnimatePresence exit
+          wait): the overlay is a workspace, and an exit-animation hang
+          would leave an invisible pointer-blocking layer over the page.
+          The enter transition still plays via initial/animate. */}
+      {employee360Open && employee360Id && (
+        <>
+          {/* Cinematic Backdrop */}
+          <motion.div
+            key="e360-backdrop"
+            variants={backdropVariants}
+            initial="hidden"
+            animate="visible"
+            className="fixed inset-0 z-[55] bg-black/60 backdrop-blur-[2px]"
+            onClick={closeEmployee360}
+          />
+          {/* Cinematic Panel — §EMPLOYEE360-COMPOSITION: the panel hugs
+              the content (no wide empty background strip on desktop),
+              anchored to the right edge. */}
+          <motion.div
+            key="e360-panel"
+            variants={panelVariants}
+            initial="hidden"
+            animate="visible"
+            className="e360-print-host fixed inset-y-0 right-0 z-[60] w-full lg:w-[88%] xl:w-[76%] 2xl:w-[68%] bg-background shadow-2xl shadow-black/40 border-s border-border overflow-y-auto"
+          >
+            {/* Subtle top glow accent line */}
+            <div className="absolute top-0 inset-x-0 h-[2px] bg-linear-to-l from-transparent via-brand-500/60 to-transparent" />
+            <div className="p-4 md:p-6 lg:p-8 max-w-5xl mx-auto">
+              <Employee360Overlay
+                employeeId={employee360Id}
+                onClose={closeEmployee360}
+              />
+            </div>
+          </motion.div>
+        </>
+      )}
 
       {/* §PRINT — dedicated print/PDF host: mounts ONCE for the whole
           app; report tabs push a clean A4 model into it. */}

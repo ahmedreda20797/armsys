@@ -53,6 +53,27 @@ function startOfDay(d: Date): Date {
 }
 
 /**
+ * Parse a stored follow-up date as a LOCAL calendar date.
+ *
+ * `nextFollowUpDate` is a date-only string (YYYY-MM-DD) the user picked
+ * in their OWN calendar (<input type="date">). `new Date('YYYY-MM-DD')`
+ * parses it as UTC midnight, which shifts it a full day against local
+ * midnight for every timezone east of UTC — so a follow-up due "today"
+ * failed the due-today check between 00:00 and 03:00 for UTC+3 clients
+ * (found by the canonical tests running across a midnight boundary).
+ * Date-only shapes are therefore parsed as LOCAL midnight; timestamps
+ * (ISO with time) keep their instant.
+ */
+function parseDueDate(raw: string): Date | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(raw);
+  if (m) {
+    return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  }
+  const d = new Date(raw);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+/**
  * A follow-up is overdue when it has a next-follow-up date in the past
  * AND it is still in an active status. Terminal follow-ups are never
  * overdue, and a missing nextFollowUpDate means no due date was set,
@@ -61,8 +82,8 @@ function startOfDay(d: Date): Date {
 export function isOverdueFollowUp(f: FollowUpLike, now: Date = new Date()): boolean {
   if (!isActiveFollowUp(f)) return false;
   if (!f.nextFollowUpDate) return false;
-  const due = new Date(f.nextFollowUpDate);
-  if (isNaN(due.getTime())) return false;
+  const due = parseDueDate(f.nextFollowUpDate);
+  if (!due) return false;
   return due < startOfDay(now);
 }
 
@@ -73,18 +94,16 @@ export function isOverdueFollowUp(f: FollowUpLike, now: Date = new Date()): bool
 export function isDueToday(f: FollowUpLike, now: Date = new Date()): boolean {
   if (!isActiveFollowUp(f)) return false;
   if (!f.nextFollowUpDate) return false;
-  const due = new Date(f.nextFollowUpDate);
-  if (isNaN(due.getTime())) return false;
-  const today = startOfDay(now);
-  const dueDay = startOfDay(due);
-  return dueDay.getTime() === today.getTime();
+  const due = parseDueDate(f.nextFollowUpDate);
+  if (!due) return false;
+  return startOfDay(due).getTime() === startOfDay(now).getTime();
 }
 
 /** Days between the due date and now; positive = overdue, negative = remaining. */
 export function followUpOverdueDays(f: FollowUpLike, now: Date = new Date()): number {
   if (!f.nextFollowUpDate) return 0;
-  const due = new Date(f.nextFollowUpDate);
-  if (isNaN(due.getTime())) return 0;
+  const due = parseDueDate(f.nextFollowUpDate);
+  if (!due) return 0;
   const ms = startOfDay(now).getTime() - startOfDay(due).getTime();
   return Math.floor(ms / (24 * 60 * 60 * 1000));
 }
