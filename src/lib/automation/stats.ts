@@ -1,5 +1,5 @@
 // ══════════════════════════════════════════════════════════════
-//  Automation — REAL stats + master switch (Qnlys milestone §15)
+//  Automation — REAL stats + master switch (Qnalys milestone §15)
 //
 //  ONE module so the automation page, the settings page, and any
 //  future dashboard read the SAME numbers:

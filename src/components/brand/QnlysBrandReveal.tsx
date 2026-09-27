@@ -79,7 +79,7 @@ export function QnlysBrandReveal({
       } ${className}`}
       dir="ltr"
       role="img"
-      aria-label="Qnlys"
+      aria-label="Qnalys"
     >
       {/* The Q anchors the identity — layered ABOVE the letters so
           they physically emerge from behind it; BREATHES while

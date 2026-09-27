@@ -46,7 +46,7 @@ function FieldError({ id, message }: { id: string; message: string }) {
 }
 
 // ── Official full-lockup logo, theme-aware ──
-// §BRAND — the brand statement uses the REAL complete Qnlys asset
+// §BRAND — the brand statement uses the REAL complete Qnalys asset
 // (perfect internal proportions by definition): silver wordmark on
 // dark surfaces (qnlys.svg), the official print variant with the
 // charcoal wordmark on paper (qnlys-print.svg).
@@ -300,11 +300,11 @@ export default function LoginPage() {
             aria-hidden="true"
             className="qnlys-login-brand-glow pointer-events-none absolute left-1/2 top-1/2 h-[560px] w-[560px] max-w-full -translate-x-1/2 -translate-y-1/2 rounded-full blur-3xl"
           />
-          {/* Official complete Qnlys lockup — real asset, perfect
+          {/* Official complete Qnalys lockup — real asset, perfect
               proportions; gentle entrance rise (§BRAND-HIERARCHY 1). */}
           <motion.img
             src={logo.src}
-            alt="Qnlys"
+            alt="Qnalys"
             dir="ltr"
             draggable={false}
             initial={{ opacity: 0, y: 16, scale: 0.97 }}
@@ -393,7 +393,7 @@ export default function LoginPage() {
                   <Input
                     id="email"
                     type="email"
-                    placeholder="user@qnlys.com"
+                    placeholder="user@qnalys.com"
                     value={email}
                     onChange={(e) => handleEmailChange(e.target.value)}
                     aria-invalid={!!emailError}
@@ -474,7 +474,7 @@ export default function LoginPage() {
             so text alignment is not used here on purpose). */}
         <div className="relative z-10 flex justify-center py-4 lg:col-span-2 lg:row-start-2">
           <p className="text-[11px] text-slate-600">
-            Qnlys © <CopyrightYear />
+            Qnalys © <CopyrightYear />
           </p>
         </div>
       </motion.div>

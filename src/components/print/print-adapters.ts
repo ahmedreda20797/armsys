@@ -34,6 +34,17 @@ const monthLabel = (monthKey?: string | null): string => formatMonthKey(monthKey
 // ─────────────────────────────────────────────────────────────
 const ui = (ar: string, en: string): string => (displayLocale() === 'en' ? en : ar);
 
+// §REPORT-SOURCE — THE one approved report source/provenance footer,
+// centralized so every report path renders the identical wording.
+// Self-localizes at model-build time (§I18N-BOUNDARY rule for static
+// adapter footers); PrintReportDocument renders it raw.
+export function reportSourceFooter(): string {
+  return ui(
+    'المصدر: نظام Qnalys — تم احتساب المؤشرات والبيانات وفقًا للسجلات المعتمدة ضمن الفترة المحددة في التقرير.',
+    'Source: Qnalys System — Metrics and data are calculated from approved records within the reporting period.',
+  );
+}
+
 /** [ar, en] label for a system enum code; unknown codes pass through raw. */
 const uiMap = (map: Record<string, [string, string]>, code: string | null | undefined, fallback = '—'): string => {
   if (!code) return fallback;
@@ -399,7 +410,7 @@ export function performanceDatasetToPrintModel(
       { label: 'خصومات الجودة (يوم)', value: num(deductions?.totalDays) },
     ],
     sections,
-    footerNote: dataset.kpi?.message || 'المصدر: بيانات الأداء الكنسية — نفس مجموعة البيانات المعروضة على الشاشة.',
+    footerNote: dataset.kpi?.message || reportSourceFooter(),
   };
 }
 

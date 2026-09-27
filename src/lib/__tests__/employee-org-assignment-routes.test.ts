@@ -1,6 +1,6 @@
 // ══════════════════════════════════════════════════════════════
 //  Employee ↔ Organization assignment — ROUTE contracts
-//  (Qnlys milestone)
+//  (Qnalys milestone)
 //
 //  The REAL route handlers run against the in-memory db stubs:
 //    • POST /api/employees accepts a VALIDATED orgNodeId — stores the

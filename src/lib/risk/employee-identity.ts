@@ -1,5 +1,5 @@
 // ══════════════════════════════════════════════════════════════
-//  Employee identity resolution (Qnlys milestone §6)
+//  Employee identity resolution (Qnalys milestone §6)
 //
 //  ROOT CAUSE of duplicated risk profiles: risk/aggregation views
 //  group by the RTDB push key of arm_erp/employees, and nothing

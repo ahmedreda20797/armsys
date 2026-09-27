@@ -1,5 +1,5 @@
 // ══════════════════════════════════════════════════════════════
-//  Report employee context — ORG-AWARE labels (Qnlys milestone)
+//  Report employee context — ORG-AWARE labels (Qnalys milestone)
 //
 //  ONE mechanism that resolves every employee's REAL organization
 //  assignment for report filtering:

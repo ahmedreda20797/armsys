@@ -5,7 +5,7 @@
 
 @theme inline {
   /* ═══════════════════════════════════════════════════════════
-     QNLYS BRAND TOKENS — single source of truth.
+     QNALYS BRAND TOKENS — single source of truth.
      Sophisticated red scale (crimson → burgundy → near-black red)
      on a charcoal foundation. Every brand color in the app MUST
      come from this scale (`bg-brand-600`, `text-brand-300`,
@@ -24,7 +24,7 @@
   --color-brand-900: #5c1220;
   --color-brand-950: #350a12;
 
-  /* Semantic surface/ink tokens (Qnlys foundation) */
+  /* Semantic surface/ink tokens (Qnalys foundation) */
   --color-surface: var(--qnlys-surface);
   --color-surface-hover: var(--qnlys-surface-hover);
   --color-surface-active: var(--qnlys-surface-active);
@@ -86,7 +86,7 @@
 
 :root {
   --radius: 0.625rem;
-  /* Qnlys semantic foundation (light fallback — app ships dark-only) */
+  /* Qnalys semantic foundation (light fallback — app ships dark-only) */
   --qnlys-surface: #ffffff;
   --qnlys-surface-hover: #f8f7f8;
   --qnlys-surface-active: #f1eff0;
@@ -128,7 +128,7 @@
 }
 
 .dark {
-  /* Qnlys charcoal foundation — deep neutral surfaces, red reserved
+  /* Qnalys charcoal foundation — deep neutral surfaces, red reserved
      for brand accents and semantic states. */
   --qnlys-surface: #0f1216;
   --qnlys-surface-hover: #161a20;
@@ -155,7 +155,7 @@
   --border: oklch(1 0 0 / 10%);
   --input: oklch(1 0 0 / 15%);
   --ring: oklch(0.62 0.14 20);
-  /* Analytical chart palette: Qnlys red + neutral + semantic support */
+  /* Analytical chart palette: Qnalys red + neutral + semantic support */
   --chart-1: oklch(0.58 0.17 22);
   --chart-2: oklch(0.72 0.12 210);
   --chart-3: oklch(0.78 0.14 75);
@@ -307,7 +307,7 @@
 }
 
 /* ═══════════════════════════════════════════════════════════
-   §BRAND — Qnlys logo reveal system (Q.svg + nlys.svg)
+   §BRAND — Qnalys logo reveal system (Q.svg + nlys.svg)
    Q anchors; nlys EMERGES from underneath it toward the word
    side. GPU-only properties (opacity / transform / clip-path);
    each animation runs ONCE per mount — no loops, no JS timing.
@@ -628,7 +628,7 @@ html {
      sits OUTSIDE every fixed/absolute background layer (fixed anchors
      to the layout viewport, which excludes the gutter). That strip is
      painted by the CANVAS (html background, propagated from body when
-     html has none). It must be the Qnlys foundation — charcoal (dark)
+     html has none). It must be the Qnalys foundation — charcoal (dark)
      / paper (light) — never a navy body utility leaking at the edge. */
   background-color: #0b0d11;
 }
@@ -2122,11 +2122,11 @@ html.light .qnlys-connect { opacity: 0.55; }
 }
 
 /* ══════════════════════════════════════════════════════════════
-   §20.2 LIGHT THEME — Qnlys PROFESSIONAL LIGHT SYSTEM
+   §20.2 LIGHT THEME — Qnalys PROFESSIONAL LIGHT SYSTEM
    ══════════════════════════════════════════════════════════════
    Light Mode is designed INDEPENDENTLY (not "dark mode on white"):
    a near-white page, white primary surfaces, charcoal text, visible
-   neutral borders, and the Qnlys deep-red brand accent tuned for
+   neutral borders, and the Qnalys deep-red brand accent tuned for
    paper contrast. Dark utilities used across the app are mapped
    HERE — one auditable adapter — so pages consume tokens without
    individual redesigns. Dark Mode keeps its own values untouched.
@@ -2147,7 +2147,7 @@ html.light {
   --light-text-3: #55606e;         /* muted text — readable on white       */
   --light-text-4: #6e7a88;         /* faint text (icons, hints)            */
 
-  /* ── §LIGHT BRAND — Qnlys deep red tuned for paper ── */
+  /* ── §LIGHT BRAND — Qnalys deep red tuned for paper ── */
   --light-accent: #a01a2b;         /* brand red readable on white          */
   --light-accent-strong: #8b1625;  /* hover/active brand red               */
 

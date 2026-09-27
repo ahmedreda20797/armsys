@@ -1,5 +1,5 @@
 // ══════════════════════════════════════════════════════════════
-//  Favicon builder — the Qnlys "Q" mark as the site favicon.
+//  Favicon builder — the Qnalys "Q" mark as the site favicon.
 //
 //  Composes the official Q artwork (extracted from public/Q.svg)
 //  over a charcoal rounded tile (the app's dark identity), then

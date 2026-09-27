@@ -1,5 +1,5 @@
 // ══════════════════════════════════════════════════════════════
-//  Report Runner — Follow-ups (Qnlys milestone §24/§25)
+//  Report Runner — Follow-ups (Qnalys milestone §24/§25)
 //
 //  DETERMINISTIC reporting over the canonical followUps store:
 //    • every number derives from real stored records via the

@@ -108,8 +108,8 @@ export function PrintReportDocument({ model }: { model: PrintReportModel }) {
   //   department, then position — never joined inline) + metadata
   //   (period, generated date). Identity fields render only when the
   //   model actually carries them.
-  //   LEFT: the Qnlys print logo ALONE — /qnlys-print.svg already
-  //   contains the full wordmark; no second "Qnlys" text under it.
+  //   LEFT: the Qnalys print logo ALONE — /qnlys-print.svg already
+  //   contains the full wordmark; no second "Qnalys" text under it.
   //
   //   §I18N-BOUNDARY — identity VALUES (name, code, department, team,
   //   position) are business data: rendered exactly as stored. Only
@@ -150,10 +150,10 @@ export function PrintReportDocument({ model }: { model: PrintReportModel }) {
               <span><strong><T>تاريخ الإنشاء: </T></strong>{generated}</span>
             </div>
           </div>
-          {/* LEFT: the Qnlys print logo (dark wordmark for white paper) —
+          {/* LEFT: the Qnalys print logo (dark wordmark for white paper) —
               the asset IS the complete brand mark; nothing under it. */}
           <div className="print-doc-logo" dir="ltr">
-            <img src="/qnlys-print.svg" alt="Qnlys" style={{ height: 44, width: 'auto', objectFit: 'contain' }} />
+            <img src="/qnlys-print.svg" alt="Qnalys" style={{ height: 44, width: 'auto', objectFit: 'contain' }} />
           </div>
         </div>
         <hr className="print-doc-rule" />
@@ -173,7 +173,7 @@ export function PrintReportDocument({ model }: { model: PrintReportModel }) {
               business data (e.g. a user-named KPI scheme) and must never
               re-enter the translation engine. */}
           <span>{model.footerNote ?? <T>تقرير رسمي — يعكس البيانات المعروضة على الشاشة للفترة المحددة.</T>}</span>
-          <span className="print-doc-footer-brand" dir="ltr">Qnlys</span>
+          <span className="print-doc-footer-brand" dir="ltr">Qnalys</span>
         </div>
       </footer>
     </div>

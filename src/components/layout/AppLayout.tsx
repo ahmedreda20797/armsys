@@ -155,7 +155,7 @@ export function AppLayout({ children }: AppLayoutProps) {
               className="flex flex-col items-center justify-center gap-0.5 px-4 py-3 text-[10px] text-slate-500 transition-colors"
               aria-hidden="true"
             >
-              {/* Official Qnlys wordmark — uses the complete lockup asset.
+              {/* Official Qnalys wordmark — uses the complete lockup asset.
                   Dark: silver on charcoal; Light: charcoal on paper. */}
               <img
                 src={mounted && resolvedTheme === 'light' ? '/qnlys-print.svg' : '/qnlys.svg'}
@@ -165,7 +165,7 @@ export function AppLayout({ children }: AppLayoutProps) {
                 className="h-5 w-auto max-w-[160px] object-contain opacity-60 hover:opacity-90 transition-opacity select-none"
               />
               <p className="text-center whitespace-nowrap">
-                © 2026 Qnlys
+                © 2026 Qnalys
               </p>
             </footer>
           </div>

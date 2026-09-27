@@ -1,5 +1,5 @@
 // ══════════════════════════════════════════════════════════════
-//  Qnlys milestone regression tests
+//  Qnalys milestone regression tests
 //
 //  Covers the pure layers of this milestone's fixes:
 //    • §6  employee identity (Risk Center duplicate root cause)

@@ -1,6 +1,6 @@
 // ══════════════════════════════════════════════════════════════
 //  Employee ↔ Organization assignment — pure helper contract
-//  (Qnlys milestone: org-aware employee form + workforce strength)
+//  (Qnalys milestone: org-aware employee form + workforce strength)
 //
 //  Covers the focused test plan §20 items that are pure graph
 //  semantics:

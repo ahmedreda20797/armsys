@@ -1,6 +1,6 @@
 // src/lib/i18n/dictionary.ts
 // ══════════════════════════════════════════════════════════════
-//  §20.1 Qnlys translation dictionary — THE coherent translation
+//  §20.1 Qnalys translation dictionary — THE coherent translation
 //  architecture (no ad-hoc conditional text in components).
 //
 //  Flat key dictionary (namespace:key). Arabic is the SOURCE language
@@ -18,7 +18,7 @@ export type Locale = 'ar' | 'en';
 
 export const DICTIONARY = {
   // ── Shell / loading ──
-  'app.name': { ar: 'Qnlys', en: 'Qnlys' },
+  'app.name': { ar: 'Qnalys', en: 'Qnalys' },
   // §LOGIN-DESCRIPTOR — the official Arabic application descriptor for
   // the login presentation (the English tagline under the logo is the
   // FIXED brand statement and is never translated).
@@ -35,7 +35,7 @@ export const DICTIONARY = {
   'login.submitting': { ar: 'جاري تسجيل الدخول...', en: 'Signing in...' },
   'login.footer': { ar: 'منصة الذكاء التشغيلي وإدارة الجودة', en: 'Operational Intelligence Platform' },
   'login.success': { ar: 'تم تسجيل الدخول بنجاح!', en: 'Signed in successfully!' },
-  // §BRAND — the official Qnlys tagline is a FIXED identity element:
+  // §BRAND — the official Qnalys tagline is a FIXED identity element:
   // the exact approved English wording in BOTH locales (never translated
   // or rewritten); only the surrounding interface follows the language.
   'login.tagline': {
@@ -175,7 +175,7 @@ export const DICTIONARY = {
   'state.unavailable': { ar: 'غير متاح', en: 'Unavailable' },
 
   // ── Search ──
-  'search.placeholder': { ar: 'ابحث في Qnlys...', en: 'Search Qnlys...' },
+  'search.placeholder': { ar: 'ابحث في Qnalys...', en: 'Search Qnalys...' },
 
   // ── Settings ──
   'settings.title': { ar: 'الإعدادات', en: 'Settings' },
@@ -217,8 +217,8 @@ export const DICTIONARY = {
   'header.logout': { ar: 'تسجيل الخروج', en: 'Sign out' },
 
   // ── §I18N-BILINGUAL — Global search ──
-  'search.label': { ar: 'البحث في Qnlys', en: 'Search Qnlys' },
-  'search.expandedPlaceholder': { ar: 'ابحث في Qnlys... موظف، عميل، رقم، ملاحظة، صفقة', en: 'Search Qnlys... employee, customer, number, note, deal' },
+  'search.label': { ar: 'البحث في Qnalys', en: 'Search Qnalys' },
+  'search.expandedPlaceholder': { ar: 'ابحث في Qnalys... موظف، عميل، رقم، ملاحظة، صفقة', en: 'Search Qnalys... employee, customer, number, note, deal' },
   'search.searching': { ar: 'جارٍ البحث...', en: 'Searching...' },
   'search.idle': { ar: 'اكتب حرفين على الأقل للبحث في النظام بالكامل', en: 'Type at least 2 characters to search the whole system' },
   'search.recents': { ar: 'أحدث عمليات البحث', en: 'Recent searches' },

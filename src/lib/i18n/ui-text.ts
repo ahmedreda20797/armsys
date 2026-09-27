@@ -1,6 +1,6 @@
 // src/lib/i18n/ui-text.ts
 // ══════════════════════════════════════════════════════════════
-//  §I18N-BOUNDARY — THE Qnlys localization boundary engine.
+//  §I18N-BOUNDARY — THE Qnalys localization boundary engine.
 //
 //  CANONICAL CONTRACT (§24 of the localization milestone):
 //

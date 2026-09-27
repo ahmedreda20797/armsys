@@ -24,8 +24,8 @@ const cairo = Cairo({
 });
 
 export const metadata: Metadata = {
-  title: "Qnlys — منصة الذكاء التشغيلي",
-  description: "منصة متكاملة لإدارة الجودة والأداء وذكاء العمليات | Qnlys",
+  title: "Qnalys — منصة الذكاء التشغيلي",
+  description: "منصة متكاملة لإدارة الجودة والأداء وذكاء العمليات | Qnalys",
   icons: {
     icon: "/favicon.ico",
     apple: "/apple-touch-icon.png",
@@ -50,7 +50,7 @@ export default function RootLayout({
            color propagated to the canvas (scrollbar-gutter strip),
            producing the dark-blue edge seen at the viewport borders.
            The canvas is owned by the html background rule in
-           globals.css (Qnlys charcoal/paper) + the base-layer
+           globals.css (Qnalys charcoal/paper) + the base-layer
            bg-background token here. */
         className={`${geistSans.variable} ${geistMono.variable} ${cairo.variable} antialiased bg-background text-slate-50`}
         style={{ fontFamily: 'var(--font-cairo), var(--font-geist-sans), "Segoe UI", Tahoma, sans-serif' }}

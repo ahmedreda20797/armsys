@@ -269,7 +269,7 @@ function WorkspaceSection<T extends NavigationDescriptor & { id: string }>({
 //  COLLAPSED rail: the Q brand mark sits in the header; hovering it
 //  cross-fades the glyph into an expand chevron (clear affordance —
 //  "this opens the menu"), click expands the sidebar.
-//  EXPANDED surface: the full Qnlys brand mark; a small collapse
+//  EXPANDED surface: the full Qnalys brand mark; a small collapse
 //  chevron sits in its own layout slot BESIDE the logo (never
 //  overlapping). Click collapses back to the rail.
 //
@@ -1018,7 +1018,7 @@ export function Sidebar({
           ) : (
             <span className="w-2" aria-hidden="true" />
           )}
-          {/* §BRAND + toggle — centered Qnlys, hover reveals collapse glyph */}
+          {/* §BRAND + toggle — centered Qnalys, hover reveals collapse glyph */}
           <div className="absolute inset-x-0 flex justify-center pointer-events-none">
             <div className="pointer-events-auto">
               <QLogoToggle expanded onToggle={handleToggleExpand} />

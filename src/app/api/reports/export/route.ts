@@ -76,7 +76,7 @@ export async function POST(request: Request) {
     );
 
     const workbook = new ExcelJS.Workbook();
-    workbook.creator = 'Qnlys';
+    workbook.creator = 'Qnalys';
     workbook.created = new Date();
 
     const sheet = workbook.addWorksheet(L('sheetTitle'), {

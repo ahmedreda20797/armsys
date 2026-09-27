@@ -297,7 +297,7 @@ export const AoccMissionHeader = memo(function AoccMissionHeader({
         </div>
         <div>
           <h1 className="text-xl md:text-2xl font-bold text-white">مركز العمليات</h1>
-          <p className="text-xs text-slate-400 mt-0.5">لوحة التحكم التنفيذية — Qnlys</p>
+          <p className="text-xs text-slate-400 mt-0.5">لوحة التحكم التنفيذية — Qnalys</p>
         </div>
 
         {/* Operational pulse indicator */}

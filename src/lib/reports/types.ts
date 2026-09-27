@@ -278,7 +278,7 @@ export interface ReportRunRequest {
   employeeIds?: string[];
   employeeScope?: 'all';
   department?: string | null;
-  /** Real org-team label (resolved per employee; Qnlys milestone §1). */
+  /** Real org-team label (resolved per employee; Qnalys milestone §1). */
   team?: string | null;
   /** Employee name/code search — normalized substring (§1). */
   search?: string | null;

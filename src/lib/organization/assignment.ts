@@ -1,5 +1,5 @@
 // ══════════════════════════════════════════════════════════════
-//  Employee ↔ Organization assignment helpers (Qnlys milestone)
+//  Employee ↔ Organization assignment helpers (Qnalys milestone)
 //
 //  ONE pure layer over the canonical org graph (lib/organization/
 //  graph) that every employee-org assignment surface shares:

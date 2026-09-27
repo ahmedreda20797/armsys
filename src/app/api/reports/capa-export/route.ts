@@ -251,7 +251,7 @@ function applyFilters(records: CAPACase[], filters: Filters): CAPACase[] {
 async function generateExcel(rows: ExportRow[], lang: Locale): Promise<ArrayBuffer> {
   const labels = LABELS[lang];
   const workbook = new ExcelJS.Workbook();
-  workbook.creator = 'Qnlys';
+  workbook.creator = 'Qnalys';
   workbook.created = new Date();
 
   const sheet = workbook.addWorksheet(labels.sheetTitle, {

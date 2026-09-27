@@ -1,6 +1,6 @@
 // src/lib/__tests__/i18n-boundary.test.ts
 // ══════════════════════════════════════════════════════════════
-//  §I18N-BOUNDARY — the Qnlys localization contract, enforced:
+//  §I18N-BOUNDARY — the Qnalys localization contract, enforced:
 //
 //    UI labels (claimed)   → translate
 //    business/user data    → PRESERVE, always, in both locales

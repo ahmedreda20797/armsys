@@ -14,12 +14,12 @@ interface SidebarLogoProps {
 }
 
 /**
- * SidebarLogo — the Qnlys mark using the OFFICIAL complete lockup assets.
+ * SidebarLogo — the Qnalys mark using the OFFICIAL complete lockup assets.
  *
  * COLLAPSED  → Q mark only (centered). We show the COMPLETE official
  *               lockup but clip it to the Q glyph area via viewBox
  *               cropping so the transition to expanded is seamless.
- * EXPANDED   → Full official Qnlys wordmark (qnlys.svg dark /
+ * EXPANDED   → Full official Qnalys wordmark (qnlys.svg dark /
  *               qnlys-print.svg light), intrinsic aspect ratio,
  *               fits within the sidebar width.
  *
@@ -29,7 +29,7 @@ interface SidebarLogoProps {
  * The brand reads Q→nlys physically (dir="ltr") independent of
  * the RTL application direction.
  */
-export function SidebarLogo({ variant, className, label = 'Qnlys' }: SidebarLogoProps) {
+export function SidebarLogo({ variant, className, label = 'Qnalys' }: SidebarLogoProps) {
   const { resolvedTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
   useEffect(() => {

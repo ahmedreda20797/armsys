@@ -1,5 +1,5 @@
 // ══════════════════════════════════════════════════════════════
-//  KPI eligibility date-boundary regression — Qnlys investigation
+//  KPI eligibility date-boundary regression — Qnalys investigation
 //
 //  ROOT CAUSE (production incident, September 2026):
 //  employmentOverlapsRange compared STORED date strings directly

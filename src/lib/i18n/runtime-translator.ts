@@ -9,7 +9,7 @@
 //  bounded-phrase passes). That is global substring replacement over
 //  arbitrary DOM content — it translated USER/BUSINESS DATA (employee
 //  names «محمد» → «Mohamed», observation sentences partially rewritten)
-//  and is forbidden by the Qnlys localization contract.
+//  and is forbidden by the Qnalys localization contract.
 //
 //  NOW: the layer is COMPLETELY INERT unless a region of the DOM is
 //  EXPLICITLY claimed as application-owned UI with:

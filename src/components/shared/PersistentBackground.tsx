@@ -13,7 +13,7 @@ import { memo } from 'react';
  * the glows never compete with content). No inline styles — CSS is
  * the single theming authority.
  *
- * Qnlys visual identity: deep charcoal foundation (dark) / near-white
+ * Qnalys visual identity: deep charcoal foundation (dark) / near-white
  * (light) with two very restrained brand-red glows. Static by design;
  * zero hydration risk and zero runtime animation cost.
  */
