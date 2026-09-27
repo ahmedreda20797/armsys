@@ -334,7 +334,7 @@ function EmployeeReportBody({ report, month }: { report: EmployeeKpiReport; mont
               <T>مخطط KPI: </T><span className="text-slate-300">{report.scheme.schemeName}</span>
               {' · '}<T>الإصدار: </T><span className="text-slate-300 font-mono">v{report.scheme.schemeVersion}</span>
               {report.scheme.qualityWeight !== null && (
-                <> · <T>وزن الجودة: </T><span className="text-slate-300">{formatNumber(report.scheme.qualityWeight, { locale })}%</span></>
+                <> · <T>نسبة الجودة: </T><span className="text-slate-300">{formatNumber(report.scheme.qualityWeight, { locale })}%</span></>
               )}
               {report.scheme.frozen && <span className="text-sky-400"> · <T>قيم مجمّدة من إغلاق الشهر</T></span>}
               {report.weightedTotal !== null && report.availableWeight !== null && (
@@ -360,7 +360,7 @@ function EmployeeReportBody({ report, month }: { report: EmployeeKpiReport; mont
                 <TableHeader>
                   <TableRow className="border-slate-700/40">
                     <TableHead className="text-right"><T>المكون</T></TableHead>
-                    <TableHead className="text-right"><T>الوزن</T></TableHead>
+                    <TableHead className="text-right"><T>النسبة</T></TableHead>
                     <TableHead className="text-right"><T>الدرجة الخام</T></TableHead>
                     <TableHead className="text-right"><T>المساهمة</T></TableHead>
                     <TableHead className="text-right"><T>الحالة</T></TableHead>

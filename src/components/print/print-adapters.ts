@@ -579,14 +579,14 @@ export function employeeKpiReportToPrintModel(
     stats: [
       { label: 'درجة الجودة (خام)', value: pct(report.quality?.rawScore) },
       { label: 'مساهمة الجودة', value: num(report.quality?.weightedContribution) },
-      { label: 'وزن الجودة', value: pct(report.quality?.weight) },
+      { label: 'نسبة الجودة', value: pct(report.quality?.weight) },
       { label: 'KPI الشركة', value: report.overallStatus === 'COMPLETE' ? ui('مكتمل', 'Complete') : dash(report.overallStatus) },
       { label: 'ملاحظات (أدلة)', value: num(evidence?.counts?.total) },
       { label: 'معتمدة', value: num(evidence?.counts?.approved) },
     ],
     sections,
     footerNote: scheme
-      ? `مخطط KPI: ${scheme.schemeName ?? '—'} (v${scheme.schemeVersion ?? '—'})${scheme.qualityWeight != null ? ` — وزن الجودة: ${scheme.qualityWeight}%` : ''}${scheme.frozen ? ' — قيم مجمّدة من إغلاق الشهر' : ''}`
+      ? `مخطط KPI: ${scheme.schemeName ?? '—'} (v${scheme.schemeVersion ?? '—'})${scheme.qualityWeight != null ? ` — نسبة الجودة: ${scheme.qualityWeight}%` : ''}${scheme.frozen ? ' — قيم مجمّدة من إغلاق الشهر' : ''}`
       : undefined,
   };
 }
