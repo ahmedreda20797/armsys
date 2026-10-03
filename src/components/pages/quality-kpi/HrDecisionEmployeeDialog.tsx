@@ -42,6 +42,12 @@ const SEVERITY_STYLES: Record<string, string> = {
   LOW: 'text-slate-400 border-slate-600 bg-slate-800',
 };
 
+// §PRESENTATION-BOUNDARY — severity keys render as Arabic labels,
+// never raw HIGH/MEDIUM/LOW codes.
+const SEVERITY_LABELS_AR: Record<string, string> = {
+  HIGH: 'عالية', MEDIUM: 'متوسطة', LOW: 'منخفضة', CRITICAL: 'حرجة',
+};
+
 const TREND_LABELS: Record<string, string> = { UP: 'تحسّن', DOWN: 'تراجع', STABLE: 'مستقر' };
 
 function formatValue(value: number | null, unit: string, locale: Locale): string {
@@ -242,7 +248,7 @@ function FactorList({
           {factors.map((f) => (
             <div key={`${f.category}-${f.ruleId}`} className="rounded-lg border border-slate-700/40 bg-slate-800/30 px-3 py-2">
               <div className="flex items-center gap-2 flex-wrap">
-                <span className={`text-[10px] rounded border px-1.5 py-0.5 ${SEVERITY_STYLES[f.severity]}`}>{f.severity}</span>
+                <span className={`text-[10px] rounded border px-1.5 py-0.5 ${SEVERITY_STYLES[f.severity]}`}>{SEVERITY_LABELS_AR[f.severity] ?? 'غير محدد'}</span>
                 <span className="text-[10px] text-slate-500">{HR_DECISION_CATEGORY_LABELS_AR[f.category]}</span>
               </div>
               <p className="text-[11px] text-slate-200 mt-1">{f.signalAr}</p>

@@ -11,6 +11,7 @@ import { formatDate, formatNumber, formatInteger, formatMonthKey } from '@/lib/i
 import { T } from '@/lib/i18n/T';
 import { translateUIText } from '@/lib/i18n/ui-text';
 import type { Locale } from '@/lib/i18n/dictionary';
+import { categoryDisplayName, selectorCategories, sortCategories } from '@/lib/observation-categories/presentation';
 import { useRecordHighlight } from '@/hooks/use-record-highlight';
 import { logCreate, logUpdate, logDelete, logApprove } from '@/lib/activity-logger';
 import { Card, CardContent } from '@/components/ui/card';
@@ -424,7 +425,7 @@ export default function ObservationsPage() {
                 <SelectContent>
                   <SelectItem value="all"><T>كل التصنيفات</T></SelectItem>
                   {categoriesList.map((c) => (
-                    <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                    <SelectItem key={c.id} value={c.id}>{categoryDisplayName(c, locale)}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -521,22 +522,24 @@ export default function ObservationsPage() {
         </div>
       )}
 
-      {/* Create dialog */}
+      {/* Create dialog — §MASTER-DATA: active categories only, canonical order */}
       <CreateObservationDialog
         open={createOpen}
         onOpenChange={setCreateOpen}
-        categories={categoriesList}
+        categories={selectorCategories(categoriesList)}
         templates={Array.isArray(templates) ? templates : []}
         employees={employeeList}
       />
 
-      {/* Edit dialog */}
+      {/* Edit dialog — ALL categories in canonical order: an observation
+          may keep its (now deactivated) category; only switching TO an
+          inactive one is blocked server-side. */}
       {editTarget && (
         <EditObservationDialog
           obs={editTarget}
           open={!!editTarget}
           onOpenChange={(o) => !o && setEditTarget(null)}
-          categories={categoriesList}
+          categories={sortCategories(categoriesList)}
         />
       )}
 
@@ -1083,10 +1086,11 @@ function CreateObservationDialog({
 }: {
   open: boolean;
   onOpenChange: (o: boolean) => void;
-  categories: Array<{ id: string; name: string; defaultPointValue: number; isBonusDefault: boolean }>;
+  categories: Array<{ id: string; name: string; nameEn?: string; defaultPointValue: number; isBonusDefault: boolean }>;
   templates: Array<{ id: string; title: string; categoryId: string; categoryName: string; defaultPoints: number; isBonus: boolean; defaultNotes: string }>;
   employees: Array<{ id: string; name: string; department: string | null; position: string | null; code: string | null }>;
 }) {
+  const { locale } = useLanguage();
   const [employeeId, setEmployeeId] = useState('');
   const [observationDate, setObservationDate] = useState(new Date().toLocaleDateString('en-GB'));
   const [type, setType] = useState('quality_observation');
@@ -1182,7 +1186,7 @@ function CreateObservationDialog({
               <Select value={categoryId} onValueChange={setCategoryId}>
                 <SelectTrigger className="bg-slate-800/50 border-slate-700"><SelectValue placeholder="اختر التصنيف" /></SelectTrigger>
                 <SelectContent>
-                  {categories.map((c) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
+                  {categories.map((c) => <SelectItem key={c.id} value={c.id}>{categoryDisplayName(c, locale)}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>
@@ -1257,8 +1261,9 @@ function EditObservationDialog({
   obs: QualityObservation;
   open: boolean;
   onOpenChange: (o: boolean) => void;
-  categories: Array<{ id: string; name: string }>;
+  categories: Array<{ id: string; name: string; nameEn?: string }>;
 }) {
+  const { locale } = useLanguage();
   const [notes, setNotes] = useState(obs.notes);
   const [evidence, setEvidence] = useState(obs.evidence);
   const [categoryId, setCategoryId] = useState(obs.categoryId);
@@ -1305,7 +1310,7 @@ function EditObservationDialog({
             <Select value={categoryId} onValueChange={setCategoryId}>
               <SelectTrigger className="bg-slate-800/50 border-slate-700"><SelectValue /></SelectTrigger>
               <SelectContent>
-                {categories.map((c) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
+                {categories.map((c) => <SelectItem key={c.id} value={c.id}>{categoryDisplayName(c, locale)}</SelectItem>)}
               </SelectContent>
             </Select>
           </div>

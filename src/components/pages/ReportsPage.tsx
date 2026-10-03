@@ -8,6 +8,7 @@ import { useLanguage } from '@/lib/i18n/language-context';
 import { T } from '@/lib/i18n/T';
 import { translateUIText } from '@/lib/i18n/ui-text';
 import { formatDateTime, formatInteger, formatNumber, formatPercentage, formatMonthKey } from '@/lib/i18n/format';
+import { deductionTypeLabel } from '@/lib/quality-deductions/domain';
 import { generateMonthOptions } from '@/lib/date-utils';
 import { createId } from '@paralleldrive/cuid2';
 import {
@@ -1176,7 +1177,7 @@ export default function ReportsPage() {
                                             <div key={q.id} className="rounded-lg bg-slate-900/60 border border-slate-700/30 p-4">
                                               <div className="flex items-center justify-between mb-1.5">
                                                 <div className="flex items-center gap-2">
-                                                  <Badge className="bg-orange-500/15 text-orange-400 border-orange-500/20 text-xs"><T>{q.type}</T></Badge>
+                                                  <Badge className="bg-orange-500/15 text-orange-400 border-orange-500/20 text-xs">{deductionTypeLabel(q.type)}</Badge>
                                                   <span className="text-slate-400 text-xs" dir="ltr">{q.date}</span>
                                                 </div>
                                                 <div className="flex items-center gap-3 text-sm">

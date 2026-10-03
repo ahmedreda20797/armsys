@@ -43,6 +43,7 @@ import { apiFetch } from '@/lib/query-provider';
 import { useLanguage } from '@/lib/i18n/language-context';
 import { T } from '@/lib/i18n/T';
 import { translateUIText } from '@/lib/i18n/ui-text';
+import { presentEntity } from '@/lib/i18n/presentation';
 import { formatInteger } from '@/lib/i18n/format';
 import type { QualityAIApiResponse, QualityAIAnalysisResult } from '@/lib/ai/quality/contracts';
 import { fetchEvidencePreview } from '@/hooks/use-evidence';
@@ -267,8 +268,13 @@ function ReadyView({
             <T>نتيجة مخزّنة</T>
           </Badge>
         )}
-        <span className="font-mono text-[9px] text-slate-600" dir="ltr" title="AI provenance">
-          {result.provider}/{result.model} · {result.promptVersion}
+        {/* AI provenance — technical metadata, hover-diagnostics only. */}
+        <span
+          className="font-mono text-[9px] text-slate-600"
+          dir="ltr"
+          title={`AI provenance: ${result.provider}/${result.model} · ${result.promptVersion}`}
+        >
+          {translateUIText('تحليل آلي', locale)}
         </span>
       </div>
 
@@ -420,7 +426,9 @@ function EvidenceChips({
           className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-0.5 text-[10px] text-emerald-300 hover:bg-emerald-500/20"
           title={translateUIText('عرض السجل المصدر ثم الانتقال إليه', locale)}
         >
-          {ref.collection === 'qualityObservations' ? <T>ملاحظات الجودة</T> : ref.collection}
+          {/* §PRESENTATION-BOUNDARY — the collection key resolves to its
+              localized domain label; raw RTDB names never render. */}
+          {presentEntity(ref.collection, locale)}
           {ref.recordIds.length > 1 ? ` (${formatInteger(ref.recordIds.length, locale)})` : ''}
         </button>
       ))}
@@ -470,7 +478,7 @@ function FailureView({
           </p>
           {hint && (
             <p className="text-[11px] leading-5 text-slate-400" data-testid="ai-diagnostic-hint">
-              <span className="font-semibold text-slate-300"><T>التصنيف الفعلي</T> ({diagnosticStatus}): </span>
+              <span className="font-semibold text-slate-300"><T>التصنيف الفعلي</T>: </span>
               {hint}
             </p>
           )}

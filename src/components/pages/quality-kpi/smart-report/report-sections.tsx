@@ -13,38 +13,30 @@
 //  interpretation copy (spec §9/§19/§30).
 // ══════════════════════════════════════════════════════════════
 
-import { useState, type ReactNode } from 'react';
+import type { MouseEvent as ReactMouseEvent, ReactNode } from 'react';
 import {
   Activity,
-  AlertTriangle,
   ChevronDown,
   ClipboardCheck,
   Clock,
-  Eye,
-  Gauge,
-  Layers,
   Link2,
   MessageSquareWarning,
   Plane,
-  Repeat,
   Scale,
   ShieldCheck,
-  Sparkles,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
-import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
-} from '@/components/ui/table';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
 import { useLanguage } from '@/lib/i18n/language-context';
 import { T } from '@/lib/i18n/T';
 import { translateUIText } from '@/lib/i18n/ui-text';
-import { formatInteger, formatNumber, unitWord } from '@/lib/i18n/format';
+import { presentEntity } from '@/lib/i18n/presentation';
+import { formatInteger, unitWord } from '@/lib/i18n/format';
 import {
   EVIDENCE_COLLECTIONS,
   isEvidenceCollection,
@@ -56,24 +48,18 @@ import {
   type EvidenceAccess,
 } from '@/lib/evidence/evidence-summaries';
 import { useEvidenceSummaries } from '@/hooks/use-evidence';
-import { StatusBadge, ValueBasisBadge } from '../kpi-reports-shared';
+import { ValueBasisBadge } from '../kpi-reports-shared';
 import {
-  UNAVAILABLE,
   type AttendanceView,
   type CapaView,
   type ChipFact,
   type ComplaintsView,
-  type DataQualityView,
   type DealsView,
   type DeductionsView,
   type EvidenceGroupView,
   type FollowUpsView,
   type KeyValueFact,
-  type KpiComponentsView,
-  type KpiHeroView,
-  type ObservationsView,
   type ReportHeaderView,
-  type RepeatedIssuesView,
   type Tone,
   type TrendView,
 } from './view-model';
@@ -188,8 +174,11 @@ export function ReportHeaderSection({ view }: { view: ReportHeaderView }) {
       <CardContent className="p-4 space-y-3">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="space-y-1 min-w-0">
+            {/* §REPORT-IDENTITY — the EMPLOYEE is the report subject; the
+                report title names the document, the name names the person. */}
+            <p className="text-[11px] text-slate-500"><T>تقرير الجودة والأداء الذكي</T></p>
             <div className="flex flex-wrap items-center gap-2">
-              <h2 className="text-lg font-bold text-slate-100">{view.employeeName}</h2>
+              <h2 className="text-xl font-bold text-slate-100">{view.employeeName}</h2>
               {view.employeeCode && (
                 <span className="text-xs font-mono text-slate-400">({view.employeeCode})</span>
               )}
@@ -200,9 +189,11 @@ export function ReportHeaderSection({ view }: { view: ReportHeaderView }) {
               ))}
             </div>
             <p className="text-xs text-slate-400">
-              {view.periodLabel}
+              <T>الفترة: </T><span className="text-slate-300 font-medium">{view.periodLabel}</span>
               <span className="mx-1.5 text-slate-600">·</span>
               <ValueBasisBadge basis={view.valueBasis} />
+              <span className="mx-1.5 text-slate-600">·</span>
+              <T>تاريخ الإصدار: </T>{view.generatedAtLabel}
             </p>
           </div>
           {/* §19 — the report shows VERIFIED FACTS only (no AI layer). */}
@@ -211,148 +202,21 @@ export function ReportHeaderSection({ view }: { view: ReportHeaderView }) {
           </Badge>
         </div>
 
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-x-4 gap-y-3 pt-1 border-t border-slate-700/40">
+        {/* Context facts — position/department/team/manager describe the
+            employee; the team NEVER replaces the employee as subject. */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-3 pt-1 border-t border-slate-700/40">
           {view.facts.map((f) => (
             <Fact key={f.label} label={f.label} value={f.value} unavailable={f.unavailable} />
           ))}
         </div>
 
-        <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs pt-1 border-t border-slate-700/40">
-          <span className="text-slate-500">
-            <T>مخطط KPI: </T>
-            {view.schemeLabel ?? <span className="italic"><T>{UNAVAILABLE}</T></span>}
-          </span>
-          <span className="text-slate-500 font-mono">
-            {view.datasetKind}
-          </span>
-        </div>
+        {view.schemeLabel && (
+          <p className="text-xs text-slate-500 pt-1 border-t border-slate-700/40">
+            <T>مخطط KPI: </T>{view.schemeLabel}
+          </p>
+        )}
       </CardContent>
     </Card>
-  );
-}
-
-// ─────────────────────────────────────────────────────────────
-//  §4  KPI hero — raw score vs weighted contribution
-// ─────────────────────────────────────────────────────────────
-
-export function KpiHeroSection({ view }: { view: KpiHeroView }) {
-  const { t, locale } = useLanguage();
-  return (
-    <SectionCard icon={Gauge} title={t('smart.section.kpi')} subtitle={t('smart.section.kpiSub')}>
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div className="rounded-xl bg-slate-900/40 border border-slate-700/40 p-4 space-y-1">
-          <div className="text-[11px] text-slate-500"><T>درجة الجودة (خام)</T></div>
-          <div className="text-3xl font-bold text-slate-100 tabular-nums">{view.rawScoreDisplay}</div>
-          <div className="text-[11px] text-slate-500"><T>Raw Quality Score — مخرج المحرك كما هو</T></div>
-        </div>
-        <div className="rounded-xl bg-slate-900/40 border border-slate-700/40 p-4 space-y-1">
-          <div className="text-[11px] text-slate-500">
-            <T>المساهمة الموزونة</T>
-            {view.weightPercent !== null ? <> (<T>وزن </T>{formatNumber(view.weightPercent, { locale })}%)</> : ''}
-          </div>
-          <div className="text-3xl font-bold text-emerald-300 tabular-nums">{view.contributionDisplay}</div>
-          <div className="text-[11px] text-slate-500"><T>Quality Contribution — وليست KPI الشركة</T></div>
-        </div>
-        <div className="rounded-xl bg-slate-900/40 border border-slate-700/40 p-4 space-y-2">
-          <div className="text-[11px] text-slate-500"><T>حالة KPI</T></div>
-          <div className="flex flex-wrap gap-1.5">
-            <StatusBadge status={view.rowStatusLabel} />
-            {view.overallStatusLabel && view.overallStatusLabel !== view.rowStatusLabel && (
-              <StatusBadge status={view.overallStatusLabel} />
-            )}
-          </div>
-          <div className="text-[11px] text-slate-500">
-            <T>المجموع الموزون المتاح: </T>{view.weightedTotalDisplay ?? translateUIText(UNAVAILABLE, locale)}
-            {view.availableWeightDisplay !== null ? <> / <T>وزن متاح </T>{view.availableWeightDisplay}</> : ''}
-          </div>
-        </div>
-      </div>
-
-      <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-xs pt-1 border-t border-slate-700/40">
-        {view.previousScoreDisplay && (
-          <span className="text-slate-400">
-            <T>الشهر السابق: </T><span className="font-mono tabular-nums text-slate-200">{view.previousScoreDisplay}</span>
-          </span>
-        )}
-        {view.deltaDisplay && (
-          <span className="text-slate-400">
-            <T>التغير: </T>
-            <span
-              className={cn(
-                'font-mono tabular-nums',
-                view.deltaToneValue === 'good' && 'text-emerald-300',
-                view.deltaToneValue === 'bad' && 'text-red-300',
-              )}
-            >
-              {view.deltaDisplay} <T>نقطة مئوية</T>
-            </span>
-          </span>
-        )}
-        {view.directionLabel && <span className="text-slate-400">{view.directionLabel}</span>}
-        {!view.previousScoreDisplay && !view.deltaDisplay && (
-          <span className="text-slate-500 italic"><T>لا توجد مقارنة شهر سابق متاحة</T></span>
-        )}
-      </div>
-
-      {view.outcomeMessage && (
-        <p className="text-xs text-amber-300/90 border-r-2 border-amber-500/40 pr-2">{view.outcomeMessage}</p>
-      )}
-
-      {/* §6 STATE DISTINCTION — real quality evidence exists while the
-          KPI engine returned no value. The evidence sections below stay
-          fully populated; the KPI gap is explained, never hidden. */}
-      {view.evidenceNote && (
-        <p className="text-xs text-emerald-300/90 border border-emerald-500/25 bg-emerald-500/[0.06] rounded-lg px-3 py-2">
-          {view.evidenceNote}
-        </p>
-      )}
-    </SectionCard>
-  );
-}
-
-// ─────────────────────────────────────────────────────────────
-//  §5  KPI component status
-// ─────────────────────────────────────────────────────────────
-
-export function KpiComponentsSection({ view }: { view: KpiComponentsView }) {
-  const { t } = useLanguage();
-  return (
-    <SectionCard icon={Layers} title={t('smart.section.components')} subtitle={t('smart.section.componentsSub')}>
-      <Table>
-        <TableHeader>
-          <TableRow className="border-slate-700/50">
-            <TableHead className="text-right h-9"><T>المكون</T></TableHead>
-            <TableHead className="text-right h-9"><T>المساهمة / الحد الأقصى</T></TableHead>
-            <TableHead className="text-right h-9"><T>الحالة</T></TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {view.rows.map((row) => (
-            <TableRow key={row.label} className={cn('border-slate-800/60', row.isOverall && 'bg-slate-900/30')}>
-              <TableCell className={cn('text-slate-200', row.isOverall && 'font-bold')}>
-                {row.label}
-              </TableCell>
-              <TableCell className="font-mono tabular-nums text-slate-200">{row.contributionDisplay}</TableCell>
-              <TableCell>
-                {row.available ? (
-                  <StatusBadge status={row.statusLabel} />
-                ) : (
-                  <Badge variant="outline" className="bg-slate-600/20 text-slate-400 border-slate-600/40 text-[11px] font-mono">
-                    NOT AVAILABLE
-                  </Badge>
-                )}
-              </TableCell>
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
-
-      {view.hasUnavailableComponents && (
-        <p className="text-[11px] text-slate-500">
-          <T>مكونات المخطط الإضافية غير متاحة في بيانات هذه الفترة — تُعرض كما يوفرها المحرك دون أي حساب بديل.</T>
-        </p>
-      )}
-    </SectionCard>
   );
 }
 
@@ -415,163 +279,45 @@ export function TrendSection({ view }: { view: TrendView }) {
 }
 
 // ─────────────────────────────────────────────────────────────
-//  §8  Quality observations
-// ─────────────────────────────────────────────────────────────
-
-export function ObservationsSection({ view }: { view: ObservationsView }) {
-  const { t, locale } = useLanguage();
-  return (
-    <SectionCard icon={Eye} title={t('smart.section.observations')} subtitle={t('smart.section.observationsSub')}>
-      <div className="flex flex-wrap gap-1.5">
-        <CountChip label={t('smart.col.total')} count={view.total} tone="info" />
-        <CountChip label={t('smart.col.approved')} count={view.approved} tone="good" />
-        <CountChip label={t('smart.col.pending')} count={view.pending} tone="warn" />
-        <CountChip label={t('smart.col.rejected')} count={view.rejected} tone="bad" />
-      </div>
-      <ChipRow chips={view.severityChips} />
-      <ChipRow chips={view.resolutionChips} />
-
-      {view.categoryRows.length > 0 ? (
-        <div className="overflow-x-auto -mx-1 px-1">
-          <Table>
-            <TableHeader>
-              <TableRow className="border-slate-700/50">
-                <TableHead className="text-right h-9"><T>الفئة</T></TableHead>
-                <TableHead className="text-right h-9 w-20"><T>العدد</T></TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {view.categoryRows.map((c) => (
-                <TableRow key={c.categoryId ?? '_'} className="border-slate-800/60">
-                  <TableCell className="text-slate-200">{c.categoryName}</TableCell>
-                  <TableCell className="font-mono tabular-nums">{formatInteger(c.count, locale)}</TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
-      ) : (
-        <SectionEmpty />
-      )}
-
-      {view.typeRows.length > 0 && (
-        <div className="text-[11px] text-slate-500">
-          <T>توزيع الأنواع (فوق حد التكرار </T>{formatInteger(view.minOccurrences, locale)}<T>): </T>
-          {view.typeRows.map((t) => `${t.label} (${formatInteger(t.count, locale)})`).join('، ')}
-        </div>
-      )}
-    </SectionCard>
-  );
-}
-
-// ─────────────────────────────────────────────────────────────
-//  §9  Repeated issues
-// ─────────────────────────────────────────────────────────────
-
-export function RepeatedIssuesSection({ view }: { view: RepeatedIssuesView }) {
-  const { t, locale } = useLanguage();
-  return (
-    <SectionCard
-      icon={Repeat}
-      title={t('smart.section.repeated')}
-      subtitle={<><T>تجميع حتمي حسب الفئة/النوع — حد أدنى </T>{formatInteger(view.minOccurrences, locale)} <T>تكرارات</T></>}
-    >
-      {view.empty ? (
-        <SectionEmpty message={translateUIText('لا توجد مشكلات متكررة ضمن حد التكرار', locale)} />
-      ) : (
-        <>
-          {view.categoryRows.length > 0 && (
-            <div className="overflow-x-auto -mx-1 px-1">
-              <Table>
-                <TableHeader>
-                  <TableRow className="border-slate-700/50">
-                    <TableHead className="text-right h-9"><T>المشكلة (فئة)</T></TableHead>
-                    <TableHead className="text-right h-9 w-16"><T>التكرار</T></TableHead>
-                    <TableHead className="text-right h-9 w-40"><T>أول / آخر ظهور</T></TableHead>
-                    <TableHead className="text-right h-9 w-36"><T>عبر نافذة التحليل</T></TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {view.categoryRows.map((row) => (
-                    <TableRow key={row.label} className="border-slate-800/60">
-                      <TableCell className="text-slate-200">{row.label}</TableCell>
-                      <TableCell className="font-mono tabular-nums">{formatInteger(row.occurrenceCount, locale)}</TableCell>
-                      <TableCell className="font-mono text-xs text-slate-400" dir="ltr">
-                        {row.firstOccurrence ?? '—'} → {row.lastOccurrence ?? '—'}
-                      </TableCell>
-                      <TableCell className="text-xs text-slate-400">{row.windowSummary ?? '—'}</TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          )}
-          {view.typeRows.length > 0 && (
-            <div className="text-[11px] text-slate-500">
-              <T>حسب النوع: </T>{view.typeRows.map((t) => `${t.label} (${formatInteger(t.occurrenceCount, locale)})`).join('، ')}
-            </div>
-          )}
-          <p className="text-[10px] text-slate-600">
-            <T>حقائق قابلة للقياس فقط — لا يتضمن هذا التقرير أي استنتاج عن الأداء أو الانضباط.</T>
-          </p>
-        </>
-      )}
-    </SectionCard>
-  );
-}
-
-// ─────────────────────────────────────────────────────────────
 //  §10  Quality deductions
 // ─────────────────────────────────────────────────────────────
 
-export function DeductionsSection({ view }: { view: DeductionsView }) {
+export function DeductionsSection({ view, canDrill, onDrill }: {
+  view: DeductionsView;
+  canDrill: boolean;
+  onDrill: () => void;
+}) {
   const { t, locale } = useLanguage();
+  // §16 — the executive report carries the SUMMARY only (count, totals,
+  // highest deduction, top category). Detailed reasons stay in the
+  // dedicated deductions view (permission-gated) — never in this report.
   return (
-    <SectionCard icon={Scale} title={t('smart.section.deductions')} subtitle={t('smart.section.deductionsSub')}>
+    <SectionCard icon={Scale} title={t('smart.section.deductions')} subtitle={<T>ملخص خصومات الجودة للفترة</T>}>
       {view.empty ? (
         <SectionEmpty />
       ) : (
         <>
           <div className="flex flex-wrap gap-1.5">
-            <CountChip label={translateUIText('العدد', locale)} count={view.count} tone="warn" />
+            <CountChip label={translateUIText('عدد الخصومات', locale)} count={view.count} tone="warn" />
             <CountChip label={translateUIText('إجمالي الأيام', locale)} count={view.totalDays} tone="bad" />
             <CountChip label={translateUIText('إجمالي المبلغ', locale)} count={view.totalAmount} tone="bad" />
           </div>
-          <ChipRow chips={view.typeChips} />
-          {view.records.length > 0 && (
-            <div className="overflow-x-auto -mx-1 px-1">
-              <Table>
-                <TableHeader>
-                  <TableRow className="border-slate-700/50">
-                    <TableHead className="text-right h-9"><T>التاريخ</T></TableHead>
-                    <TableHead className="text-right h-9"><T>النوع</T></TableHead>
-                    <TableHead className="text-right h-9"><T>السبب</T></TableHead>
-                    <TableHead className="text-right h-9 w-20"><T>أيام</T></TableHead>
-                    <TableHead className="text-right h-9 w-24"><T>مبلغ</T></TableHead>
-                    <TableHead className="text-right h-9 w-28"><T>مرجع CAPA</T></TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {view.records.map((r) => (
-                    <TableRow key={r.id} className="border-slate-800/60">
-                      <TableCell className="font-mono text-xs text-slate-300 whitespace-nowrap">{r.date}</TableCell>
-                      <TableCell className="text-slate-200">{r.type}</TableCell>
-                      <TableCell className="text-slate-400 text-xs max-w-48 truncate" title={r.description}>
-                        {r.description || '—'}
-                      </TableCell>
-                      <TableCell className="font-mono tabular-nums text-red-300">{r.daysDisplay}</TableCell>
-                      <TableCell className="font-mono tabular-nums text-red-300">{r.amountDisplay}</TableCell>
-                      <TableCell className="font-mono text-[10px] text-slate-500 truncate max-w-28" dir="ltr">
-                        {r.relatedCapaId ?? '—'}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
+          {view.typeChips.length > 0 && <ChipRow chips={view.typeChips} />}
+          {view.highestLine && (
+            <p className="text-[11px] text-slate-400 border-t border-slate-700/40 pt-2">{view.highestLine}</p>
+          )}
+          {canDrill && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="no-print h-7 px-2 text-[11px] text-emerald-300 hover:text-emerald-200 hover:bg-emerald-500/10"
+              onClick={(e) => { e.stopPropagation(); onDrill(); }}
+            >
+              <T>عرض تفاصيل الخصومات</T>
+            </Button>
           )}
           <p className="text-[10px] text-slate-600">
-            <T>الخصومات مجال رواتب مستقل — لا يفترض هذا التقرير أي أثر تلقائي لها على KPI؛ قيم KPI تُستهلك من المحرك كما هي.</T>
+            <T>التفاصيل والأسباب تُعرض في تقرير الخصومات المخصص وفق الصلاحيات.</T>
           </p>
         </>
       )}
@@ -702,6 +448,10 @@ export function FollowUpsSection({ view }: { view: FollowUpsView }) {
             <span>
               <T>تأخر الإكمال: </T><span className="font-mono tabular-nums text-slate-200">{view.avgOverdueDisplay}</span>
             </span>
+            <span title={view.onTimeNote}>
+              <T>الإنجاز في الموعد: </T><span className="font-mono tabular-nums text-slate-500 italic">{view.onTimeRateDisplay}</span>
+              <span className="text-[10px] text-slate-600"> — {view.onTimeNote}</span>
+            </span>
           </div>
         </>
       )}
@@ -713,32 +463,116 @@ export function FollowUpsSection({ view }: { view: FollowUpsView }) {
 //  §14  Travel deals / operational context
 // ─────────────────────────────────────────────────────────────
 
-export function DealsSection({ view }: { view: DealsView }) {
+// ─────────────────────────────────────────────────────────────
+//  §14/§35-§36  Deal performance — explicit date semantics + drills
+// ─────────────────────────────────────────────────────────────
+
+/** §40 — the deal questions a metric may drill into (the page owns navigation). */
+export type DealDrillTarget = 'closed' | 'confirmed' | 'cancelled' | 'current' | 'travel' | 'completed';
+
+export function DealsSection({ view, canDrill, onDrill }: {
+  view: DealsView;
+  canDrill: boolean;
+  onDrill: (target: DealDrillTarget) => void;
+}) {
   const { t, locale } = useLanguage();
-  // §DEAL-DATES — the two canonical deal dimensions are shown
-  // separately and labeled by their date source; an unknown closure
-  // month is surfaced as unknown, never folded into a month count.
+  // §DEAL-DATES/§32-§36 — every count carries its EXPLICIT semantics;
+  // the closure breakdown reconciles with the headline population
+  // (confirmed + cancelled + still-active = closed during period).
+  const hasAnyDealData = view.closedWithEmployeeTotal > 0
+    || view.travelTotal > 0
+    || view.closedTotal > 0
+    || view.currentDeals > 0;
+
+  const drill = (target: DealDrillTarget, e: ReactMouseEvent) => {
+    e.stopPropagation();
+    onDrill(target);
+  };
+
   return (
-    <SectionCard icon={Plane} title={t('smart.section.deals')} subtitle={t('smart.section.dealsSub')}>
-      {view.travelTotal === 0 && view.closedTotal === 0 && view.closedUnknownMonth === 0 ? (
+    <SectionCard icon={Plane} title={t('smart.section.deals')} subtitle={<T>أداء الصفقات — أساس تاريخ صريح لكل رقم</T>}>
+      {!hasAnyDealData ? (
         <SectionEmpty />
       ) : (
         <>
-          <div className="flex flex-wrap gap-1.5">
-            <CountChip label={translateUIText('صفقات مكتملة (تاريخ الإغلاق)', locale)} count={view.closedTotal} tone="good" />
-            <CountChip label={translateUIText('حجم السفر (تاريخ المغادرة)', locale)} count={view.travelTotal} tone="info" />
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+            {([
+              {
+                target: 'closed' as DealDrillTarget,
+                label: <T>تقفيلات الفترة</T>,
+                hint: <T>تاريخ تقفيل الديل · أي حالة حالية</T>,
+                value: view.closedWithEmployeeInPeriod, tone: 'text-slate-100',
+              },
+              {
+                target: 'confirmed' as DealDrillTarget,
+                label: <T>التقفيلات المؤكدة</T>,
+                hint: <T>حالة حالية: مكتملة</T>,
+                value: view.confirmedClosures, tone: 'text-emerald-300',
+              },
+              {
+                target: 'cancelled' as DealDrillTarget,
+                label: <T>التقفيلات الملغاة</T>,
+                hint: <T>أُغلقت ثم أُلغيت لاحقًا</T>,
+                value: view.cancelledClosures, tone: 'text-red-300',
+              },
+              {
+                target: 'current' as DealDrillTarget,
+                label: <T>الصفقات الحالية</T>,
+                hint: <T>الحالة الحالية: تعديل/جاري</T>,
+                value: view.currentDeals, tone: 'text-sky-300',
+              },
+              {
+                target: 'travel' as DealDrillTarget,
+                label: <T>رحلات السفر</T>,
+                hint: <T>تاريخ المغادرة</T>,
+                value: view.travelTotal, tone: 'text-slate-200',
+              },
+              {
+                target: 'completed' as DealDrillTarget,
+                label: <T>المكتملات المرصودة</T>,
+                hint: <T>تاريخ الاكتمال</T>,
+                value: view.closedTotal, tone: 'text-slate-200',
+              },
+            ] as const).map((tile) => (
+              <div
+                key={tile.target}
+                className={cn(
+                  'rounded-xl bg-slate-900/40 border border-slate-700/40 p-3 space-y-0.5',
+                  canDrill && 'cursor-pointer hover:border-emerald-500/40 transition-colors',
+                )}
+                onClick={canDrill ? (e) => drill(tile.target, e) : undefined}
+                title={canDrill ? translateUIText('عرض السجلات المطابقة في صفحة السفر', locale) : undefined}
+              >
+                <div className="text-[10px] text-slate-500">{tile.label}</div>
+                <div className={cn('text-2xl font-bold tabular-nums', tile.tone)} dir="ltr">
+                  {formatInteger(tile.value, locale)}
+                </div>
+                <div className="text-[9px] text-slate-600">{tile.hint}</div>
+              </div>
+            ))}
           </div>
-          <ChipRow chips={view.statusChips} />
-          <div className="flex flex-wrap gap-x-6 gap-y-1 text-xs text-slate-400 border-t border-slate-700/40 pt-2">
-            <span>
-              <T>نسبة الإكمال: </T><span className="font-mono tabular-nums text-slate-200">{view.completionRateDisplay}</span>
+
+          <div className="flex flex-wrap gap-x-5 gap-y-1 text-[11px] text-slate-500 border-t border-slate-700/40 pt-2">
+            <span title={translateUIText('المؤكدة + الملغاة + الجارية = تقفيلات الفترة', locale)}>
+              <T>تطابق التقفيلات: </T>
+              <span className="font-mono tabular-nums text-slate-300" dir="ltr">
+                {formatInteger(view.confirmedClosures, locale)} + {formatInteger(view.cancelledClosures, locale)} + {formatInteger(view.stillActiveClosures, locale)} = {formatInteger(view.closedWithEmployeeInPeriod, locale)}
+              </span>
             </span>
             {view.closedUnknownMonth > 0 && (
-              <span title={translateUIText('لا يوجد طابع زمني موثوق لإغلاق هذه الصفقات — لا تُنسب لأي شهر', locale)}>
-                <T>مكتملة بتاريخ إغلاق غير محدد: </T><span className="font-mono tabular-nums text-slate-200">{formatInteger(view.closedUnknownMonth, locale)}</span>
+              <span title={translateUIText('لا يوجد طابع زمني موثوق لتقفيل هذه الصفقات — لا تُنسب لأي شهر', locale)}>
+                <T>تقفيلات بتاريخ غير محدد: </T>
+                <span className="font-mono tabular-nums text-slate-300">{formatInteger(view.closedUnknownMonth, locale)}</span>
               </span>
             )}
           </div>
+
+          {view.statusAllTime.length > 0 && (
+            <p className="text-[10px] text-slate-500">
+              <T>الحالة الحالية (كل الفترات): </T>
+              {view.statusAllTime.map((s) => `${s.label} ${formatInteger(s.count, locale)}`).join(' · ')}
+            </p>
+          )}
         </>
       )}
     </SectionCard>
@@ -795,7 +629,7 @@ function EvidenceRecordRows({
   recordIds: string[];
   onViewEvidence: (selection: EvidenceDetailSelection) => void;
 }) {
-  const collectionTitle = EVIDENCE_COLLECTIONS[collection]?.title ?? collection;
+  const collectionTitle = EVIDENCE_COLLECTIONS[collection]?.title ?? presentEntity(collection, 'ar');
   const summariesQuery = useEvidenceSummaries(collection, recordIds, true);
 
   if (summariesQuery.isLoading) {
@@ -809,17 +643,11 @@ function EvidenceRecordRows({
   }
 
   if (summariesQuery.isError || !summariesQuery.data) {
-    // Degrade to the functional raw-id list — never fabricated data.
+    // Degrade to an explicit localized state — raw record IDs are
+    // never rendered as visible content (§PRESENTATION-BOUNDARY).
     return (
       <div className="rounded-b-lg border border-t-0 border-slate-700/40 bg-slate-900/20 px-4 py-2 max-h-48 overflow-y-auto arm-scroll">
-        <p className="text-[10px] text-amber-300/70"><T>تعذر تحميل ملخصات الأدلة — تُعرض المعرفات فقط.</T></p>
-        <ul className="space-y-1">
-          {recordIds.map((id) => (
-            <li key={id} className="font-mono text-[10px] text-slate-500 truncate" dir="ltr" title={id}>
-              {id}
-            </li>
-          ))}
-        </ul>
+        <p className="text-[10px] text-amber-300/70"><T>تعذر تحميل ملخصات الأدلة — أعد فتح القسم للمحاولة مجدداً.</T></p>
       </div>
     );
   }
@@ -844,14 +672,11 @@ function EvidenceRecordRows({
               data-testid="evidence-summary-row"
             >
               <div className="min-w-0">
-                <p className="truncate text-[12px] text-slate-200">
+                <p className="truncate text-[12px] text-slate-200" title={recordId}>
                   <span className="font-medium">{summary.title}</span>
                   {summary.metaLines.length > 0 && (
                     <span className="text-slate-400"> — {summary.metaLines.join(' · ')}</span>
                   )}
-                </p>
-                <p className="font-mono text-[9px] text-slate-600 truncate" dir="ltr" title={recordId}>
-                  {recordId}
                 </p>
               </div>
               <Button
@@ -916,9 +741,6 @@ export function EvidenceSection({
                 <CollapsibleTrigger className="group flex flex-1 items-center gap-2 text-right min-w-0">
                   <ChevronDown className="h-3.5 w-3.5 text-slate-500 transition-transform group-data-[state=open]:rotate-180 shrink-0" />
                   <span className="text-xs text-slate-300">{g.label}</span>
-                  <span className="text-[10px] font-mono text-slate-600 truncate hidden sm:inline" dir="ltr">
-                    {g.collection}
-                  </span>
                   <span className="mr-auto text-[11px] font-mono text-slate-400 tabular-nums shrink-0">
                     {formatInteger(g.count, locale)} {unitWord(g.count === 1 ? 'record' : 'records', locale)}
                   </span>
@@ -943,13 +765,9 @@ export function EvidenceSection({
                   />
                 ) : (
                   <div className="rounded-b-lg border border-t-0 border-slate-700/40 bg-slate-900/20 px-4 py-2 max-h-48 overflow-y-auto arm-scroll">
-                    <ul className="space-y-1">
-                      {g.recordIds.map((id) => (
-                        <li key={id} className="font-mono text-[10px] text-slate-500 truncate" dir="ltr" title={id}>
-                          {id}
-                        </li>
-                      ))}
-                    </ul>
+                    <p className="text-[10px] text-slate-500">
+                      <T>سجلات مرجعية بلا معاينة متاحة</T> — {formatInteger(g.recordIds.length, locale)}
+                    </p>
                   </div>
                 )}
               </CollapsibleContent>
@@ -960,70 +778,5 @@ export function EvidenceSection({
         <T>تُفتح سجلات المصدر فقط ضمن الصفحات المخوّلة لمستخدمك — الربط يحترم صلاحيات كل صفحة.</T>
       </p>
     </SectionCard>
-  );
-}
-
-// ─────────────────────────────────────────────────────────────
-//  §18  Data quality
-// ─────────────────────────────────────────────────────────────
-
-export function DataQualitySection({ view }: { view: DataQualityView }) {
-  const { t } = useLanguage();
-  if (!view.hasIssues) return null;
-  return (
-    <Card data-report-card className="bg-amber-950/20 border-amber-800/40 print:border-amber-400">
-      <CardHeader className="pb-2 pt-4 px-4">
-        <CardTitle className="text-sm text-amber-200 flex items-center gap-2">
-          <AlertTriangle className="h-4 w-4 text-amber-400" />
-          <T>جودة البيانات</T>
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="px-4 pb-4 pt-0 space-y-2">
-        {view.unattributedChips.length > 0 && (
-          <div className="flex flex-wrap gap-1.5">
-            {view.unattributedChips.map((u) => (
-              <CountChip key={u.label} label={u.label} count={u.count} tone="warn" />
-            ))}
-          </div>
-        )}
-        {view.unattributedChips.length > 0 && (
-          <p className="text-xs text-amber-200/90">
-            <T>سجلات تعذر إسنادها لفترة بشكل حتمي (استُثنت دون تخمين — ولا تُخفى).</T>
-          </p>
-        )}
-        {view.notes.length > 0 && (
-          <ul className="text-[11px] text-amber-100/70 space-y-1">
-            {view.notes.map((note) => (
-              <li key={note}>• {note}</li>
-            ))}
-          </ul>
-        )}
-      </CardContent>
-    </Card>
-  );
-}
-
-// ─────────────────────────────────────────────────────────────
-//  §31  Future AI placeholder — clearly labeled, no fake content
-// ─────────────────────────────────────────────────────────────
-
-export function SmartAnalysisPlaceholder() {
-  return (
-    <Card data-report-card className="bg-slate-800/20 border-dashed border-slate-700/40 no-print">
-      <CardContent className="p-4 flex items-center gap-3">
-        <div className="w-9 h-9 rounded-lg bg-slate-800/60 border border-slate-700/50 flex items-center justify-center shrink-0">
-          <Sparkles className="h-4 w-4 text-slate-500" />
-        </div>
-        <div className="space-y-0.5 min-w-0">
-          <div className="text-sm font-semibold text-slate-400"><T>التحليل الذكي</T></div>
-          <p className="text-[11px] text-slate-600">
-            <T>مساحة محفوظة لطبقة تحليل لاحقة — غير مفعّلة في هذه المرحلة (حقائق موثقة فقط).</T>
-          </p>
-        </div>
-        <Badge variant="outline" className="mr-auto bg-slate-800/50 text-slate-500 border-slate-700/50 text-[10px] shrink-0">
-          <T>قادم في مرحلة لاحقة</T>
-        </Badge>
-      </CardContent>
-    </Card>
   );
 }

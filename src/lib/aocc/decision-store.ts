@@ -558,13 +558,16 @@ function groupLabel(groupBy: DecisionGroupKey, key: string): string {
     capa: 'كابا', complaints: 'الشكاوى', followUps: 'المتابعات', attendance: 'الحضور',
     riskCenter: 'المخاطر', hrDeductions: 'الخصومات', requests: 'الطلبات', quality: 'الجودة',
     biometric: 'البصمة', notifications: 'الإشعارات', travel: 'السفر', rulesEngine: 'الأتمتة',
+    employee360: 'ملف الموظف 360',
   };
 
   switch (groupBy) {
-    case 'priority': return priorityLabels[key] || key;
-    case 'status': return statusLabels[key] || key;
-    case 'module': return moduleLabels[key] || key;
-    default: return key;
+    // §PRESENTATION-BOUNDARY — unmapped keys fall back to generic
+    // Arabic labels; a raw group key never becomes a visible header.
+    case 'priority': return priorityLabels[key] || 'أخرى';
+    case 'status': return statusLabels[key] || 'أخرى';
+    case 'module': return moduleLabels[key] || 'أخرى';
+    default: return 'أخرى';
   }
 }
 

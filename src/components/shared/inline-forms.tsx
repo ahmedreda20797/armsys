@@ -35,10 +35,12 @@ import { toast } from 'sonner';
 import { authFetch } from '@/lib/api-fetch';
 import { logCreate } from '@/lib/activity-logger';
 import { useAuth } from '@/contexts/AuthContext';
+import { useLanguage } from '@/lib/i18n/language-context';
+import { categoryDisplayName } from '@/lib/observation-categories/presentation';
 import type { Employee } from '@/types';
 import { EMPLOYEE_STATUS_LABELS_AR, EMPLOYEE_STATUSES } from '@/lib/organization/employee-status';
 import { PRIORITY_OPTIONS, DEPARTMENTS, SOURCE_OPTIONS } from '@/lib/capa-constants';
-import { addDays } from '@/lib/date-utils';
+import { addDays, getRequestTypeLabel } from '@/lib/date-utils';
 
 /* ── Shared types ── */
 interface SystemUser { id: string; name: string; email?: string; role?: string; }
@@ -65,7 +67,7 @@ const COMPLAINT_SEVERITY = [
 
 const COMPLAINT_STATUS = [
   { value: 'open', label: 'مفتوح' },
-  { value: 'investigating', label: 'قيد التحقيق' },
+  { value: 'under_investigation', label: 'قيد التحقيق' },
   { value: 'pending_resolution', label: 'بانتظار الحل' },
   { value: 'resolved', label: 'تم الحل' },
   { value: 'closed', label: 'مغلقة' },
@@ -562,7 +564,9 @@ export function RequestInlineForm({ onClose, employees, onCreated }: {
         }),
       });
       if (res.ok) {
-        logCreate('requests', 'طلب', form.type);
+        // §PRESENTATION-BOUNDARY — the activity feed is user-visible;
+        // the human type label is logged, never the raw enum key.
+        logCreate('requests', 'طلب', getRequestTypeLabel(form.type));
         toast.success('تم تقديم الطلب بنجاح');
         // Canonical invalidation (fixes the old ['home-stats'] dead key).
         invalidateDomain(qc, 'requests');
@@ -641,10 +645,11 @@ const OBSERVATION_EMPTY = (categories: ObservationFormState['categories']): Obse
 export function ObservationInlineForm({ onClose, employees, categories, onCreated }: {
   onClose: () => void;
   employees: Employee[];
-  categories: Array<{ id: string; name: string; defaultPointValue: number; isBonusDefault: boolean }>;
+  categories: Array<{ id: string; name: string; nameEn?: string; defaultPointValue: number; isBonusDefault: boolean }>;
   onCreated: () => void;
 }) {
   const { user } = useAuth();
+  const { locale } = useLanguage();
   const qc = useQueryClient();
   const [form, setForm] = useState<ObservationFormState>(() => OBSERVATION_EMPTY(categories));
   const [saving, setSaving] = useState(false);
@@ -676,7 +681,9 @@ export function ObservationInlineForm({ onClose, employees, categories, onCreate
         }),
       });
       if (res.ok) {
-        logCreate('observations', 'ملاحظة', form.employeeId);
+        // §PRESENTATION-BOUNDARY — the activity feed shows the employee's
+        // NAME, never the raw record id.
+        logCreate('observations', 'ملاحظة', employees.find((e) => e.id === form.employeeId)?.name || 'موظف');
         toast.success('تم إنشاء الملاحظة بنجاح');
         // Canonical invalidation (fixes the old ['observations'] and
         // ['home-stats'] dead keys): KPI surfaces, legacy quality view,
@@ -727,7 +734,7 @@ export function ObservationInlineForm({ onClose, employees, categories, onCreate
           <Select value={form.categoryId} onValueChange={applyCategoryDefaults}>
             <SelectTrigger className="bg-slate-800 border-slate-600 text-white h-9 text-sm"><SelectValue placeholder="اختر التصنيف" /></SelectTrigger>
             <SelectContent>
-              {categories.map((c) => <SelectItem key={c.id} value={c.id} className="text-white">{c.name}</SelectItem>)}
+              {categories.map((c) => <SelectItem key={c.id} value={c.id} className="text-white">{categoryDisplayName(c, locale)}</SelectItem>)}
             </SelectContent>
           </Select>
         </div>

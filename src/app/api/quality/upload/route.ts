@@ -268,8 +268,8 @@ export async function POST(request: NextRequest) {
       // ── Determine deduction type from reason text ──
       let type = 'quality_issue';
       const reasonLower = reason.toLowerCase();
-      if (reasonLower.includes('سلامة') || reasonLower.includes('safety') || reasonLower.includes('حادث') || reasonLower.includes('معدات حماية')) {
-        type = 'safety';
+      if (reasonLower.includes('سلوك') || reasonLower.includes('behavior') || reasonLower.includes('حادث') || reasonLower.includes('معدات حماية')) {
+        type = 'behavior';
       } else if (reasonLower.includes('التزام') || reasonLower.includes('compliance') || reasonLower.includes('قوانين') || reasonLower.includes('لوائح')) {
         type = 'compliance';
       }

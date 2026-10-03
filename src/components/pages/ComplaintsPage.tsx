@@ -73,9 +73,11 @@ import {
   type CapaInlineFormState,
 } from '@/components/shared/inline-forms';
 import { T } from '@/lib/i18n/T';
+import { presentStatus, presentSystemOrVerbatim } from '@/lib/i18n/presentation';
 import { translateUIText } from '@/lib/i18n/ui-text';
 import { useLanguage } from '@/lib/i18n/language-context';
 import { formatInteger } from '@/lib/i18n/format';
+import { isClosedComplaintStatus, isOpenComplaintStatus, normalizeComplaintStatus } from '@/lib/complaints/complaint-status';
 
 type ComplaintDescriptor = {
   targetType: 'record';
@@ -143,7 +145,7 @@ const SEVERITY_OPTIONS = [
 
 const STATUS_OPTIONS = [
   { value: 'open', label: 'مفتوح' },
-  { value: 'investigating', label: 'قيد التحقيق' },
+  { value: 'under_investigation', label: 'قيد التحقيق' },
   { value: 'pending_resolution', label: 'بانتظار الحل' },
   { value: 'resolved', label: 'تم الحل' },
   { value: 'closed', label: 'مغلقة' },
@@ -169,7 +171,7 @@ const emptyForm: ComplaintFormData = {
 
 function getComplaintTypeBadge(type: string) {
   const found = COMPLAINT_TYPES.find((t) => t.value === type);
-  return found?.label || type;
+  return found?.label || presentSystemOrVerbatim(type, 'ar');
 }
 
 function getComplaintTypeColor(type: string) {
@@ -185,7 +187,7 @@ function getComplaintTypeColor(type: string) {
 
 function getSeverityBadge(severity: string) {
   const found = SEVERITY_OPTIONS.find((s) => s.value === severity);
-  return found?.label || severity;
+  return found?.label || presentStatus(severity, 'ar');
 }
 
 function getSeverityColor(severity: string) {
@@ -199,14 +201,16 @@ function getSeverityColor(severity: string) {
 }
 
 function getStatusBadge(status: string) {
-  const found = STATUS_OPTIONS.find((s) => s.value === status);
-  return found?.label || status;
+  // §COMPLAINT-STATUS — legacy stored aliases display canonically.
+  const normalized = normalizeComplaintStatus(status);
+  const found = STATUS_OPTIONS.find((s) => s.value === (normalized ?? status));
+  return found?.label || presentStatus(status, 'ar');
 }
 
 function getStatusColor(status: string) {
-  switch (status) {
+  switch (normalizeComplaintStatus(status) ?? status) {
     case 'open': return 'bg-blue-500/15 text-blue-400 border-blue-500/30';
-    case 'investigating': return 'bg-amber-500/15 text-amber-400 border-amber-500/30';
+    case 'under_investigation': return 'bg-amber-500/15 text-amber-400 border-amber-500/30';
     case 'pending_resolution': return 'bg-orange-500/15 text-orange-400 border-orange-500/30';
     case 'resolved': return 'bg-brand-500/15 text-brand-400 border-brand-500/30';
     case 'closed': return 'bg-slate-500/15 text-slate-400 border-slate-500/30';
@@ -345,7 +349,7 @@ export default function ComplaintsPage() {
 
   // §15 case classification — same vocabulary as the stats logic:
   // open = open/investigating/pending_resolution; closed = resolved/closed.
-  const isClosedCase = (c: Complaint) => c.status === 'resolved' || c.status === 'closed';
+  const isClosedCase = (c: Complaint) => isClosedComplaintStatus(c.status);
 
   // Filtered complaints
   const filtered = useMemo(() => {
@@ -385,7 +389,7 @@ export default function ComplaintsPage() {
   // Stats
   const stats = useMemo(() => {
     const total = complaints.length;
-    const openCount = complaints.filter((c) => c.status === 'open' || c.status === 'investigating' || c.status === 'pending_resolution').length;
+    const openCount = complaints.filter((c) => isOpenComplaintStatus(c.status)).length;
     const resolvedCount = complaints.filter((c) => c.status === 'resolved' || c.status === 'closed').length;
     const resolved = complaints.filter((c) => c.status === 'resolved' || c.status === 'closed');
     const avgResolution = resolved.length > 0
@@ -797,10 +801,13 @@ export default function ComplaintsPage() {
                             />
                           </span>
                         )}
+                        {/* §PRESENTATION-BOUNDARY — dealId stays internal
+                            (navigation/highlight); the chip shows a human
+                            label, never the raw record id. */}
                         {complaint.dealId && (
-                          <span className="flex items-center gap-1">
+                          <span className="flex items-center gap-1" title={complaint.dealId}>
                             <FileText className="size-3" />
-                            {complaint.dealId}
+                            <T>مرتبطة بصفقة سفر</T>
                           </span>
                         )}
                       </div>

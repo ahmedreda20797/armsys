@@ -80,6 +80,13 @@ export interface EmployeeIdentityFacts {
    * unavailable state, never an invented label.
    */
   team: string | null;
+  /**
+   * §REPORT-IDENTITY — the employee's MANAGER, resolved from the
+   * ORGANIZATION TREE (the nearest team-type ancestor's manager
+   * display name). Null when unassigned/the node has no manager —
+   * rendered as an explicit unavailable state, never invented.
+   */
+  manager: string | null;
   position: string | null;
   /** Existing lifecycle vocabulary (normalizeEmployeeStatus). */
   employmentStatus: 'active' | 'inactive' | 'archived' | 'unknown';
@@ -440,6 +447,18 @@ export interface TravelDealFacts {
    *  records created before the field). Surfaced as unknown — never
    *  attributed to a month, never derived from another date. */
   closedWithEmployeeUnknownMonth: number;
+  /**
+   * §CLOSURE-BREAKDOWN — current-status split of the period's closure
+   * population (DEAL_CLOSED dimension). The parts sum EXACTLY to
+   * closedWithEmployeeInPeriod: completed = confirmed closures,
+   * canceled = cancelled closures (the historical closure SURVIVES
+   * cancellation — it stays in BOTH numbers), the rest still
+   * operationally active.
+   */
+  closedWithEmployeeInPeriodByStatus: Record<
+    'upcoming' | 'in_progress' | 'completed' | 'canceled',
+    number
+  >;
   /** All-time CURRENT-STATUS snapshot (verbatim vocabulary — the
    *  operational "now" counts, independent of every date dimension). */
   statusAllTime: Record<'upcoming' | 'in_progress' | 'completed' | 'canceled', number>;

@@ -42,6 +42,7 @@ import type {
 import { T } from '@/lib/i18n/T';
 import { useLanguage } from '@/lib/i18n/language-context';
 import { translateUIText } from '@/lib/i18n/ui-text';
+import { categoryDisplayName } from '@/lib/observation-categories/presentation';
 import { formatMonthKey, formatNumber, formatInteger } from '@/lib/i18n/format';
 
 // ─── Stat card ────────────────────────────────────────────────
@@ -240,13 +241,17 @@ export default function KpiDashboardPage() {
   const categories = Array.isArray(categoriesData) ? categoriesData : [];
 
   // Build categoryId → name/color map for the distribution chart.
+  // ALL categories map (historical observations may reference
+  // deactivated ones); names are locale-aware via the canonical
+  // presentation helper.
   const categoryMap = useMemo(() => {
     const m = new Map<string, { name: string; color: string }>();
     for (const c of categories) {
-      m.set(c.id, { name: c.name, color: (c as any).color || '#3b82f6' });
+      m.set(c.id, { name: categoryDisplayName(c as { name: string; nameEn?: string }, locale), color: (c as any).color || '#3b82f6' });
     }
     return m;
-  }, [categories]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- categories/locale drive the map
+  }, [categories, locale]);
 
   // Sorted category distribution (desc by points).
   const sortedCategories = useMemo(() => {

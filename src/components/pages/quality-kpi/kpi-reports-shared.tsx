@@ -15,6 +15,7 @@ import { cn } from '@/lib/utils';
 import type { KpiValueBasis } from '@/lib/kpi-reporting';
 import { useLanguage } from '@/lib/i18n/language-context';
 import { translateUIText } from '@/lib/i18n/ui-text';
+import { presentStatus } from '@/lib/i18n/presentation';
 import { formatMonthKey, formatNumber, formatPercentage } from '@/lib/i18n/format';
 import type { Locale } from '@/lib/i18n/dictionary';
 
@@ -103,13 +104,19 @@ const STATUS_LABELS: Record<string, [string, string]> = {
 export function StatusBadge({ status, className }: { status: string | null; className?: string }) {
   const { locale } = useLanguage();
   if (!status) return <span className="text-slate-500">—</span>;
+  const label = STATUS_LABELS[status]?.[locale === 'en' ? 1 : 0]
+    // §PRESENTATION-BOUNDARY — unknown engine keys resolve to the safe
+    // generic label; the raw key never becomes visible text.
+    ?? presentStatus(status, locale);
   return (
     <Badge
       variant="outline"
-      className={cn('font-mono text-[11px] whitespace-nowrap', STATUS_STYLES[status] ?? 'bg-slate-500/15 text-slate-300 border-slate-500/30', className)}
-      title={STATUS_LABELS[status]?.[locale === 'en' ? 1 : 0] ?? status}
+      className={cn('text-[11px] whitespace-nowrap', STATUS_STYLES[status] ?? 'bg-slate-500/15 text-slate-300 border-slate-500/30', className)}
+      // The visible text is the localized business label; the raw
+      // engine key stays an explicit hover diagnostic (title) only.
+      title={STATUS_LABELS[status] ? status : undefined}
     >
-      {status}
+      {label}
     </Badge>
   );
 }

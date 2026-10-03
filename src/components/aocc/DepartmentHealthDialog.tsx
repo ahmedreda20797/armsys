@@ -85,7 +85,9 @@ function topFactorsOf(
     })
     .filter((f) => f.count > 0)
     .sort((a, b) => b.points - a.points);
-  const labels = entries.slice(0, 2).map((f) => RISK_FACTOR_LABELS[f.key] ?? f.key);
+  // §PRESENTATION-BOUNDARY — unmapped factor keys show the generic
+  // localized label, never the raw key.
+  const labels = entries.slice(0, 2).map((f) => RISK_FACTOR_LABELS[f.key] ?? 'عوامل أخرى');
   return labels.length > 0 ? labels.join(' · ') : '—';
 }
 

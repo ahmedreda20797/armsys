@@ -49,11 +49,16 @@ describe('travel write-path — permission gates stay pinned (§35.43/45-49)', (
   });
 });
 
-describe('travel write-path — closedAt is a server-side ledger (§35.44)', () => {
-  it('PUT strips the client closedAt and re-derives it from the status transition', () => {
+describe('travel write-path — closedAt is a server-side ledger (§35.44 + §LEGACY-BACKFILL)', () => {
+  it('PUT strips the raw client closedAt from the update map and resolves the ledger through the ONE canonical resolver', () => {
     const src = stripComments(route('src/app/api/travel/[id]/route.ts'));
+    // The client value never reaches Firebase verbatim: it is captured,
+    // stripped from the update map, then validated/normalized (and only
+    // honored for a completed deal / entering-completed transition) by
+    // the canonical §LEGACY-BACKFILL resolver.
     assert.match(src, /delete\s+updates\.closedAt/);
-    assert.match(src, /closedAtForStatusTransition\(/);
+    assert.match(src, /resolveClosedAtForUpdate\(/);
+    assert.match(src, /closedAtResolution\.ok/);
   });
   it('the ledger lifecycle: stamp on enter, preserve on stay, clear on leave', () => {
     const enter = closedAtForStatusTransition({ previousStatus: 'in_progress', nextStatus: 'completed', now: new Date('2026-10-08T00:00:00.000Z') });

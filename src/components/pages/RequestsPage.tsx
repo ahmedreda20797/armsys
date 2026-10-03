@@ -57,6 +57,7 @@ import { useAppStore } from '@/lib/store';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLanguage } from '@/lib/i18n/language-context';
 import { T } from '@/lib/i18n/T';
+import { presentStatus } from '@/lib/i18n/presentation';
 import { translateUIText } from '@/lib/i18n/ui-text';
 import { formatInteger, formatMonthKey } from '@/lib/i18n/format';
 import { getRequestTypeLabel, getRequestTypeColor, todayDayKey } from '@/lib/date-utils';
@@ -278,7 +279,9 @@ export default function RequestsPage() {
       case 'rejected':
         return <Badge className="bg-red-500/15 text-red-400 border-red-500/20"><T>مرفوض</T></Badge>;
       default:
-        return <Badge variant="outline">{status}</Badge>;
+        // §PRESENTATION-BOUNDARY — unknown status keys show a generic
+        // localized label, never the raw key.
+        return <Badge variant="outline">{presentStatus(status, 'ar')}</Badge>;
     }
   };
 

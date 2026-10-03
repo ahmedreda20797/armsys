@@ -36,6 +36,7 @@ import { usePageState } from '@/hooks/use-page-state';
 import { useLanguage } from '@/lib/i18n/language-context';
 import { T } from '@/lib/i18n/T';
 import { translateUIText } from '@/lib/i18n/ui-text';
+import { presentStatus } from '@/lib/i18n/presentation';
 import { formatInteger } from '@/lib/i18n/format';
 import type { HrPerformanceReport } from '@/lib/report-audience';
 import {
@@ -186,7 +187,7 @@ export default function HrPerformanceReportTab({ month }: { month: string }) {
           <SelectTrigger className="h-9 w-40 bg-slate-900/60 border-slate-700/60"><SelectValue placeholder={translateUIText('حالة النتيجة', locale)} /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all"><T>كل الحالات</T></SelectItem>
-            {STATUS_OPTIONS.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+            {STATUS_OPTIONS.map((s) => <SelectItem key={s} value={s}>{presentStatus(s, locale)}</SelectItem>)}
           </SelectContent>
         </Select>
         <Button variant="outline" size="sm" className="h-9 border-slate-700/60 text-slate-300 hover:bg-slate-800 gap-1.5" onClick={openPrint} disabled={!report}>

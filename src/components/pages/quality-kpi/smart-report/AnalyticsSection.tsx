@@ -89,8 +89,10 @@ export function AnalyticsSection({ employeeId, month }: { employeeId: string; mo
           <Info className="mt-0.5 h-5 w-5 shrink-0 text-sky-400" />
           <div className="space-y-1 min-w-0">
             <p className="text-sm text-sky-200">{view.message}</p>
-            <p className="text-[11px] text-slate-500">
-              <T>سبب الحالة: </T><span className="font-mono" dir="ltr">{view.reason}</span>
+            {/* §PRESENTATION-BOUNDARY — the raw reason code stays a hover
+                diagnostic; the visible text is the localized message. */}
+            <p className="text-[11px] text-slate-500" title={view.reason}>
+              <T>سبب الحالة: غير متاح لهذه الفترة</T>
             </p>
           </div>
         </div>
@@ -102,7 +104,7 @@ export function AnalyticsSection({ employeeId, month }: { employeeId: string; mo
             <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-400" />
             <div className="min-w-0 space-y-1">
               <p className="text-sm text-amber-200">{view.message}</p>
-              <p className="text-[11px] text-slate-500 font-mono" dir="ltr">{view.reason}</p>
+              <p className="text-[11px] text-slate-500" title={view.reason}><T>حدث خطأ أثناء تحليل البيانات.</T></p>
             </div>
           </div>
           <Button
@@ -123,7 +125,7 @@ export function AnalyticsSection({ employeeId, month }: { employeeId: string; mo
             <Clock className="mt-0.5 h-5 w-5 shrink-0 text-orange-400" />
             <div className="min-w-0 space-y-1">
               <p className="text-sm text-orange-200">{view.message}</p>
-              <p className="text-[11px] text-slate-500 font-mono" dir="ltr">{view.reason}</p>
+              <p className="text-[11px] text-slate-500" title={view.reason}><T>استغرق التحليل وقتاً أطول من المسموح.</T></p>
             </div>
           </div>
           <Button

@@ -23,7 +23,9 @@ export function isKnownDocumentType(value: unknown): value is string {
 }
 
 export function documentTypeLabel(value: string): string {
-  return DOCUMENT_TYPES.find((t) => t.value === value)?.label ?? value;
+  // §PRESENTATION-BOUNDARY — an unknown/legacy docType key resolves to
+  // the generic business label; the raw key never reaches the UI.
+  return DOCUMENT_TYPES.find((t) => t.value === value)?.label ?? 'مستند';
 }
 
 /** Derived expiry status — explicit, never stored, never fabricated. */

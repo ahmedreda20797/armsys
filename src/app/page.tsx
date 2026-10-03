@@ -62,7 +62,6 @@ const SettingsPage         = dynamic(() => import('@/components/pages/SettingsPa
 const ProfilePage          = dynamic(() => import('@/components/pages/ProfilePage'),                            { loading: () => <PageSkeleton />, ssr: false });
 // ── Quality KPI (Phase 1) ──
 const ObservationsPage         = dynamic(() => import('@/components/pages/quality-kpi/ObservationsPage'),         { loading: () => <PageSkeleton />, ssr: false });
-const ObservationCategoriesPage = dynamic(() => import('@/components/pages/quality-kpi/ObservationCategoriesPage'), { loading: () => <PageSkeleton />, ssr: false });
 const ObservationTemplatesPage  = dynamic(() => import('@/components/pages/quality-kpi/ObservationTemplatesPage'),  { loading: () => <PageSkeleton />, ssr: false });
 const KpiDashboardPage         = dynamic(() => import('@/components/pages/quality-kpi/KpiDashboardPage'),         { loading: () => <PageSkeleton />, ssr: false });
 const MonthClosePage           = dynamic(() => import('@/components/pages/quality-kpi/MonthClosePage'),           { loading: () => <PageSkeleton />, ssr: false });
@@ -181,7 +180,12 @@ function renderPage(currentPage: string): React.ReactNode {
     case 'workflowDesigner': return <WorkflowDesignerPage key="workflowDesigner" />;
     // ── Quality KPI (Phase 1) ──
     case 'observations':          return <ObservationsPage          key="observations" />;
-    case 'observationCategories': return <ObservationCategoriesPage key="observationCategories" />;
+    // §SETTINGS-CENTER — the legacy categories page id routes INTO the
+    // Settings Center (Master Data domain, deep-linked). The registry
+    // entry + permission key are unchanged, so existing grants keep
+    // working with exactly ONE settings UI.
+    case 'observationCategories':
+      return <SettingsPage key="observationCategories" initialSection="masterData" initialDomain="observationCategories" routePageId="observationCategories" />;
     case 'observationTemplates':  return <ObservationTemplatesPage  key="observationTemplates" />;
     case 'kpiDashboard':          return <KpiDashboardPage          key="kpiDashboard" />;
     case 'kpiReports':            return <KpiReportsPage            key="kpiReports" />;

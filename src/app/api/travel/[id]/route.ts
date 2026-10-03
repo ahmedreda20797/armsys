@@ -2,8 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getById, updateRecord, deleteRecord } from '@/lib/db';
 import { verifyPermission } from '@/lib/verify-permission';
 import { asScopeViewer, employeeInScope } from '@/lib/scope/server';
-import { closedAtForStatusTransition } from '@/lib/deal-dates';
-import { isValidDisplayDate } from '@/lib/date-utils';
+import { resolveClosedAtForUpdate } from '@/lib/deal-dates';
+import { isValidDisplayDate, normalizeArabicDigits } from '@/lib/date-utils';
 import { projectLegacyServiceFields, sanitizeBookingItems } from '@/lib/booking-items';
 
 export async function PUT(
@@ -42,11 +42,15 @@ export async function PUT(
     }
 
     // ── §DEAL-DATES — closedAt is a SERVER-side closure ledger ──
-    // The client's closedAt (if any) is never trusted: the stamp is
-    // derived from the observed status transition (entering
-    // 'completed' = now; leaving it = cleared; staying = verbatim).
-    // createdAt / id are technical/system fields — never client-writable.
+    // The client's closedAt (if any) is never trusted blindly: it is
+    // resolved through the ONE canonical resolver (§LEGACY-BACKFILL),
+    // which validates + normalizes it (ISO instant of the calendar
+    // day's UTC start) and only ever honors it for a COMPLETED deal
+    // (legacy backfill §6.C / authorized correction §6.D) or an
+    // entering-'completed' transition (§6.B). createdAt / id are
+    // technical/system fields — never client-writable.
     const updates: Record<string, unknown> = { ...(body as Record<string, unknown>) };
+    const clientClosedAt = updates.closedAt;
     delete updates.closedAt;
     delete updates.createdAt;
     delete updates.id;
@@ -63,6 +67,11 @@ export async function PUT(
         delete updates.dealClosedAt;
       } else if (typeof updates.dealClosedAt !== 'string' || !isValidDisplayDate(updates.dealClosedAt)) {
         return NextResponse.json({ error: 'تاريخ تقفيل الديل غير صالح — الصيغة DD/MM/YYYY' }, { status: 400 });
+      } else {
+        // §8 — Arabic/English keyboard input normalizes to the ASCII
+        // display contract before persisting (month attribution and
+        // every reader rely on it).
+        updates.dealClosedAt = normalizeArabicDigits((updates.dealClosedAt as string).trim());
       }
     }
 
@@ -80,12 +89,22 @@ export async function PUT(
       Object.assign(updates, projectLegacyServiceFields(sanitized.items));
     }
 
-    if (typeof updates.status === 'string' && updates.status !== existing.status) {
-      updates.closedAt = closedAtForStatusTransition({
-        previousStatus: existing.status,
-        nextStatus: updates.status as string,
-        existingClosedAt: existing.closedAt ?? null,
-      });
+    // ── §DEAL-DATES + §LEGACY-BACKFILL — the ONE canonical closedAt
+    // resolution for this update (transition B/E, legacy backfill C,
+    // authorized correction D, non-completed A). Deterministic error
+    // (400) on an invalid client date — the mutation never hangs and
+    // never partially applies.
+    const closedAtResolution = resolveClosedAtForUpdate({
+      existingStatus: existing.status,
+      existingClosedAt: existing.closedAt ?? null,
+      nextStatus: typeof updates.status === 'string' ? updates.status : null,
+      clientClosedAt,
+    });
+    if (!closedAtResolution.ok) {
+      return NextResponse.json({ error: closedAtResolution.error }, { status: 400 });
+    }
+    if (closedAtResolution.closedAt !== undefined) {
+      updates.closedAt = closedAtResolution.closedAt;
     }
 
     const trip = await updateRecord('travelDeals', id, updates);

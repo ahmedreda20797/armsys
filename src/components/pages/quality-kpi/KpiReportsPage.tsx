@@ -138,7 +138,7 @@ export default function KpiReportsPage() {
             <span className="block text-[11px] text-slate-500 mt-0.5 no-print">
               <T>الفترة الحالية: </T>{formatMonthKey(effectiveMonth, locale)}
               {monthOptions.find((o) => o.value === effectiveMonth)?.closed
-                ? <T>{' — شهر مغلق (FINALIZED)'}</T>
+                ? <T>{' — شهر مغلق (نتائج مجمّدة)'}</T>
                 : <T>{' — شهر مفتوح'}</T>}
             </span>
           </>
@@ -207,7 +207,7 @@ export default function KpiReportsPage() {
               </SelectContent>
             </Select>
             <span className="text-[10px] text-slate-500">
-              <T>{monthOptions.find((o) => o.value === effectiveMonth)?.closed ? 'شهر مغلق (FINALIZED)' : 'شهر مفتوح'}</T>
+              <T>{monthOptions.find((o) => o.value === effectiveMonth)?.closed ? 'شهر مغلق (نتائج مجمّدة)' : 'شهر مفتوح'}</T>
             </span>
           </div>
           <KpiMonthlyTableTab kind={basis} month={effectiveMonth} />

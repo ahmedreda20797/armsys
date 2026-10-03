@@ -96,9 +96,11 @@ export function AuditTrailList({
     <ul className={cn('space-y-2', className)}>
       {entries.map((e) => {
         const actionEntry = ACTION_LABELS[e.action];
-        const actionLabel = actionEntry ? (locale === 'en' ? actionEntry[1] : actionEntry[0]) : e.action;
+        // §PRESENTATION-BOUNDARY — unmapped action/entity keys show
+        // generic localized labels, never the raw key.
+        const actionLabel = actionEntry ? (locale === 'en' ? actionEntry[1] : actionEntry[0]) : 'إجراء';
         const entityEntry = ENTITY_LABELS[e.entityType];
-        const entityLabel = entityEntry ? (locale === 'en' ? entityEntry[1] : entityEntry[0]) : e.entityType;
+        const entityLabel = entityEntry ? (locale === 'en' ? entityEntry[1] : entityEntry[0]) : 'سجل';
         const tone = ACTION_TONE[e.action] ?? 'bg-slate-500/10 text-slate-300 border-slate-500/20';
         return (
           <li

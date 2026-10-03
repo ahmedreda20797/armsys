@@ -49,6 +49,14 @@ export interface PrintReportIdentity {
   team?: string | null;
   department?: string | null;
   position?: string | null;
+  /** §REPORT-IDENTITY — the direct manager (context fact, optional). */
+  manager?: string | null;
+  /**
+   * §REPORT-IDENTITY — localized employment-status label, carried ONLY
+   * when it applies (the live header surfaces it solely for non-active
+   * employees). Null/undefined = active, nothing to flag.
+   */
+  employmentStatusLabel?: string | null;
 }
 
 /** The complete, clean report document model. */

@@ -40,6 +40,7 @@ import {
 import { InlineFormPanel } from '@/components/shared/InlineFormPanel';
 import { useEmployees, useDashboardUsers } from '@/hooks/use-queries';
 import { useObservationCategories } from '@/hooks/use-kpi-queries';
+import { selectorCategories } from '@/lib/observation-categories/presentation';
 
 export type HomeQuickActionId =
   | 'employees'
@@ -125,11 +126,13 @@ function useSystemUsers(): { id: string; name: string; email?: string; role?: st
   return (users ?? []) as { id: string; name: string; email?: string; role?: string }[];
 }
 
-function useQuickActionCategories(): Array<{ id: string; name: string; defaultPointValue: number; isBonusDefault: boolean }> {
+function useQuickActionCategories(): Array<{ id: string; name: string; nameEn?: string; defaultPointValue: number; isBonusDefault: boolean }> {
   // Same endpoint the KPI suite uses — reuse ITS cached query instead
   // of a second raw fetch (also regains the 401 token-refresh retry).
+  // §MASTER-DATA: NEW-observation selectors see ACTIVE categories in
+  // canonical (sortOrder) order only.
   const { data } = useObservationCategories();
-  return (data ?? []) as Array<{ id: string; name: string; defaultPointValue: number; isBonusDefault: boolean }>;
+  return selectorCategories((data ?? []) as Array<{ id: string; name: string; nameEn?: string; sortOrder?: number; isActive?: boolean; defaultPointValue: number; isBonusDefault: boolean }>);
 }
 
 // ── Inline form branches — ALL use the same inline pattern ──

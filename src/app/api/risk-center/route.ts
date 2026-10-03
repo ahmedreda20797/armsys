@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { isOpenComplaintStatus } from '@/lib/complaints/complaint-status';
 import { getAllBatch } from '@/lib/db';
 import { dedupeEmployeesByIdentity, employeeIdentityKey } from '@/lib/risk/employee-identity';
 import { requireAuth, verifyPermission } from '@/lib/verify-permission';
@@ -220,7 +221,7 @@ export async function GET(request: NextRequest) {
         empComplaints.set(key, { open: 0, lastDate: '' });
       }
       const stat = empComplaints.get(key)!;
-      if (c.status === 'open' || c.status === 'under_investigation' || c.status === 'pending_resolution') stat.open += 1;
+      if (isOpenComplaintStatus(c.status)) stat.open += 1;
       if ((c.createdAt || '') > stat.lastDate) stat.lastDate = c.createdAt || '';
     }
 

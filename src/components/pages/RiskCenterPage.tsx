@@ -33,6 +33,7 @@ import { useAppStore } from '@/lib/store';
 import { useRecordHighlight } from '@/hooks/use-record-highlight';
 import { T } from '@/lib/i18n/T';
 import { translateUIText } from '@/lib/i18n/ui-text';
+import { isRecordIdLike } from '@/lib/i18n/presentation';
 import { useLanguage } from '@/lib/i18n/language-context';
 import type { Locale } from '@/lib/i18n/dictionary';
 import { formatInteger, formatMonthKey } from '@/lib/i18n/format';
@@ -145,7 +146,7 @@ function topReasonOf(emp: EmployeeRisk): string {
   const entries = Object.entries(emp.breakdown ?? {})
     .filter(([, b]) => (b?.count ?? 0) > 0)
     .sort((a, b) => (b[1]?.points ?? 0) - (a[1]?.points ?? 0));
-  const labels = entries.slice(0, 2).map(([key]) => RISK_FACTOR_LABELS[key] ?? key);
+  const labels = entries.slice(0, 2).map(([key]) => RISK_FACTOR_LABELS[key] ?? 'عوامل أخرى');
   if (labels.length === 0) return '—';
   return labels.join(' · ');
 }
@@ -615,7 +616,7 @@ export default function RiskCenterPage() {
             <div className="flex items-center gap-2 mt-2">
               <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-brand-500/30 bg-brand-500/10 text-brand-300 text-[11px] font-medium">
                 <UserCheck className="size-3.5" />
-                {translateUIText('مركّز على:', locale)} {deepLinkEmployeeName || employeeFocus}
+                {translateUIText('مركّز على:', locale)} {deepLinkEmployeeName || (isRecordIdLike(employeeFocus) ? translateUIText('موظف محدد', locale) : employeeFocus)}
                 <button
                   type="button"
                   aria-label={translateUIText('إزالة التركيز', locale)}
@@ -661,7 +662,7 @@ export default function RiskCenterPage() {
               <p className="text-slate-400 text-sm font-medium">
                 <T>لا توجد مخاطر مسجلة لهذا الموظف في الفترة المحددة</T>
               </p>
-              <p className="text-slate-600 text-xs mt-1">{deepLinkEmployeeName || employeeFocus} — {basisLabel}</p>
+              <p className="text-slate-600 text-xs mt-1">{deepLinkEmployeeName || (isRecordIdLike(employeeFocus) ? translateUIText('موظف محدد', locale) : employeeFocus)} — {basisLabel}</p>
               <Button variant="outline" size="sm" className="mt-4 border-slate-700/70 text-slate-300 hover:bg-slate-800" onClick={() => setEmployeeFocus(null)}>
                 <T>عرض كل الموظفين</T>
               </Button>

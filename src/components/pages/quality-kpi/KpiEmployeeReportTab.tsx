@@ -46,6 +46,7 @@ import {
 import { T } from '@/lib/i18n/T';
 import { useLanguage } from '@/lib/i18n/language-context';
 import { translateUIText } from '@/lib/i18n/ui-text';
+import { presentStatus } from '@/lib/i18n/presentation';
 import { formatMonthKey, formatDate, formatNumber, formatInteger } from '@/lib/i18n/format';
 
 const SEVERITY_STYLES: Record<string, string> = {
@@ -214,8 +215,8 @@ function DiagnosePanel({
                 <T>{trace.wouldAppearInReport ? 'سيظهر في التقرير' : 'لن يظهر في التقرير'}</T>
               </Badge>
               {trace.rowStatus && (
-                <Badge variant="outline" className="border-slate-600/50 text-slate-300 font-mono text-[11px]">
-                  {trace.rowStatus}
+                <Badge variant="outline" className="border-slate-600/50 text-slate-300 text-[11px]" title={trace.rowStatus}>
+                  {presentStatus(trace.rowStatus, locale)}
                 </Badge>
               )}
             </div>
@@ -423,7 +424,7 @@ function ComponentStatusBadge({ status }: { status: KpiComponentResultStatus }) 
   if (status === 'PENDING') {
     return (
       <Badge variant="outline" className="text-[11px] border-slate-600/50 text-slate-400">
-        <T>غير متاح (PENDING)</T>
+        <T>غير متاح (قيد الانتظار)</T>
       </Badge>
     );
   }
@@ -474,8 +475,8 @@ function TrendCard({ report }: { report: EmployeeKpiReport }) {
               }`}
               title={
                 p.available
-                  ? `${formatMonthKey(p.monthKey, locale)} — ${p.finalized ? translateUIText('مجمّدة', locale) : p.valueBasis}`
-                  : `${formatMonthKey(p.monthKey, locale)} — ${translateUIText('لا توجد نتيجة', locale)} (${p.rowStatus})`
+                  ? `${formatMonthKey(p.monthKey, locale)} — ${p.finalized ? translateUIText('مجمّدة', locale) : presentStatus(p.valueBasis, locale)}`
+                  : `${formatMonthKey(p.monthKey, locale)} — ${translateUIText('لا توجد نتيجة', locale)} (${presentStatus(p.rowStatus, locale)})`
               }
             >
               <p className="text-[11px] text-slate-400">{formatMonthKey(p.monthKey, locale)}</p>
@@ -574,14 +575,14 @@ function EvidenceCard({ report }: { report: EmployeeKpiReport }) {
                   <TableCell className="text-slate-200">{obs.categoryName}</TableCell>
                   <TableCell>
                     <Badge variant="outline" className={`text-[11px] ${SEVERITY_STYLES[obs.severity] ?? ''}`}>
-                      {obs.severity}
+                      {presentStatus(obs.severity, locale)}
                     </Badge>
                   </TableCell>
                   <TableCell className="text-slate-300 max-w-[220px]">
                     <span className="line-clamp-2" title={obs.notes}>{obs.notes || '—'}</span>
                   </TableCell>
-                  <TableCell className="text-slate-400 text-xs whitespace-nowrap">{obs.status}</TableCell>
-                  <TableCell className="text-slate-400 text-xs whitespace-nowrap">{obs.approvalStatus}</TableCell>
+                  <TableCell className="text-slate-400 text-xs whitespace-nowrap">{presentStatus(obs.status, locale)}</TableCell>
+                  <TableCell className="text-slate-400 text-xs whitespace-nowrap">{presentStatus(obs.approvalStatus, locale)}</TableCell>
                   <TableCell className="font-mono text-xs whitespace-nowrap">
                     {obs.effect.counted ? (
                       <span className={obs.effect.signedPoints >= 0 ? 'text-emerald-300' : 'text-red-300'}>

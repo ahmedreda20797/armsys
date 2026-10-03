@@ -23,6 +23,7 @@ import { asScopeViewer, employeeInScope, authScopeViewer, filterRowsByEmployeeSc
 import { makeApprovalEvent, appendApprovalEvent, projectLatestApprovalStatus } from '@/lib/approvals';
 import { makeAuditEvent, writeAudit } from '@/lib/audit';
 import { AUDIT_LOG_TABLE } from '@/app/api/quality-audit-log/route';
+import { ensureObservationCategoryMasterData } from '@/lib/observation-categories';
 import { notifyObservationAwaitingApproval } from '@/lib/notifications/quality-events';
 import { dispatchAutomationEvent } from '@/lib/automation/event-bridge';
 import type { QualityObservation, ApprovalEvent } from '@/types/quality-kpi';
@@ -178,10 +179,21 @@ export async function POST(request: NextRequest) {
     const department = emp?.department || 'غير محدد';
     const positionSnapshot = emp?.position || '';
 
+    // Master Data ensure runs before category resolution so a fresh
+    // install can never fail FK validation for lack of vocabulary
+    // (idempotent — zero writes once converged).
+    await ensureObservationCategoryMasterData();
+
     // Resolve category details (server-side, so weight is authoritative).
-    const categories = await getAll<{ id: string; name: string; weight: number; isBonusDefault: boolean }>('observationCategories', TTL.STATIC);
+    const categories = await getAll<{ id: string; name: string; weight: number; isBonusDefault: boolean; isActive?: boolean }>('observationCategories', TTL.STATIC);
     const category = categories.find((c) => c.id === categoryId);
     if (!category) return validationError('التصنيف غير موجود');
+    // §MASTER-DATA — deactivated categories disappear from NEW
+    // observations (fail-closed server-side; historical records and
+    // edits of existing observations are unaffected).
+    if (category.isActive === false) {
+      return validationError('هذا التصنيف معطّل ولا يمكن استخدامه في ملاحظات جديدة');
+    }
     const categoryName = category.name;
     const categoryWeight = category.weight;
 

@@ -8,7 +8,7 @@ import { getDaysRemaining } from '@/lib/date-utils';
 import { isDepartureAttention, isReturnAttention } from '@/lib/travel-status';
 // §DEAL-DATES — canonical deal date dimensions + the DEFAULT DATE =
 // TODAY doctrine (dealClosedAt default).
-import { todayDisplayDate, isValidDisplayDate } from '@/lib/date-utils';
+import { todayDisplayDate, isValidDisplayDate, normalizeArabicDigits } from '@/lib/date-utils';
 // §TRAVEL-FILTERS — the ONE canonical Travel filter pipeline (Home and
 // Travel answer the same question through the same pure functions).
 import {
@@ -186,7 +186,9 @@ export async function POST(request: NextRequest) {
       if (typeof body.dealClosedAt !== 'string' || !isValidDisplayDate(body.dealClosedAt)) {
         return NextResponse.json({ error: 'تاريخ تقفيل الديل غير صالح — الصيغة DD/MM/YYYY' }, { status: 400 });
       }
-      dealClosedAt = body.dealClosedAt;
+      // §8 — Arabic/English keyboard input normalizes to the ASCII
+      // display contract before persisting.
+      dealClosedAt = normalizeArabicDigits(body.dealClosedAt.trim());
     }
 
     // ── §BOOKING-ITEMS — canonical items from the payload; legacy

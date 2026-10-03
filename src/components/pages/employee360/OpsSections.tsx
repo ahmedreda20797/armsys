@@ -99,10 +99,9 @@ export function AttendanceSection({ attendance, periodLabel }: {
             <span><T>خصم أيام الحضور:</T> <span className="font-semibold text-foreground" dir="ltr">{r.attendanceDeductionDays}</span></span>
             <span><T>خصم التأخير:</T> <span className="font-semibold text-foreground" dir="ltr">{r.lateDeductionDays}</span></span>
             <span><T>خصم الغياب:</T> <span className="font-semibold text-foreground" dir="ltr">{r.absenceDeductionDays}</span></span>
-            <span dir="ltr">engine: {r.engineVersion}</span>
           </div>
           <p className="mt-2 text-[10px] text-muted-foreground/80">
-            <T>النتيجة المخزنة الشهرية (attendance-v1) — أصل الحضور القانوني، بلا إعادة حساب.</T>
+            <T>النتيجة المخزنة الشهرية — أصل الحضور القانوني، بلا إعادة حساب.</T>
           </p>
         </>
       )}
@@ -115,6 +114,11 @@ export function AttendanceSection({ attendance, periodLabel }: {
 const FOLLOW_UP_STATUS_AR: Record<string, string> = {
   open: 'مفتوحة', under_review: 'تحت المراجعة', under_follow_up: 'تحت المتابعة',
   resolved: 'تمت', closed: 'مغلقة', cancelled: 'ملغاة',
+};
+
+/** §PRESENTATION-BOUNDARY — HR deduction status keys → Arabic labels. */
+const HR_STATUS_AR: Record<string, string> = {
+  pending: 'معلق', approved: 'معتمد', rejected: 'مرفوض',
 };
 
 export function FollowUpsSection({ followUps, employeeId, periodLabel }: {
@@ -153,7 +157,7 @@ export function FollowUpsSection({ followUps, employeeId, periodLabel }: {
         <div className="mt-3 flex flex-wrap gap-1.5">
           {statusEntries.map(([status, count]) => (
             <span key={status} className="rounded-md border border-border/60 bg-muted/30 px-2 py-1 text-[11px] text-muted-foreground">
-              {FOLLOW_UP_STATUS_AR[status] ?? status}: <span className="font-semibold text-foreground">{count}</span>
+              {FOLLOW_UP_STATUS_AR[status] ?? 'أخرى'}: <span className="font-semibold text-foreground">{count}</span>
             </span>
           ))}
         </div>
@@ -241,7 +245,7 @@ export function HrDeductionsSection({ hr, monthKey }: {
           <div className="mt-1 flex flex-wrap gap-1">
             {Object.entries(hr.statusCounts).map(([status, count]) => (
               <span key={status} className="rounded bg-muted/60 px-1.5 py-0.5 text-[10px] text-muted-foreground">
-                {status}: {count}
+                {HR_STATUS_AR[status] ?? 'أخرى'}: {count}
               </span>
             ))}
           </div>

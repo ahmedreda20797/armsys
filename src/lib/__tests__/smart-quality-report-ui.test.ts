@@ -71,6 +71,7 @@ function makeDataset(overrides?: {
       employeeCode: '001',
       department: 'المبيعات',
       team: null,
+      manager: null,
       position: 'مستشار سفر',
       employmentStatus: 'active',
       eligibleForPeriod: true,
@@ -258,6 +259,7 @@ function makeDataset(overrides?: {
       closedWithEmployeeInPeriod: 9,
       closedWithEmployeeMonthly: [{ month: '2026-08', count: 9 }],
       closedWithEmployeeUnknownMonth: 3,
+      closedWithEmployeeInPeriodByStatus: { upcoming: 2, in_progress: 3, completed: 3, canceled: 1 },
       statusAllTime: { upcoming: 5, in_progress: 3, completed: 12, canceled: 2 },
     },
     attendance:
@@ -318,8 +320,13 @@ describe('smart report §32.1 — employee header', () => {
     assert.equal(header.schemeLabel, 'مخطط جودة الحجوزات — إصدار 3');
     const dept = header.facts.find((f) => f.label === 'القسم');
     assert.equal(dept?.value, 'المبيعات');
-    const employment = header.facts.find((f) => f.label === 'حالة التوظيف');
-    assert.equal(employment?.value, 'نشط');
+    // §REPORT-IDENTITY — the manager is a context fact; an active
+    // employee carries NO employment-status fact (badges handle it).
+    const manager = header.facts.find((f) => f.label === 'المدير المباشر');
+    assert.equal(manager?.value, UNAVAILABLE);
+    assert.equal(manager?.unavailable, true);
+    assert.equal(header.facts.some((f) => f.label === 'حالة التوظيف'), false);
+    assert.equal(header.lifecycleBadges.length, 0);
   });
 
   it('shows an explicit unavailable state for team and missing fields (never invented)', () => {
@@ -346,8 +353,8 @@ describe('smart report §32.21 — archived employee historical report', () => {
       header.lifecycleBadges.some((b) => b.label.includes('فترة تاريخية')),
       true,
     );
-    const employment = header.facts.find((f) => f.label === 'حالة التوظيف');
-    assert.equal(employment?.value, 'مؤرشف');
+    const employmentBadge = header.lifecycleBadges.find((b) => b.label.includes('مؤرشف'));
+    assert.ok(employmentBadge, 'archived status surfaces as a lifecycle badge');
   });
 });
 
@@ -525,13 +532,14 @@ describe('smart report §32.9 — repeated issues', () => {
 });
 
 describe('smart report §32.10 — deductions', () => {
-  it('keeps day-based and monetary totals separate', () => {
+  it('keeps day-based and monetary totals separate; summary carries no record reasons (§16)', () => {
     const view = buildDeductions(makeDataset());
     assert.equal(view.count, 2);
     assert.equal(view.totalDays, 1.5);
     assert.equal(view.totalAmount, 900);
-    assert.equal(view.records.length, 2);
-    assert.equal(view.records[0].relatedCapaId, 'capa_1');
+    // §16 — the executive view carries the SUMMARY only: no per-record
+    // rows, no free-text reasons.
+    assert.equal('records' in view, false);
     assert.equal(view.empty, false);
   });
 });
@@ -808,11 +816,75 @@ describe('smart report §32.23/§30 — no AI-generated content', () => {
     }
   });
 
-  it('the future AI area is a labeled placeholder only ("coming in a future phase")', () => {
+  it('no fake AI placeholder remains — the facts sections carry only verified labeling (§19)', () => {
     const src = stripComments(sectionsSrc);
-    assert.equal(src.includes('SmartAnalysisPlaceholder'), true);
-    assert.equal(src.includes('قادم في مرحلة لاحقة'), true);
+    // The "قادم في مرحلة لاحقة" placeholder era is over (the REAL AI
+    // section is a separate on-demand component); the facts sections
+    // must not pretend an AI feature exists.
+    assert.equal(src.includes('SmartAnalysisPlaceholder'), false);
+    assert.equal(src.includes('قادم في مرحلة لاحقة'), false);
     assert.equal(src.includes('حقائق موثقة'), true, 'VERIFIED FACTS labeling (§19) must be present');
+  });
+});
+
+
+describe('smart report §52/§57 — executive refinement contracts', () => {
+  const intelSectionsSrc = readFileSync(join(SMART_DIR, 'intelligence-sections.tsx'), 'utf8');
+  const intelViewSrc = readFileSync(join(SMART_DIR, 'intelligence-view.ts'), 'utf8');
+  const reportSectionsSrc = readFileSync(join(SMART_DIR, 'report-sections.tsx'), 'utf8');
+
+  it('§2/§3 the employee header is the primary identity — manager + generation date, no dataset kind', () => {
+    const src = stripComments(viewmodelSrc) + stripComments(reportSectionsSrc);
+    assert.equal(src.includes('datasetKind'), false, 'the internal dataset kind must not render');
+    assert.equal(src.includes('المدير المباشر'), true, 'manager is a header fact');
+    assert.equal(src.includes('generatedAtLabel'), true, 'the generation date renders in the header');
+    assert.equal(src.includes('تقرير الجودة والأداء الذكي'), true, 'the report names the document above the person');
+  });
+
+  it('§12 no internal rule ID ever reaches the rendered views', () => {
+    const src = stripComments(intelViewSrc);
+    // The view layer maps fact-layer rule ids to human labels — the raw
+    // ids may exist in FACTS (diagnostics) but never in TEMPLATES.
+    assert.ok(!/rowStatus\}/.test(src), 'engine row status interpolates into a template');
+    assert.ok(!/rule: \{source\}/.test(src), 'raw rule source interpolates into a template');
+    assert.equal(src.includes('ATTENTION_SOURCE_LABELS'), true);
+  });
+
+  it('§16 deduction details are not exposed in the executive section', () => {
+    const src = stripComments(reportSectionsSrc);
+    assert.ok(!/r\.description/.test(src), 'free-text deduction reasons must not render');
+    assert.equal(src.includes('عرض تفاصيل الخصومات'), true, 'a summary drill exists instead');
+  });
+
+  it('§52/§53 the page carries no duplicated section cards', () => {
+    const src = stripComments(pageSrc);
+    for (const removed of ['KpiHeroSection', 'ObservationsSection', 'RepeatedIssuesSection', 'DataQualitySection']) {
+      assert.ok(!src.includes(removed), `${removed} duplicate was not removed from the page`);
+    }
+    assert.equal(src.includes('TopSignalsSection'), true);
+    assert.equal(src.includes('WhatChangedSection'), true);
+    // The narrative (executive analysis) closes the report — after the
+    // data-quality matrix, before the page-3 evidence area.
+    const dqAt = src.indexOf('<DataQualityIntelSection');
+    const narAt = src.indexOf('<NarrativeSection');
+    const evAt = src.indexOf('<EvidenceSection');
+    assert.ok(narAt > dqAt, 'the executive analysis comes after the data-quality matrix');
+    assert.ok(evAt > narAt, 'expanded evidence stays on page 3');
+  });
+
+  it('§40 deal drills navigate through the store with explicit date basis + status + employee + period', () => {
+    const src = stripComments(pageSrc);
+    assert.equal(src.includes("dateBasis: 'dealClosedAt'"), true);
+    assert.equal(src.includes("status: 'active'"), true, 'current deals drill uses the derived active status');
+    assert.equal(src.includes('handleDealDrill'), true);
+  });
+
+  it('§3/§35 the executive strip and deals section carry explicit deal semantics', () => {
+    const src = stripComments(intelSectionsSrc) + stripComments(reportSectionsSrc);
+    for (const label of ['تقفيلات الفترة', 'الصفقات الحالية']) {
+      assert.equal(src.includes(label), true, `missing explicit label: ${label}`);
+    }
+    assert.equal(src.includes('تطابق التقفيلات'), true, 'the closure reconciliation line exists');
   });
 });
 

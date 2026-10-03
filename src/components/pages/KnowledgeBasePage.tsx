@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { usePermissions } from '@/hooks/usePermissions';
 import { useLanguage } from '@/lib/i18n/language-context';
 import { formatDate as localeDate, displayLocale } from '@/lib/i18n/format';
+import { presentStatus } from '@/lib/i18n/presentation';
 import type { Locale } from '@/lib/i18n/dictionary';
 import {
   useKnowledgeBase,
@@ -144,7 +145,7 @@ function getDepartmentColor(dept: string) {
 
 function getStatusBadge(status: string) {
   const found = STATUS_OPTIONS.find((s) => s.value === status);
-  return found?.label || status;
+  return found?.label || presentStatus(status, 'ar');
 }
 
 function getStatusColor(status: string) {

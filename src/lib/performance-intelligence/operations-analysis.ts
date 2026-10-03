@@ -18,6 +18,7 @@
 // ══════════════════════════════════════════════════════════════
 
 import type { CAPACase, CustomerComplaint, FollowUp, TravelDeal } from '@/types';
+import { isClosedComplaintStatus, isOpenComplaintStatus } from '@/lib/complaints/complaint-status';
 import {
   ACTIVE_CAPA_STATUSES,
   isClosedCAPA,
@@ -33,6 +34,7 @@ import {
 } from '@/lib/metrics/followUpMetrics';
 import { roundTo2 } from '@/lib/kpi-framework/validation';
 import { buildDealMetrics } from '@/lib/deal-dates';
+import { presentSystemOrVerbatim } from '@/lib/i18n/presentation';
 import { displayDateOrderKey } from './month-attribution';
 import type {
   CapaFacts,
@@ -128,7 +130,10 @@ export function aggregateComplaints(args: {
     if (group.ids.length < min) continue;
     repeatedTypes.push({
       issueKey,
-      label: issueKey,
+      // §PRESENTATION-BOUNDARY — the stored complaintType key
+      // (service_quality…) resolves to its human Arabic label;
+      // legacy free-text values stay verbatim.
+      label: presentSystemOrVerbatim(issueKey, 'ar'),
       occurrenceCount: group.ids.length,
       firstOccurrence: group.bounds.first,
       lastOccurrence: group.bounds.last,
@@ -143,8 +148,10 @@ export function aggregateComplaints(args: {
     byType,
     bySeverity,
     repeatedTypes: repeatedTypes.sort(byCountThenKey),
-    resolvedOrClosed: complaints.filter((c) => c.status === 'resolved' || c.status === 'closed').length,
-    stillOpen: complaints.filter((c) => c.status === 'open' || c.status === 'under_investigation' || c.status === 'pending_resolution').length,
+    // §COMPLAINT-STATUS — the ONE canonical open/terminal predicates
+    // (legacy 'investigating' rows aggregate canonically — never vanish).
+    resolvedOrClosed: complaints.filter((c) => isClosedComplaintStatus(c.status)).length,
+    stillOpen: complaints.filter((c) => isOpenComplaintStatus(c.status)).length,
     viaDealCount: complaints.filter((c) => typeof c.dealId === 'string' && c.dealId.length > 0).length,
     avgResolutionDays: avgDaySpan(
       complaints.map((c) => ({ start: c.createdAt, end: c.resolvedAt })),
@@ -365,6 +372,9 @@ export function aggregateTravelDeals(args: {
     closedWithEmployeeInPeriod: metrics.closedWithEmployeeInPeriod,
     closedWithEmployeeMonthly: metrics.closedWithEmployeeMonthly,
     closedWithEmployeeUnknownMonth: metrics.closedWithEmployeeUnknownMonth,
+    // §CLOSURE-BREAKDOWN — the period closure population split by
+    // current status (confirmed / cancelled / still active).
+    closedWithEmployeeInPeriodByStatus: metrics.closedWithEmployeeInPeriodByStatus,
     // All-time current-status snapshot.
     statusAllTime: metrics.byStatus,
   };

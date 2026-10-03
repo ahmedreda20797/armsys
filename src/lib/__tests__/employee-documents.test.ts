@@ -34,12 +34,14 @@ describe('Employee Documents (§17 — metadata + derived status)', () => {
     }
   });
 
-  it('4. type vocabulary is closed — unknown types rejected, labels fall back', () => {
+  it('4. type vocabulary is closed — unknown types rejected, labels fall back safely', () => {
     assert.ok(isKnownDocumentType('identity'));
     assert.ok(isKnownDocumentType('contract'));
     assert.ok(!isKnownDocumentType('passport_of_doom'));
     assert.equal(documentTypeLabel('identity'), 'هوية / بطاقة');
-    assert.equal(documentTypeLabel('unknown_x'), 'unknown_x');
+    // §PRESENTATION-BOUNDARY — an unknown/legacy type key resolves to
+    // the generic business label; the raw key never reaches the UI.
+    assert.equal(documentTypeLabel('unknown_x'), 'مستند');
   });
 
   it('5. every vocabulary entry has a non-empty label', () => {

@@ -102,6 +102,14 @@ stubbedDb.findFirst = async (t: string, filters: Record<string, unknown>) => {
   );
 };
 
+// findWhere — same in-memory semantics as the real implementation
+// (getAll + equality filter). Needed by consumers such as the
+// idempotency dedup helper.
+stubbedDb.findWhere = async (t: string, filters: Record<string, unknown>) => {
+  calls.push({ fn: 'findWhere', args: [t] });
+  return table(t).filter((r) => Object.entries(filters).every(([k, v] : [string, unknown]) => r[k] === v));
+};
+
 stubbedDb.createRecord = async (t: string, data: Record<string, any>) => {
   calls.push({ fn: 'createRecord', args: [t] });
   const rec = {

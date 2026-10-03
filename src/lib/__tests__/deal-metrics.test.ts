@@ -173,3 +173,77 @@ describe('travel + created dimensions stay available from the same builder', () 
     assert.deepEqual(metrics.travelMonthly, [{ month: '2026-09', count: 1 }, { month: '2026-10', count: 1 }]);
   });
 });
+
+// ══════════════════════════════════════════════════════════════
+//  §48/§32 CONTROLLED CLOSURE/CANCELLATION SCENARIO — the historical
+//  closure SURVIVES cancellation, and the current-status breakdown
+//  reconciles EXACTLY with the period closure headline.
+// ══════════════════════════════════════════════════════════════
+
+describe('§48 — controlled scenario: 5 September closures (4 confirmed, 1 later cancelled)', () => {
+  const deals: Deal[] = [
+    d('c1', { status: 'completed', dealClosedAt: '02/09/2026', closedAt: '2026-09-20T10:00:00.000Z' }),
+    d('c2', { status: 'completed', dealClosedAt: '05/09/2026', closedAt: '2026-09-21T10:00:00.000Z' }),
+    d('c3', { status: 'completed', dealClosedAt: '11/09/2026', closedAt: '2026-09-22T10:00:00.000Z' }),
+    d('c4', { status: 'completed', dealClosedAt: '18/09/2026', closedAt: '2026-09-23T10:00:00.000Z' }),
+    // Closed WITH the employee on 15/09, then cancelled on 22/09 — the
+    // September closure REMAINS (no cancellation basis erases it).
+    d('c5', { status: 'canceled', dealClosedAt: '15/09/2026', closedAt: null }),
+  ];
+
+  it('counts all 5 as Closed During Period regardless of current status', () => {
+    const m = buildDealMetrics(deals, SEPT);
+    assert.equal(m.closedWithEmployeeInPeriod, 5);
+  });
+
+  it('splits the SAME population by current status: 4 confirmed + 1 cancelled', () => {
+    const m = buildDealMetrics(deals, SEPT);
+    assert.equal(m.closedWithEmployeeInPeriodByStatus.completed, 4);
+    assert.equal(m.closedWithEmployeeInPeriodByStatus.canceled, 1);
+    assert.equal(m.closedWithEmployeeInPeriodByStatus.upcoming, 0);
+    assert.equal(m.closedWithEmployeeInPeriodByStatus.in_progress, 0);
+  });
+
+  it('the breakdown reconciles exactly with the headline (§32)', () => {
+    const m = buildDealMetrics(deals, SEPT);
+    const sum = Object.values(m.closedWithEmployeeInPeriodByStatus).reduce((a, b) => a + b, 0);
+    assert.equal(sum, m.closedWithEmployeeInPeriod);
+  });
+
+  it('a deal closed in another month NEVER joins the period breakdown — even when departing/cancelled in it', () => {
+    const outsider: Deal[] = [
+      // Closed with the employee in AUGUST, departs in SEPTEMBER, cancelled now.
+      d('aug-1', { status: 'canceled', dealClosedAt: '20/08/2026', departureDate: '20/09/2026' }),
+      ...deals,
+    ];
+    const m = buildDealMetrics(outsider, SEPT);
+    assert.equal(m.closedWithEmployeeInPeriod, 5, 'September closure headline unchanged');
+    assert.equal(m.closedWithEmployeeInPeriodByStatus.canceled, 1, 'no August closure leaks into the September split');
+  });
+
+  it('closures with an unknown date stay UNKNOWN in every part of the breakdown', () => {
+    const legacy: Deal[] = [
+      d('legacy-1', { status: 'completed', dealClosedAt: null }),
+      ...deals,
+    ];
+    const m = buildDealMetrics(legacy, SEPT);
+    assert.equal(m.closedWithEmployeeUnknownMonth, 1);
+    assert.equal(m.closedWithEmployeeInPeriod, 5, 'the unknown record is not attributed to September');
+    const sum = Object.values(m.closedWithEmployeeInPeriodByStatus).reduce((a, b) => a + b, 0);
+    assert.equal(sum, 5, 'and it never joins the breakdown either');
+  });
+});
+
+describe('§27 — Current Deals is a STATUS snapshot, never a date attribution', () => {
+  it('upcoming+in_progress deals count as current even though they carry a period dealClosedAt', () => {
+    const deals: Deal[] = [
+      d('now-1', { status: 'in_progress', dealClosedAt: '03/09/2026' }),
+      d('now-2', { status: 'upcoming', dealClosedAt: '03/09/2026' }),
+      d('done-1', { status: 'completed', dealClosedAt: '04/09/2026', closedAt: '2026-09-25T00:00:00.000Z' }),
+    ];
+    const m = buildDealMetrics(deals, SEPT);
+    assert.equal(m.byStatus.upcoming + m.byStatus.in_progress, 2, 'current deals = the non-terminal status snapshot');
+    assert.equal(m.closedWithEmployeeInPeriod, 3, 'the closure headline is independent of it');
+    assert.equal(m.completedInPeriod, 1, 'and independent of the CLOSED dimension too');
+  });
+});

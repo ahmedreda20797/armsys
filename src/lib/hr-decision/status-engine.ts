@@ -554,7 +554,9 @@ export function evaluateHrStatus(input: EvaluateHrStatusInput): HrStatusEvaluati
   // 3 — repeated / multi-dimension evidence (TREND excluded — the
   //     sustained-decline ladder below owns it).
   if (weakDimensionCount >= 2) {
-    const dims = [...weakCategories].map((c) => CATEGORY_LABELS[c] ?? c).join('، ');
+    // §PRESENTATION-BOUNDARY — a dimension key outside the closed set
+    // resolves to the generic label, never the raw key.
+    const dims = [...weakCategories].map((c) => CATEGORY_LABELS[c] ?? 'بُعد آخر').join('، ');
     return {
       ...base,
       status: 'PERFORMANCE_IMPROVEMENT_REVIEW',

@@ -115,10 +115,9 @@ export function PrintReportDocument({ model }: { model: PrintReportModel }) {
   //   position) are business data: rendered exactly as stored. Only
   //   the fixed field labels around them are claimed UI.
   const identity = model.identity;
-  const identitySecondary = [
-    identity?.code ? (<><T>كود الموظف: </T>{identity.code}</>) : null,
-    identity?.team ? (<><T>الفريق: </T>{identity.team}</>) : null,
-  ].filter(Boolean);
+  // §PRINT-IDENTITY-PARITY — contextual identity facts; the employee
+  // CODE renders directly under the NAME (never buried with the team).
+  const identitySecondary = identity?.team ? (<><T>الفريق: </T>{identity.team}</>) : null;
   return (
     <div className="print-doc" lang={locale}>
       {/* Header — report identity + period */}
@@ -129,17 +128,26 @@ export function PrintReportDocument({ model }: { model: PrintReportModel }) {
             <h1 className="print-doc-title"><T>{model.title}</T></h1>
             {identity?.name ? (
               <div className="print-doc-subject">
+                {/* §REPORT-IDENTITY — the EMPLOYEE is the primary subject;
+                    the team is contextual metadata, never the subject. */}
                 <p className="print-doc-subject-name">{identity.name}</p>
+                {identity.code ? (
+                  <p className="print-doc-subject-code" dir="ltr">{identity.code}</p>
+                ) : null}
                 {identity.department ? (
                   <p className="print-doc-subject-line"><T>القسم: </T>{identity.department}</p>
                 ) : null}
                 {identity.position ? (
                   <p className="print-doc-subject-line"><T>الوظيفة: </T>{identity.position}</p>
                 ) : null}
-                {identitySecondary.length > 0 ? (
-                  <p className="print-doc-subject-extra">{identitySecondary.map((frag, i) => (
-                    <span key={i}>{i > 0 ? ' · ' : ''}{frag}</span>
-                  ))}</p>
+                {identity.manager ? (
+                  <p className="print-doc-subject-line"><T>المدير: </T>{identity.manager}</p>
+                ) : null}
+                {identity.employmentStatusLabel ? (
+                  <p className="print-doc-subject-line"><T>حالة التوظيف: </T>{identity.employmentStatusLabel}</p>
+                ) : null}
+                {identitySecondary ? (
+                  <p className="print-doc-subject-extra">{identitySecondary}</p>
                 ) : null}
               </div>
             ) : model.subject ? (

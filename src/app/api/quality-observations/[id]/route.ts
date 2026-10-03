@@ -145,9 +145,16 @@ export async function PUT(
     let categoryWeight = existing.categoryWeight;
     if (body.categoryId && body.categoryId !== existing.categoryId) {
       const { getAll } = await import('@/lib/db');
-      const categories = await getAll<{ id: string; name: string; weight: number }>('observationCategories', TTL.STATIC);
+      const categories = await getAll<{ id: string; name: string; weight: number; isActive?: boolean }>('observationCategories', TTL.STATIC);
       const cat = categories.find((c) => c.id === body.categoryId);
       if (!cat) return validationError('التصنيف غير موجود');
+      // §MASTER-DATA — switching to a DEACTIVATED category is rejected;
+      // keeping the existing category is always allowed (historical
+      // integrity — deactivated categories remain valid for their own
+      // records).
+      if (cat.isActive === false) {
+        return validationError('هذا التصنيف معطّل ولا يمكن استخدامه في الملاحظات');
+      }
       categoryName = cat.name;
       categoryWeight = cat.weight;
     }

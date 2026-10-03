@@ -50,7 +50,7 @@ function StatusChip({ status }: { status: string }) {
           : 'text-amber-400 border-amber-500/30 bg-amber-500/10',
       )}
     >
-      {STATUS_LABELS_AR[status] ?? status}
+      {STATUS_LABELS_AR[status] ?? 'غير محدد'}
     </Badge>
   );
 }

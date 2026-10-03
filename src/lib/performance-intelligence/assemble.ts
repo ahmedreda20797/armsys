@@ -45,6 +45,12 @@ export interface AssembleEmployeePerformanceDatasetInput {
    * caller (service). Null when unassigned — never invented here.
    */
   orgTeam?: string | null;
+  /**
+   * §REPORT-IDENTITY — the employee's manager (the nearest team
+   * ancestor's manager display name), resolved by the caller from the
+   * ORGANIZATION TREE. Null when unassigned/managerless — never invented.
+   */
+  orgManager?: string | null;
   kpiReport: EmployeeKpiReport;
   observations: ReadonlyArray<QualityObservation>;
   deductions: ReadonlyArray<QualityDeduction>;
@@ -65,9 +71,11 @@ function buildIdentityFacts(args: {
   identity: EmployeeIdentityRecord | null;
   /** Org-tree team label resolved by the service (null when unassigned). */
   orgTeam: string | null;
+  /** §REPORT-IDENTITY — org-tree manager display name (null when none). */
+  orgManager: string | null;
   kpiReport: EmployeeKpiReport;
 }): EmployeeIdentityFacts {
-  const { employeeId, identity, orgTeam, kpiReport } = args;
+  const { employeeId, identity, orgTeam, orgManager, kpiReport } = args;
   const eligible =
     kpiReport.outcomeStatus !== 'NOT_ELIGIBLE_PERIOD' && kpiReport.outcomeStatus !== 'EMPLOYEE_NOT_FOUND';
 
@@ -78,6 +86,7 @@ function buildIdentityFacts(args: {
       employeeCode: kpiReport.employee.employeeCode,
       department: kpiReport.employee.department,
       team: null,
+      manager: null,
       position: kpiReport.employee.position,
       employmentStatus: 'unknown',
       eligibleForPeriod: eligible,
@@ -98,6 +107,7 @@ function buildIdentityFacts(args: {
     employeeCode: identity.code,
     department: identity.department,
     team: orgTeam,
+    manager: orgManager,
     position: identity.position,
     employmentStatus: status,
     eligibleForPeriod: eligible,
@@ -280,6 +290,7 @@ export function assembleEmployeePerformanceDataset(
       employeeId,
       identity: input.identity,
       orgTeam: input.orgTeam ?? null,
+      orgManager: input.orgManager ?? null,
       kpiReport: input.kpiReport,
     }),
     period: {

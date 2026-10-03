@@ -63,12 +63,28 @@ export type Priority = 'low' | 'medium' | 'high' | 'critical';
 // ─────────────────────────────────────────────────────────────
 
 /**
- * A reusable observation category.
+ * Master Data impact vocabulary for observation categories.
+ * POSITIVE → new observations default to a bonus; NEGATIVE/NEUTRAL →
+ * default to a deduction. Kept in sync with the legacy `isBonusDefault`
+ * boolean (POSITIVE ⇔ true) so the existing scoring engine is untouched.
+ */
+export type CategoryImpact = 'POSITIVE' | 'NEGATIVE' | 'NEUTRAL';
+
+/** All valid impact values — the canonical server-side vocabulary. */
+export const CATEGORY_IMPACT_VALUES: readonly CategoryImpact[] = ['POSITIVE', 'NEGATIVE', 'NEUTRAL'];
+
+/**
+ * A reusable observation category — the first Master Data domain.
  *
  * `defaultPointValue` drives the current score formula.
  * `weight` is stored now for future analytics — it lets the system
  * distinguish observations with equal points but different business
  * impact. The score formula uses points only (per spec).
+ *
+ * Master Data fields (`nameEn`, `isActive`, `sortOrder`, `impact`) are
+ * OPTIONAL for backward compatibility with pre-migration records; the
+ * idempotent master-data migration backfills them without ever
+ * overwriting a value that is already present.
  */
 export interface ObservationCategory {
   id: string;
@@ -77,6 +93,19 @@ export interface ObservationCategory {
   key: string;
   /** Arabic display name. */
   name: string;
+  /** English display name (Master Data). */
+  nameEn?: string;
+  /**
+   * Master Data activation state. Inactive categories disappear from
+   * NEW-observation selectors only — historical observations and
+   * reports keep rendering them. Absent (= pre-migration record)
+   * reads as active.
+   */
+  isActive?: boolean;
+  /** Master Data display order — selectors follow it, never array order. */
+  sortOrder?: number;
+  /** Business impact of the category (drives the default bonus/deduction). */
+  impact?: CategoryImpact;
   /** Default magnitude applied when an observation uses this category. */
   defaultPointValue: number;
   /** Business-impact weight for future analytics (defaults to 1). */
@@ -85,7 +114,8 @@ export interface ObservationCategory {
   color: string;
   /** Default severity/priority hint. */
   priority: Priority;
-  /** When true, applying this category defaults to a bonus (award) observation. */
+  /** When true, applying this category defaults to a bonus (award) observation.
+   *  Derived from `impact` (POSITIVE ⇔ true) — kept for scoring-engine compat. */
   isBonusDefault: boolean;
   createdAt: string;
   updatedAt: string;

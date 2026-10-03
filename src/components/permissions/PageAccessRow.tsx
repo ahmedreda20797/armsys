@@ -48,6 +48,15 @@ import type { AuthorizationProfile, ProfilePage } from './types';
 
 // ── display vocabularies ────────────────────────────────────────
 
+/** §27 CONFIG-SURFACE — human Arabic names for sensitive field keys. */
+const FIELD_LABELS_AR: Record<string, string> = {
+  mobile: 'رقم الموبايل',
+  nationalId: 'الرقم القومي',
+  email: 'البريد الإلكتروني',
+  salary: 'الراتب',
+  address: 'العنوان',
+};
+
 export const LEVEL_LABELS: Record<PermissionLevel, string> = {
   none: 'ممنوع',
   read: 'قراءة',
@@ -496,7 +505,11 @@ export function PageAccessRow({ page, profile, draft, handlers, expanded, onTogg
                         : access === 'read-only' ? 'border-amber-500/40 text-amber-300 bg-amber-500/10'
                         : 'border-emerald-500/40 text-emerald-300 bg-emerald-500/10',
                     )}>
-                      <code className="text-[9px]">{field}</code>
+                      {/* §27 CONFIG-SURFACE — human field label first; the
+                          raw field key (the stored config value) stays in
+                          the explicit <code> diagnostics slot. */}
+                      {FIELD_LABELS_AR[field] ?? 'حقل'}
+                      <code className="text-[9px] opacity-70" dir="ltr">{field}</code>
                       {access === 'hidden' ? 'مخفي' : access === 'read-only' ? 'قراءة فقط' : 'قابل للتحرير'}
                     </Badge>
                   );
@@ -566,7 +579,9 @@ function buildScopeContext(
   }
   if (scope === 'own') {
     return identity.linkedEmployeeId
-      ? <p className="text-[11px] text-slate-300">سجل الموظف المرتبط بهذا الحساب فقط ({identity.linkedEmployeeName ?? identity.linkedEmployeeCode ?? identity.linkedEmployeeId}) — ولا شيء غيره.</p>
+      // §PRESENTATION-BOUNDARY — the localized generic label replaces a
+      // raw employee id when name and code are both absent.
+      ? <p className="text-[11px] text-slate-300">سجل الموظف المرتبط بهذا الحساب فقط ({identity.linkedEmployeeName ?? identity.linkedEmployeeCode ?? 'حسابه المرتبط'}) — ولا شيء غيره.</p>
       : <p className="text-[11px] text-amber-300">تعذر الحل — لا يوجد موظف مرتبط بهذا الحساب؛ النطاق يبقى فارغاً (مقيد) ولا يتوسع تلقائياً إلى الفريق أو القسم.</p>;
   }
 

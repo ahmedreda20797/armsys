@@ -31,6 +31,11 @@ const FACTOR_SEVERITY_LABELS: Record<string, string> = {
   LOW: 'منخفض', MEDIUM: 'متوسط', HIGH: 'مرتفع',
 };
 
+/** §PRESENTATION-BOUNDARY — risk-level keys → Arabic labels. */
+const RISK_LEVEL_LABELS_AR: Record<string, string> = {
+  low: 'منخفض', medium: 'متوسط', high: 'عالٍ', critical: 'حرج',
+};
+
 export function DecisionSupportSection({ decision }: {
   decision: NonNullable<Employee360Data['decisionSupport']>;
 }) {
@@ -47,7 +52,7 @@ export function DecisionSupportSection({ decision }: {
             {decision.statusLabelAr}
           </p>
           <p className="mt-2 text-[11px] text-muted-foreground">
-            <T>المخاطر</T>: <span className="font-semibold text-foreground" dir="ltr">{decision.riskScore}</span> · {decision.riskLevel}
+            <T>المخاطر</T>: <span className="font-semibold text-foreground" dir="ltr">{decision.riskScore}</span> · {RISK_LEVEL_LABELS_AR[decision.riskLevel] ?? 'غير محدد'}
           </p>
           {decision.momDeltaPoints !== null && (
             <p className="mt-1 text-[11px] text-muted-foreground">
@@ -83,7 +88,7 @@ export function DecisionSupportSection({ decision }: {
                         ? 'bg-red-500/10 text-red-600 dark:text-red-400'
                         : 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
                     }`}>
-                      {FACTOR_SEVERITY_LABELS[f.severity] ?? f.severity}
+                      {FACTOR_SEVERITY_LABELS[f.severity] ?? 'غير محدد'}
                     </span>
                     <span className="text-foreground">{f.signalAr}</span>
                     {f.comparisonAr && <span className="text-muted-foreground">({f.comparisonAr})</span>}
@@ -124,7 +129,7 @@ export function AttentionSection({ items }: {
                 className={`flex w-full items-start gap-3 rounded-xl border px-3.5 py-2.5 text-start transition-colors hover:bg-muted/60 ${ATTENDANCE_SEVERITY_STYLES[item.severity] ?? ATTENDANCE_SEVERITY_STYLES.info}`}
               >
                 <span className="mt-0.5 inline-flex shrink-0 rounded-md border border-border/50 bg-background/60 px-1.5 py-0.5 text-[9px] font-semibold text-muted-foreground">
-                  {SEVERITY_LABEL[item.severity] ?? item.severity}
+                  {SEVERITY_LABEL[item.severity] ?? 'تنبيه'}
                 </span>
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-sm font-medium text-foreground">{item.title}</span>

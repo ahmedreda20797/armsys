@@ -135,7 +135,7 @@ export function PerformanceSection({ kpi, trend, targetScore, periodLabel }: {
                           <span className="font-medium text-foreground">{c.name}</span>
                           {!available && (
                             <span className="ms-2 text-[10px] text-muted-foreground">
-                              {COMPONENT_STATUS_LABELS[c.status] ?? c.status}
+                              {COMPONENT_STATUS_LABELS[c.status] ?? 'غير متاح'}
                             </span>
                           )}
                         </td>
@@ -172,7 +172,7 @@ export function PerformanceSection({ kpi, trend, targetScore, periodLabel }: {
                 {direction === 'UP' ? <TrendingUp className="size-3.5" />
                   : direction === 'DOWN' ? <TrendingDown className="size-3.5" />
                   : <Minus className="size-3.5" />}
-                {TREND_LABELS[direction] ?? direction}
+                {TREND_LABELS[direction] ?? 'مستقر'}
               </span>
             )}
           </div>

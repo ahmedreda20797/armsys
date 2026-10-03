@@ -62,3 +62,40 @@ export function navigateToTravelDeals(employeeId: string, monthKey?: string) {
   store.navigateTo('travel', undefined, monthKey ? { employeeId, month: monthKey } : { employeeId });
   store.closeEmployee360();
 }
+
+/**
+ * §32/§34 — closure-population drill: deals closed with the employee
+ * during the period, narrowed by CURRENT status. The SAME population
+ * as «مغلقة خلال الفترة» — (dealClosedAt, month, status) reconciles
+ * 1:1 with the Smart Report's confirmed/cancelled closure counts.
+ */
+export function navigateToClosureStatusDeals(
+  employeeId: string,
+  monthKey: string,
+  status: 'completed' | 'canceled',
+) {
+  const store = useAppStore.getState();
+  store.navigateTo('travel', undefined, {
+    employeeId,
+    dateBasis: 'dealClosedAt',
+    month: monthKey,
+    status,
+  });
+  store.closeEmployee360();
+}
+
+/**
+ * §27 CURRENT DEALS drill — the current-status snapshot population
+ * (upcoming OR in_progress). No date dimension narrows it (month=all):
+ * "current" is a NOW question, never a period attribution.
+ */
+export function navigateToCurrentDeals(employeeId: string) {
+  const store = useAppStore.getState();
+  store.navigateTo('travel', undefined, {
+    employeeId,
+    month: 'all',
+    dateBasis: 'dealClosedAt',
+    status: 'active',
+  });
+  store.closeEmployee360();
+}

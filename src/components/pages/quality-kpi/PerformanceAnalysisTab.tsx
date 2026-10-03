@@ -40,6 +40,7 @@ import {
 import { T } from '@/lib/i18n/T';
 import { useLanguage } from '@/lib/i18n/language-context';
 import { translateUIText } from '@/lib/i18n/ui-text';
+import { presentStatus, presentEntity } from '@/lib/i18n/presentation';
 import { formatMonthKey, formatNumber, formatInteger, formatDateTime } from '@/lib/i18n/format';
 
 const TREND_LABELS: Record<string, [string, string]> = {
@@ -160,7 +161,9 @@ function DatasetBody({ dataset }: { dataset: EmployeePerformanceDataset }) {
         <CardHeader className="pb-2">
           <CardTitle className="text-base text-slate-100 flex items-center gap-2">
             <Brain className="h-4 w-4 text-brand-400" />
-            {employee.employeeName || employee.employeeId}
+            {/* §PRESENTATION-BOUNDARY — a raw employee record id never
+                becomes the visible card title. */}
+            {employee.employeeName || <T>موظف بدون اسم</T>}
             <span className="text-xs font-normal text-slate-500">
               {employee.employeeCode ? `(${employee.employeeCode})` : ''} · {employee.department ?? '—'}
             </span>
@@ -192,7 +195,7 @@ function DatasetBody({ dataset }: { dataset: EmployeePerformanceDataset }) {
               label={<T>المخطط</T>}
               value={kpi.scheme ? <>{kpi.scheme.schemeName} — <T>إصدار</T> {kpi.scheme.schemeVersion}</> : '—'}
             />
-            <Fact label={<T>نتيجة المحرك</T>} value={<span className="font-mono">{kpi.outcomeStatus}</span>} />
+            <Fact label={<T>نتيجة المحرك</T>} value={presentStatus(kpi.outcomeStatus, locale)} />
             <Fact
               label={<T>مقارنة بالشهر السابق</T>}
               value={
@@ -245,7 +248,7 @@ function DatasetBody({ dataset }: { dataset: EmployeePerformanceDataset }) {
           </div>
           <div className="flex flex-wrap gap-2">
             {Object.entries(quality.observations.bySeverity).map(([severity, count]) => (
-              <CountChip key={severity} label={<><T>شدة</T>: {severity}</>} count={count} />
+              <CountChip key={severity} label={<><T>شدة</T>: {presentStatus(severity, locale)}</>} count={count} />
             ))}
           </div>
           <Table>
@@ -259,7 +262,7 @@ function DatasetBody({ dataset }: { dataset: EmployeePerformanceDataset }) {
             <TableBody>
               {quality.observations.byCategory.map((cat) => (
                 <TableRow key={cat.categoryId ?? '_unclassified'} className="border-slate-800/60">
-                  <TableCell className="font-mono text-xs text-slate-400">{cat.categoryId ?? '_unclassified'}</TableCell>
+                  <TableCell className="font-mono text-xs text-slate-400" title={cat.categoryId ?? undefined}>{cat.categoryId ? cat.categoryId : <T>غير مصنّف</T>}</TableCell>
                   <TableCell className="text-slate-200">{cat.categoryName}</TableCell>
                   <TableCell className="font-mono">{formatInteger(cat.count, locale)}</TableCell>
                 </TableRow>
@@ -336,7 +339,7 @@ function DatasetBody({ dataset }: { dataset: EmployeePerformanceDataset }) {
               </div>
               {complaints.repeatedTypes.length > 0 && (
                 <div className="text-xs text-slate-400">
-                  <T>أنواع متكررة: </T>{complaints.repeatedTypes.map((t) => `${t.issueKey} (${formatInteger(t.occurrenceCount, locale)})`).join('، ')}
+                  <T>أنواع متكررة: </T>{complaints.repeatedTypes.map((t) => `${t.label} (${formatInteger(t.occurrenceCount, locale)})`).join('، ')}
                 </div>
               )}
               <div className="text-xs font-semibold text-slate-300 pt-2"><T>المتابعات</T></div>
@@ -357,12 +360,18 @@ function DatasetBody({ dataset }: { dataset: EmployeePerformanceDataset }) {
                 <CountChip label={<T>مغلقة</T>} count={capa.closedCount} />
                 <CountChip label={<T>ارتباط غير مباشر</T>} count={capa.indirectCount} />
               </div>
-              <div className="text-xs font-semibold text-slate-300 pt-2"><T>صفقات السفر (مصنّفة بتاريخها المرجعي)</T></div>
+              <div className="text-xs font-semibold text-slate-300 pt-2"><T>أداء الصفقات (أساس تاريخ صريح لكل رقم)</T></div>
               <div className="flex flex-wrap gap-2">
-                <CountChip label={<T>مكتملة (تاريخ الإغلاق)</T>} count={deals.closedTotal} />
-                <CountChip label={<T>حجم السفر (تاريخ المغادرة)</T>} count={deals.travelTotal} />
-                <CountChip label={<T>ملغاة</T>} count={deals.canceled} />
-                <CountChip label={<T>نشطة</T>} count={deals.active} />
+                {/* §DEAL-DATES/§32 — closure headline + the SAME population
+                    split by current status (reconciles: مؤكدة + ملغاة +
+                    جارية = تقفيلات الفترة) */}
+                <CountChip label={<T>تقفيلات الفترة (تاريخ تقفيل الديل)</T>} count={deals.closedWithEmployeeInPeriod} />
+                <CountChip label={<T>تقفيلات مؤكدة</T>} count={deals.closedWithEmployeeInPeriodByStatus.completed} />
+                <CountChip label={<T>تقفيلات ملغاة</T>} count={deals.closedWithEmployeeInPeriodByStatus.canceled} />
+                <CountChip label={<T>مكتملة (تاريخ الاكتمال)</T>} count={deals.closedTotal} />
+                <CountChip label={<T>رحلات السفر (تاريخ المغادرة)</T>} count={deals.travelTotal} />
+                <CountChip label={<T>ملغاة (حالة حالية)</T>} count={deals.canceled} />
+                <CountChip label={<T>نشطة (حالة حالية)</T>} count={deals.active} />
                 {deals.closedUnknownMonth > 0 && <CountChip label={<T>بتاريخ إغلاق غير محدد</T>} count={deals.closedUnknownMonth} />}
               </div>
               <div className="text-xs font-semibold text-slate-300 pt-2"><T>الحضور (سياق فقط — خارج KPI الجودة)</T></div>
@@ -373,7 +382,7 @@ function DatasetBody({ dataset }: { dataset: EmployeePerformanceDataset }) {
                   <CountChip label={<T>الالتزام %</T>} count={attendance.result.compliance} />
                 </div>
               ) : (
-                <div className="text-xs text-slate-500"><T>لا توجد نتيجة شهرية مخزّنة (NOT_AVAILABLE)</T></div>
+                <div className="text-xs text-slate-500"><T>لا توجد نتيجة شهرية مخزّنة لهذه الفترة</T></div>
               )}
             </div>
           </div>
@@ -395,20 +404,20 @@ function DatasetBody({ dataset }: { dataset: EmployeePerformanceDataset }) {
               ['followUps', evidence.followUps.recordIds.length],
               ['travelDeals', evidence.deals.recordIds.length],
             ].map(([collection, count]) => (
-              <Badge key={String(collection)} variant="outline" className="bg-slate-900/40 text-slate-400 border-slate-800 font-mono text-[10px]">
-                {collection}: {formatInteger(Number(count), locale)}
+              <Badge key={String(collection)} variant="outline" className="bg-slate-900/40 text-slate-400 border-slate-800 text-[10px]">
+                {presentEntity(String(collection), locale)}: {formatInteger(Number(count), locale)}
               </Badge>
             ))}
             {evidence.attendance && (
-              <Badge variant="outline" className="bg-slate-900/40 text-slate-400 border-slate-800 font-mono text-[10px]">
-                attendanceResults: {formatInteger(evidence.attendance.recordIds.length, locale)}
+              <Badge variant="outline" className="bg-slate-900/40 text-slate-400 border-slate-800 text-[10px]">
+                {presentEntity('attendanceResults', locale)}: {formatInteger(evidence.attendance.recordIds.length, locale)}
               </Badge>
             )}
           </div>
           {dataQuality.unattributedRecords.length > 0 && (
             <div className="text-xs text-amber-300/90">
               <T>سجلات بلا شهر قابل للإسناد (استُثنت دون تخمين): </T>
-              {dataQuality.unattributedRecords.map((u) => `${u.collection} (${formatInteger(u.count, locale)})`).join('، ')}
+              {dataQuality.unattributedRecords.map((u) => `${presentEntity(u.collection, locale)} (${formatInteger(u.count, locale)})`).join('، ')}
             </div>
           )}
           <ul className="text-[11px] text-slate-500 space-y-1">
@@ -416,7 +425,7 @@ function DatasetBody({ dataset }: { dataset: EmployeePerformanceDataset }) {
               <li key={note}>• {note}</li>
             ))}
           </ul>
-          <div className="text-[10px] text-slate-600 font-mono">generatedAt: {formatDateTime(dataset.generatedAt, locale)}</div>
+          <div className="text-[10px] text-slate-600"><T>تاريخ التوليد: </T>{formatDateTime(dataset.generatedAt, locale)}</div>
         </CardContent>
       </Card>
     </div>

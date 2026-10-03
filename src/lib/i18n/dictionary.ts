@@ -327,7 +327,7 @@ export const DICTIONARY = {
   'home.progress': { ar: 'التقدم', en: 'Progress' },
   'home.followUpCompletion': { ar: 'إكمال المتابعات', en: 'Follow-up Completion' },
   'home.qualityPerEmployee': { ar: 'خصومات جودة لكل موظف', en: 'Quality Deductions per Employee' },
-  'home.completedWork': { ar: 'العمل المكتمل', en: 'Completed Work' },
+  'home.completedWork': { ar: 'رحلات مكتملة (تاريخ السفر)', en: 'Completed trips (travel date)' },
   'home.viewRecords': { ar: 'عرض السجلات', en: 'View Records' },
   'home.insightDetails': { ar: 'تفاصيل المؤشر', en: 'Insight Details' },
   'home.metricDefinition': { ar: 'تعريف المؤشر', en: 'Metric Definition' },

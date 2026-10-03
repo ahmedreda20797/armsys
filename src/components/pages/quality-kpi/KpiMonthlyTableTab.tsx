@@ -53,6 +53,7 @@ import {
 import { T } from '@/lib/i18n/T';
 import { useLanguage } from '@/lib/i18n/language-context';
 import { translateUIText } from '@/lib/i18n/ui-text';
+import { presentStatus } from '@/lib/i18n/presentation';
 import { formatDate, formatNumber, formatInteger } from '@/lib/i18n/format';
 
 export type TableTabKind = 'monthly' | 'mtd' | 'historical';
@@ -260,7 +261,7 @@ export default function KpiMonthlyTableTab({
               <SelectContent>
                 <SelectItem value="all"><T>كل الحالات</T></SelectItem>
                 {['AVAILABLE', 'PENDING', 'INCOMPLETE', 'ZERO', 'FINALIZED', 'NO_SCHEME'].map((s) => (
-                  <SelectItem key={s} value={s} className="font-mono text-xs">{s}</SelectItem>
+                  <SelectItem key={s} value={s}>{presentStatus(s, locale)}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
@@ -409,7 +410,7 @@ export default function KpiMonthlyTableTab({
                       <div className="flex flex-col gap-1">
                         <StatusBadge status={row.rowStatus} />
                         {row.overallStatus && (
-                          <span className="text-[10px] text-slate-500">KPI: {row.overallStatus}</span>
+                          <span className="text-[10px] text-slate-500"><T>الإجمالي:</T> {presentStatus(row.overallStatus, locale)}</span>
                         )}
                       </div>
                     </TableCell>

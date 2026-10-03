@@ -62,14 +62,19 @@ interface PendingRequestRow {
   createdAt: string;
 }
 
+// §PRESENTATION-BOUNDARY — covers the FULL request-type vocabulary;
+// unknown keys resolve to a generic label, never the raw enum key.
 const REQUEST_TYPE_LABELS: Record<string, string> = {
   leave: 'إجازة',
-  excuse: 'استئذان',
+  permission: 'استئذان',
+  excuse: 'غياب',
+  tardiness: 'تأخير',
   mission: 'مهمة عمل',
   remote: 'عمل عن بعد',
   salary_advance: 'سلفة',
   other: 'أخرى',
 };
+const REQUEST_TYPE_FALLBACK = 'طلب آخر';
 
 function ApproveRequestsDetail({ onClose }: { onClose: () => void }) {
   const { data, isLoading } = useRequests();
@@ -148,7 +153,7 @@ function ApproveRequestsDetail({ onClose }: { onClose: () => void }) {
             </span>
             <span className="shrink-0 inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-sky-500/10 border border-sky-500/25 text-sky-300 text-[10px] font-bold">
               <FileText className="size-2.5" />
-              {REQUEST_TYPE_LABELS[row.type] ?? row.type}
+              {REQUEST_TYPE_LABELS[row.type] ?? REQUEST_TYPE_FALLBACK}
             </span>
             <span className="shrink-0 text-[10px] text-slate-500 flex items-center gap-1 mr-auto">
               <CalendarDays className="size-2.5" />
@@ -204,7 +209,7 @@ function ApproveRequestsDetail({ onClose }: { onClose: () => void }) {
         onOpenChange={(open) => { if (!open) setRejecting(null); }}
         title="رفض الطلب"
         description="هل أنت متأكد من رفض هذا الطلب؟ سيتم إبلاغ الموظف بالقرار."
-        itemName={rejecting ? `${rejecting.employeeName ?? ''} — ${REQUEST_TYPE_LABELS[rejecting.type] ?? rejecting.type} (${rejecting.date})` : undefined}
+        itemName={rejecting ? `${rejecting.employeeName ?? ''} — ${REQUEST_TYPE_LABELS[rejecting.type] ?? REQUEST_TYPE_FALLBACK} (${rejecting.date})` : undefined}
         confirmLabel="رفض"
         loading={!!rejecting && actingId === rejecting.id}
         onConfirm={async () => { if (rejecting) await decide(rejecting, 'rejected'); }}

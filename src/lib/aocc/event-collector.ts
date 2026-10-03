@@ -7,6 +7,7 @@
 // ═══════════════════════════════════════════════════════════════
 
 import { isOverdue, getSLAInfo } from '@/lib/capa-helpers';
+import { getRequestTypeLabel } from '@/lib/date-utils';
 import { SLA_DAYS } from '@/lib/capa-constants';
 import { formatTime } from '@/lib/i18n/format';
 import {
@@ -324,7 +325,7 @@ export function collectEvents(data: RawDataBundle): OperationalEvent[] {
         actionUrl: null,
         targetPage: 'requests',
         status: req.status,
-        title: `طلب ${req.type}: ${req.employeeName || ''}`,
+        title: `طلب ${getRequestTypeLabel(req.type)}: ${req.employeeName || ''}`,
         description: req.reason || null,
         metadata: { hoursPending: hours, requestType: req.type, dueDate: req.date },
       });
@@ -854,6 +855,15 @@ export function generateRecommendations(
 //  PART 6: Activity Feed Generation
 // ═══════════════════════════════════════════════════════════════
 
+/**
+ * §PRESENTATION-BOUNDARY — activity-feed verbs and request types are
+ * user-visible; every system key resolves to an Arabic label.
+ */
+const ACTIVITY_ACTION_LABELS: Record<string, string> = {
+  create: 'إنشاء', update: 'تعديل', delete: 'حذف',
+  approve: 'اعتماد', reject: 'رفض', login: 'تسجيل دخول', logout: 'تسجيل خروج',
+};
+
 const MODULE_FEED_CONFIG: Record<string, { iconType: string; colorClass: string }> = {
   attendance: { iconType: 'clock', colorClass: 'text-amber-400' },
   biometric: { iconType: 'fingerprint', colorClass: 'text-brand-400' },
@@ -906,7 +916,7 @@ export function buildActivityFeed(
         id: `log-${log.id}`,
         timestamp: log.timestamp || log.createdAt,
         timeLabel: formatTimeLabel(log.timestamp || log.createdAt),
-        title: log.details || log.action,
+        title: log.details || ACTIVITY_ACTION_LABELS[log.action] || 'سجل نظام',
         description: log.userName ? `بواسطة ${log.userName}` : null,
         sourceModule: (log.page as SourceModule) || 'notifications',
         iconType: config.iconType,

@@ -67,7 +67,9 @@ export function ExecutiveSummary({ data, monthKey, employeeId }: {
         value={overallValue ?? <span className="text-sm font-semibold text-muted-foreground">—</span>}
         sub={
           overall.state === 'value'
-            ? (KPI_ROW_STATUS_LABELS[overall.rowStatus] ?? overall.rowStatus)
+            // §PRESENTATION-BOUNDARY — unknown engine row statuses fall
+            // back to a generic label, never the raw key.
+            ? (KPI_ROW_STATUS_LABELS[overall.rowStatus] ?? 'حالة غير معروفة')
             : overall.state === 'not_eligible'
               ? <T>غير مشمول بهذه الفترة</T>
               : overall.state === 'pending'

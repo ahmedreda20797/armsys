@@ -66,10 +66,15 @@ const KIND_META: Record<HomeStatDetailKind, { title: string }> = {
   'pending-requests': { title: 'الطلبات المعلقة' },
 };
 
+// §PRESENTATION-BOUNDARY — covers the FULL request-type vocabulary
+// (matches REQUEST_TYPES in inline-forms); unknown keys resolve to a
+// generic label, never the raw enum key.
 const REQUEST_TYPE_LABELS: Record<string, string> = {
-  leave: 'إجازة', excuse: 'استئذان', mission: 'مهمة عمل',
-  remote: 'عمل عن بعد', salary_advance: 'سلفة', other: 'أخرى',
+  leave: 'إجازة', permission: 'استئذان', excuse: 'غياب',
+  tardiness: 'تأخير', remote: 'ريموتلي', mission: 'مهمة عمل',
+  salary_advance: 'سلفة', other: 'أخرى',
 };
+const REQUEST_TYPE_FALLBACK = 'طلب آخر';
 
 export function HomeStatDetailDialog({
   kind, stats, employees, onRequestAction, actionLoadingId, onClose,
@@ -220,7 +225,7 @@ export function HomeStatDetailDialog({
                     {req.employeeDepartment ? <span className="text-[10px] font-normal text-slate-500"> · {req.employeeDepartment}</span> : null}
                   </span>
                   <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-sky-500/10 border border-sky-500/25 text-sky-300 font-bold shrink-0">
-                    {REQUEST_TYPE_LABELS[req.type] ?? req.type}
+                    {REQUEST_TYPE_LABELS[req.type] ?? REQUEST_TYPE_FALLBACK}
                   </span>
                   <span className="text-[10px] text-slate-500 shrink-0 tabular-nums">{req.date}</span>
                 </div>

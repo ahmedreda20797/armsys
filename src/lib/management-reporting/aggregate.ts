@@ -25,19 +25,15 @@ import type {
   ManagementReportLoaders,
 } from './types';
 
+// §COMPLAINT-STATUS — the ONE canonical predicates (legacy
+// 'investigating' rows aggregate canonically — never vanish).
+import { isClosedComplaintStatus, isOpenComplaintStatus } from '@/lib/complaints/complaint-status';
 type Row = Record<string, unknown>;
 
 // ─────────────────────────────────────────────────────────────
 //  Canonical open/closed vocabularies (reused — never redefined)
 // ─────────────────────────────────────────────────────────────
 
-/** Complaints: open set mirrors the Complaints page stats doctrine. */
-const OPEN_COMPLAINT_STATUSES: ReadonlySet<string> = new Set([
-  'open',
-  'investigating',
-  'pending_resolution',
-]);
-const CLOSED_COMPLAINT_STATUSES: ReadonlySet<string> = new Set(['resolved', 'closed']);
 
 /** CAPA: canonical metrics vocabulary. */
 const OPEN_CAPA_STATUSES: ReadonlySet<string> = new Set(ACTIVE_CAPA_STATUSES);
@@ -93,8 +89,8 @@ function statusSplit(
 ): 'open' | 'closed' | null {
   switch (source) {
     case 'complaints':
-      if (OPEN_COMPLAINT_STATUSES.has(status)) return 'open';
-      if (CLOSED_COMPLAINT_STATUSES.has(status)) return 'closed';
+      if (isOpenComplaintStatus(status)) return 'open';
+      if (isClosedComplaintStatus(status)) return 'closed';
       return null;
     case 'capaCases':
       if (OPEN_CAPA_STATUSES.has(status)) return 'open';

@@ -15,6 +15,7 @@ import type { QualityObservation } from '@/types/quality-kpi';
 import type { QualityDeduction } from '@/types';
 import { roundTo2 } from '@/lib/kpi-framework/validation';
 import { deductionTypeLabel } from '@/lib/quality-deductions/domain';
+import { presentSystemOrVerbatim } from '@/lib/i18n/presentation';
 import { displayDateOrderKey, monthKeyOfDisplayDate, monthKeyOfStoredMonth } from './month-attribution';
 import type {
   CategoryCount,
@@ -183,7 +184,14 @@ export function detectRepeatedIssues(args: {
     ),
     byType: groupObservations(
       args.observations,
-      (obs) => ({ key: obs.type || UNCLASSIFIED_KEY, label: obs.type || UNCLASSIFIED_KEY }),
+      // §PRESENTATION-BOUNDARY — the stored type key (quality_issue,
+      // quality_observation…) resolves to its human Arabic label;
+      // legacy free-text values stay verbatim; the internal
+      // _unclassified key never renders.
+      (obs) => ({
+        key: obs.type || UNCLASSIFIED_KEY,
+        label: obs.type ? presentSystemOrVerbatim(obs.type, 'ar') : UNCLASSIFIED_LABEL,
+      }),
       min,
     ),
   };

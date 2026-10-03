@@ -16,6 +16,7 @@
 //      distribution, completion/overdue rates, repeated issues)
 // ══════════════════════════════════════════════════════════════
 
+import { presentStatus, presentSystemOrVerbatim } from '@/lib/i18n/presentation';
 import { getAll } from '@/lib/db';
 import type { FollowUp } from '@/types';
 import {
@@ -54,12 +55,16 @@ export const FOLLOW_UP_TYPE_LABELS: Record<string, string> = {
 
 export function followUpStatusLabel(status: string | null | undefined): string {
   if (!status) return '—';
-  return FOLLOW_UP_STATUS_LABELS[status] ?? status;
+  // §PRESENTATION-BOUNDARY — unknown status keys resolve to the safe
+  // generic label; the raw key never reaches a report row.
+  return FOLLOW_UP_STATUS_LABELS[status] ?? presentStatus(status, 'ar');
 }
 
 export function followUpTypeLabel(type: string | null | undefined): string {
   if (!type) return 'أخرى';
-  return FOLLOW_UP_TYPE_LABELS[type] ?? type;
+  // §PRESENTATION-BOUNDARY — known type keys resolve canonically;
+  // legacy free-text values stay verbatim, record ids never render.
+  return FOLLOW_UP_TYPE_LABELS[type] ?? presentSystemOrVerbatim(type, 'ar');
 }
 
 /** One flat report row: one stored follow-up, employee-annotated. */

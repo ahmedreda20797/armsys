@@ -190,7 +190,13 @@ export const APP_PAGES: PageConfig[] = [
   { id: 'complaints', title: 'شكاوى العملاء', description: 'تسجيل ومعالجة شكاوى العملاء وربطها بالإجراءات', titleEn: 'Customer Complaints', descriptionEn: 'Record and handle customer complaints with follow-through', icon: 'MessageSquareWarning', permissionKey: 'complaints', availableActions: ['create', 'update', 'delete'], groupId: 'quality_ctrl' },
   // ── Quality KPI (Phase 1) ──
   { id: 'observations', title: 'ملاحظات الجودة', description: 'ملاحظات الجودة الميدانية وتصنيفاتها واعتمادها', titleEn: 'Quality Observations', descriptionEn: 'Field quality observations, categories, and approvals', icon: 'Eye', permissionKey: 'observations', availableActions: ['create', 'update', 'delete', 'approve'], groupId: 'quality_ctrl' },
-  { id: 'observationCategories', title: 'تصنيفات الملاحظات', description: 'إدارة تصنيفات ملاحظات الجودة', titleEn: 'Observation Categories', descriptionEn: 'Manage quality observation categories', icon: 'Tags', permissionKey: 'observationCategories', availableActions: ['create', 'update', 'delete'], groupId: 'quality_ctrl', overlayOnly: true },
+  // §SETTINGS-CENTER — Master Data domain: managed from Settings →
+  // البيانات المرجعية والقوائم النظامية. The id + permission key are
+  // the canonical authorization identity for this domain (also used
+  // by /api/observation-categories); the route renders the Settings
+  // Center deep-linked to the domain. Keep the entry UNCHANGED so
+  // existing grants keep working.
+  { id: 'observationCategories', title: 'تصنيفات الملاحظات', description: 'بيانات مرجعية: تصنيفات ملاحظات الجودة (من مركز الإعدادات)', titleEn: 'Observation Categories', descriptionEn: 'Master Data: quality observation categories (in the Settings Center)', icon: 'Tags', permissionKey: 'observationCategories', availableActions: ['create', 'update', 'delete'], groupId: 'quality_ctrl', overlayOnly: true },
   { id: 'observationTemplates', title: 'قوالب الملاحظات', description: 'قوالب جاهزة لتسجيل ملاحظات الجودة', titleEn: 'Observation Templates', descriptionEn: 'Ready templates for recording quality observations', icon: 'FilePlus2', permissionKey: 'observationTemplates', availableActions: ['create', 'update', 'delete'], groupId: 'quality_ctrl', overlayOnly: true },
   { id: 'kpiDashboard', title: 'لوحة مؤشرات الجودة', description: 'مؤشرات الأداء الرئيسية للجودة لحظة بلحظة', titleEn: 'Quality KPI Dashboard', descriptionEn: 'Real-time quality key performance indicators', icon: 'Gauge', permissionKey: 'kpiDashboard', availableActions: [], groupId: 'quality_ctrl' },
   // ── KPI Reporting Layer (Phase 2): read-only reporting over the
@@ -221,10 +227,13 @@ export const APP_PAGES: PageConfig[] = [
   { id: 'knowledgeBase', title: 'قاعدة المعرفة', description: 'توثيق الإجراءات والسياسات والدليل التشغيلي', titleEn: 'Knowledge Base', descriptionEn: 'Procedures, policies, and the operational guide', icon: 'BookOpen', permissionKey: 'knowledgeBase', availableActions: ['create', 'update', 'delete'], groupId: 'reports' },
   // ═══ ⚙️ الإدارة والإعدادات ═══
   { id: 'controlPanel', title: 'مركز التحكم', description: 'إدارة المستخدمين والصلاحيات والجلسات وسجل الأنشطة', titleEn: 'Control Center', descriptionEn: 'Users, permissions, sessions, and activity log administration', icon: 'Shield', permissionKey: 'controlPanel', availableActions: [], groupId: 'settings' },
-  // §20 — unified Settings: personal preferences (profile, language,
-  // theme). Every authenticated user gets view access via their preset;
-  // system administration stays behind the existing controlPanel page.
-  { id: 'settings', title: 'الإعدادات', description: 'الملف الشخصي والتفضيلات السريعة — اللغة والمظهر', titleEn: 'Settings', descriptionEn: 'Profile and quick preferences — language and appearance', icon: 'Settings', permissionKey: 'settings', availableActions: [], groupId: 'settings' },
+  // §20 — unified Settings: the ONE centralized Settings Center.
+  // Internal navigation over personal preferences (General), the
+  // Master Data & System Lists framework, and the canonical
+  // system-config pages (controlPanel, organization, kpiSettings…).
+  // Every authenticated user gets view access via their preset;
+  // each linked/embedded surface keeps its own permission key.
+  { id: 'settings', title: 'الإعدادات', description: 'مركز الإعدادات الموحد — التفضيلات والبيانات المرجعية وروابط إدارة النظام', titleEn: 'Settings', descriptionEn: 'The unified Settings Center — preferences, Master Data, and system administration', icon: 'Settings', permissionKey: 'settings', availableActions: [], groupId: 'settings' },
   // §USER-PROFILE — the full self-service profile page (photo upload
   // with zoom control, linked-employee identity, managed teams).
   // overlayOnly: reached from the Header profile menu (avatar), never

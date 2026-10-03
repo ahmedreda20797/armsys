@@ -37,6 +37,8 @@ export function isUrgent(dateStr: string): boolean {
 
 /**
  * Get Arabic label for a request type.
+ * §PRESENTATION-BOUNDARY — unknown/legacy keys resolve to a generic
+ * business label; the raw enum key never reaches the UI.
  */
 export function getRequestTypeLabel(type: string): string {
   switch (type) {
@@ -45,7 +47,9 @@ export function getRequestTypeLabel(type: string): string {
     case 'excuse': return 'غياب';
     case 'tardiness': return 'تأخير';
     case 'remote': return 'ريموتلي';
-    default: return type;
+    case 'mission': return 'مهمة عمل';
+    case 'salary_advance': return 'سلفة';
+    default: return 'طلب آخر';
   }
 }
 
@@ -105,10 +109,15 @@ export function todayDisplayDate(now: Date = new Date()): string {
  * a real calendar date (no 31/02, no garbage parts). Used by every
  * server write-path that accepts a display date from a client
  * (fail-closed: anything else is rejected).
+ *
+ * §DEAL-DATES (§8) — Arabic-Indic (٠-٩) and Eastern Arabic-Indic (۰-۹)
+ * digits are normalized to ASCII before validation, so Arabic and
+ * English keyboard input are both accepted; the validated value is the
+ * ASCII form.
  */
 export function isValidDisplayDate(value: unknown): value is string {
   if (typeof value !== 'string') return false;
-  const m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(value.trim());
+  const m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(normalizeArabicDigits(value.trim()));
   if (!m) return false;
   const day = Number(m[1]);
   const month = Number(m[2]);
@@ -116,6 +125,41 @@ export function isValidDisplayDate(value: unknown): value is string {
   if (month < 1 || month > 12 || day < 1) return false;
   const daysInMonth = new Date(year, month, 0).getDate();
   return day <= daysInMonth;
+}
+
+/** Arabic-Indic (٠-٩) and Eastern Arabic-Indic (۰-۹) digits → ASCII 0-9. */
+export function normalizeArabicDigits(value: string): string {
+  return value.replace(/[\u0660-\u0669\u06F0-\u06F9]/g, (d) => {
+    const code = d.charCodeAt(0);
+    return String.fromCharCode(code <= 0x0669 ? code - 0x0660 + 48 : code - 0x06f0 + 48);
+  });
+}
+
+/**
+ * §DEAL-DATES — normalize a VALIDATED display date "DD/MM/YYYY" into
+ * the canonical ISO instant of that calendar day's start
+ * ("YYYY-MM-DDT00:00:00.000Z"), UTC-constructed so the intended
+ * calendar date can never shift with the server timezone. Returns
+ * null for anything that is not a valid display date (fail-closed —
+ * callers never persist a fabricated timestamp).
+ */
+export function displayDateToIsoDayStart(value: string): string | null {
+  if (!isValidDisplayDate(value)) return null;
+  const m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(normalizeArabicDigits(value.trim()))!;
+  const [, day, month, year] = m;
+  return new Date(Date.UTC(Number(year), Number(month) - 1, Number(day))).toISOString();
+}
+
+/**
+ * §DEAL-DATES — the reverse display formatter: an ISO day key or ISO
+ * instant ("YYYY-MM-DD…") → "DD/MM/YYYY" (the app's display contract).
+ * Pure string surgery on the ISO prefix — no Date parsing, no
+ * timezone shift. Returns null for non-ISO input.
+ */
+export function isoToDisplayDate(value: unknown): string | null {
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}/.test(value)) return null;
+  const [year, month, day] = value.slice(0, 10).split('-');
+  return `${day}/${month}/${year}`;
 }
 
 /** Current calendar month as a period key "YYYY-MM" (period filters). */

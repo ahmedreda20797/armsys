@@ -66,8 +66,8 @@ export interface CapaRelationshipSplit {
 export interface PerformanceIntelligenceLoaders extends KpiReportingLoaders {
   /** Raw employee record incl. lifecycle stamps (null = not found). */
   loadEmployeeIdentity(employeeId: string): Promise<EmployeeIdentityRecord | null>;
-  /** Org-tree nodes for team/department label resolution (org tree is authoritative). */
-  loadOrgNodes(): Promise<Array<{ id: string; name: string; type: string; parentId: string | null; status?: string | null }>>;
+  /** Org-tree nodes for team/department/manager resolution (org tree is authoritative). */
+  loadOrgNodes(): Promise<Array<{ id: string; name: string; type: string; parentId: string | null; status?: string | null; managerUserName?: string | null }>>;
   /** One collection read for the whole analysis window, filtered in memory. */
   loadObservationsForWindow(employeeId: string, months: ReadonlyArray<string>): Promise<QualityObservation[]>;
   loadQualityDeductions(employeeId: string): Promise<QualityDeduction[]>;
@@ -113,6 +113,7 @@ export const defaultPerformanceIntelligenceLoaders: PerformanceIntelligenceLoade
         type: String(n.type ?? ''),
         parentId: typeof n.parentId === 'string' ? n.parentId : null,
         status: typeof n.status === 'string' ? n.status : null,
+        managerUserName: typeof n.managerUserName === 'string' && n.managerUserName.length > 0 ? n.managerUserName : null,
       }));
   },
 

@@ -26,7 +26,8 @@
 import type { EmployeePerformanceDataset, RelationshipConfidence } from '@/lib/performance-intelligence';
 import type { KpiValueBasis } from '@/lib/kpi-reporting';
 import type { Locale } from '@/lib/i18n/dictionary';
-import { formatMonthKey } from '@/lib/i18n/format';
+import { formatDateTime, formatMonthKey } from '@/lib/i18n/format';
+import { presentSystemOrVerbatim } from '@/lib/i18n/presentation';
 
 // ─────────────────────────────────────────────────────────────
 //  Shared vocabulary
@@ -147,10 +148,15 @@ const RESOLUTION_LABELS_AR: Record<string, [string, string]> = {
   closed: ['مغلقة', 'Closed'],
 };
 
-/** Fallback-aware label for stored vocabularies (unknown keys stay verbatim). */
+/**
+ * Fallback-aware label for stored vocabularies. §PRESENTATION-BOUNDARY:
+ * unknown keys resolve through the canonical presentation resolver —
+ * known system keys get their localized label, legacy/user-entered
+ * values stay verbatim, and a raw record id is never displayed.
+ */
 function storedLabel(map: Record<string, [string, string]>, key: string, locale: Locale): string {
   const pair = map[key];
-  return pair ? uiLabel(pair, locale) : key;
+  return pair ? uiLabel(pair, locale) : presentSystemOrVerbatim(key, locale);
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -204,16 +210,20 @@ export interface ReportHeaderView {
   facts: KeyValueFact[];
   lifecycleBadges: Array<{ label: string; tone: Tone }>;
   periodLabel: string;
+  generatedAtLabel: string;
   valueBasis: KpiValueBasis;
   valueBasisLabel: string;
   schemeLabel: string | null;
-  datasetKind: string;
 }
 
 export function buildReportHeader(dataset: EmployeePerformanceDataset, locale: Locale = 'ar'): ReportHeaderView {
   const { employee, period, kpi } = dataset;
 
+  // §REPORT-IDENTITY — the EMPLOYEE is the report's primary identity:
+  // position/department/team/manager are CONTEXT facts (the team never
+  // replaces the employee's name as the visible subject).
   const facts: KeyValueFact[] = [
+    { label: uiLabel(['المسمى الوظيفي', 'Job title'], locale), value: employee.position ?? unavailableLabel(locale), unavailable: employee.position === null },
     { label: uiLabel(['القسم', 'Department'], locale), value: employee.department ?? unavailableLabel(locale), unavailable: employee.department === null },
     {
       // The team resolves from the ORGANIZATION TREE (service-side).
@@ -223,22 +233,25 @@ export function buildReportHeader(dataset: EmployeePerformanceDataset, locale: L
       value: employee.team ?? unavailableLabel(locale),
       unavailable: !employee.team,
     },
-    { label: uiLabel(['المسمى الوظيفي', 'Job title'], locale), value: employee.position ?? unavailableLabel(locale), unavailable: employee.position === null },
     {
-      label: uiLabel(['حالة التوظيف', 'Employment status'], locale),
-      value: storedLabel(EMPLOYMENT_STATUS_LABELS, employee.employmentStatus, locale),
-      unavailable: employee.employmentStatus === 'unknown',
-    },
-    {
-      label: uiLabel(['أهلية الفترة', 'Period eligibility'], locale),
-      value: employee.eligibleForPeriod
-        ? uiLabel(['مؤهل للفترة', 'Eligible for the period'], locale)
-        : uiLabel(['غير مؤهل للفترة', 'Not eligible for the period'], locale),
-      unavailable: false,
+      // §REPORT-IDENTITY — the direct manager (nearest team ancestor's
+      // manager), from the organization tree. Null = explicit unavailable.
+      label: uiLabel(['المدير المباشر', 'Direct manager'], locale),
+      value: employee.manager ?? unavailableLabel(locale),
+      unavailable: !employee.manager,
     },
   ];
 
   const lifecycleBadges: Array<{ label: string; tone: Tone }> = [];
+  if (employee.employmentStatus !== 'active') {
+    lifecycleBadges.push({
+      label: `${uiLabel(['حالة التوظيف', 'Employment status'], locale)}: ${storedLabel(EMPLOYMENT_STATUS_LABELS, employee.employmentStatus, locale)}`,
+      tone: 'warn',
+    });
+  }
+  if (!employee.eligibleForPeriod) {
+    lifecycleBadges.push({ label: uiLabel(['غير مؤهل للفترة', 'Not eligible for the period'], locale), tone: 'warn' });
+  }
   if (employee.archivedButEligible) {
     lifecycleBadges.push({ label: uiLabel(['مؤرشف حاليًا — فترة تاريخية', 'Currently archived — historical period'], locale), tone: 'warn' });
   }
@@ -247,12 +260,15 @@ export function buildReportHeader(dataset: EmployeePerformanceDataset, locale: L
   }
 
   return {
-    employeeName: employee.employeeName || employee.employeeId,
+    // §PRESENTATION-BOUNDARY — a raw employee record id never becomes
+    // the visible report title; the localized unnamed label is used.
+    employeeName: employee.employeeName || (locale === 'en' ? 'Unnamed employee' : 'موظف بدون اسم'),
     employeeId: employee.employeeId,
     employeeCode: employee.employeeCode,
     facts,
     lifecycleBadges,
     periodLabel: formatMonth(period.monthKey, locale),
+    generatedAtLabel: formatDateTime(dataset.generatedAt, locale),
     valueBasis: period.valueBasis,
     valueBasisLabel: uiLabel(VALUE_BASIS_LABELS[period.valueBasis], locale),
     schemeLabel: kpi.scheme
@@ -260,7 +276,6 @@ export function buildReportHeader(dataset: EmployeePerformanceDataset, locale: L
         ? `${kpi.scheme.schemeName} — version ${kpi.scheme.schemeVersion}`
         : `${kpi.scheme.schemeName} — إصدار ${kpi.scheme.schemeVersion}`
       : null,
-    datasetKind: dataset.datasetKind,
   };
 }
 
@@ -580,20 +595,28 @@ export interface DeductionsView {
   totalDaysDisplay: string;
   totalAmountDisplay: string;
   typeChips: ChipFact[];
-  records: Array<{
-    id: string;
-    date: string;
-    type: string;
-    description: string;
-    daysDisplay: string;
-    amountDisplay: string;
-    relatedCapaId: string | null;
-  }>;
+  /** §16 — highest single deduction (days, then amount) as a summary
+   *  line. Detailed reasons stay in the dedicated deductions view. */
+  highestLine: string | null;
   empty: boolean;
 }
 
 export function buildDeductions(dataset: EmployeePerformanceDataset, locale: Locale = 'ar'): DeductionsView {
   const d = dataset.quality.deductions;
+  // Highest single deduction — same comparator as the intelligence
+  // layer (days first, then amount); a presentation pick, not a new
+  // aggregation.
+  const highest = d.records.reduce<typeof d.records[number] | null>((acc, r) => {
+    if (!acc) return r;
+    if (r.deductionDays > acc.deductionDays) return r;
+    if (r.deductionDays === acc.deductionDays && r.deductionAmount > acc.deductionAmount) return r;
+    return acc;
+  }, null);
+  const highestLine = highest
+    ? locale === 'en'
+      ? `Highest single deduction: ${formatPlainNumber(highest.deductionDays)} day(s)${highest.deductionAmount > 0 ? ` · ${formatPlainNumber(highest.deductionAmount)}` : ''} (${highest.date})`
+      : `أعلى خصم منفرد: ${formatPlainNumber(highest.deductionDays)} يوم${highest.deductionAmount > 0 ? ` · ${formatPlainNumber(highest.deductionAmount)}` : ''} (${highest.date})`
+    : null;
   return {
     count: d.count,
     totalDays: d.totalDays,
@@ -605,15 +628,7 @@ export function buildDeductions(dataset: EmployeePerformanceDataset, locale: Loc
       count: t.count,
       tone: 'neutral',
     })),
-    records: d.records.map((r) => ({
-      id: r.id,
-      date: r.date,
-      type: r.type,
-      description: r.description,
-      daysDisplay: r.deductionDays === 0 ? '—' : formatPlainNumber(r.deductionDays),
-      amountDisplay: r.deductionAmount === 0 ? '—' : formatPlainNumber(r.deductionAmount),
-      relatedCapaId: r.relatedCapaId,
-    })),
+    highestLine,
     empty: d.count === 0,
   };
 }
@@ -726,6 +741,13 @@ export interface FollowUpsView {
   completionRateDisplay: string;
   dueToday: number;
   avgOverdueDisplay: string;
+  /**
+   * On-time completion is NOT COMPUTABLE from the canonical model —
+   * follow-ups carry no completion timestamp. Explicit unavailable
+   * state (never an estimate), surfaced in the section.
+   */
+  onTimeRateDisplay: string;
+  onTimeNote: string;
   statusChips: ChipFact[];
   typeChips: ChipFact[];
   priorityChips: ChipFact[];
@@ -747,6 +769,8 @@ export function buildFollowUps(dataset: EmployeePerformanceDataset, locale: Loca
         : locale === 'en'
           ? `${Math.round(f.avgOverdueDays * 100) / 100} days`
           : `${Math.round(f.avgOverdueDays * 100) / 100} يوم`,
+    onTimeRateDisplay: unavailableLabel(locale),
+    onTimeNote: uiLabel(['يتطلب طابعًا زمنيًا للإكمال في المصدر — لا يُقدَّر أبدًا', 'Requires a completion timestamp at the source — never estimated'], locale),
     statusChips: entriesToChips(f.byStatus),
     typeChips: entriesToChips(f.byType),
     priorityChips: entriesToChips(f.byPriority, SEVERITY_LABELS, locale),
@@ -761,17 +785,32 @@ export interface DealsView {
   /** TRAVEL dimension — deals departing in the period (travel volume). */
   travelTotal: number;
   statusChips: ChipFact[];
-  /** CLOSED dimension — observed closures in the period (closedAt). */
+  /** CLOSED dimension — observed completions in the period (closedAt). */
   closedTotal: number;
   /** Completed deals with unknown closure month — surfaced, never attributed. */
   closedUnknownMonth: number;
+  /** DEAL_CLOSED dimension — closed WITH the employee in the period
+   *  (dealClosedAt, ANY current status) — the sales-closure metric. */
+  closedWithEmployeeInPeriod: number;
+  /** §CLOSURE-BREAKDOWN — current-status split of the SAME closure
+   *  population; the three parts sum exactly to the count above. */
+  confirmedClosures: number;
+  cancelledClosures: number;
+  stillActiveClosures: number;
+  /** DEAL_CLOSED dimension — all-time deals closed with the employee. */
+  closedWithEmployeeTotal: number;
+  /** §27 — CURRENT-STATUS snapshot (upcoming + in_progress, all-time). */
+  currentDeals: number;
   canceled: number;
   active: number;
   completionRateDisplay: string;
+  /** All-time current-status snapshot (verbatim vocabulary). */
+  statusAllTime: Array<{ label: string; count: number }>;
 }
 
 export function buildDeals(dataset: EmployeePerformanceDataset, locale: Locale = 'ar'): DealsView {
   const d = dataset.deals;
+  const byClosureStatus = d.closedWithEmployeeInPeriodByStatus;
   return {
     travelTotal: d.travelTotal,
     statusChips: (Object.entries(d.byStatus) as Array<[string, number]>).map(([key, count]) => ({
@@ -781,9 +820,18 @@ export function buildDeals(dataset: EmployeePerformanceDataset, locale: Locale =
     })),
     closedTotal: d.closedTotal,
     closedUnknownMonth: d.closedUnknownMonth,
+    closedWithEmployeeInPeriod: d.closedWithEmployeeInPeriod,
+    confirmedClosures: byClosureStatus.completed,
+    cancelledClosures: byClosureStatus.canceled,
+    stillActiveClosures: byClosureStatus.upcoming + byClosureStatus.in_progress,
+    closedWithEmployeeTotal: d.closedWithEmployeeTotal,
+    currentDeals: d.statusAllTime.upcoming + d.statusAllTime.in_progress,
     canceled: d.canceled,
     active: d.active,
     completionRateDisplay: formatPercent(d.completionRate),
+    statusAllTime: (Object.entries(d.statusAllTime) as Array<[string, number]>)
+      .filter(([, count]) => count > 0)
+      .map(([key, count]) => ({ label: storedLabel(DEAL_STATUS_LABELS, key, locale), count })),
   };
 }
 
@@ -920,7 +968,7 @@ function entriesToChips(
   locale: Locale = 'ar',
 ): ChipFact[] {
   return Object.entries(entries).map(([key, count]) => ({
-    label: labels ? storedLabel(labels, key, locale) : key,
+    label: labels ? storedLabel(labels, key, locale) : presentSystemOrVerbatim(key, locale),
     count,
     tone: 'neutral' as const,
   }));

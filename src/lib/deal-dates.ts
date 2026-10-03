@@ -34,6 +34,7 @@
 import type { TravelDeal } from '@/types';
 import { monthKeyOfDisplayDate, monthKeyOfIso } from '@/lib/performance-intelligence/month-attribution';
 import type { MonthlyCount } from '@/lib/performance-intelligence/types';
+import { displayDateToIsoDayStart, isValidDisplayDate, normalizeArabicDigits } from '@/lib/date-utils';
 
 /** The four canonical deal date dimensions. */
 export type DealDateDimension = 'DEAL_CLOSED' | 'CREATED' | 'CLOSED' | 'TRAVEL';
@@ -162,6 +163,83 @@ export function closedAtForStatusTransition(args: {
   return (args.now ?? new Date()).toISOString();
 }
 
+// ─────────────────────────────────────────────────────────────
+//  §LEGACY-BACKFILL — the ONE canonical closedAt update resolver
+//
+//  Legacy deals completed BEFORE the closedAt ledger existed carry
+//  status='completed' with closedAt=null — a VALID historical state
+//  (unknown, never fabricated). The PUT handler must accept an
+//  authorized editor's EXPLICIT historical closure date for those
+//  records without ever fabricating one, and without a second
+//  lifecycle implementation: every rule below routes the canonical
+//  transition logic through closedAtForStatusTransition.
+//
+//  Resolution table (§DEAL-DATES lifecycle rules):
+//    A. status stays non-completed          → never touched (client value ignored)
+//    B. transition INTO 'completed'         → explicit valid client date, else now
+//    C. stays 'completed', stored null      → client valid date (legacy backfill) / untouched
+//    D. stays 'completed', stored value     → client valid date (authorized correction) / untouched
+//    E. transition AWAY from 'completed'    → null (canonical clearing; client value ignored)
+//
+//  The client value is NEVER trusted blindly: it must be a REAL
+//  calendar date (DD/MM/YYYY display contract — Arabic digits
+//  normalized — or an ISO day/instant) and is normalized to the
+//  canonical ISO instant of that day's UTC start, so the calendar
+//  month can never shift. Invalid input fails closed with an error.
+// ─────────────────────────────────────────────────────────────
+
+export type ClosedAtResolution =
+  | { ok: true; closedAt?: string | null }
+  | { ok: false; error: string };
+
+export const CLOSED_AT_INVALID_ERROR = 'تاريخ الاكتمال غير صالح — الصيغة DD/MM/YYYY';
+
+/** Raw client closure intent → canonical ISO instant ('YYYY-MM-DDT00:00:00.000Z'). */
+function normalizeClientClosedAt(raw: unknown): { value?: string | null; error?: string } {
+  if (raw === undefined) return {};
+  if (raw === null || raw === '') return { value: null }; // explicit "no value" — never data loss (see resolver)
+  if (typeof raw !== 'string') return { error: CLOSED_AT_INVALID_ERROR };
+  const trimmed = normalizeArabicDigits(raw.trim());
+  if (trimmed === '') return { value: null };
+  if (isValidDisplayDate(trimmed)) return { value: displayDateToIsoDayStart(trimmed) };
+  // ISO day key or full ISO instant — the ledger's stored shape
+  // (idempotent round-trips of an existing value).
+  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return { value: `${trimmed}T00:00:00.000Z` };
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{3})?Z$/.test(trimmed)) return { value: trimmed };
+  return { error: CLOSED_AT_INVALID_ERROR };
+}
+
+export function resolveClosedAtForUpdate(args: {
+  existingStatus?: string | null;
+  existingClosedAt?: string | null;
+  nextStatus?: string | null;
+  /** Raw client closedAt (display DD/MM/YYYY, ISO day/instant, null, undefined). */
+  clientClosedAt: unknown;
+  now?: Date;
+}): ClosedAtResolution {
+  const { existingStatus, existingClosedAt, nextStatus } = args;
+  const parsed = normalizeClientClosedAt(args.clientClosedAt);
+  if (parsed.error) return { ok: false, error: parsed.error };
+  const clientValue = parsed.value;
+
+  // Transition (B/E) — the canonical transition rule decides; an
+  // explicit valid client closure date is honored only when ENTERING
+  // 'completed' (historical completion registration).
+  if (typeof nextStatus === 'string' && nextStatus !== existingStatus) {
+    if (nextStatus !== 'completed') return { ok: true, closedAt: null };
+    if (clientValue) return { ok: true, closedAt: clientValue };
+    return { ok: true, closedAt: closedAtForStatusTransition({ previousStatus: existingStatus, nextStatus, existingClosedAt, now: args.now }) };
+  }
+
+  // No transition — only a COMPLETED deal may carry the ledger (A/C/D).
+  if (existingStatus !== 'completed') return { ok: true };
+  // C/D — explicit valid value (backfill or correction); anything else
+  // leaves the stored value untouched (legacy null stays null — never
+  // fabricated, never silently cleared).
+  if (clientValue) return { ok: true, closedAt: clientValue };
+  return { ok: true };
+}
+
 /** Result of counting the CLOSED dimension for one reporting month. */
 export interface DealClosurePeriodCounts {
   /** Completed deals whose closedAt month equals the requested month. */
@@ -235,6 +313,21 @@ export interface DealMetrics {
   completedInPeriod: number;
   completedMonthly: MonthlyCount[];
   completedUnknownMonth: number;
+
+  /**
+   * §CLOSURE-BREAKDOWN — the CURRENT-STATUS split of the period's
+   * closure population (DEAL_CLOSED dimension). The deal was closed
+   * with the employee during the period; the split answers "what
+   * happened to it since" WITHOUT erasing the historical closure:
+   *
+   *   completed  → confirmed closure   (التقفيلات المؤكدة)
+   *   canceled   → cancelled closure   (التقفيلات الملغاة)
+   *   the rest   → still operationally active
+   *
+   * INVARIANT (test-pinned): the parts sum EXACTLY to
+   * closedWithEmployeeInPeriod — one closure, one current state.
+   */
+  closedWithEmployeeInPeriodByStatus: Record<DealStatusVocabulary, number>;
 
   /** D. TRAVEL BY PERIOD — the TRAVEL dimension (departureDate). */
   travelInPeriod: number;
@@ -316,6 +409,21 @@ export function buildDealMetrics(
   const closedWithEmployeeInPeriod = period
     ? scoped.filter((d) => getDealDateMonthKey(d, 'dealClosedAt') === period).length
     : 0;
+  // §CLOSURE-BREAKDOWN — the SAME closure population split by current
+  // status (a September closure that is now cancelled still belongs to
+  // September; it surfaces in BOTH the period count and the cancelled
+  // part — never erased, never double-counted).
+  const closedWithEmployeeInPeriodByStatus: DealMetrics['closedWithEmployeeInPeriodByStatus'] = {
+    upcoming: 0, in_progress: 0, completed: 0, canceled: 0,
+  };
+  if (period) {
+    for (const d of scoped) {
+      if (getDealDateMonthKey(d, 'dealClosedAt') !== period) continue;
+      if (closedWithEmployeeInPeriodByStatus[d.status] !== undefined) {
+        closedWithEmployeeInPeriodByStatus[d.status] += 1;
+      }
+    }
+  }
   const completedInPeriod = period
     ? scoped.filter((d) => d.status === 'completed' && getDealDateMonthKey(d, 'closedAt') === period).length
     : 0;
@@ -329,6 +437,7 @@ export function buildDealMetrics(
   return {
     closedWithEmployeeTotal: scoped.length,
     closedWithEmployeeInPeriod,
+    closedWithEmployeeInPeriodByStatus,
     closedWithEmployeeMonthly: monthlyOf(scoped, 'dealClosedAt', windowSet),
     closedWithEmployeeUnknownMonth,
     byStatus,

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { normalizeComplaintStatus } from '@/lib/complaints/complaint-status';
 import { getById, updateRecord, deleteRecord } from '@/lib/db';
 import type { VerifyResult } from '@/lib/verify-permission';
 import { asScopeViewer, employeeInScope } from '@/lib/scope/server';
@@ -63,6 +64,17 @@ export async function PUT(
       return NextResponse.json({ error: 'Complaint not found' }, { status: 404 });
     }
 
+    // §COMPLAINT-STATUS — canonical vocabulary on write (legacy alias
+    // 'investigating' maps to under_investigation; unknown → 400).
+    let normalizedStatus: string | undefined;
+    if (status !== undefined) {
+      const normalized = normalizeComplaintStatus(status);
+      if (!normalized) {
+        return NextResponse.json({ error: 'حالة الشكوى غير صالحة' }, { status: 400 });
+      }
+      normalizedStatus = normalized;
+    }
+
     const complaint = await updateRecord('complaints', id, {
       ...(customerName !== undefined && { customerName }),
       ...(customerContact !== undefined && { customerContact }),
@@ -71,7 +83,7 @@ export async function PUT(
       ...(complaintType !== undefined && { complaintType }),
       ...(description !== undefined && { description }),
       ...(severity !== undefined && { severity }),
-      ...(status !== undefined && { status }),
+      ...(status !== undefined && { status: normalizedStatus }),
       ...(resolution !== undefined && { resolution }),
       ...(responsiblePerson !== undefined && { responsiblePerson }),
       ...(compensationProvided !== undefined && { compensationProvided }),

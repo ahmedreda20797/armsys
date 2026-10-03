@@ -113,7 +113,7 @@ describe('QualityPage deep-link container handling (§25, §49-33/34)', () => {
   });
 
   it('the empty state NAMES the active period (§10/§56)', () => {
-    assert.match(src, /لا توجد خصومات مسجلة في \$\{formatMonthLabelAr\(monthFilter\)\}/);
+    assert.match(src, /<T>لا توجد خصومات مسجلة في <\/T>\{formatMonthKey\(monthFilter, locale\)\}/);
   });
 });
 
@@ -166,8 +166,11 @@ describe('KPI Reports view persistence + period visibility (§38/§39/§50)', ()
   });
 
   it('shows the current period with MTD/FINALIZED distinction (§39)', () => {
-    assert.match(src, /الفترة الحالية: \{formatMonth\(effectiveMonth\)\}/);
-    assert.match(src, /شهر مغلق \(FINALIZED\)/);
+    assert.match(src, /<T>الفترة الحالية: <\/T>\{formatMonthKey\(effectiveMonth, locale\)\}/);
+    // §PRESENTATION-BOUNDARY — the frozen marker is a human label; the
+    // raw engine key (FINALIZED) never renders in the report UI.
+    assert.match(src, /شهر مغلق \(نتائج مجمّدة\)/);
+    assert.doesNotMatch(src, /شهر مغلق \(FINALIZED\)/);
   });
 });
 

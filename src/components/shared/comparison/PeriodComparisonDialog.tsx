@@ -31,6 +31,7 @@ import { buildMonthOptions, formatScore, formatSignedPoints } from '@/components
 import { formatMonthKey, formatNumber } from '@/lib/i18n/format';
 import { useLanguage } from '@/lib/i18n/language-context';
 import { T } from '@/lib/i18n/T';
+import { presentStatus } from '@/lib/i18n/presentation';
 import { useMonthSnapshots } from '@/hooks/use-kpi-queries';
 import { cn } from '@/lib/utils';
 
@@ -93,7 +94,9 @@ export function buildComponentComparison(
   const rows: ComparisonRow[] = ids.map((id) => {
     const ca = mapA.get(id);
     const cb = mapB.get(id);
-    const label = ca?.name ?? cb?.name ?? id;
+    // §PRESENTATION-BOUNDARY — an unnamed KPI component shows the
+    // localized generic label; the raw componentId never renders.
+    const label = ca?.name ?? cb?.name ?? 'مكوّن غير مسمّى';
     const rawDelta = deltaOf(ca?.rawScore, cb?.rawScore);
     return {
       key: id,
@@ -278,7 +281,9 @@ export function PeriodComparisonDialog({
                       {row.key === '__weightedTotal__' ? <T>الإجمالي الموزون</T> : row.label}
                       {row.key === '__weightedTotal__' && (
                         <span className="block text-[10px] text-slate-500 font-normal">
-                          {queryA.data?.overallStatus ?? '—'} ← {queryB.data?.overallStatus ?? '—'}
+                          {/* §PRESENTATION-BOUNDARY — engine status keys
+                              render as localized labels. */}
+                          {queryA.data?.overallStatus ? presentStatus(queryA.data.overallStatus, locale) : '—'} ← {queryB.data?.overallStatus ? presentStatus(queryB.data.overallStatus, locale) : '—'}
                         </span>
                       )}
                     </td>

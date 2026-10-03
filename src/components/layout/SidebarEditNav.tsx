@@ -382,7 +382,8 @@ export function SidebarEditNav({ initialLayout, visiblePages, saving, onDone, on
   const groupLabel = useCallback(
     (groupId: string) => {
       const g = draft.groups.find((x) => x.id === groupId);
-      return g ? sidebarGroupLabel(g, locale) : groupId;
+      // §PRESENTATION-BOUNDARY — a vanished group id never renders raw.
+      return g ? sidebarGroupLabel(g, locale) : (locale === 'en' ? 'Group' : 'مجموعة');
     },
     [draft, locale],
   );

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { normalizeComplaintStatus } from '@/lib/complaints/complaint-status';
 import { getAll, withEmployee, sortByDateField } from '@/lib/db';
 import { requireAuth } from '@/lib/verify-permission';
 import { asScopeViewer, employeeInScope, authScopeViewer, filterRowsByEmployeeScope, resolveEmployeeScopeFromDb } from '@/lib/scope/server';
@@ -123,6 +124,13 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // §COMPLAINT-STATUS — canonical vocabulary on write (legacy alias
+    // 'investigating' maps to under_investigation; unknown → 400).
+    const normalizedStatus = normalizeComplaintStatus(status) ?? (status ? null : 'open');
+    if (!normalizedStatus) {
+      return NextResponse.json({ error: 'حالة الشكوى غير صالحة' }, { status: 400 });
+    }
+
     const { createRecord } = await import('@/lib/db');
     const complaint = await createRecord('complaints', {
       customerName,
@@ -132,7 +140,7 @@ export async function POST(request: NextRequest) {
       complaintType,
       description,
       severity: severity || 'medium',
-      status: status || 'open',
+      status: normalizedStatus,
       resolution: resolution || null,
       responsiblePerson: responsiblePerson || '',
       compensationProvided: compensationProvided || null,
@@ -149,7 +157,7 @@ export async function POST(request: NextRequest) {
     // §13: automation event — active complaints-module rules fire here.
     void dispatchAutomationEvent('record_created', 'complaints', {
       employeeId: employeeId || null,
-      status: status || 'open',
+      status: normalizedStatus,
       severity: severity || 'medium',
       category: complaintType,
       sourceRecordId: complaint.id,

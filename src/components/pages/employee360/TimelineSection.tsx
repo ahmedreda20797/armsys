@@ -32,6 +32,14 @@ const EVENT_STATUS_LABELS: Record<string, string> = {
   open: 'مفتوح', completed: 'مكتمل', deduction: 'خصم',
   created: 'إنشاء', closed: 'مغلق', verified: 'تم التحقق',
   reopened: 'معاد فتحه', resolved: 'تمت', cancelled: 'ملغاة',
+  canceled: 'ملغاة', under_review: 'قيد المراجعة',
+  under_follow_up: 'قيد المتابعة', in_progress: 'جارية',
+  upcoming: 'قادمة', overdue: 'متأخرة', investigation: 'تحقيق',
+};
+
+// §PRESENTATION-BOUNDARY — priority keys render as Arabic labels.
+const PRIORITY_LABELS_AR: Record<string, string> = {
+  low: 'منخفضة', medium: 'متوسطة', high: 'عالية', critical: 'حرجة', urgent: 'عاجلة',
 };
 
 const PAGE_SIZE = 15;
@@ -59,12 +67,12 @@ export function TimelineSection({ events, periodLabel }: {
                     <p className="text-sm font-medium text-foreground">{event.title}</p>
                     {event.priority && (
                       <Badge variant="outline" className="rounded-md px-1.5 py-0 text-[9px] text-muted-foreground">
-                        {event.priority}
+                        {PRIORITY_LABELS_AR[event.priority] ?? 'أولوية'}
                       </Badge>
                     )}
                     {event.status && (
                       <Badge variant="outline" className="rounded-md px-1.5 py-0 text-[9px] text-muted-foreground">
-                        {EVENT_STATUS_LABELS[event.status] ?? event.status}
+                        {EVENT_STATUS_LABELS[event.status] ?? 'تحديث'}
                       </Badge>
                     )}
                   </div>

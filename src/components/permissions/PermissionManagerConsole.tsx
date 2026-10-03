@@ -35,6 +35,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
 import { authFetch } from '@/lib/api-fetch';
+import { presentEntity } from '@/lib/i18n/presentation';
 import { usePageState } from '@/hooks/use-page-state';
 import { useAuth } from '@/contexts/AuthContext';
 import { orgNodeTypeLabel, type OrgNodeType } from '@/lib/organization';
@@ -86,6 +87,9 @@ const ROLE_LABELS: Record<string, string> = {
   quality: 'جودة',
   user: 'مستخدم',
 };
+
+/** §PRESENTATION-BOUNDARY — unknown role keys never render raw. */
+const ROLE_FALLBACK_LABEL = 'مستخدم';
 
 const ROLE_CHIP: Record<string, string> = {
   admin: 'bg-brand-500/15 text-brand-300 border-brand-500/40',
@@ -440,7 +444,7 @@ export function PermissionManagerConsole({ users, selectedUserId, onSelectUser, 
                       </div>
                       <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
                         <Badge variant="outline" className={cn('text-[9px] border px-1', ROLE_CHIP[u.role] ?? ROLE_CHIP.user)}>
-                          {ROLE_LABELS[u.role] ?? u.role}
+                          {ROLE_LABELS[u.role] ?? ROLE_FALLBACK_LABEL}
                         </Badge>
                         {u.linkedEmployeeCode && <span className="text-[9px] text-slate-500">#{u.linkedEmployeeCode}</span>}
                         {u.isSuspended && (
@@ -496,7 +500,7 @@ export function PermissionManagerConsole({ users, selectedUserId, onSelectUser, 
                   <div className="flex items-center gap-2 flex-wrap">
                     <h3 className="text-base font-semibold text-white">{profile.identity.name || profile.identity.email}</h3>
                     <Badge variant="outline" className={cn('text-[10px] border', ROLE_CHIP[profile.identity.role] ?? ROLE_CHIP.user)}>
-                      {ROLE_LABELS[profile.identity.role] ?? profile.identity.role}
+                      {ROLE_LABELS[profile.identity.role] ?? ROLE_FALLBACK_LABEL}
                     </Badge>
                     {profile.identity.isSuspended ? (
                       <Badge variant="outline" className="text-[10px] border-brand-500/50 text-brand-300 bg-brand-500/10">الحساب معلّق</Badge>
@@ -793,5 +797,7 @@ function EmptyState({ icon, title, subtitle }: { icon: ReactNode; title: string;
 
 function pageTitle(pageKey: string): string {
   const page = APP_PAGES.find((p) => p.permissionKey === pageKey);
-  return page?.title ?? pageKey;
+  // §PRESENTATION-BOUNDARY — an unknown page key resolves through the
+  // canonical entity vocabulary instead of rendering raw.
+  return page?.title ?? presentEntity(pageKey, 'ar');
 }

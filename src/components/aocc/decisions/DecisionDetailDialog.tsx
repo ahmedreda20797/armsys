@@ -177,7 +177,7 @@ export const DecisionDetailDialog = memo(function DecisionDetailDialog({
                 {d.title}
               </DialogTitle>
               <DialogDescription className="text-[11px] text-slate-400 mt-0.5">
-                {getDecisionTypeLabel(d.type)} • معرف: {d.id}
+                {getDecisionTypeLabel(d.type)}
               </DialogDescription>
             </div>
 

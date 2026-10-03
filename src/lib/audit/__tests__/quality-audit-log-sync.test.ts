@@ -327,11 +327,15 @@ describe('audit log records the full review lifecycle (no status filter)', () =>
     assert.equal(pairs.length, new Set(pairs).size, 'no (action, entity) pair written twice');
 
     // No second-copy audit system: writes only touch the canonical
-    // observation table, the single audit collection, and notifications.
+    // observation table, the single audit collection, notifications,
+    // and the observationCategories MASTER DATA table — the creation
+    // route runs the idempotent master-data ensure before category
+    // resolution (bootstrap on a fresh install; zero writes once
+    // converged).
     const tables = new Set(createdRecords.map((r) => r.table));
     for (const table of tables) {
       assert.ok(
-        ['qualityObservations', 'qualityAuditLog', 'notifications'].includes(table),
+        ['qualityObservations', 'qualityAuditLog', 'notifications', 'observationCategories'].includes(table),
         `unexpected write target: ${table}`,
       );
     }

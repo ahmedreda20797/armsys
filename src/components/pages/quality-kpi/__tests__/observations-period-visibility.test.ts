@@ -147,11 +147,11 @@ describe('observations page — period visibility contracts (§68)', () => {
   it('the ACTIVE period is always visible in the toolbar (not only inside the collapsed panel)', () => {
     assert.match(source, /observations-period-indicator/);
     assert.match(source, /فترة العرض:/);
-    assert.match(source, /filters\.month \? formatMonth\(filters\.month\) : 'كل الأشهر'/);
+    assert.match(source, /filters\.month \? formatMonthKey\(filters\.month, locale\) : <T>كل الأشهر<\/T>/);
   });
 
   it('the empty state NAMES the period — never a bare misleading zero state (§68)', () => {
-    assert.match(source, /لا توجد ملاحظات مسجلة في \$\{monthLabel\}/);
+    assert.match(source, /<T>لا توجد ملاحظات مسجلة في <\/T>\{monthLabel\}/);
     assert.ok(!source.includes('>لا توجد ملاحظات</p>'), 'the old misleading zero state must stay dead');
   });
 

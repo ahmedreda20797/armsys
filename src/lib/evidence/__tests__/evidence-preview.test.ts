@@ -86,10 +86,13 @@ describe('Phase 5.2 — evidence summaries (§32)', () => {
     assert.equal(summary.rawId, observation.id); // kept for the secondary slot
     assert.notEqual(summary.title, observation.id);
     assert.notEqual(summaryPrimaryText(summary), observation.id);
-    // The section renders the raw id in a dedicated small mono line.
+    // §PRESENTATION-BOUNDARY — the raw record id NEVER renders as
+    // visible text; it is confined to an explicit hover diagnostic
+    // (title) on the human-readable title line.
     const sectionsSource = srcOf(
       'src/components/pages/quality-kpi/smart-report/report-sections.tsx');
-    assert.match(sectionsSource, /font-mono text-\[9px\][^\n]*\{recordId\}/);
+    assert.doesNotMatch(sectionsSource, /font-mono[^>]*>\s*\{recordId\}/);
+    assert.match(sectionsSource, /title=\{recordId\}/);
   });
 
   it('24b. forbidden / not_found degrade explicitly with NO invented content', () => {

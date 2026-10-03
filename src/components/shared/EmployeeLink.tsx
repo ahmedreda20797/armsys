@@ -45,7 +45,9 @@ export function EmployeeLink({
   const { canViewPage } = usePermissions('employee360');
   const canOpen = canViewPage('employee360');
 
-  const finalName = children || name || code || employeeId;
+  // §PRESENTATION-BOUNDARY — the employee record id is never the
+  // visible link text; the localized generic label is the fallback.
+  const finalName = children || name || code || 'موظف';
   const finalDept = department;
 
   if (!employeeId) {
@@ -93,7 +95,7 @@ export function EmployeeLink({
         ${canOpen ? 'cursor-pointer group' : 'cursor-default'}
         ${className}
       `}
-      title={canOpen ? `عرض ملف ${name || code || employeeId}` : undefined}
+      title={canOpen ? `عرض ملف ${name || code || 'الموظف'}` : undefined}
     >
       {/* Avatar */}
       {!hideAvatar && (

@@ -68,14 +68,17 @@ export async function getEmployeePerformanceDataset(
   const identity = await loaders.loadEmployeeIdentity(input.employeeId);
   if (!identity) return null;
 
-  // ── Team label from the ORGANIZATION TREE (§REPORT-IDENTITY) ──
+  // ── Team label + MANAGER from the ORGANIZATION TREE (§REPORT-IDENTITY) ──
   // One extra cached read; the tree is authoritative, subteams roll up
   // to their parent team, and an unassigned employee resolves to null
-  // (explicit unavailable downstream — never an invented label).
+  // (explicit unavailable downstream — never an invented label). The
+  // manager is the nearest team ancestor's manager display name.
   const orgNodes = await loaders.loadOrgNodes();
-  const team = identity.orgNodeId
-    ? findAncestorOfType(buildOrgIndex(orgNodes as never), identity.orgNodeId, 'team')?.name ?? null
+  const teamNode = identity.orgNodeId
+    ? findAncestorOfType(buildOrgIndex(orgNodes as never), identity.orgNodeId, 'team')
     : null;
+  const team = teamNode?.name ?? null;
+  const manager = teamNode?.managerUserName ?? null;
 
   // ── Canonical KPI report (Phase 2 → Phase 1 engine, same loaders) ──
   // ── Batched operational reads: ONE cached read per collection ──
@@ -105,6 +108,7 @@ export async function getEmployeePerformanceDataset(
     minOccurrences: input.minOccurrences,
     identity,
     orgTeam: team,
+    orgManager: manager,
     kpiReport,
     observations,
     deductions,

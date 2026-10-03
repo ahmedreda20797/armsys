@@ -441,7 +441,7 @@ export function buildAnalyticsView(api: AnalyticsApiResponse | undefined, locale
     concentration,
     gaps,
     unavailableMetricsLabel: r.dataQuality.unavailableMetrics.length > 0
-      ? r.dataQuality.unavailableMetrics.join(' • ')
+      ? r.dataQuality.unavailableMetrics.map((m) => unavailableMetricLabel(m, locale)).join(' • ')
       : null,
     noteLabels,
   };
@@ -454,10 +454,32 @@ function anomalyTitle(anomalyType: string, locale: Locale = 'ar'): string {
   if (anomalyType.endsWith('_COUNT_SPIKE')) {
     const prefix = anomalyType.replace('_COUNT_SPIKE', '');
     const domainKey = ANOMALY_TYPE_PREFIX[prefix];
-    const domain = domainKey ? uiLabel(DOMAIN_LABELS[domainKey], locale) : prefix;
+    const domain = domainKey
+      ? uiLabel(DOMAIN_LABELS[domainKey], locale)
+      : (locale === 'en' ? 'records' : 'السجلات');
     return locale === 'en' ? `Unusual increase in ${domain} count` : `ارتفاع غير معتاد في عدد ${domain}`;
   }
-  return anomalyType;
+  // §PRESENTATION-BOUNDARY — an unmapped anomaly type never renders
+  // as its raw engine code.
+  return locale === 'en' ? 'Unclassified statistical deviation' : 'اختلاف إحصائي غير مصنّف';
+}
+
+/**
+ * §PRESENTATION-BOUNDARY — engine metric keys ('trend.stats …') never
+ * reach the report; each maps to its human sentence.
+ */
+function unavailableMetricLabel(metric: string, locale: Locale = 'ar'): string {
+  if (metric.startsWith('trend.stats')) {
+    return locale === 'en'
+      ? 'Trend statistics — insufficient available months'
+      : 'إحصاءات الاتجاه — أشهر متاحة غير كافية';
+  }
+  if (metric.startsWith('followUps.avgOverdueDays')) {
+    return locale === 'en'
+      ? 'Average follow-up overdue days — not available in the dataset'
+      : 'متوسط تأخر المتابعات — غير متاح في مجموعة البيانات';
+  }
+  return locale === 'en' ? 'Metric unavailable for this period' : 'مؤشر غير متاح لهذه الفترة';
 }
 
 /** Translate a handful of known engine note sentences; pass others through. */

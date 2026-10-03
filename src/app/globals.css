@@ -1812,6 +1812,17 @@ textarea:focus {
   margin: 0 0 2px;
 }
 
+/* §PRINT-IDENTITY-PARITY — the employee CODE sits directly under the
+   name (mono, logical dir), mirroring the live header's
+   "الاسم (الكود)" identity pairing. */
+.print-doc-subject-code {
+  font-size: 11px;
+  font-weight: 600;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  color: #4b5563;
+  margin: 0 0 3px;
+}
+
 /* §PRINT-IDENTITY — employee name / department / position STACKED on
    their own lines (top-right of the report), never joined inline. */
 .print-doc-subject-line {

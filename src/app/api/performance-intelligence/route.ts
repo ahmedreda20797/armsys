@@ -1,6 +1,7 @@
 // ══════════════════════════════════════════════════════════════
 //  GET /api/performance-intelligence — Employee Performance
-//  Intelligence dataset (Phase 3)
+//  Intelligence dataset (Phase 3) + §QUALITY-INTELLIGENCE
+//  decision/risk and permission-gated HR facts.
 //
 //  Thin route: authenticate → authorize (existing kpiReports
 //  permission — no second permission system) → AUTHORIZED scope
@@ -14,6 +15,19 @@
 //    minOccurrences (optional, default 2, clamped ≥ 2)
 //
 //  The response is DETERMINISTIC FACTS ONLY — no narratives.
+//  §QUALITY-INTELLIGENCE additions (both computed over the SAME
+//  dataset instance — no second engine run):
+//    decision     — the canonical HR-decision/risk-engine projection,
+//                   SECTION-GATED server-side: the report is withheld
+//                   (null) when the viewer lacks the employee360
+//                   decisionSupport section, and its per-section
+//                   factors/scorecard entries are dropped by the SAME
+//                   employee360 section gate the Employee360 profile
+//                   uses (hrDeductions etc.). Server-side enforcement —
+//                   the UI never decides visibility.
+//    hrDeductions — the employee's stored HR-deduction month block
+//                   (aggregateHrMonth projection), null unless the
+//                   viewer holds the hrDeductions section.
 // ══════════════════════════════════════════════════════════════
 
 import { NextRequest } from 'next/server';
@@ -33,6 +47,12 @@ import {
   MAX_WINDOW_MONTHS,
   MIN_WINDOW_MONTHS,
 } from '@/lib/performance-intelligence';
+import { getHrEmployeeDecisionReport } from '@/lib/hr-decision';
+import { filterFactorsBySectionGate, filterScorecardBySectionGate } from '@/lib/hr-decision/section-gate';
+import { resolveEmployee360SectionGate } from '@/lib/permissions/employee360-access';
+import { getAll } from '@/lib/db';
+import { aggregateHrMonth } from '@/lib/employee-performance';
+import type { EmployeeHrDeductionRecord } from '@/lib/employee-performance';
 
 export async function GET(request: NextRequest) {
   try {
@@ -90,7 +110,49 @@ export async function GET(request: NextRequest) {
 
     if (!dataset) return notFoundError('الموظف غير موجود');
 
-    return Response.json(dataset);
+    // ═══ §QUALITY-INTELLIGENCE — canonical decision/risk projection ═══
+    // The canonical SECTION gate (the same resolver Employee360 uses)
+    // decides, server-side, whether this viewer may see the decision
+    // support block and each factor-owning section.
+    const sectionGate = resolveEmployee360SectionGate(permCheck.user.permissions);
+
+    let decision: Awaited<ReturnType<typeof getHrEmployeeDecisionReport>> = null;
+    if (sectionGate.decisionSupport) {
+      const full = await getHrEmployeeDecisionReport({
+        employeeId: employeeId!,
+        monthKey: month!,
+        dataset,
+      });
+      if (full) {
+        // Per-section enforcement: factor lines and scorecard entries
+        // owned by a denied section are DROPPED before serialization
+        // (the same rule the Employee360 profile applies).
+        decision = {
+          ...full,
+          factors: filterFactorsBySectionGate(full.factors, sectionGate),
+          concerns: filterFactorsBySectionGate(full.concerns, sectionGate),
+          strengths: filterFactorsBySectionGate(full.strengths, sectionGate),
+          scorecard: filterScorecardBySectionGate(full.scorecard, sectionGate),
+        };
+      }
+    }
+
+    // ═══ HR deductions — withheld unless the section is granted ═══
+    let hrDeductionsBlock: ReturnType<typeof aggregateHrMonth> | null = null;
+    if (sectionGate.hrDeductions) {
+      const rows = await getAll('hrDeductions').catch(() => [] as never[]);
+      const monthRows = (rows as Array<Record<string, unknown>>)
+        .filter((r) => r.employeeId === employeeId && r.month === month);
+      hrDeductionsBlock = monthRows.length
+        ? aggregateHrMonth(month!, monthRows as unknown as EmployeeHrDeductionRecord[])
+        : null;
+    }
+
+    return Response.json({
+      ...dataset,
+      decision,
+      hrDeductions: hrDeductionsBlock,
+    });
   } catch (error) {
     logServerFailure('performance-intelligence', 'GET', error);
     return internalError();

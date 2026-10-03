@@ -59,7 +59,9 @@ const SEVERITY_META: Record<AttentionSeverity, SeverityMeta> = {
   critical: {
     short: 'حرج',
     heading: 'حالات حرجة',
-    aria: 'critical',
+    // §ACCESSIBILITY — the announced text is the human label, never
+    // the raw severity key.
+    aria: 'حرج',
     icon: AlertOctagon,
     rowClass: 'border-red-500/25 bg-red-500/5',
     badgeClass: 'bg-red-500/15 text-red-400 border-red-500/30',
@@ -68,7 +70,7 @@ const SEVERITY_META: Record<AttentionSeverity, SeverityMeta> = {
   urgent: {
     short: 'عاجل',
     heading: 'عاجل',
-    aria: 'urgent',
+    aria: 'عاجل',
     icon: AlertTriangle,
     rowClass: 'border-orange-500/25 bg-orange-500/5',
     badgeClass: 'bg-orange-500/15 text-orange-400 border-orange-500/30',
@@ -77,7 +79,7 @@ const SEVERITY_META: Record<AttentionSeverity, SeverityMeta> = {
   warning: {
     short: 'اليوم',
     heading: 'مستحقة اليوم',
-    aria: 'warning',
+    aria: 'مستحقة اليوم',
     icon: Clock,
     rowClass: 'border-amber-500/25 bg-amber-500/5',
     badgeClass: 'bg-amber-500/15 text-amber-400 border-amber-500/30',
@@ -86,7 +88,7 @@ const SEVERITY_META: Record<AttentionSeverity, SeverityMeta> = {
   info: {
     short: 'معلومة',
     heading: 'للمتابعة',
-    aria: 'info',
+    aria: 'للمتابعة',
     icon: Info,
     rowClass: 'border-cyan-500/25 bg-cyan-500/5',
     badgeClass: 'bg-cyan-500/15 text-cyan-400 border-cyan-500/30',
@@ -594,7 +596,7 @@ const DefaultAttentionRow = memo(function DefaultAttentionRow({ item }: { item: 
           'inline-flex items-center gap-1 px-2 py-1 rounded-md border text-[10px] font-bold shrink-0 w-16 justify-center',
           meta.badgeClass,
         )}
-        aria-label={`severity: ${meta.aria}`}
+        aria-label={meta.aria}
       >
         <SevIcon className="size-3" aria-hidden="true" />
         {meta.short}

@@ -26,6 +26,7 @@ import { parseSafeHttpUrl } from '@/lib/quality-observations/evidence';
 import { useLanguage } from '@/lib/i18n/language-context';
 import { T } from '@/lib/i18n/T';
 import { translateUIText } from '@/lib/i18n/ui-text';
+import { presentSystemOrVerbatim } from '@/lib/i18n/presentation';
 import { formatNumber, formatInteger, displayLocale } from '@/lib/i18n/format';
 
 type ViewMode = 'grouped' | 'flat';
@@ -168,9 +169,11 @@ function renderGroupedDetails(row: Record<string, unknown>): React.ReactNode {
           <div key={String(d.id ?? i)} className="rounded-lg border border-slate-800/80 bg-slate-900/50 px-3 py-2 text-xs space-y-1.5">
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
               <span className="font-mono text-slate-300" dir="ltr">{String(d.date ?? '—')}</span>
-              <span className="font-semibold text-slate-100"><T>{String(d.category ?? '—')}</T></span>
+              {/* §PRESENTATION-BOUNDARY — stored type keys resolve to human
+                  labels; legacy business text stays verbatim. */}
+              <span className="font-semibold text-slate-100">{presentSystemOrVerbatim(String(d.category ?? ''), 'ar') || '—'}</span>
               {typeof d.status === 'string' && d.status !== 'معتمد' && (
-                <Badge className="bg-amber-500/10 text-amber-400 border-amber-500/20 text-[10px]"><T>{d.status}</T></Badge>
+                <Badge className="bg-amber-500/10 text-amber-400 border-amber-500/20 text-[10px]">{presentSystemOrVerbatim(d.status, 'ar')}</Badge>
               )}
               <span className="flex items-center gap-2 mr-auto">
                 {Number(d.deductionDays) > 0 && (

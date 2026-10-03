@@ -33,6 +33,7 @@ import {
 import type { ObservationTemplate, Severity } from '@/types/quality-kpi';
 import { T } from '@/lib/i18n/T';
 import { translateUIText } from '@/lib/i18n/ui-text';
+import { categoryDisplayName, selectorCategories } from '@/lib/observation-categories/presentation';
 import { useLanguage } from '@/lib/i18n/language-context';
 
 // ─── Constants ────────────────────────────────────────────────
@@ -65,7 +66,7 @@ function CreateTemplateDialog({
 }: {
   open: boolean;
   onOpenChange: (o: boolean) => void;
-  categories: Array<{ id: string; name: string }>;
+  categories: Array<{ id: string; name: string; nameEn?: string }>;
 }) {
   const { locale } = useLanguage();
   const [title, setTitle] = useState('');
@@ -119,7 +120,7 @@ function CreateTemplateDialog({
         <div className="space-y-3">
           <div className="space-y-1">
             <Label><T>عنوان القالب *</T></Label>
-            <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder={translateUIText('مثال: تأخر متابعة دوري', locale)} className="bg-slate-800/50 border-slate-700" />
+            <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder={translateUIText('مثال: مراجعة أداء أسبوعية', locale)} className="bg-slate-800/50 border-slate-700" />
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1">
@@ -128,7 +129,7 @@ function CreateTemplateDialog({
                 <SelectTrigger className="bg-slate-800/50 border-slate-700"><SelectValue placeholder={translateUIText('اختر التصنيف', locale)} /></SelectTrigger>
                 <SelectContent>
                   {categories.map((c) => (
-                    <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                    <SelectItem key={c.id} value={c.id}>{categoryDisplayName(c, locale)}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -267,7 +268,11 @@ export default function ObservationTemplatesPage() {
   const { data: categoriesData } = useObservationCategories();
 
   const templates: ObservationTemplate[] = Array.isArray(data) ? data : [];
-  const categories: Array<{ id: string; name: string }> = Array.isArray(categoriesData) ? categoriesData : [];
+  // §MASTER-DATA — templates are created against ACTIVE categories in
+  // canonical order (listing display uses each template's frozen name).
+  const categories: Array<{ id: string; name: string; nameEn?: string }> = selectorCategories(
+    (Array.isArray(categoriesData) ? categoriesData : []) as Array<{ id: string; name: string; nameEn?: string; sortOrder?: number; isActive?: boolean }>,
+  );
 
   // Client-side search.
   const filtered = useMemo(() => {

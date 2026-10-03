@@ -106,10 +106,16 @@ import {
   parseDealDateBasis,
   type DealDateBasis,
 } from '@/lib/deal-dates';
-import { logCreate, logUpdate, logDelete } from '@/lib/activity-logger';
+import { logCreate, logUpdate, logDelete, logActivity } from '@/lib/activity-logger';
+// §TRAVEL-FORM — the ONE canonical save contract (payload shape, save
+// timeout, failure text) shared with the regression tests.
+import { buildTravelSavePayload, describeTravelSaveError, type TravelFormData } from '@/lib/travel-form';
+// §DEAL-DATES (§LEGACY-BACKFILL) — the closedAt ledger display formatter.
+import { isoToDisplayDate } from '@/lib/date-utils';
 import { EmployeeSearchInput } from '@/components/shared/EmployeeSearchInput';
 import { authFetch } from '@/lib/api-fetch';
 import { T } from '@/lib/i18n/T';
+import { presentStatus } from '@/lib/i18n/presentation';
 import { translateUIText } from '@/lib/i18n/ui-text';
 import { useLanguage } from '@/lib/i18n/language-context';
 import type { Locale } from '@/lib/i18n/dictionary';
@@ -125,20 +131,9 @@ interface TravelWithEmployee extends TravelDeal {
   employeeName: string;
 }
 
-interface TravelFormData {
-  employeeId: string;
-  destination: string;
-  departureDate: string;
-  returnDate: string;
-  /** §DEAL-DATES (DEAL_CLOSED) — تاريخ تقفيل الديل (DD/MM/YYYY). */
-  dealClosedAt: string;
-  dealerName: string;
-  customerNames: string;
-  /** §BOOKING-ITEMS — canonical dynamic booking rows (replaces the six fixed selects). */
-  bookingItems: BookingItem[];
-  notes: string;
-  status: string;
-}
+// §TRAVEL-FORM — TravelFormData now lives in lib/travel-form.ts (the
+// canonical save contract, imported above) together with the payload
+// builder and the save-failure text resolver.
 
 // ═══════════════════════════════════════════════════════════════
 //  CONSTANTS
@@ -150,6 +145,9 @@ const emptyForm: TravelFormData = {
   // entered into Qnalys the day it is closed with the employee); the
   // user keeps full manual override for historical registration.
   dealClosedAt: todayDisplayDate(),
+  // §LEGACY-BACKFILL — the completion ledger (تاريخ الاكتمال) is never
+  // prefabricated: '' = unknown / untouched.
+  closedAt: '',
   dealerName: '', customerNames: '',
   bookingItems: [],
   notes: '', status: 'upcoming',
@@ -284,7 +282,9 @@ const StatusBadge = memo(function StatusBadge({ status }: { status: string }) {
     case 'in_progress': return <Badge className="bg-amber-500/15 text-amber-400 border-amber-500/20"><T>جاري</T></Badge>;
     case 'completed': return <Badge className="bg-green-500/15 text-green-400 border-green-500/20"><T>مكتمل</T></Badge>;
     case 'canceled': return <Badge className="bg-red-500/15 text-red-400 border-red-500/20"><T>ملغي</T></Badge>;
-    default: return <Badge variant="outline">{status}</Badge>;
+    // §PRESENTATION-BOUNDARY — unknown status keys show a generic
+    // localized label, never the raw key.
+    default: return <Badge variant="outline">{presentStatus(status, 'ar')}</Badge>;
   }
 });
 
@@ -694,13 +694,17 @@ const TripCard = memo(function TripCard({
 
 // ─── TripFormDialog ───
 const TripFormDialog = memo(function TripFormDialog({
-  title, open, onOpenChange, form, setForm, employees, saving, onSave, editingTrip,
+  title, open, onOpenChange, form, setForm, employees, saving, onSave, editingTrip, saveError,
 }: {
   title: string; open: boolean; onOpenChange: (v: boolean) => void;
   form: TravelFormData; setForm: React.Dispatch<React.SetStateAction<TravelFormData>>;
   employees: Employee[]; saving: boolean; onSave: () => void;
   /** The stored deal when editing (drives the read-only completion info). */
   editingTrip: TravelWithEmployee | null;
+  /** §13 — the visible save-failure text for the LAST attempt (null
+   *  while idle/successful; the dialog stays open so the user can
+   *  correct the data). */
+  saveError?: string | null;
 }) {
   const { locale } = useLanguage();
   const updateForm = useCallback((field: keyof TravelFormData, value: string | boolean | BookingItem[]) => {
@@ -731,8 +735,6 @@ const TripFormDialog = memo(function TripFormDialog({
       ],
     }));
   }, [setForm]);
-
-  const storedCompletion = editingTrip?.closedAt ?? null;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -789,20 +791,37 @@ const TripFormDialog = memo(function TripFormDialog({
             <Label className="text-slate-300"><T>تاريخ العودة</T></Label>
             <Input value={form.returnDate} onChange={(e) => updateForm('returnDate', e.target.value)} className="bg-slate-800 border-slate-600 text-white" placeholder="DD/MM/YYYY" dir="ltr" />
           </div>
-          {/* §DEAL-DATES — تاريخ الاكتمال is a SERVER-generated ledger
-              (closedAt): READ-ONLY, never a form field, never trusted
-              from the client. Historical unknown stays unknown. */}
+          {/* §DEAL-DATES — تاريخ الاكتمال is the SERVER closure ledger
+              (closedAt). Legacy completed deals (closedAt=null) carry a
+              VALID unknown ledger: an authorized editor may backfill the
+              REAL historical completion date (§LEGACY-BACKFILL §6.C) or
+              explicitly correct an existing one (§6.D) — the server
+              validates + normalizes it and NEVER fabricates it. Leaving
+              it empty keeps the stored value untouched (unknown stays
+              unknown); non-completed deals keep the auto-stamp note. */}
           {editingTrip && (
-            <div className="space-y-2">
-              <Label className="text-slate-300"><T>تاريخ الاكتمال</T></Label>
-              <div className="bg-slate-800/60 border border-slate-700/40 rounded-md px-3 py-2 text-sm text-slate-300" dir="ltr">
-                {editingTrip.status === 'completed'
-                  ? (storedCompletion
-                    ? <span className="text-emerald-400">{formatDateTime(storedCompletion, locale)}</span>
-                    : <span className="text-amber-400"><T>تاريخ الاكتمال غير معروف</T></span>)
-                  : <span className="text-slate-500"><T>يُسجل تلقائياً من النظام عند الإكمال</T></span>}
+            form.status === 'completed' ? (
+              <div className="space-y-2">
+                <Label className="text-slate-300"><T>تاريخ الاكتمال</T></Label>
+                <Input
+                  value={form.closedAt}
+                  onChange={(e) => updateForm('closedAt', e.target.value)}
+                  className="bg-slate-800 border-slate-600 text-white"
+                  placeholder="DD/MM/YYYY"
+                  dir="ltr"
+                />
+                {!form.closedAt && (
+                  <p className="text-xs text-amber-400/80"><T>غير معروف — أدخل التاريخ التاريخي الفعلي لإكمال الصفقة إن وُجد</T></p>
+                )}
               </div>
-            </div>
+            ) : (
+              <div className="space-y-2">
+                <Label className="text-slate-300"><T>تاريخ الاكتمال</T></Label>
+                <div className="bg-slate-800/60 border border-slate-700/40 rounded-md px-3 py-2 text-sm text-slate-300" dir="ltr">
+                  <span className="text-slate-500"><T>يُسجل تلقائياً من النظام عند الإكمال</T></span>
+                </div>
+              </div>
+            )
           )}
           <div className="space-y-2">
             <Label className="text-slate-300"><T>اسم الديل</T></Label>
@@ -868,8 +887,18 @@ const TripFormDialog = memo(function TripFormDialog({
           </div>
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={() => { onOpenChange(false); setForm(emptyForm); }} className="border-slate-600 text-slate-300"><T>إلغاء</T></Button>
-          <Button onClick={onSave} disabled={saving || !form.employeeId || !form.destination || !form.departureDate} className="bg-linear-to-r from-brand-600 to-brand-700 hover:from-brand-700 hover:to-brand-800 text-white">{saving ? <T>جاري الحفظ...</T> : <T>حفظ</T>}</Button>
+          {/* §13 — every save attempt terminates in SUCCESS or a VISIBLE
+              ERROR; the server's safe validation message is shown
+              verbatim, transport failures get the localized fallback. */}
+          {saveError && (
+            <div role="alert" className="w-full rounded-md border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-400">
+              {saveError}
+            </div>
+          )}
+          <div className="flex w-full justify-end gap-2">
+            <Button variant="outline" onClick={() => { onOpenChange(false); setForm(emptyForm); }} className="border-slate-600 text-slate-300"><T>إلغاء</T></Button>
+            <Button onClick={onSave} disabled={saving || !form.employeeId || !form.destination || !form.departureDate} className="bg-linear-to-r from-brand-600 to-brand-700 hover:from-brand-700 hover:to-brand-800 text-white">{saving ? <T>جاري الحفظ...</T> : <T>حفظ</T>}</Button>
+          </div>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -1198,6 +1227,9 @@ export default function TravelPage() {
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [editingTrip, setEditingTrip] = useState<TravelWithEmployee | null>(null);
   const [form, setForm] = useState<TravelFormData>(emptyForm);
+  // §13 — the visible save-failure text for the LAST dialog attempt
+  // (null while idle/successful; cleared when a dialog opens).
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [isUploadOpen, setIsUploadOpen] = useState(false);
   // §MONTH-ISOLATION — expansion is PER MONTH GROUP (was a single
@@ -1300,32 +1332,44 @@ export default function TravelPage() {
   }, [updateTravel, trips]);
 
   const handleSave = useCallback(() => {
-    // §DEAL-DATES — dealClosedAt goes through only when set; an empty
-    // value on a legacy edit leaves the stored value untouched (the
-    // server rejects invalid shapes and never fabricates the date).
-    // closedAt is NEVER sent — it is a server-side ledger.
-    const payload = {
-      employeeId: form.employeeId,
-      destination: form.destination,
-      departureDate: form.departureDate,
-      returnDate: form.returnDate,
-      dealClosedAt: form.dealClosedAt || undefined,
-      dealerName: form.dealerName,
-      customerNames: form.customerNames,
-      bookingItems: form.bookingItems,
-      notes: form.notes,
-      status: form.status,
-    };
+    // §TRAVEL-FORM — the ONE canonical payload builder (dealClosedAt
+    // only when set; closedAt only for a completed-deal EDIT — the
+    // §LEGACY-BACKFILL path; never fabricated).
+    const payload = buildTravelSavePayload(form, !!editingTrip);
+    // §13 — every attempt clears the stale error first: the outcome is
+    // set by onSuccess/onError and NEVER leaves the dialog in
+    // "جاري الحفظ" (React Query settles the promise in both cases and
+    // the mutation aborts after TRAVEL_SAVE_TIMEOUT_MS).
+    setSaveError(null);
     if (editingTrip) {
       updateTravel.mutate({ id: editingTrip.id, data: payload }, {
-        onSuccess: () => { logUpdate('travel', 'رحلة', form.destination); setEditingTrip(null); setIsAddOpen(false); setForm(emptyForm); },
+        onSuccess: () => {
+          logUpdate('travel', 'رحلة', form.destination);
+          // §24 AUDIT — the historical completion-ledger backfill is
+          // traceable in the EXISTING activity trail: null → date.
+          const completionLedgerChanged = payload.closedAt !== undefined;
+          if (completionLedgerChanged) {
+            logActivity('update', 'travel',
+              `تاريخ الاكتمال: ${editingTrip.closedAt ?? 'غير معروف'} → ${form.closedAt || 'غير معروف'} (${form.destination})`,
+              { field: 'closedAt', dealId: editingTrip.id, from: editingTrip.closedAt ?? null, to: payload.closedAt ?? null });
+          }
+          setEditingTrip(null); setIsAddOpen(false); setForm(emptyForm);
+        },
+        onError: (error) => {
+          // §13/§14 — visible, safe failure text; the dialog stays
+          // open so the user can correct the data and retry.
+          setSaveError(describeTravelSaveError(error, translateUIText('تعذر حفظ الصفقة — تحقق من التاريخ والبيانات المطلوبة', locale)));
+        },
       });
     } else {
       createTravel.mutate(payload, {
         onSuccess: () => { logCreate('travel', 'رحلة', form.destination); setIsAddOpen(false); setForm(emptyForm); },
+        onError: (error) => {
+          setSaveError(describeTravelSaveError(error, translateUIText('تعذر حفظ الصفقة — تحقق من التاريخ والبيانات المطلوبة', locale)));
+        },
       });
     }
-  }, [editingTrip, form, updateTravel, createTravel]);
+  }, [editingTrip, form, updateTravel, createTravel, locale]);
 
   const handleDelete = useCallback((id: string) => {
     deleteTravel.mutate(id, {
@@ -1340,6 +1384,9 @@ export default function TravelPage() {
 
   const openEdit = useCallback((trip: TravelWithEmployee) => {
     setEditingTrip(trip);
+    // A stale error from the previous attempt never follows the user
+    // into a freshly opened edit (§13).
+    setSaveError(null);
     setForm({
       employeeId: trip.employeeId, destination: trip.destination,
       departureDate: trip.departureDate, returnDate: trip.returnDate || '',
@@ -1347,6 +1394,11 @@ export default function TravelPage() {
       // left empty for the authorized editor to fill with the REAL
       // business date — never inferred from createdAt/departure/closure.
       dealClosedAt: trip.dealClosedAt || '',
+      // §LEGACY-BACKFILL — the stored completion ledger (تاريخ
+      // الاكتمال) is displayed as a display date for EXPLICIT
+      // correction; a legacy null ledger stays EMPTY (unknown — never
+      // prefabricated from any other date).
+      closedAt: trip.closedAt ? (isoToDisplayDate(trip.closedAt) ?? '') : '',
       dealerName: trip.dealerName || '', customerNames: trip.customerNames || '',
       // §BOOKING-ITEMS — canonical items (legacy deals normalize at read time).
       bookingItems: normalizeBookingItems(trip),
@@ -1754,7 +1806,7 @@ export default function TravelPage() {
           label: translateUIText('إضافة رحلة', locale),
           // §DEAL-DATES — dealClosedAt defaults to TODAY at open time
           // (not module load), per the DEFAULT DATE = TODAY doctrine.
-          onClick: () => { setForm({ ...emptyForm, dealClosedAt: todayDisplayDate() }); setEditingTrip(null); setIsAddOpen(true); },
+          onClick: () => { setForm({ ...emptyForm, dealClosedAt: todayDisplayDate() }); setEditingTrip(null); setSaveError(null); setIsAddOpen(true); },
         } : undefined}
         actions={canCreate ? (
           <Button onClick={() => setIsUploadOpen(true)} variant="outline" className="border-amber-500/30 text-amber-400 hover:bg-amber-500/10">
@@ -1913,6 +1965,10 @@ export default function TravelPage() {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all" className="text-white text-xs"><T>الحالة: الكل</T></SelectItem>
+              {/* §27 CURRENT DEALS — the derived current-status population
+                  (تعديل + جاري); the drill target of the Smart Report's
+                  «الصفقات الحالية» metric. */}
+              <SelectItem value="active" className="text-white text-xs"><T>الحالة: نشطة (تعديل + جاري)</T></SelectItem>
               {statusConfig.map((s) => (
                 <SelectItem key={s.key} value={s.key} className="text-white text-xs"><T>{s.label}</T></SelectItem>
               ))}
@@ -1969,20 +2025,22 @@ export default function TravelPage() {
       <TripFormDialog
         title={translateUIText('إضافة رحلة سفر جديدة', locale)}
         open={isAddOpen && !editingTrip}
-        onOpenChange={setIsAddOpen}
+        onOpenChange={(v) => { if (!v) setSaveError(null); setIsAddOpen(v); }}
         form={form} setForm={setForm}
         employees={employees} saving={createTravel.isPending}
         onSave={handleSave}
         editingTrip={null}
+        saveError={saveError}
       />
       <TripFormDialog
         title={`${translateUIText('تعديل', locale)}: ${editingTrip?.destination ?? ''}`}
         open={!!editingTrip}
-        onOpenChange={(v) => { if (!v) setEditingTrip(null); }}
+        onOpenChange={(v) => { if (!v) { setEditingTrip(null); setSaveError(null); } }}
         form={form} setForm={setForm}
         employees={employees} saving={updateTravel.isPending}
         onSave={handleSave}
         editingTrip={editingTrip}
+        saveError={saveError}
       />
       <DeleteConfirmDialog
         open={!!deletingId}

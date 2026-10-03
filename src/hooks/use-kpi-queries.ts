@@ -186,6 +186,20 @@ export function useObservationCategories() {
   });
 }
 
+/**
+ * Management-UI variant — the same canonical endpoint with
+ * `withUsage=1`, which attaches `usageCount` (observations referencing
+ * each category). Separate cache entry; invalidated together with the
+ * base categories query by every mutation below.
+ */
+export function useObservationCategoriesWithUsage() {
+  return useQuery({
+    queryKey: [...kpiQueryKeys.categories, 'usage'],
+    queryFn: () => apiFetch('/api/observation-categories?withUsage=1'),
+    staleTime: 60_000,
+  });
+}
+
 export function useCreateCategory() {
   const qc = useQueryClient();
   return useMutation({
@@ -194,7 +208,10 @@ export function useCreateCategory() {
         method: 'POST',
         body: JSON.stringify(data),
       }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: kpiQueryKeys.categories }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: kpiQueryKeys.categories });
+      qc.invalidateQueries({ queryKey: [...kpiQueryKeys.categories, 'usage'] });
+    },
   });
 }
 
@@ -206,7 +223,10 @@ export function useUpdateCategory() {
         method: 'PUT',
         body: JSON.stringify(data),
       }),
-    onSettled: () => qc.invalidateQueries({ queryKey: kpiQueryKeys.categories }),
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: kpiQueryKeys.categories });
+      qc.invalidateQueries({ queryKey: [...kpiQueryKeys.categories, 'usage'] });
+    },
   });
 }
 
@@ -215,7 +235,26 @@ export function useDeleteCategory() {
   return useMutation({
     mutationFn: (id: string) =>
       apiFetch(`/api/observation-categories/${id}`, { method: 'DELETE' }),
-    onSettled: () => qc.invalidateQueries({ queryKey: kpiQueryKeys.categories }),
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: kpiQueryKeys.categories });
+      qc.invalidateQueries({ queryKey: [...kpiQueryKeys.categories, 'usage'] });
+    },
+  });
+}
+
+/** Master Data reorder — PUT { reorder: [id, …] } on the collection. */
+export function useReorderCategories() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (orderedIds: string[]) =>
+      apiFetch('/api/observation-categories', {
+        method: 'PUT',
+        body: JSON.stringify({ reorder: orderedIds }),
+      }),
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: kpiQueryKeys.categories });
+      qc.invalidateQueries({ queryKey: [...kpiQueryKeys.categories, 'usage'] });
+    },
   });
 }
 

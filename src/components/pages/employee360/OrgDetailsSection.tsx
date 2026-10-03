@@ -15,6 +15,7 @@ import { ChevronDown, Network } from 'lucide-react';
 import { T } from '@/lib/i18n/T';
 import { useLanguage } from '@/lib/i18n/language-context';
 import { navigateToEmployeeProfile } from '@/lib/employee-360/navigation';
+import { orgNodeTypeLabel, type OrgNodeType } from '@/lib/organization/types';
 import { SectionShell, EmptyState } from '@/components/pages/employee360/ui';
 import { EmployeeDocumentsSection } from '@/components/pages/employee360/EmployeeDocumentsSection';
 import type { Employee360Data } from '@/lib/employee-360/client-types';
@@ -53,7 +54,9 @@ export function OrganizationSection({ organization, employeeId }: {
                       : 'border-border/60 bg-muted/30 text-muted-foreground'
                   }`}>
                     {node.name}
-                    <span className="ms-1 text-[9px] opacity-60">{node.type}</span>
+                    {/* §PRESENTATION-BOUNDARY — the node TYPE renders as its
+                        canonical organization label, never the raw key. */}
+                    <span className="ms-1 text-[9px] opacity-60">{orgNodeTypeLabel(node.type as OrgNodeType) || 'عقدة'}</span>
                   </span>
                 </span>
               ))}
@@ -97,10 +100,12 @@ export function EmployeeDetailsSection({ employee }: {
     { label: <T>تاريخ التعيين</T>, value: employee.hireDate ?? '—', ltr: true },
     { label: <T>المدة الخدمية</T>, value: employee.tenureYears !== null ? <>{employee.tenureYears} <T>سنة</T></> : '—' },
     { label: <T>الوردية</T>, value: employee.shiftStart && employee.shiftEnd ? `${employee.shiftStart} - ${employee.shiftEnd}` : '—', ltr: true },
-    { label: <T>الحالة</T>, value: STATUS_LABELS[employee.status] ?? employee.status },
+    { label: <T>الحالة</T>, value: STATUS_LABELS[employee.status] ?? 'غير محدد' },
     { label: <T>الهاتف</T>, value: employee.mobile ?? '—', ltr: true },
     { label: <T>الإقامة</T>, value: employee.residence ?? '—' },
-    { label: <T>عقدة الهيكل</T>, value: employee.orgNodeId ? <span dir="ltr" className="font-mono text-xs">{employee.orgNodeId}</span> : '—' },
+    // §PRESENTATION-BOUNDARY — the org node id is internal (tree
+    // navigation uses it); the visible row shows a stable human label.
+    { label: <T>عقدة الهيكل</T>, value: employee.orgNodeId ? <T>مرتبط بالهيكل التنظيمي</T> : '—' },
   ];
 
   return (

@@ -29,7 +29,13 @@ import {
 } from '@/lib/deal-dates';
 
 export type TravelTab = 'all' | 'upcoming' | 'in_progress' | 'returned' | 'canceled';
-export type TravelStatusFilter = TravelDeal['status'] | 'all';
+/**
+ * §27 CURRENT DEALS — 'active' is a DERIVED current-status filter
+ * (upcoming OR in_progress): the population of deals that currently
+ * exist and are not in a terminal state. It never participates in a
+ * date-dimension attribution.
+ */
+export type TravelStatusFilter = TravelDeal['status'] | 'all' | 'active';
 
 /** Operational category — derived from the TRAVEL dates, not the status. */
 export type TripCategory = 'upcoming' | 'in_progress' | 'returned';
@@ -43,7 +49,12 @@ export function getTripCategory(depDate: string, retDate: string | null): TripCa
 
 export const TRAVEL_TABS: readonly TravelTab[] = ['all', 'upcoming', 'in_progress', 'returned', 'canceled'] as const;
 
-export const TRAVEL_STATUS_FILTERS: readonly TravelStatusFilter[] = ['all', 'upcoming', 'in_progress', 'completed', 'canceled'] as const;
+export const TRAVEL_STATUS_FILTERS: readonly TravelStatusFilter[] = ['all', 'active', 'upcoming', 'in_progress', 'completed', 'canceled'] as const;
+
+/** §27 — the CURRENT-DEALS predicate (upcoming OR in_progress). */
+export function isActiveStatusFilterDeal(t: Pick<TravelDeal, 'status'>): boolean {
+  return t.status === 'upcoming' || t.status === 'in_progress';
+}
 
 export interface TravelQueryFilters {
   tab: TravelTab;
@@ -182,8 +193,12 @@ export function applyTravelFilters(
     filtered = filtered.filter((t) => isCanceledDeal(t));
   }
 
-  // §9 — independent current-status filter
-  if (filters.status !== 'all') {
+  // §9 — independent current-status filter. 'active' is the §27
+  // CURRENT-DEALS population (upcoming OR in_progress) — orthogonal
+  // to the date basis like every other status value.
+  if (filters.status === 'active') {
+    filtered = filtered.filter((t) => isActiveStatusFilterDeal(t));
+  } else if (filters.status !== 'all') {
     filtered = filtered.filter((t) => t.status === filters.status);
   }
 

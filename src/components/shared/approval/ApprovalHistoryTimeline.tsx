@@ -84,7 +84,9 @@ export function ApprovalHistoryTimeline({
         const style = ACTION_STYLE[ev.action] ?? ACTION_STYLE.submit;
         const Icon = style.icon;
         const labelEntry = ACTION_LABELS[ev.action];
-        const label = labelEntry ? (locale === 'en' ? labelEntry[1] : labelEntry[0]) : ev.action;
+        // §PRESENTATION-BOUNDARY — unmapped action codes show a generic
+        // localized label, never the raw key.
+        const label = labelEntry ? (locale === 'en' ? labelEntry[1] : labelEntry[0]) : 'حدث';
         return (
           <li
             key={`${ev.timestamp}-${i}`}

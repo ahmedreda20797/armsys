@@ -18,6 +18,8 @@
 
 import type { EvidenceCollection } from './evidence-collections';
 import { getDealMonthKey, type DealDateSource } from '@/lib/deal-dates';
+import { DEDUCTION_TYPE_LABELS } from '@/lib/quality-deductions/domain';
+import { presentSystemOrVerbatim } from '@/lib/i18n/presentation';
 
 export interface ProjectedField {
   label: string;
@@ -171,7 +173,11 @@ function projectQualityObservation(r: Rec): ProjectedRecord {
   b.add('الموظف', r.employeeName);
   b.add('القسم', r.department);
   b.add('التصنيف', r.categoryName);
-  b.add('النوع', r.type);
+  // §PRESENTATION-BOUNDARY — a stored type key resolves to its human
+  // label; legacy free-text stays verbatim.
+  b.add('النوع', typeof r.type === 'string' && r.type.trim() !== ''
+    ? presentSystemOrVerbatim(r.type, 'ar')
+    : null);
   b.add('الشدة', r.severity, OBSERVATION_SEVERITY);
   b.add('حالة الاعتماد', r.approvalStatus, APPROVAL_STATUS);
   if (r.applyPointDeduction === true && typeof r.points === 'number') {
@@ -186,7 +192,9 @@ function projectQualityDeduction(r: Rec): ProjectedRecord {
   const b = builder('خصم جودة');
   b.add('التاريخ', r.date ?? r.deductionDate ?? r.createdAt);
   b.add('الموظف', r.employeeName);
-  b.add('النوع', r.type ?? r.categoryName);
+  // §PRESENTATION-BOUNDARY — the stored type key (quality_issue…)
+  // resolves to its human Arabic label, never raw.
+  b.add('النوع', r.type ?? r.categoryName, DEDUCTION_TYPE_LABELS);
   b.add('الأيام', r.days);
   b.add('المبلغ', r.amount);
   b.add('السبب', r.reason ?? r.notes);

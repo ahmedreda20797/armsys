@@ -36,7 +36,7 @@ describe('AI section — mounting & failure isolation (§23/§24/§53)', () => {
     assert.match(page, /<AIAnalysisSection\b/);
     assert.match(page, /onViewEvidence=\{handleViewEvidence\}/);
     assert.match(page, /employeeId=\{employeeId\}/);
-    assert.match(page, /month=\{month\}/);
+    assert.match(page, /month=\{effectiveMonth\}/);
   });
 
   it('the section renders AFTER Analytics and never blocks the facts sections', () => {
@@ -165,7 +165,7 @@ describe('Arabic output rendering + stable enums (§46)', () => {
 describe('AI §68 period rule — the AI section displays the period', () => {
   it('READY view always names the period and marks MTD as not finalized (§21/§68)', () => {
     const section = readSrc(SECTION_PATH);
-    assert.match(section, /الفترة: \{periodLabel\}/);
+    assert.match(section, /<T>الفترة: <\/T>\{periodLabel\}/);
     assert.match(section, /formatMonthLabelAr/);
     assert.match(section, /حتى تاريخه \(MTD\)/);
     assert.match(section, /ليست شهرًا نهائيًا/);

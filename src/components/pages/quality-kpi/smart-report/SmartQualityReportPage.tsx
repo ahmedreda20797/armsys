@@ -45,7 +45,6 @@ import { usePageState } from '@/hooks/use-page-state';
 import { useLanguage } from '@/lib/i18n/language-context';
 import { T } from '@/lib/i18n/T';
 import { translateUIText } from '@/lib/i18n/ui-text';
-import { formatDateTime } from '@/lib/i18n/format';
 import { usePermissions } from '@/hooks/usePermissions';
 import { useAppStore } from '@/lib/store';
 import type { EmployeePerformanceDataset } from '@/lib/performance-intelligence';
@@ -54,34 +53,36 @@ import {
   buildAttendance,
   buildComplaints,
   buildCapa,
-  buildDataQuality,
   buildDeductions,
   buildEvidenceGroups,
   buildFollowUps,
   buildDeals,
-  buildKpiComponents,
-  buildKpiHero,
-  buildObservations,
   buildReportHeader,
-  buildRepeatedIssues,
   buildTrend,
   previousMonthKey,
 } from './view-model';
+import { buildIntelligenceViews, type ReportPayload } from './intelligence-view';
+import {
+  DataQualityIntelSection,
+  ExecutiveSummarySection,
+  KpiIntelligenceSection,
+  ManagementAttentionSection,
+  NarrativeSection,
+  QualityIntelligenceSection,
+  TopSignalsSection,
+  WhatChangedSection,
+} from './intelligence-sections';
 import {
   AttendanceSection,
   CapaSection,
   ComplaintsSection,
-  DataQualitySection,
   DealsSection,
   DeductionsSection,
   EvidenceSection,
   FollowUpsSection,
-  KpiComponentsSection,
-  KpiHeroSection,
-  ObservationsSection,
   ReportHeaderSection,
-  RepeatedIssuesSection,
   TrendSection,
+  type DealDrillTarget,
 } from './report-sections';
 import { AnalyticsSection } from './AnalyticsSection';
 import { AIAnalysisSection } from './AIAnalysisSection';
@@ -199,17 +200,51 @@ function ReportBody() {
     navigateTo(intent.page, intent.highlightId ?? undefined, navParams);
   }, [navigateTo, visibleSet, evidencePreview]);
 
-  // All view models derive from the ONE dataset — no second source.
+  // §40 DEAL DRILL-DOWNS — every deal metric opens the Travel page with
+  // the EXACT population expressed through the canonical date-basis +
+  // status + employee + period filters (the store navigation model —
+  // no URL routing). The Travel page's own deep-link resolver applies
+  // these deterministically over the persisted filter state.
+  const handleDealDrill = useCallback((target: DealDrillTarget) => {
+    if (!visibleSet.has('travel')) return;
+    const employeeScope = { employeeId: employeeId, month: effectiveMonth };
+    switch (target) {
+      case 'closed': // DEAL_CLOSED (dealClosedAt), any current status
+        navigateTo('travel', undefined, { dateBasis: 'dealClosedAt', status: 'all', ...employeeScope });
+        break;
+      case 'confirmed': // the SAME closure population, current status = completed
+        navigateTo('travel', undefined, { dateBasis: 'dealClosedAt', status: 'completed', ...employeeScope });
+        break;
+      case 'cancelled': // the SAME closure population, current status = canceled
+        navigateTo('travel', undefined, { dateBasis: 'dealClosedAt', status: 'canceled', ...employeeScope });
+        break;
+      case 'current': // §27 current deals — status snapshot, no date dimension
+        navigateTo('travel', undefined, { ...employeeScope, month: 'all', dateBasis: 'dealClosedAt', status: 'active' });
+        break;
+      case 'travel': // TRAVEL dimension (departureDate)
+        navigateTo('travel', undefined, { dateBasis: 'departureDate', status: 'all', ...employeeScope });
+        break;
+      case 'completed': // CLOSED dimension (closedAt), completed only
+        navigateTo('travel', undefined, { dateBasis: 'closedAt', status: 'completed', ...employeeScope });
+        break;
+    }
+  }, [navigateTo, visibleSet, employeeId, effectiveMonth]);
+
+  // §16 — deduction details live in the CANONICAL quality-deductions
+  // view (the Quality page), period-seeded through the store nav
+  // params; the executive report itself stays summary-only.
+  const handleDeductionsDrill = useCallback(() => {
+    if (!visibleSet.has('quality')) return;
+    navigateTo('quality', undefined, { month: effectiveMonth });
+  }, [navigateTo, visibleSet, effectiveMonth]);
+
+
   const views = useMemo(() => {
     const dataset = datasetQuery.data as EmployeePerformanceDataset | undefined;
     if (!dataset) return null;
     return {
       header: buildReportHeader(dataset, locale),
-      hero: buildKpiHero(dataset, locale),
-      components: buildKpiComponents(dataset, locale),
       trend: buildTrend(dataset, locale),
-      observations: buildObservations(dataset, locale),
-      repeatedIssues: buildRepeatedIssues(dataset, locale),
       deductions: buildDeductions(dataset, locale),
       complaints: buildComplaints(dataset, locale),
       capa: buildCapa(dataset, locale),
@@ -217,18 +252,30 @@ function ReportBody() {
       deals: buildDeals(dataset, locale),
       attendance: buildAttendance(dataset, locale),
       evidence: buildEvidenceGroups(dataset, locale),
-      dataQuality: buildDataQuality(dataset, locale),
+      // QUALITY-INTELLIGENCE - the deterministic analytical layer over
+      // the SAME payload (executive summary, signals, KPI breakdown,
+      // issue concentration, what-changed, patterns, management
+      // attention, narrative, data-quality matrix). Pure projection -
+      // zero extra fetches.
+      intelligence: buildIntelligenceViews(datasetQuery.data as ReportPayload, locale),
       generatedAt: dataset.generatedAt,
     };
   }, [datasetQuery.data, locale]);
 
   // §PRINT — the dedicated clean A4 report host (not the live UI):
   // the tab's dataset projects into the shared print model adapter.
+  // §PRINT-IDENTITY-PARITY — SAME dataset, SAME title as the live
+  // header (تقرير الجودة والأداء الذكي), so the PDF identifies the
+  // employee exactly like the screen (رحمه ايمن — EMP-084), never a
+  // scope/team label.
   const handlePrint = () => {
     if (!datasetQuery.data) return;
     openPrintReport(
-      performanceDatasetToPrintModel(datasetQuery.data as Parameters<typeof performanceDatasetToPrintModel>[0], {
-        title: translateUIText('تقرير الجودة الذكي', locale),
+      performanceDatasetToPrintModel(datasetQuery.data as EmployeePerformanceDataset, {
+        title: translateUIText('تقرير الجودة والأداء الذكي', locale),
+        // §QUALITY-INTELLIGENCE — the printed document carries the SAME
+        // analytical sections the screen shows (identical facts).
+        intelligence: views?.intelligence,
       }),
     );
   };
@@ -352,51 +399,100 @@ function ReportBody() {
         </Card>
       )}
 
-      {/* ── The report ── */}
+      {/* ── The report — §52 information architecture: page 1 answers
+              WHO / HOW / WHAT CHANGED; page 2 carries the detail and the
+              actions; page 3 (only when needed) the expanded evidence. ── */}
       {employeeId !== '' && views && (
         <div className="space-y-4 report-print">
-          {/* §3 Employee header */}
+          {/* ── PAGE 1 ── */}
+
+          {/* §2/§3 Employee header — the EMPLOYEE is the primary identity;
+              position/department/team/manager are context, never the subject. */}
           <ReportHeaderSection view={views.header} />
 
-          {/* §4 KPI hero */}
-          <KpiHeroSection view={views.hero} />
+          {/* §3 Executive summary — score/change/risk + explicit-semantics
+              deal metrics (تقفيلات الفترة / الصفقات الحالية) */}
+          <ExecutiveSummarySection view={views.intelligence.executive} />
 
-          {/* §5 Components + §7 Trend — side by side on desktop */}
+          {/* §4 Top 3 signals — the most meaningful real facts only */}
+          <TopSignalsSection
+            signals={views.intelligence.signals}
+            canOpenPage={(page) => visibleSet.has(page)}
+            onOpenPage={(page) => navigateTo(page)}
+          />
+
+          {/* §6 KPI intelligence (FULL configured breakdown — the ONE place
+              the KPI configuration state is detailed) + §10 canonical trend */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
-            <KpiComponentsSection view={views.components} />
+            <KpiIntelligenceSection view={views.intelligence.kpi} />
             <TrendSection view={views.trend} />
           </div>
 
-          {/* §8-§10 Quality performance */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
-            <ObservationsSection view={views.observations} />
-            <RepeatedIssuesSection view={views.repeatedIssues} />
-          </div>
-          <DeductionsSection view={views.deductions} />
+          {/* §8-§10 Quality intelligence — totals, concentration, patterns,
+              MoM comparison (ONE merged section — no duplicate cards) */}
+          <QualityIntelligenceSection
+            view={views.intelligence.quality}
+            patterns={views.intelligence.patterns}
+          />
 
-          {/* §11-§13 Complaints / CAPA / Follow-ups */}
+          {/* §15 What changed — current vs previous comparable period */}
+          <WhatChangedSection rows={views.intelligence.whatChanged} />
+
+          {/* ── PAGE 2 ── */}
+
+          {/* §13 Management attention — WHAT/WHY/SOURCE with human-readable
+              sources; does NOT duplicate the pattern list above */}
+          <ManagementAttentionSection
+            items={views.intelligence.attention}
+            canOpenPage={(page) => visibleSet.has(page)}
+            onOpenPage={(page) => navigateTo(page)}
+          />
+
+          {/* §21 Follow-ups — explicit denominator; on-time stays honestly
+              unavailable without completion timestamps */}
+          <FollowUpsSection view={views.followUps} />
+
+          {/* §16 Quality deductions — SUMMARY only; details live in the
+              canonical deductions view (permission-gated drill) */}
+          <DeductionsSection
+            view={views.deductions}
+            canDrill={visibleSet.has('quality')}
+            onDrill={handleDeductionsDrill}
+          />
+
+          {/* §22/§23 Complaints / CAPA — canonical status normalization */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
             <ComplaintsSection view={views.complaints} />
             <CapaSection view={views.capa} />
           </div>
-          <FollowUpsSection view={views.followUps} />
 
-          {/* §14-§15 Operational + attendance context */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
-            <DealsSection view={views.deals} />
-            <AttendanceSection view={views.attendance} />
-          </div>
+          {/* §35/§36 Deal performance — explicit date semantics + drills */}
+          <DealsSection
+            view={views.deals}
+            canDrill={visibleSet.has('travel')}
+            onDrill={handleDealDrill}
+          />
 
-          {/* §16/§17 Evidence */}
+          {/* §15b Attendance context (never part of Quality KPI) */}
+          <AttendanceSection view={views.attendance} />
+
+          {/* §18 Data quality — ONE management-readable availability matrix
+              (merged: sources + unattributed + notes) */}
+          <DataQualityIntelSection view={views.intelligence.dataQuality} />
+
+          {/* §14/§55 Executive analysis — the closing narrative, derived
+              only from the numbers above */}
+          <NarrativeSection sentences={views.intelligence.narrative} />
+
+          {/* ── PAGE 3 — only when needed: expanded evidence ── */}
+
+          {/* §16/§17 Evidence — traceability into source collections */}
           <EvidenceSection
             groups={views.evidence}
             canOpenPage={(page) => visibleSet.has(page)}
             onOpenPage={(page) => navigateTo(page)}
             onViewEvidence={handleViewEvidence}
           />
-
-          {/* §18 Data quality — limitations never hidden */}
-          <DataQualitySection view={views.dataQuality} />
 
           {/* Phase 5.3 — deterministic statistical insights (TypeScript engine,
               FACT + ANALYSIS layer; degrades independently without
@@ -414,8 +510,10 @@ function ReportBody() {
             onViewEvidence={handleViewEvidence}
           />
 
-          <p className="text-[10px] text-slate-600 font-mono text-left" dir="ltr">
-            generatedAt: {formatDateTime(views.generatedAt, locale)}
+          {/* §FOOTER — the approved source sentence (generatedAt lives in
+              the header now). */}
+          <p className="text-[10px] text-slate-600 text-center pt-1 border-t border-slate-800/60">
+            <T>تقرير رسمي — مصدر البيانات: قاعدة بيانات النظام للفترة المحددة. تُعرض القيم كما أنتجها المحركات الحتمية دون أي تقدير.</T>
           </p>
         </div>
       )}

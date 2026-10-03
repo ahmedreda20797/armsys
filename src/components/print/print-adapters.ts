@@ -13,6 +13,7 @@
 
 import type { PrintReportModel, PrintSection } from './print-report-store';
 import { formatNumber, formatPercentage, formatMonthKey, displayLocale } from '@/lib/i18n/format';
+import { presentStatus } from '@/lib/i18n/presentation';
 
 const dash = (v: unknown): string =>
   v === null || v === undefined || v === '' ? '—' : String(v);
@@ -251,12 +252,34 @@ interface ObservationRecordLike {
   notes?: string;
 }
 
+/**
+ * §PRINT-IDENTITY-PARITY — the employee block mirrors the CANONICAL
+ * EmployeeIdentityFacts field names (employeeName / employeeCode / …).
+ * It previously invented `name` / `code`, which read undefined off the
+ * real dataset and dropped the printed header into the generic scope
+ * fallback (النطاق: <department>) — the department/team replacing the
+ * employee as the report subject. Canonical names keep live and print
+ * on the ONE identity source (no second employee pipeline).
+ */
+interface EmployeeIdentityFactsLike {
+  employeeId?: string;
+  employeeName?: string;
+  employeeCode?: string | null;
+  department?: string | null;
+  team?: string | null;
+  manager?: string | null;
+  position?: string | null;
+  employmentStatus?: string | null;
+}
+
 interface DatasetLike {
-  employee?: { name?: string; department?: string | null; position?: string | null; code?: string | null; team?: string | null };
-  period?: { label?: string; months?: string[]; monthKey?: string };
+  employee?: EmployeeIdentityFactsLike;
+  period?: { monthKey?: string };
   kpi?: {
     weightedTotal?: number | null;
-    quality?: { rawScore?: number | null; weight?: number | null; contribution?: number | null; status?: string | null } | null;
+    // §PRINT-IDENTITY-PARITY — canonical KpiQualityFacts field names
+    // (weightedContribution, not an invented `contribution`).
+    quality?: { rawScore?: number | null; weight?: number | null; weightedContribution?: number | null; status?: string | null } | null;
     overallStatus?: string | null;
     message?: string | null;
   };
@@ -269,7 +292,12 @@ interface DatasetLike {
       byResolutionStatus?: Record<string, number>;
       byCategory?: Array<{ categoryId: string | null; categoryName: string; count: number }>;
     };
-    deductions?: { count?: number; totalDays?: number; totalAmount?: number; records?: DeductionRecordLike[] };
+    deductions?: {
+      count?: number; totalDays?: number; totalAmount?: number;
+      /** §16 — record reasons NEVER print; only the summary enters the
+       *  executive document (details stay in the dedicated view). */
+      records?: Array<{ deductionDays?: number; deductionAmount?: number; date?: string }>;
+    };
   };
   complaints?: { total?: number; stillOpen?: number; resolvedOrClosed?: number; avgResolutionDays?: number | null };
   capa?: { total?: number; active?: number; overdue?: number; closedCount?: number };
@@ -283,19 +311,148 @@ const OBS_STATUS_LABELS: Record<string, [string, string]> = {
   rejected: ['مرفوضة', 'Rejected'],
 };
 
+// §REPORT-IDENTITY — the live header's employment-status vocabulary
+// (view-model EMPLOYMENT_STATUS_LABELS); the print header carries the
+// label only for non-active employees, exactly like the screen.
+const EMPLOYMENT_STATUS_LABELS: Record<string, [string, string]> = {
+  active: ['نشط', 'Active'],
+  inactive: ['غير نشط', 'Inactive'],
+  archived: ['مؤرشف', 'Archived'],
+  unknown: ['غير معروف', 'Unknown'],
+};
+
+// §QUALITY-INTELLIGENCE — the localized analytical views computed by
+// the smart report page over the SAME payload (no refetch, no
+// recomputation) so the printed document carries the identical
+// executive summary / KPI breakdown / concentration / narrative /
+// attention / data-quality matrix the screen shows.
+type IntelligenceViewsLike = import('@/components/pages/quality-kpi/smart-report/intelligence-view').IntelligenceViews;
+
 export function performanceDatasetToPrintModel(
   dataset: DatasetLike,
-  options?: { title?: string },
+  options?: { title?: string; intelligence?: IntelligenceViewsLike },
 ): PrintReportModel {
   const sections: PrintSection[] = [];
+
+  // ── §QUALITY-INTELLIGENCE — the analytical sections come FIRST so
+  // the printed document reads as a management intelligence report,
+  // not a dashboard dump. Values are the page's own localized views.
+  const intel = options?.intelligence;
+  if (intel) {
+    const exec = intel.executive;
+    const execStats: Array<{ label: string; value: string }> = [
+      { label: 'مؤشر الأداء (KPI)', value: exec.scoreDisplay },
+      { label: 'نقطة مقارنة بالشهر السابق', value: exec.deltaDisplay ?? '—' },
+      { label: 'الاتجاه', value: exec.trendLabel ?? '—' },
+      { label: 'جودة الفترة', value: exec.qualityScoreDisplay },
+      { label: 'المخاطر', value: exec.riskLabel ?? '—' },
+      { label: 'حالة القرار', value: exec.decisionStatusLabel ?? '—' },
+      // §3 EXECUTIVE HEADER — explicit deal semantics in print too.
+      { label: 'تقفيلات الفترة', value: exec.closedDuringPeriodDisplay },
+      { label: 'الصفقات الحالية', value: exec.currentDealsDisplay },
+    ];
+    const execParagraphs: string[] = [];
+    if (exec.incompleteMessage) execParagraphs.push(exec.incompleteMessage);
+    if (exec.missingComponents.length > 0) {
+      execParagraphs.push(`مكونات KPI تحتاج إلى إعداد: ${exec.missingComponents.join('، ')}`);
+    }
+    sections.push({
+      heading: 'الملخص التنفيذي للأداء والجودة',
+      stats: execStats,
+      paragraphs: execParagraphs.length > 0 ? execParagraphs : undefined,
+    });
+
+    // §4 Top 3 signals — the compact management headline.
+    if (intel.signals.length > 0) {
+      sections.push({
+        heading: 'أهم 3 إشارات',
+        table: {
+          columns: ['الإشارة'],
+          rows: intel.signals.map((s, i) => [`${i + 1}. ${s.text}`]),
+        },
+      });
+    }
+
+    // §15 What changed — current vs previous comparable period.
+    if (intel.whatChanged.length > 0) {
+      sections.push({
+        heading: 'ماذا تغير؟ (مقارنة بالشهر المماثل السابق)',
+        table: {
+          columns: ['المؤشر', 'السابق', 'الحالي', 'التغير'],
+          rows: intel.whatChanged.map((r) => [r.metricLabel, r.previousDisplay, r.currentDisplay, r.deltaDisplay]),
+        },
+      });
+    }
+
+    // Full configured KPI component breakdown.
+    sections.push({
+      heading: 'مكونات KPI المُهيأة',
+      table: {
+        columns: ['المكون', 'الوزن', 'الدرجة', 'الإسهام', 'الحالة'],
+        rows: intel.kpi.rows.map((r) => [r.name, r.weightDisplay, r.actualDisplay, r.contributionDisplay, r.statusLabel]),
+      },
+    });
+
+    // Issue concentration + deterministic patterns.
+    if (intel.quality.concentration.length > 0) {
+      const concParagraphs: string[] = [];
+      if (intel.quality.topIssueLine) concParagraphs.push(intel.quality.topIssueLine);
+      if (intel.quality.previousDeltaLine) concParagraphs.push(intel.quality.previousDeltaLine);
+      sections.push({
+        heading: 'تركّز المشكلات',
+        paragraphs: concParagraphs.length > 0 ? concParagraphs : undefined,
+        table: {
+          columns: ['فئة المشكلة', 'العدد', 'النسبة'],
+          rows: intel.quality.concentration.map((c) => [c.categoryName, c.count, c.shareDisplay]),
+        },
+      });
+    }
+    if (intel.patterns.length > 0) {
+      sections.push({
+        heading: 'الأنماط المكتشفة (قواعد حتمية)',
+        table: {
+          columns: ['النمط'],
+          rows: intel.patterns.map((p) => [p.text]),
+        },
+      });
+    }
+
+    // Executive narrative — deterministic sentences over the facts.
+    if (intel.narrative.length > 0) {
+      sections.push({
+        heading: 'التحليل التنفيذي',
+        paragraphs: intel.narrative.map((n) => n.text),
+      });
+    }
+
+    // Management attention — WHAT / WHY / SOURCE.
+    if (intel.attention.length > 0) {
+      sections.push({
+        heading: 'يحتاج انتباه الإدارة',
+        table: {
+          columns: ['الإشارة', 'التفصيل', 'المصدر'],
+          rows: intel.attention.map((a) => [a.what, a.why ?? '—', a.source]),
+        },
+      });
+    }
+
+    // Data-quality availability matrix.
+    sections.push({
+      heading: 'جودة البيانات وتوافر المصادر',
+      table: {
+        columns: ['المصدر', 'التوافر'],
+        rows: intel.dataQuality.rows.map((r) => [r.sourceLabel, r.availabilityLabel]),
+      },
+    });
+  }
 
   const observations = dataset.quality?.observations;
   if (observations?.records && observations.records.length > 0) {
     // Deterministic distributions first — the printed report must carry
     // the same analysis the screen shows, not only the raw record list.
     const distroRows: Array<Array<string | number>> = [
-      ...Object.entries(observations.bySeverity ?? {}).map(([k, v]) => [ui('الخطورة', 'Severity'), uiMap(SEVERITY_LABELS, k, k), v] as Array<string | number>),
-      ...Object.entries(observations.byResolutionStatus ?? {}).map(([k, v]) => [ui('حالة المعالجة', 'Resolution status'), uiMap(SEVERITY_LABELS, k, k), v] as Array<string | number>),
+      ...Object.entries(observations.bySeverity ?? {}).map(([k, v]) => [ui('الخطورة', 'Severity'), uiMap(SEVERITY_LABELS, k, 'أخرى'), v] as Array<string | number>),
+      ...Object.entries(observations.byResolutionStatus ?? {}).map(([k, v]) => [ui('حالة المعالجة', 'Resolution status'), uiMap(SEVERITY_LABELS, k, 'أخرى'), v] as Array<string | number>),
       ...(observations.byCategory ?? []).map((c) => [ui('التصنيف', 'Category'), c.categoryId === '_unclassified' ? ui('غير مصنّف', 'Uncategorized') : c.categoryName, c.count] as Array<string | number>),
     ];
     sections.push({
@@ -325,20 +482,28 @@ export function performanceDatasetToPrintModel(
     });
   }
 
+  // §16 — the executive print carries the deductions SUMMARY only
+  // (count / totals / highest single deduction). Free-text reasons and
+  // per-record rows stay in the dedicated permission-gated view.
   const deductions = dataset.quality?.deductions;
-  if (deductions?.records && deductions.records.length > 0) {
+  if (deductions && (deductions.count ?? 0) > 0) {
+    const records = deductions.records ?? [];
+    const highest = records.reduce<{ days: number; amount: number; date: string } | null>((acc, r) => {
+      const days = r.deductionDays ?? 0;
+      const amount = r.deductionAmount ?? 0;
+      if (!acc) return { days, amount, date: r.date ?? '—' };
+      if (days > acc.days || (days === acc.days && amount > acc.amount)) return { days, amount, date: r.date ?? '—' };
+      return acc;
+    }, null);
     sections.push({
-      heading: 'خصومات الجودة',
-      table: {
-        columns: ['التاريخ', 'النوع', 'الأيام', 'المبلغ (ج.م)', 'التفاصيل'],
-        rows: deductions.records.map((d) => [
-          dash(d.date),
-          dash(d.type),
-          num(d.deductionDays),
-          num(d.deductionAmount),
-          dash(d.description),
-        ]),
-      },
+      heading: 'خصومات الجودة — ملخص الفترة',
+      stats: [
+        { label: 'عدد الخصومات', value: num(deductions.count) },
+        { label: 'إجمالي الأيام', value: num(deductions.totalDays) },
+        { label: 'إجمالي المبلغ', value: num(deductions.totalAmount) },
+        { label: 'أعلى خصم منفرد', value: highest ? `${num(highest.days)} يوم / ${num(highest.amount)}` : '—' },
+      ],
+      paragraphs: ['التفاصيل والأسباب تُعرض في تقرير الخصومات المخصص وفق الصلاحيات.'],
     });
   }
 
@@ -382,29 +547,42 @@ export function performanceDatasetToPrintModel(
   }
 
   const quality = dataset.kpi?.quality;
+  // §PRINT-IDENTITY-PARITY — the SAME canonical EmployeeIdentityFacts
+  // the live header renders. The name is PRIMARY; a genuinely unnamed
+  // employee gets the explicit unnamed label (the live header's own
+  // fallback) — the team/department NEVER substitutes for the name.
+  const employee = dataset.employee;
   return {
     title: options?.title ?? 'تحليل الأداء',
     subject: [
-      dataset.employee?.name,
-      (dataset.employee as { code?: string | null } | undefined)?.code,
-      dataset.employee?.department,
-      dataset.period?.label,
+      employee?.employeeName,
+      employee?.employeeCode,
+      employee?.department,
     ].filter(Boolean).join(' — '),
     // §PRINT-HEADER — structured employee identity from authoritative
-    // sources (employee record + org tree), never a generic label.
+    // sources (employee record + org tree), never a generic label. The
+    // MANAGER is a context fact (§REPORT-IDENTITY — the employee is the
+    // subject; the team never replaces the name).
     identity: {
-      name: dataset.employee?.name,
-      code: (dataset.employee as { code?: string | null } | undefined)?.code,
-      position: dataset.employee?.position ?? null,
-      team: dataset.employee?.team ?? null,
-      department: dataset.employee?.department ?? null,
+      name: employee?.employeeName || ui('موظف بدون اسم', 'Unnamed employee'),
+      code: employee?.employeeCode ?? null,
+      position: employee?.position ?? null,
+      team: employee?.team ?? null,
+      department: employee?.department ?? null,
+      manager: employee?.manager ?? null,
+      // §REPORT-IDENTITY — surfaced only when it applies (non-active),
+      // mirroring the live header's lifecycle badge semantics.
+      employmentStatusLabel:
+        employee?.employmentStatus && employee.employmentStatus !== 'active'
+          ? uiMap(EMPLOYMENT_STATUS_LABELS, employee.employmentStatus, employee.employmentStatus)
+          : null,
     },
-    period: dataset.period?.label || monthLabel(dataset.period?.monthKey),
+    period: monthLabel(dataset.period?.monthKey),
     generatedAt: dataset.generatedAt,
     stats: [
       { label: 'درجة الجودة (خام)', value: pct(quality?.rawScore) },
       { label: 'وزن الجودة', value: pct(quality?.weight) },
-      { label: 'مساهمة الجودة', value: num(quality?.contribution) },
+      { label: 'مساهمة الجودة', value: num(quality?.weightedContribution) },
       { label: 'الإجمالي الموزون', value: num(dataset.kpi?.weightedTotal) },
       { label: 'ملاحظات الجودة', value: num(observations?.total) },
       { label: 'خصومات الجودة (يوم)', value: num(deductions?.totalDays) },
@@ -970,10 +1148,12 @@ export function hrDecisionEmployeeToPrintModel(report: HrDecisionEmployeeReportL
     period: monthLabel(report.monthKey),
     generatedAt: report.generatedAt,
     stats: [
-      { label: 'الحالة', value: uiMap(HR_DECISION_STATUS, x.status, x.status ?? '—') },
+      { label: 'الحالة', value: uiMap(HR_DECISION_STATUS, x.status, '—') },
       { label: 'نتيجة الأداء', value: x.kpiScore === null || x.kpiScore === undefined ? '—' : pct(x.kpiScore) },
       { label: 'الاتجاه', value: x.trendDirection ? uiMap(HR_TREND, x.trendDirection, '—') : '—'},
-      { label: 'مستوى المخاطر', value: x.riskLevel ?? '—' },
+      // §PRESENTATION-BOUNDARY — the risk-level key renders as its
+      // localized business label, never raw.
+      { label: 'مستوى المخاطر', value: x.riskLevel ? presentStatus(x.riskLevel, displayLocale() === 'en' ? 'en' : 'ar') : '—' },
     ],
     sections,
     footerNote: `${report.action?.actionAr ?? '—'} — ${report.action?.rationaleAr ?? ''} · ${report.action?.disclaimerAr ?? hrDecisionDisclaimer()}`,

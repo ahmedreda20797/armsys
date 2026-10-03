@@ -49,6 +49,7 @@ import { toast } from 'sonner';
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
 import { SaveStateIndicator, type SaveState } from '@/components/shared/SaveStateIndicator';
 import { getRequestTypeLabel } from '@/lib/date-utils';
+import { deductionTypeLabel } from '@/lib/quality-deductions/domain';
 import { getDepartureUrgency, travelDaysUntil } from '@/lib/travel-status';
 import {
   Clock, FileText, Plane, AlertTriangle, CheckCircle2,
@@ -666,7 +667,14 @@ export default function HomePage() {
      Decisions happen inline (overflow on request rows); the row
      click navigates to the EXACT record via the Qnalys highlight. */
   const urgentTravels = stats.upcomingTravel.filter((tr) => isUrgentDeparture(tr.departureDate));
+  // §PRESENTATION-BOUNDARY — follow-up type keys resolve to human
+  // labels in BOTH locales; an unknown key falls back to the generic
+  // business label, never the raw key.
   const FUTYPE_LABELS: Record<string, string> = { quality: 'جودة', behavior: 'سلوك', attendance: 'حضور', productivity: 'إنتاجية', training: 'تدريب', customerHandling: 'التعامل مع العملاء' };
+  const FUTYPE_LABELS_EN: Record<string, string> = { quality: 'Quality', behavior: 'Behavior', attendance: 'Attendance', productivity: 'Productivity', training: 'Training', customerHandling: 'Customer handling' };
+  const fuTypeAr = (k: string) => FUTYPE_LABELS[k] || 'متابعة';
+  const fuTypeEn = (k: string) => FUTYPE_LABELS_EN[k] || 'follow-up';
+  const REQ_TYPE_EN: Record<string, string> = { leave: 'Leave', permission: 'Excuse', excuse: 'Absence', tardiness: 'Late', remote: 'Remote', mission: 'Mission', salary_advance: 'Advance', other: 'Other' };
   const queueItems: AttentionItem[] = [];
 
   // 1) Overdue follow-ups — per record, most urgent first.
@@ -674,7 +682,7 @@ export default function HomePage() {
     queueItems.push({
       id: `q-fu-${f.id}`,
       severity: 'critical',
-      primary: L(`متابعة متأخرة — ${FUTYPE_LABELS[f.followUpType] || f.followUpType}`, `Overdue follow-up — ${f.followUpType}`),
+      primary: L(`متابعة متأخرة — ${fuTypeAr(f.followUpType)}`, `Overdue follow-up — ${fuTypeEn(f.followUpType)}`),
       secondary: `${f.employeeName}${f.employeeDepartment ? ` · ${f.employeeDepartment}` : ''}${f.responsiblePersonName ? ` — ${L('مسؤول', 'owner')}: ${f.responsiblePersonName}` : ''}`,
       trailing: L(`${f.daysOverdue} ${f.daysOverdue === 1 ? 'يوم' : 'أيام'} تأخير`, `${f.daysOverdue}d overdue`),
       actionLabel: t('action.followUp'),
@@ -713,7 +721,7 @@ export default function HomePage() {
     queueItems.push({
       id: `q-req-${req.id}`,
       severity: 'warning',
-      primary: L(`${getRequestTypeLabel(req.type)} — بانتظار الموافقة`, `${req.type} — awaiting approval`),
+      primary: L(`${getRequestTypeLabel(req.type)} — بانتظار الموافقة`, `${REQ_TYPE_EN[req.type] || 'Request'} — awaiting approval`),
       secondary: `${req.employeeName}${req.employeeDepartment ? ` · ${req.employeeDepartment}` : ''}${req.reason ? ` — ${req.reason}` : ''}`,
       trailing: req.createdAt ? relativeTime(req.createdAt, locale) : undefined,
       actionLabel: t('action.review'),
@@ -749,7 +757,7 @@ export default function HomePage() {
     queueItems.push({
       id: `q-todayfu-${fu.id}`,
       severity: 'warning',
-      primary: L(`متابعة مستحقة اليوم — ${FUTYPE_LABELS[fu.followUpType] || fu.followUpType}`, `Follow-up due today — ${fu.followUpType}`),
+      primary: L(`متابعة مستحقة اليوم — ${fuTypeAr(fu.followUpType)}`, `Follow-up due today — ${fuTypeEn(fu.followUpType)}`),
       secondary: `${fu.employeeName}${fu.employeeDepartment ? ` · ${fu.employeeDepartment}` : ''}${fu.responsiblePersonName ? ` — ${L('مسؤول', 'owner')}: ${fu.responsiblePersonName}` : ''}`,
       actionLabel: t('action.followUp'),
       onClick: () => navigateTo('followUps', fu.id, { dueToday: '1' }),
@@ -844,7 +852,7 @@ export default function HomePage() {
         'Active follow-ups whose next date is today — regardless of priority.'),
       source: L('followUps — nextFollowUpDate = اليوم', 'followUps table — nextFollowUpDate = today'),
       freshness: metricFreshness.followUps ?? null,
-      breakdown: stats.todaysFollowUps.slice(0, 4).map((f) => ({ label: f.employeeName, value: FUTYPE_LABELS[f.followUpType] || f.followUpType })),
+      breakdown: stats.todaysFollowUps.slice(0, 4).map((f) => ({ label: f.employeeName, value: locale === 'en' ? fuTypeEn(f.followUpType) : fuTypeAr(f.followUpType) })),
       navigateTo: { page: 'followUps', params: { dueToday: '1' } },
     }),
     urgentTravel: () => setInsight({
@@ -900,7 +908,7 @@ export default function HomePage() {
         'Effective (approved) quality deductions this month — pending or rejected deductions are never counted.'),
       source: L('qualityDeductions — month الحالي + اعتماد فعّال', 'qualityDeductions — current month + effective approval'),
       freshness: metricFreshness.quality ?? null,
-      breakdown: Object.entries(stats.qualitySummary.byType).map(([label, value]) => ({ label, value })),
+      breakdown: Object.entries(stats.qualitySummary.byType).map(([key, value]) => ({ label: deductionTypeLabel(key), value })),
       navigateTo: { page: 'quality', params: { month: currentMonthKey } },
     }),
   };
@@ -1176,7 +1184,7 @@ export default function HomePage() {
           <button key={fu.id} type="button" onClick={() => navigateTo('followUps', fu.id, { dueToday: '1' })}
             className="w-full flex items-center gap-3 py-2 -mx-2 px-2 rounded-lg text-start hover:bg-surface-hover/70 transition-colors">
             <span className="min-w-0 flex-1">
-              <span className="block text-xs font-semibold text-foreground truncate">{fu.employeeName} — {FUTYPE_LABELS[fu.followUpType] || fu.followUpType}</span>
+              <span className="block text-xs font-semibold text-foreground truncate">{fu.employeeName} — {locale === 'en' ? fuTypeEn(fu.followUpType) : fuTypeAr(fu.followUpType)}</span>
               <span className="block text-[10px] text-text-muted">{fu.responsiblePersonName ? `${L('مسؤول', 'owner')}: ${fu.responsiblePersonName}` : ''}</span>
             </span>
             <span className={`text-[9px] px-1.5 py-0.5 rounded-md shrink-0 ${fu.priorityLevel === 'high' ? 'text-red-400 bg-red-500/10' : fu.priorityLevel === 'medium' ? 'text-amber-400 bg-amber-500/10' : 'text-text-muted bg-slate-500/10'}`}>
@@ -1219,7 +1227,7 @@ export default function HomePage() {
         </div>
         {Object.entries(stats.qualitySummary.byType).map(([type, count]) => (
           <div key={type} className="flex items-center gap-3 text-[11px]">
-            <span className="text-text-secondary w-32 truncate">{type}</span>
+            <span className="text-text-secondary w-32 truncate">{deductionTypeLabel(type)}</span>
             <span className="h-1 rounded-full bg-slate-500/15 flex-1 max-w-40 overflow-hidden">
               <span className="block h-full rounded-full bg-orange-500/70" style={{ width: `${stats.qualitySummary.totalCases > 0 ? (count / stats.qualitySummary.totalCases) * 100 : 0}%` }} />
             </span>
@@ -1293,7 +1301,7 @@ export default function HomePage() {
         </div>
         {Object.entries(stats.qualitySummary.byType).map(([type, count]) => (
           <div key={type} className="flex items-center gap-3 text-[11px]">
-            <span className="text-text-secondary w-32 truncate">{type}</span>
+            <span className="text-text-secondary w-32 truncate">{deductionTypeLabel(type)}</span>
             <span className="h-1 rounded-full bg-slate-500/15 flex-1 max-w-40 overflow-hidden">
               <span className="block h-full rounded-full bg-orange-500/70" style={{ width: `${stats.qualitySummary.totalCases > 0 ? (count / stats.qualitySummary.totalCases) * 100 : 0}%` }} />
             </span>

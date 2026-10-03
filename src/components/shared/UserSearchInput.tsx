@@ -134,9 +134,11 @@ export function UserSearchInput({
 
   const shouldShowDropdown = showDropdown && searchText && !value;
 
+  // §PRESENTATION-BOUNDARY — unknown role keys fall back to the
+  // generic localized label, never the raw key.
   const roleLabel = (role?: string) => {
     const map: Record<string, string> = { admin: 'مدير النظام', hr: 'HR', manager: 'مدير', quality: 'جودة', user: 'مستخدم' };
-    return map[role || ''] || role || '';
+    return map[role || ''] || 'مستخدم';
   };
 
   // Filter variant

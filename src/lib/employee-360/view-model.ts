@@ -46,6 +46,9 @@ import type {
 } from '@/lib/hr-decision/types';
 import { HR_FACTOR_SECTION_BY_CATEGORY } from '@/lib/permissions/employee360-access';
 import type { Employee360SectionGate } from '@/lib/permissions/employee360-access';
+import { presentSystemOrVerbatim } from '@/lib/i18n/presentation';
+import { deductionTypeLabel } from '@/lib/quality-deductions/domain';
+import { getRequestTypeLabel } from '@/lib/date-utils';
 
 // ─────────────────────────────────────────────────────────────
 //  Shapes (fully serializable — the API response contract)
@@ -282,6 +285,7 @@ export interface AssembleEmployee360Input {
 //  These are the SAME helpers the risk center uses — no new rules.
 // ─────────────────────────────────────────────────────────────
 import { isOverdueFollowUp, isDueToday } from '@/lib/metrics/followUpMetrics';
+import { isOpenComplaintStatus } from '@/lib/complaints/complaint-status';
 import { isOverdueCAPA, isTerminalCAPA } from '@/lib/metrics';
 
 function asDate(value: unknown): string | null {
@@ -362,9 +366,38 @@ const FOLLOW_UP_LABELS: Record<string, string> = {
   resolved: 'تمت', closed: 'مغلقة', cancelled: 'ملغاة',
 };
 
+/** §PRESENTATION-BOUNDARY — priority keys → Arabic labels. */
+const PRIORITY_LABELS: Record<string, string> = {
+  low: 'منخفضة', medium: 'متوسطة', high: 'عالية', critical: 'حرجة',
+};
+
+function priorityLabel(value: unknown): string {
+  const k = typeof value === 'string' ? value.trim() : '';
+  return PRIORITY_LABELS[k] ?? 'غير محددة';
+}
+
+/** §PRESENTATION-BOUNDARY — CAPA workflow action keys → Arabic labels. */
+const CAPA_ACTION_LABELS: Record<string, string> = {
+  created: 'إنشاء', updated: 'تحديث', approved: 'اعتماد',
+  rejected: 'رفض', closed: 'إغلاق', reopened: 'إعادة فتح',
+  assigned: 'إسناد', completed: 'إكمال', comment: 'تعليق',
+};
+
+/** Human label for a stored follow-up type key (legacy text stays verbatim). */
+function followUpTypeLabel(value: unknown): string {
+  const k = typeof value === 'string' ? value.trim() : '';
+  return k === '' ? 'متابعة' : presentSystemOrVerbatim(k, 'ar');
+}
+
+/** Human label for a stored complaint type key (legacy text stays verbatim). */
+function complaintTypeLabel(value: unknown): string {
+  const k = typeof value === 'string' ? value.trim() : '';
+  return k === '' ? 'شكوى' : presentSystemOrVerbatim(k, 'ar');
+}
+
 function followUpLabel(f: Employee360RawRecord): string {
   const s = typeof f.status === 'string' ? f.status : '';
-  return FOLLOW_UP_LABELS[s] ?? s;
+  return FOLLOW_UP_LABELS[s] ?? 'غير محددة';
 }
 
 function buildAttention(args: {
@@ -391,7 +424,7 @@ function buildAttention(args: {
         id: `fu-overdue-${f.id}`,
         severity: String(f.priorityLevel) === 'critical' ? 'critical' : 'urgent',
         source: 'followUp',
-        title: `متابعة متأخرة — ${String(f.subject ?? f.followUpType ?? '')}`,
+        title: `متابعة متأخرة — ${String(f.subject ?? '') || followUpTypeLabel(f.followUpType)}`,
         detail: `الحالة: ${followUpLabel(f)}${f.nextFollowUpDate ? ` · الاستحقاق: ${String(f.nextFollowUpDate)}` : ''}`,
         drill: { page: 'followUps', highlightId: String(f.id), params: { employeeId: String(f.employeeId ?? '') } },
       });
@@ -404,7 +437,7 @@ function buildAttention(args: {
         id: `fu-today-${f.id}`,
         severity: 'warning',
         source: 'followUp',
-        title: `متابعة مستحقة اليوم — ${String(f.subject ?? f.followUpType ?? '')}`,
+        title: `متابعة مستحقة اليوم — ${String(f.subject ?? '') || followUpTypeLabel(f.followUpType)}`,
         detail: `الحالة: ${followUpLabel(f)}`,
         drill: { page: 'followUps', highlightId: String(f.id), params: { employeeId: String(f.employeeId ?? '') } },
       });
@@ -418,22 +451,22 @@ function buildAttention(args: {
         id: `capa-overdue-${c.id}`,
         severity: String(c.priority) === 'critical' ? 'critical' : 'urgent',
         source: 'capa',
-        title: `CAPA متأخرة — ${String(c.title ?? c.capaId ?? c.id)}`,
-        detail: `الأولوية: ${String(c.priority ?? '')}`,
+        title: `CAPA متأخرة — ${String(c.title ?? '') || String(c.capaId ?? '') || '—'}`,
+        detail: `الأولوية: ${priorityLabel(c.priority)}`,
         drill: { page: 'capa', highlightId: String(c.id), params: { employeeId: String(c.employeeId ?? '') } },
       });
     }
   }
 
   if (gate.complaints) {
-    const open = complaintRows.filter((c) =>
-      ['open', 'under_investigation', 'pending_resolution'].includes(String(c.status ?? '')));
+    // §COMPLAINT-STATUS — canonical open predicate (legacy aliases included).
+    const open = complaintRows.filter((c) => isOpenComplaintStatus(c.status));
     for (const c of open.slice(0, 5)) {
       items.push({
         id: `complaint-open-${c.id}`,
         severity: String(c.severity) === 'critical' ? 'critical' : 'warning',
         source: 'complaint',
-        title: `شكوى مفتوحة — ${String(c.complaintType ?? '')}`,
+        title: `شكوى مفتوحة — ${complaintTypeLabel(c.complaintType)}`,
         detail: null,
         drill: { page: 'complaints', highlightId: String(c.id), params: { employeeId: String(c.employeeId ?? '') } },
       });
@@ -510,7 +543,7 @@ function buildTimeline(args: {
     push({
       type: 'followUp',
       date: asDate(f.date) ?? '',
-      title: `متابعة: ${String(f.followUpType ?? '')}`,
+      title: `متابعة: ${followUpTypeLabel(f.followUpType)}`,
       description: String(f.subject ?? ''),
       status: String(f.status ?? ''),
       priority: typeof f.priorityLevel === 'string' ? f.priorityLevel : undefined,
@@ -521,7 +554,9 @@ function buildTimeline(args: {
     push({
       type: 'quality',
       date: asDate(q.date) ?? '',
-      title: `خصم جودة: ${String(q.type ?? '')}`,
+      // §PRESENTATION-BOUNDARY — deductionTypeLabel never renders the
+      // raw stored type key (quality_issue…).
+      title: `خصم جودة: ${deductionTypeLabel(typeof q.type === 'string' ? q.type : '')}`,
       description: String(q.description ?? ''),
       status: 'deduction',
       timestamp: asDate(q.createdAt),
@@ -541,7 +576,7 @@ function buildTimeline(args: {
     push({
       type: 'request',
       date: asDate(r.date) ?? '',
-      title: `طلب: ${String(r.type ?? '')}`,
+      title: `طلب: ${getRequestTypeLabel(String(r.type ?? ''))}`,
       description: String(r.reason ?? ''),
       status: String(r.status ?? ''),
       timestamp: asDate(r.createdAt),
@@ -551,7 +586,7 @@ function buildTimeline(args: {
     push({
       type: 'complaint',
       date: (asDate(c.createdAt) ?? '').split('T')[0],
-      title: `شكوى: ${String(c.complaintType ?? '')}`,
+      title: `شكوى: ${complaintTypeLabel(c.complaintType)}`,
       description: String(c.description ?? ''),
       status: String(c.status ?? ''),
       timestamp: asDate(c.createdAt),
@@ -571,8 +606,8 @@ function buildTimeline(args: {
     push({
       type: 'capa',
       date: (asDate(capa.createdAt) ?? '').split('T')[0],
-      title: `CAPA: ${String(capa.capaId ?? capa.title ?? '')}`,
-      description: `تم إنشاء حالة ${String(capa.title ?? '')} — الأولوية: ${String(capa.priority ?? '')}`,
+      title: `CAPA: ${String(capa.title ?? '') || String(capa.capaId ?? '')}`,
+      description: `تم إنشاء حالة ${String(capa.title ?? '')} — الأولوية: ${priorityLabel(capa.priority)}`,
       status: 'created',
       priority: typeof capa.priority === 'string' ? capa.priority : undefined,
       timestamp: asDate(capa.createdAt),
@@ -582,7 +617,9 @@ function buildTimeline(args: {
       push({
         type: 'capa',
         date: (asDate(evt.timestamp) ?? '').split('T')[0],
-        title: `CAPA ${String(capa.capaId ?? '')}: ${String(evt.action ?? '')}`,
+        // §PRESENTATION-BOUNDARY — the CAPA workflow action key renders
+        // as its human Arabic label; capaId is a human case reference.
+        title: `CAPA ${String(capa.capaId ?? '')}: ${CAPA_ACTION_LABELS[String(evt.action ?? '')] ?? 'تحديث'}`,
         description: String(evt.description ?? ''),
         status: String(evt.action ?? 'updated').toLowerCase(),
         user: String(evt.performedByName ?? evt.performedBy ?? ''),

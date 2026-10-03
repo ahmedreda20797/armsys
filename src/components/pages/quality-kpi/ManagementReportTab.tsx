@@ -30,6 +30,7 @@ import { usePrintReportStore } from '@/components/print/print-report-store';
 import { managementReportToPrintModel } from '@/components/print/print-adapters';
 import { T } from '@/lib/i18n/T';
 import { useLanguage } from '@/lib/i18n/language-context';
+import { presentEntity } from '@/lib/i18n/presentation';
 import { formatNumber, formatInteger } from '@/lib/i18n/format';
 
 const DOMAIN_ORDER: ManagementDomainSource[] = [
@@ -171,7 +172,7 @@ function GroupTable({
                   {DOMAIN_ORDER.map((d) => (
                     <TableHead key={d} className="text-right">
                       {DOMAIN_ICONS[d]}
-                      <span className="sr-only">{d}</span>
+                      <span className="sr-only">{presentEntity(d, locale)}</span>
                     </TableHead>
                   ))}
                 </TableRow>

@@ -8,6 +8,7 @@ import type { OrgAssignmentNode } from '@/lib/organization/assignment';
 import { queryKeys } from '@/lib/cache/query-keys';
 import { freshnessFor } from '@/lib/cache/cache-policy';
 import { invalidateDomain, invalidateDomains, REFRESH_ALL_DOMAINS, type MutationDomain } from '@/lib/cache/invalidation';
+import { TRAVEL_SAVE_TIMEOUT_MS } from '@/lib/travel-form';
 
 // ═════════════════════════════════════════════════════════════
 //  Query Key Factory — canonical definitions live in
@@ -298,7 +299,13 @@ export function useCreateTravel() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (data: Record<string, any>) =>
-      apiFetch('/api/travel', { method: 'POST', body: JSON.stringify(data) }),
+      apiFetch('/api/travel', {
+        method: 'POST',
+        body: JSON.stringify(data),
+        // §TRAVEL-SAVE-TIMEOUT — the save must always settle (§13:
+        // success or visible error, never an infinite "جاري الحفظ").
+        signal: AbortSignal.timeout(TRAVEL_SAVE_TIMEOUT_MS),
+      }),
     onSuccess: (_res, data) => {
       invalidateDomain(qc, 'travel', { employeeId: data?.employeeId });
     },
@@ -309,7 +316,13 @@ export function useUpdateTravel() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({ id, data }: { id: string; data: Record<string, any> }) =>
-      apiFetch(`/api/travel/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+      apiFetch(`/api/travel/${id}`, {
+        method: 'PUT',
+        body: JSON.stringify(data),
+        // §TRAVEL-SAVE-TIMEOUT — the save must always settle (§13:
+        // success or visible error, never an infinite "جاري الحفظ").
+        signal: AbortSignal.timeout(TRAVEL_SAVE_TIMEOUT_MS),
+      }),
     // onSettled (existing semantics): refresh deal surfaces even when
     // the mutation errors — status transitions drive closedAt.
     onSettled: (_res, _err, vars) => {
