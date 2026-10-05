@@ -4,6 +4,7 @@ import { getAll, withEmployee, sortByDateField } from '@/lib/db';
 import { requireAuth } from '@/lib/verify-permission';
 import { asScopeViewer, employeeInScope, authScopeViewer, filterRowsByEmployeeScope, resolveEmployeeScopeFromDb } from '@/lib/scope/server';
 import { dispatchAutomationEvent } from '@/lib/automation/event-bridge';
+import { assertSimpleValueIsActive } from '@/lib/master-data/simple-lists';
 
 export async function GET(request: NextRequest) {
   try {
@@ -97,6 +98,14 @@ export async function POST(request: NextRequest) {
         { error: 'Customer name, complaint type, and description are required' },
         { status: 400 }
       );
+    }
+
+    // ── §MASTER-DATA deactivation guard — a complaint type deactivated
+    // in the Settings Center cannot be selected for NEW complaints
+    // (unknown/legacy values stay accepted; guard, not a whitelist).
+    const typeGuard = await assertSimpleValueIsActive('complaintTypes', complaintType);
+    if (typeGuard) {
+      return NextResponse.json({ error: typeGuard }, { status: 400 });
     }
 
     // ── TARGET-EMPLOYEE SCOPE (M0.4) ──

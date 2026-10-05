@@ -214,7 +214,12 @@ export const APP_PAGES: PageConfig[] = [
   { id: 'smartQualityReport', title: 'تقرير الجودة الذكي', description: 'عرض موحد لحالة الجودة مع الأدلة والتحليل', titleEn: 'Smart Quality Report', descriptionEn: 'Unified quality status with evidence and analysis', icon: 'FileSearch', permissionKey: 'kpiReports', availableActions: ['export'], groupId: 'quality_ctrl' },
   // ═══ 🏢 الموارد البشرية ═══
   { id: 'hrDeductions', title: 'خصومات الموارد البشرية', description: 'خصومات الموارد البشرية اليدوية واعتمادها', titleEn: 'HR Deductions', descriptionEn: 'Manual HR deductions and their approval', icon: 'Banknote', permissionKey: 'hrDeductions', availableActions: ['create', 'update', 'delete', 'approve'], groupId: 'hr' },
-  { id: 'rules', title: 'قواعد الخصم', description: 'قواعد الخصم الآلية ومزامنتها مع الحضور', titleEn: 'Deduction Rules', descriptionEn: 'Automated deduction rules synced with attendance', icon: 'Scale', permissionKey: 'rules', availableActions: ['create', 'update', 'delete'], groupId: 'hr' },
+  // §SETTINGS-CENTER — deduction rules are system CONFIGURATION
+  // (automated rule authoring synced with attendance), administered
+  // from the Settings Center section «قواعد الخصم». overlayOnly keeps
+  // the page/permission/API identity intact while removing the
+  // duplicate global-sidebar destination (authorization unchanged).
+  { id: 'rules', title: 'قواعد الخصم', description: 'قواعد الخصم الآلية ومزامنتها مع الحضور', titleEn: 'Deduction Rules', descriptionEn: 'Automated deduction rules synced with attendance', icon: 'Scale', permissionKey: 'rules', availableActions: ['create', 'update', 'delete'], groupId: 'hr', overlayOnly: true },
   // ═══ ✈️ العمليات والسفر ═══
   { id: 'travel', title: 'السفر', description: 'إدارة رحلات وأجازات السفر وحالات المندوبين', titleEn: 'Travel', descriptionEn: 'Manage trips, travel leave, and delegate status', icon: 'Plane', permissionKey: 'travel', availableActions: ['create', 'update', 'delete', 'export'], groupId: 'travel_ops' },
   // ═══ 📈 التقارير والتحليلات ═══
@@ -233,7 +238,19 @@ export const APP_PAGES: PageConfig[] = [
   // system-config pages (controlPanel, organization, kpiSettings…).
   // Every authenticated user gets view access via their preset;
   // each linked/embedded surface keeps its own permission key.
-  { id: 'settings', title: 'الإعدادات', description: 'مركز الإعدادات الموحد — التفضيلات والبيانات المرجعية وروابط إدارة النظام', titleEn: 'Settings', descriptionEn: 'The unified Settings Center — preferences, Master Data, and system administration', icon: 'Settings', permissionKey: 'settings', availableActions: [], groupId: 'settings' },
+  { id: 'settings', title: 'الإعدادات', description: 'مركز الإعدادات الموحد — التفضيلات والبيانات المرجعية وإدارة النظام', titleEn: 'Settings', descriptionEn: 'The unified Settings Center — preferences, Master Data, and system administration', icon: 'Settings', permissionKey: 'settings', availableActions: [], groupId: 'settings' },
+  // §SETTINGS-CENTER §MASTER-DATA — the canonical ADMINISTRATION gate
+  // for the Master Data & System Lists domains that have no page of
+  // their own (follow-up types, complaint types, request types, and
+  // future simple lists). Quality observation categories keep their
+  // own historical 'observationCategories' key — existing grants are
+  // never retargeted. overlayOnly: an authorization identity + a
+  // Settings section, never a global-sidebar destination. Actions:
+  // create/update/delete mirror the reference domain; view rides the
+  // level. Safe defaults: only the admin bypass grants it out of the
+  // box — delegation happens through the Permission Manager exactly
+  // like every other page.
+  { id: 'masterData', title: 'إدارة البيانات المرجعية', description: 'صلاحية إدارة قوائم الأعمال في مركز الإعدادات (البيانات المرجعية والقوائم النظامية)', titleEn: 'Master Data Administration', descriptionEn: 'Administer the Settings Center business lists (Master Data & System Lists)', icon: 'Database', permissionKey: 'masterData', availableActions: ['create', 'update', 'delete'], groupId: 'settings', overlayOnly: true },
   // §USER-PROFILE — the full self-service profile page (photo upload
   // with zoom control, linked-employee identity, managed teams).
   // overlayOnly: reached from the Header profile menu (avatar), never
@@ -247,13 +264,25 @@ export const APP_PAGES: PageConfig[] = [
   // page must never be exposed to anyone by accident (Safe Defaults).
   { id: 'organization', title: 'الهيكل التنظيمي', description: 'الهيكل التنظيمي والوظائف وقوالب صلاحياتها', titleEn: 'Organization', descriptionEn: 'The org structure, jobs, and their permission templates', icon: 'Network', permissionKey: 'organization', availableActions: ['create', 'update', 'delete'], groupId: 'settings' },
   { id: 'workflowDesigner', title: 'مصمم المسارات', description: 'تصميم مسارات سير العمل والموافقات', titleEn: 'Workflow Designer', descriptionEn: 'Design workflow and approval paths', icon: 'Workflow', permissionKey: 'workflowDesigner', availableActions: ['create', 'update', 'delete'], groupId: 'settings' },
-  { id: 'rulesEngine', title: 'الأتمتة والقواعد', description: 'قواعد الأتمتة الذكية وإشعارات النظام', titleEn: 'Rules & Automation', descriptionEn: 'Smart automation rules and system notifications', icon: 'Zap', permissionKey: 'rulesEngine', availableActions: ['create', 'update', 'delete'], groupId: 'settings' },
+  // §SETTINGS-CENTER — rulesEngine is a Settings-internal configuration
+  // section (it renders inside the Settings Center). overlayOnly keeps
+  // the page + permission key fully functional (routes, API gates,
+  // Permission Manager, direct links) while removing the DUPLICATE
+  // global-sidebar destination — the canonical path is
+  // Sidebar → Settings → الأتمتة والقواعد. Sidebar removal never
+  // changes authorization.
+  { id: 'rulesEngine', title: 'الأتمتة والقواعد', description: 'قواعد الأتمتة الذكية وإشعارات النظام', titleEn: 'Rules & Automation', descriptionEn: 'Smart automation rules and system notifications', icon: 'Zap', permissionKey: 'rulesEngine', availableActions: ['create', 'update', 'delete'], groupId: 'settings', overlayOnly: true },
   // §14: the standalone 'firebase' settings page was REMOVED — Firebase
   // configuration itself (admin SDK, RTDB) is unchanged; it simply has
   // no in-app administration surface anymore.
   // ── Month close / KPI settings (Phase 1) ──
-  { id: 'monthClose', title: 'إغلاق الشهر', description: 'إغلاق وإعادة فتح الأشهر وتثبيت بياناتها', titleEn: 'Month Close', descriptionEn: 'Close and reopen months and freeze their data', icon: 'CalendarCog', permissionKey: 'monthClose', availableActions: ['approve'], groupId: 'settings' },
-  { id: 'kpiSettings', title: 'إعدادات محرك الأداء', description: 'ضبط محرك حساب مؤشرات الأداء والأوزان', titleEn: 'Performance Engine Settings', descriptionEn: 'Configure the KPI calculation engine and weights', icon: 'Settings2', permissionKey: 'kpiSettings', availableActions: ['update'], groupId: 'settings' },
+  // §SETTINGS-CENTER — monthClose + kpiSettings are Settings-internal
+  // configuration sections (same overlayOnly doctrine as rulesEngine
+  // above): pages, permission keys, routes and APIs unchanged; the
+  // global-sidebar duplicates are gone in favor of the canonical
+  // Sidebar → Settings → section path.
+  { id: 'monthClose', title: 'إغلاق الشهر', description: 'إغلاق وإعادة فتح الأشهر وتثبيت بياناتها', titleEn: 'Month Close', descriptionEn: 'Close and reopen months and freeze their data', icon: 'CalendarCog', permissionKey: 'monthClose', availableActions: ['approve'], groupId: 'settings', overlayOnly: true },
+  { id: 'kpiSettings', title: 'إعدادات محرك الأداء', description: 'ضبط محرك حساب مؤشرات الأداء والأوزان', titleEn: 'Performance Engine Settings', descriptionEn: 'Configure the KPI calculation engine and weights', icon: 'Settings2', permissionKey: 'kpiSettings', availableActions: ['update'], groupId: 'settings', overlayOnly: true },
 ];
 
 // Role presets with action-level permissions
@@ -303,6 +332,9 @@ export const HR_PERMISSIONS: PermissionsMap = {
   observations: 'none',
   observationCategories: 'none',
   observationTemplates: 'none',
+  // §MASTER-DATA — list administration is not an HR preset function
+  // (safe default; delegable via the Permission Manager).
+  masterData: 'none',
   // HR may view the KPI dashboard (read-only); no management/approval authority
   kpiDashboard: 'read',
   // KPI reports (Phase 2) — read-only for HR (view + print, no export)
@@ -350,6 +382,10 @@ export const MANAGER_PERMISSIONS: PermissionsMap = {
   // Quality KPI (Phase 1) — managers approve and close months
   observations: makeEditWithActions(['create', 'update', 'delete', 'approve']),
   observationCategories: makeEditWithActions(['create', 'update', 'delete']),
+  // §MASTER-DATA — the simple business lists (follow-up/complaint/
+  // request types) follow the SAME administration model as the
+  // observation categories: manager administers, admin bypasses.
+  masterData: makeEditWithActions(['create', 'update', 'delete']),
   observationTemplates: makeEditWithActions(['create', 'update', 'delete']),
   kpiDashboard: 'read',
   // KPI reports (Phase 2) — management visibility + Excel export
@@ -397,6 +433,9 @@ export const QUALITY_PERMISSIONS: PermissionsMap = {
   // category management belongs to manager/admin per the authorization model.
   observations: makeEditWithActions(['create', 'update', 'delete']),
   observationCategories: 'read',
+  // §MASTER-DATA — read-only for quality (labels resolve; no list
+  // administration), mirroring observationCategories.
+  masterData: 'read',
   observationTemplates: makeEditWithActions(['create', 'update', 'delete']),
   kpiDashboard: 'read',
   // KPI reports (Phase 2) — the Quality Department generates the
@@ -445,6 +484,7 @@ export const DEFAULT_PERMISSIONS: PermissionsMap = {
   observations: 'none',
   observationCategories: 'none',
   observationTemplates: 'none',
+  masterData: 'none',
   kpiDashboard: 'none',
   // KPI reports (Phase 2) — not part of the generic default role
   kpiReports: 'none',

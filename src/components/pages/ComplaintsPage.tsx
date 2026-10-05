@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { usePermissions } from '@/hooks/usePermissions';
 import { usePageState } from '@/hooks/use-page-state';
@@ -74,6 +74,7 @@ import {
 } from '@/components/shared/inline-forms';
 import { T } from '@/lib/i18n/T';
 import { presentStatus, presentSystemOrVerbatim } from '@/lib/i18n/presentation';
+import { useMasterDataVocabulary } from '@/hooks/use-master-data';
 import { translateUIText } from '@/lib/i18n/ui-text';
 import { useLanguage } from '@/lib/i18n/language-context';
 import { formatInteger } from '@/lib/i18n/format';
@@ -136,6 +137,12 @@ const COMPLAINT_TYPES = [
   { value: 'other', label: 'أخرى' },
 ];
 
+/** §MASTER-DATA — the historical static labels are the vocabulary FALLBACK;
+ *  the DB list (Settings → Master Data) is the source of truth once loaded. */
+const COMPLAINT_TYPE_FALLBACK: Record<string, string> = Object.fromEntries(
+  COMPLAINT_TYPES.map((t) => [t.value, t.label]),
+);
+
 const SEVERITY_OPTIONS = [
   { value: 'low', label: 'منخفض' },
   { value: 'medium', label: 'متوسط' },
@@ -169,9 +176,9 @@ const emptyForm: ComplaintFormData = {
 //  HELPERS
 // ═══════════════════════════════════════════════════════════════
 
-function getComplaintTypeBadge(type: string) {
+function getComplaintTypeBadge(type: string, resolveLabel?: (value: string) => string) {
   const found = COMPLAINT_TYPES.find((t) => t.value === type);
-  return found?.label || presentSystemOrVerbatim(type, 'ar');
+  return found?.label || (resolveLabel ? resolveLabel(type) : presentSystemOrVerbatim(type, 'ar'));
 }
 
 function getComplaintTypeColor(type: string) {
@@ -225,6 +232,10 @@ function getStatusColor(status: string) {
 export default function ComplaintsPage() {
   const { canView, canCreate, canUpdate, canDelete } = usePermissions('complaints');
   const { locale } = useLanguage();
+  // §MASTER-DATA — the complaint TYPE vocabulary is DB-driven
+  // (Settings → Master Data) with the static list as fallback.
+  const complaintTypeVocabulary = useMasterDataVocabulary('complaintTypes', COMPLAINT_TYPE_FALLBACK);
+  const resolveComplaintTypeLabel = useCallback((v: string) => complaintTypeVocabulary.label(v), [complaintTypeVocabulary]);
   // §12 GLOBAL INLINE FORM STANDARD — creating a CAPA from a complaint
   // opens the shared inline CAPA form HERE (gated by CAPA's own
   // create permission); it never navigates to the CAPA page.
@@ -686,8 +697,8 @@ export default function ComplaintsPage() {
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all" className="text-white"><T>الكل</T></SelectItem>
-            {COMPLAINT_TYPES.map((t) => (
-              <SelectItem key={t.value} value={t.value} className="text-white">
+            {complaintTypeVocabulary.allOptions.map((t) => (
+              <SelectItem key={t.key} value={t.key} className="text-white">
                 <T>{t.label}</T>
               </SelectItem>
             ))}
@@ -746,7 +757,7 @@ export default function ComplaintsPage() {
                             variant="outline"
                             className={`text-[10px] px-2 py-0 h-5 border ${getComplaintTypeColor(complaint.complaintType)}`}
                           >
-                            <T>{getComplaintTypeBadge(complaint.complaintType)}</T>
+                            <T>{getComplaintTypeBadge(complaint.complaintType, resolveComplaintTypeLabel)}</T>
                           </Badge>
                           <Badge
                             variant="outline"
@@ -928,8 +939,8 @@ export default function ComplaintsPage() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {COMPLAINT_TYPES.map((t) => (
-                      <SelectItem key={t.value} value={t.value} className="text-white">
+                    {complaintTypeVocabulary.options.map((t) => (
+                      <SelectItem key={t.key} value={t.key} className="text-white">
                         <T>{t.label}</T>
                       </SelectItem>
                     ))}

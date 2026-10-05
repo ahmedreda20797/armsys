@@ -97,11 +97,22 @@ describe('§PRINT-IDENTITY-PARITY — live report = print/PDF report', () => {
     assert.equal(printed.identity?.code, 'EMP-084');
     // PDF/header team === live team fact
     assert.equal(printed.identity?.team, "Salah' Sales Team");
-    // PDF/header manager === live manager fact
-    assert.equal(printed.identity?.manager, live.facts.find((f) => f.label === 'المدير المباشر')?.value);
+    // PDF/header manager === live manager fact (compact context line §5)
     assert.equal(printed.identity?.manager, 'Ahmed Salah');
+    assert.ok(
+      live.contextSegments.some((s) => s.includes('Ahmed Salah')),
+      'the live context line carries the manager',
+    );
     // PDF/header position === live position fact
     assert.equal(printed.identity?.position, 'Sales');
+    // §ORG-SEMANTICS — department === team is never double-labeled: the
+    // print identity drops the department rather than calling the team
+    // a department (the live header shows the neutral org-location form).
+    assert.equal(printed.identity?.department, null);
+    assert.ok(
+      live.contextSegments.some((s) => s.includes("Salah' Sales Team")),
+      'the live context line carries the team as the organizational location',
+    );
   });
 
   it('the primary printed identity is the EMPLOYEE, never the team', () => {
@@ -171,10 +182,17 @@ describe('§PRINT-IDENTITY-PARITY — live report = print/PDF report', () => {
     assert.equal(printed.period, formatMonthKey('2026-09'));
     // weightedContribution (canonical field) — previously read a phantom
     // `contribution` and always printed '—'. The value follows the
-    // locale's canonical number formatting (Arabic digits in ar).
-    const contribution = printed.stats?.find((s) => s.label === 'مساهمة الجودة');
-    assert.equal(contribution?.value, formatNumber(35.2));
-    assert.notEqual(contribution?.value, '—');
+    // locale's canonical number formatting (Arabic digits in ar). §3 —
+    // the stat is labeled Calculated Points, never "contribution".
+    const calculated = printed.stats?.find((s) => s.label === 'النقاط المحتسبة للجودة');
+    assert.equal(calculated?.value, formatNumber(35.2));
+    assert.notEqual(calculated?.value, '—');
+    // §3 — no weight/weighting terminology survives in the print stats.
+    const statLabels = (printed.stats ?? []).map((s) => s.label).join(' | ');
+    assert.ok(!statLabels.includes('الوزن'), 'no weight stat label');
+    assert.ok(!statLabels.includes('المساهمة'), 'no contribution stat label');
+    assert.ok(!statLabels.includes('الموزون'), 'no weighted-total stat label');
+    assert.ok(statLabels.includes('نسبة الجودة'), 'the raw score prints as the Quality Rate');
   });
 });
 

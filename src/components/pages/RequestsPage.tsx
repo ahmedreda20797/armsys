@@ -61,6 +61,7 @@ import { presentStatus } from '@/lib/i18n/presentation';
 import { translateUIText } from '@/lib/i18n/ui-text';
 import { formatInteger, formatMonthKey } from '@/lib/i18n/format';
 import { getRequestTypeLabel, getRequestTypeColor, todayDayKey } from '@/lib/date-utils';
+import { useMasterDataVocabulary } from '@/hooks/use-master-data';
 import { PageHeaderBar } from '@/components/shared/PageHeaderBar';
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
 import { logCreate, logApprove, logDelete } from '@/lib/activity-logger';
@@ -76,10 +77,20 @@ interface RequestWithEmployee extends RequestRecord {
   employee?: { id: string; name: string; department: string | null };
 }
 
+/** §MASTER-DATA — the historical static labels are the vocabulary FALLBACK;
+ *  the DB list (Settings → Master Data) is the source of truth once loaded. */
+const REQUEST_TYPE_FALLBACK: Record<string, string> = Object.fromEntries(
+  ['leave', 'permission', 'excuse', 'tardiness', 'remote', 'mission', 'salary_advance']
+    .map((k) => [k, getRequestTypeLabel(k)]),
+);
 export default function RequestsPage() {
   const { canEdit, canCreate, canUpdate, canDelete, canApprove } = usePermissions('requests');
   const { user } = useAuth();
   const { locale } = useLanguage();
+  // §MASTER-DATA — the request TYPE vocabulary is DB-driven
+  // (Settings → Master Data) with the static list as fallback.
+  const requestTypeVocabulary = useMasterDataVocabulary('requestTypes', REQUEST_TYPE_FALLBACK);
+  const resolveRequestTypeLabel = useCallback((v: string) => requestTypeVocabulary.label(v), [requestTypeVocabulary]);
   // Field selectors — a selectorless useAppStore() re-renders the page
   // on EVERY store write (same loop hazard as EmployeesPage §loop).
   // ═══ DATA STATE (cache-backed, §4) — snapshot restore + background
@@ -204,7 +215,7 @@ export default function RequestsPage() {
         body: JSON.stringify(addForm),
       });
       const empName = employees.find((e: any) => e.id === addForm.employeeId)?.name || '';
-      logCreate('requests', 'طلب', `${getRequestTypeLabel(addForm.type)} - ${empName}`);
+      logCreate('requests', 'طلب', `${resolveRequestTypeLabel(addForm.type)} - ${empName}`);
       await invalidateDomain(queryClient, 'requests', { employeeId: addForm.employeeId });
       setIsAddOpen(false);
       setAddForm({ employeeId: '', type: 'leave', date: '', reason: '' });
@@ -243,7 +254,7 @@ export default function RequestsPage() {
     try {
       const req = requests.find((r: any) => r.id === id);
       await apiFetch(`/api/requests/${id}`, { method: 'DELETE' });
-      if (req) logDelete('requests', 'طلب', `${req.employeeName || ''} - ${getRequestTypeLabel(req.type)}`);
+      if (req) logDelete('requests', 'طلب', `${req.employeeName || ''} - ${resolveRequestTypeLabel(req.type)}`);
       await invalidateDomain(queryClient, 'requests', { employeeId: req?.employeeId });
       setDeletingId(null);
     } catch {
@@ -261,7 +272,7 @@ export default function RequestsPage() {
         method: 'PATCH',
         body: JSON.stringify({ status, reviewedBy: user?.id }),
       });
-      if (req) logApprove('requests', 'طلب', `${req.employeeName || ''} - ${getRequestTypeLabel(req.type)}`, status);
+      if (req) logApprove('requests', 'طلب', `${req.employeeName || ''} - ${resolveRequestTypeLabel(req.type)}`, status);
       await invalidateDomain(queryClient, 'requests', { employeeId: req?.employeeId });
     } catch {
       // Error handled silently
@@ -325,7 +336,7 @@ export default function RequestsPage() {
     const matchesSearch =
       (r.employeeName || '').toLowerCase().includes(search.toLowerCase()) ||
       r.date.includes(search) ||
-      getRequestTypeLabel(r.type).includes(search);
+      resolveRequestTypeLabel(r.type).includes(search);
     const matchesMonth = monthFilter && monthFilter !== 'all'
       ? extractMonth(r.date) === monthFilter
       : true;
@@ -478,7 +489,7 @@ export default function RequestsPage() {
                             <div className="flex items-center gap-3 flex-wrap">
                               <EmployeeLink employeeId={req.employeeId} name={req.employeeName} />
                               <Badge className={`${getRequestTypeColor(req.type)} text-[11px] px-2 py-0`}>
-                                <T>{getRequestTypeLabel(req.type)}</T>
+                                <T>{resolveRequestTypeLabel(req.type)}</T>
                               </Badge>
                               <span className="text-slate-500 text-xs" dir="ltr">{req.date}</span>
                             </div>
@@ -566,7 +577,7 @@ export default function RequestsPage() {
                         </TableCell>
                         <TableCell className="py-3 px-3">
                           <Badge className={`${getRequestTypeColor(req.type)} text-[10px] px-1.5 py-0`}>
-                            <T>{getRequestTypeLabel(req.type)}</T>
+                            <T>{resolveRequestTypeLabel(req.type)}</T>
                           </Badge>
                         </TableCell>
                         <TableCell className="py-3 px-3 text-slate-400 text-xs" dir="ltr">{req.date}</TableCell>
@@ -629,11 +640,9 @@ export default function RequestsPage() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="leave" className="text-white"><T>إجازة</T></SelectItem>
-                  <SelectItem value="permission" className="text-white"><T>استئذان</T></SelectItem>
-                  <SelectItem value="excuse" className="text-white"><T>غياب</T></SelectItem>
-                  <SelectItem value="tardiness" className="text-white"><T>تأخير</T></SelectItem>
-                  <SelectItem value="remote" className="text-white"><T>ريموتلي</T></SelectItem>
+                  {requestTypeVocabulary.options.map((t) => (
+                    <SelectItem key={t.key} value={t.key} className="text-white"><T>{t.label}</T></SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
@@ -705,11 +714,9 @@ export default function RequestsPage() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="leave" className="text-white"><T>إجازة</T></SelectItem>
-                  <SelectItem value="permission" className="text-white"><T>استئذان</T></SelectItem>
-                  <SelectItem value="excuse" className="text-white"><T>غياب</T></SelectItem>
-                  <SelectItem value="tardiness" className="text-white"><T>تأخير</T></SelectItem>
-                  <SelectItem value="remote" className="text-white"><T>ريموتلي</T></SelectItem>
+                  {requestTypeVocabulary.options.map((t) => (
+                    <SelectItem key={t.key} value={t.key} className="text-white"><T>{t.label}</T></SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>

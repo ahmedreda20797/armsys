@@ -168,15 +168,6 @@ export function formatScore(value: number | null | undefined): string {
   return `${Math.round(value * 100) / 100}%`;
 }
 
-export function formatContribution(
-  value: number | null | undefined,
-  max: number | null | undefined,
-): string {
-  if (value === null || value === undefined) return UNAVAILABLE;
-  const v = Math.round(value * 100) / 100;
-  return max === null || max === undefined ? `${v}` : `${v} / ${max}`;
-}
-
 /** Signed percentage-point delta (e.g. "+5" / "-3"); null passes through. */
 export function formatSignedPoints(value: number | null | undefined): string | null {
   if (value === null || value === undefined) return null;
@@ -200,14 +191,19 @@ export function deltaTone(delta: number | null | undefined): Tone {
 }
 
 // ─────────────────────────────────────────────────────────────
-//  §3  Report header view
+//  §3  Report header view — COMPACT identity (§5)
 // ─────────────────────────────────────────────────────────────
 
 export interface ReportHeaderView {
   employeeName: string;
   employeeId: string;
   employeeCode: string | null;
-  facts: KeyValueFact[];
+  /**
+   * §5 COMPACT HEADER — the employee's context as ONE metadata line:
+   * position · organizational location (§6 semantics) · manager. The
+   * name stays the primary identity; this line is secondary context.
+   */
+  contextSegments: string[];
   lifecycleBadges: Array<{ label: string; tone: Tone }>;
   periodLabel: string;
   generatedAtLabel: string;
@@ -216,31 +212,43 @@ export interface ReportHeaderView {
   schemeLabel: string | null;
 }
 
+/**
+ * §ORG-SEMANTICS — the employee's organizational location line.
+ * Department and TEAM are distinct org-tree levels: the same node is
+ * never displayed under both labels. When only a team exists (or the
+ * department resolves to the team itself), the single value renders
+ * under the neutral «الموقع التنظيمي» label instead of a false
+ * department claim. The manager stays a LABELED fact — a bare person
+ * name in a metadata line would be ambiguous.
+ */
+function buildOrgSegments(
+  employee: EmployeePerformanceDataset['employee'],
+  locale: Locale,
+): string[] {
+  const department = employee.department?.trim() || null;
+  const team = employee.team?.trim() || null;
+  const sameNode = department !== null && team !== null
+    && department.localeCompare(team, 'ar') === 0;
+  const segments: string[] = [];
+  if (department && team && !sameNode) {
+    segments.push(department, team);
+  } else if (department || team) {
+    segments.push(`${uiLabel(['الموقع التنظيمي', 'Organizational location'], locale)}: ${department ?? team}`);
+  }
+  if (employee.manager) {
+    segments.push(`${uiLabel(['المدير المباشر', 'Direct manager'], locale)}: ${employee.manager}`);
+  }
+  return segments;
+}
+
 export function buildReportHeader(dataset: EmployeePerformanceDataset, locale: Locale = 'ar'): ReportHeaderView {
   const { employee, period, kpi } = dataset;
 
   // §REPORT-IDENTITY — the EMPLOYEE is the report's primary identity:
-  // position/department/team/manager are CONTEXT facts (the team never
-  // replaces the employee's name as the visible subject).
-  const facts: KeyValueFact[] = [
-    { label: uiLabel(['المسمى الوظيفي', 'Job title'], locale), value: employee.position ?? unavailableLabel(locale), unavailable: employee.position === null },
-    { label: uiLabel(['القسم', 'Department'], locale), value: employee.department ?? unavailableLabel(locale), unavailable: employee.department === null },
-    {
-      // The team resolves from the ORGANIZATION TREE (service-side).
-      // Datasets built before the team field existed (and unassigned
-      // employees) render the explicit unavailable state — spec §3.
-      label: uiLabel(['الفريق', 'Team'], locale),
-      value: employee.team ?? unavailableLabel(locale),
-      unavailable: !employee.team,
-    },
-    {
-      // §REPORT-IDENTITY — the direct manager (nearest team ancestor's
-      // manager), from the organization tree. Null = explicit unavailable.
-      label: uiLabel(['المدير المباشر', 'Direct manager'], locale),
-      value: employee.manager ?? unavailableLabel(locale),
-      unavailable: !employee.manager,
-    },
-  ];
+  // position/org location/manager are ONE compact context line (§5).
+  const contextSegments: string[] = [];
+  if (employee.position) contextSegments.push(employee.position);
+  contextSegments.push(...buildOrgSegments(employee, locale));
 
   const lifecycleBadges: Array<{ label: string; tone: Tone }> = [];
   if (employee.employmentStatus !== 'active') {
@@ -265,7 +273,7 @@ export function buildReportHeader(dataset: EmployeePerformanceDataset, locale: L
     employeeName: employee.employeeName || (locale === 'en' ? 'Unnamed employee' : 'موظف بدون اسم'),
     employeeId: employee.employeeId,
     employeeCode: employee.employeeCode,
-    facts,
+    contextSegments,
     lifecycleBadges,
     periodLabel: formatMonth(period.monthKey, locale),
     generatedAtLabel: formatDateTime(dataset.generatedAt, locale),
@@ -280,154 +288,14 @@ export function buildReportHeader(dataset: EmployeePerformanceDataset, locale: L
 }
 
 // ─────────────────────────────────────────────────────────────
-//  §4  KPI hero view — raw score vs weighted contribution
-// ─────────────────────────────────────────────────────────────
-
-export interface KpiHeroView {
-  /** Raw Quality Score (0–100) — engine output, verbatim. */
-  rawScoreDisplay: string;
-  hasRawScore: boolean;
-  /** Weighted Quality Contribution — engine output, verbatim. */
-  contributionDisplay: string;
-  weightPercent: number | null;
-  componentStatusLabel: string | null;
-  /** Company-KPI row status (e.g. INCOMPLETE) — engine verdict. */
-  rowStatusLabel: string;
-  overallStatusLabel: string | null;
-  weightedTotalDisplay: string | null;
-  availableWeightDisplay: string | null;
-  previousScoreDisplay: string | null;
-  deltaDisplay: string | null;
-  deltaToneValue: Tone;
-  directionLabel: string | null;
-  /** Arabic engine explanation for non-value outcomes (verbatim). */
-  outcomeMessage: string | null;
-  schemeLabel: string | null;
-  /**
-   * §6 STATE DISTINCTION — set only when the KPI engine returned NO
-   * value while REAL quality evidence exists in the dataset for the
-   * same employee/period. This is state B/D (evidence exists, KPI
-   * unavailable / not eligible) — never rendered for state A (no
-   * evidence). Pure projection of dataset counters; nothing invented.
-   */
-  evidenceNote: string | null;
-}
-
-export function buildKpiHero(dataset: EmployeePerformanceDataset, locale: Locale = 'ar'): KpiHeroView {
-  const { kpi, trend } = dataset;
-  const quality = kpi.quality;
-  const mom = trend.mom;
-
-  // §6 — the KPI engine verdict never suppresses quality evidence:
-  // when the engine produced no score/contribution while the dataset
-  // holds real period observations/deductions, say so explicitly
-  // (state B/D). Counts are the dataset's own — verbatim.
-  const kpiValueAvailable = quality?.rawScore != null || quality?.weightedContribution != null;
-  const obsTotal = dataset.quality.observations.total;
-  const dedCount = dataset.quality.deductions.count;
-  const evidenceParts: string[] = [];
-  if (obsTotal > 0) evidenceParts.push(locale === 'en' ? `${obsTotal} quality observations` : `${obsTotal} ملاحظة جودة`);
-  if (dedCount > 0) evidenceParts.push(locale === 'en' ? `${dedCount} quality deductions` : `${dedCount} خصم جودة`);
-  const evidenceNote =
-    !kpiValueAvailable && evidenceParts.length > 0
-      ? locale === 'en'
-        ? `Real quality evidence exists for this period (${evidenceParts.join(' · ')}) and is shown in the sections below — the KPI result is unavailable per engine rules, and no substitute values are invented.`
-        : `توجد أدلة جودة حقيقية لهذه الفترة (${evidenceParts.join(' · ')}) وتُعرض في الأقسام أدناه — نتيجة KPI غير متاحة وفق قواعد المحرك، ولا تُختلق قيم بديلة.`
-      : null;
-
-  return {
-    rawScoreDisplay: formatScore(quality?.rawScore ?? null),
-    hasRawScore: quality?.rawScore !== null && quality?.rawScore !== undefined,
-    contributionDisplay: formatContribution(
-      quality?.weightedContribution ?? null,
-      quality?.maxContribution ?? null,
-    ),
-    weightPercent: quality?.weight ?? kpi.scheme?.qualityWeight ?? null,
-    componentStatusLabel: quality?.status ?? null,
-    rowStatusLabel: kpi.rowStatus,
-    overallStatusLabel: kpi.overallStatus ?? null,
-    weightedTotalDisplay: kpi.weightedTotal === null ? null : formatPlainNumber(kpi.weightedTotal),
-    availableWeightDisplay: kpi.availableWeight === null ? null : formatPlainNumber(kpi.availableWeight),
-    previousScoreDisplay: mom ? formatScore(mom.previousRawScore) : null,
-    deltaDisplay: formatSignedPoints(mom?.deltaPoints ?? null),
-    deltaToneValue: deltaTone(mom?.deltaPoints ?? null),
-    directionLabel: trend.direction ? storedLabel(TREND_LABELS, trend.direction, locale) : null,
-    outcomeMessage: kpi.message,
-    schemeLabel: kpi.scheme
-      ? locale === 'en'
-        ? `${kpi.scheme.schemeName} — version ${kpi.scheme.schemeVersion}`
-        : `${kpi.scheme.schemeName} — إصدار ${kpi.scheme.schemeVersion}`
-      : null,
-    evidenceNote,
-  };
-}
-
-// ─────────────────────────────────────────────────────────────
-//  §5  KPI component status view (informational only)
-// ─────────────────────────────────────────────────────────────
-
-export interface KpiComponentRowView {
-  label: string;
-  contributionDisplay: string;
-  statusLabel: string;
-  available: boolean;
-  isOverall: boolean;
-}
-
-export interface KpiComponentsView {
-  rows: KpiComponentRowView[];
-  /** True when the engine verdict says the scheme has unvalued components. */
-  hasUnavailableComponents: boolean;
-}
-
-export function buildKpiComponents(dataset: EmployeePerformanceDataset, locale: Locale = 'ar'): KpiComponentsView {
-  const { kpi } = dataset;
-  const quality = kpi.quality;
-
-  const rows: KpiComponentRowView[] = [];
-
-  if (quality) {
-    rows.push({
-      label: quality.name || uiLabel(['الجودة', 'Quality'], locale),
-      contributionDisplay: formatContribution(quality.weightedContribution, quality.maxContribution),
-      statusLabel: quality.status,
-      available: quality.weightedContribution !== null,
-      isOverall: false,
-    });
-  } else {
-    // No quality component result — explicit NOT AVAILABLE row (no zero).
-    rows.push({
-      label: uiLabel(['الجودة', 'Quality'], locale),
-      contributionDisplay: unavailableLabel(locale),
-      statusLabel: 'NOT_AVAILABLE',
-      available: false,
-      isOverall: false,
-    });
-  }
-
-  rows.push({
-    label: uiLabel(['إجمالي KPI (المتاح)', 'Total KPI (available)'], locale),
-    contributionDisplay:
-      kpi.weightedTotal === null
-        ? unavailableLabel(locale)
-        : `${formatPlainNumber(kpi.weightedTotal)}${
-            kpi.availableWeight === null
-              ? ''
-              : locale === 'en'
-                ? ` / available weight ${formatPlainNumber(kpi.availableWeight)}`
-                : ` / وزن متاح ${formatPlainNumber(kpi.availableWeight)}`
-          }`,
-    statusLabel: kpi.rowStatus,
-    available: kpi.rowStatus === 'AVAILABLE' || kpi.rowStatus === 'FINALIZED',
-    isOverall: true,
-  });
-
-  return {
-    rows,
-    hasUnavailableComponents: kpi.rowStatus === 'INCOMPLETE' || kpi.rowStatus === 'PENDING',
-  };
-}
-
+//  §4/§5 KPI hero + component-status views — REMOVED (§SMART-REPORT-
+//  REFINEMENT). The KpiIntelligenceSection/intelligence-view pipeline
+//  is the ONE KPI presentation (percentage business terminology:
+//  Defined Rate / Achieved Rate / Calculated Points). The legacy
+//  "raw score vs weighted contribution" hero builders carried the
+//  retired weight/contribution vocabulary and are gone so the old
+//  terminology cannot resurface.
+//
 // ─────────────────────────────────────────────────────────────
 //  §7  Performance trend view
 // ─────────────────────────────────────────────────────────────
@@ -659,7 +527,7 @@ export function buildComplaints(dataset: EmployeePerformanceDataset, locale: Loc
     relationshipLabel: uiLabel(RELATIONSHIP_LABELS[c.relationship], locale),
     total: c.total,
     statusChips: entriesToChips(c.byStatus, RESOLUTION_LABELS_AR, locale),
-    typeChips: entriesToChips(c.byType),
+    typeChips: entriesToChips(c.byType, undefined, locale),
     severityChips: entriesToChips(c.bySeverity, SEVERITY_LABELS, locale),
     resolvedOrClosed: c.resolvedOrClosed,
     stillOpen: c.stillOpen,
@@ -703,9 +571,9 @@ export function buildCapa(dataset: EmployeePerformanceDataset, locale: Locale = 
   return {
     relationshipLabel: uiLabel(RELATIONSHIP_LABELS[c.relationship], locale),
     total: c.total,
-    statusChips: entriesToChips(c.byStatus),
+    statusChips: entriesToChips(c.byStatus, undefined, locale),
     priorityChips: entriesToChips(c.byPriority, SEVERITY_LABELS, locale),
-    sourceChips: entriesToChips(c.bySource),
+    sourceChips: entriesToChips(c.bySource, undefined, locale),
     active: c.active,
     terminal: c.terminal,
     overdue: c.overdue,
@@ -771,8 +639,8 @@ export function buildFollowUps(dataset: EmployeePerformanceDataset, locale: Loca
           : `${Math.round(f.avgOverdueDays * 100) / 100} يوم`,
     onTimeRateDisplay: unavailableLabel(locale),
     onTimeNote: uiLabel(['يتطلب طابعًا زمنيًا للإكمال في المصدر — لا يُقدَّر أبدًا', 'Requires a completion timestamp at the source — never estimated'], locale),
-    statusChips: entriesToChips(f.byStatus),
-    typeChips: entriesToChips(f.byType),
+    statusChips: entriesToChips(f.byStatus, undefined, locale),
+    typeChips: entriesToChips(f.byType, undefined, locale),
     priorityChips: entriesToChips(f.byPriority, SEVERITY_LABELS, locale),
   };
 }
@@ -964,8 +832,8 @@ export function buildDataQuality(dataset: EmployeePerformanceDataset, locale: Lo
 
 function entriesToChips(
   entries: Record<string, number>,
-  labels?: Record<string, [string, string]>,
-  locale: Locale = 'ar',
+  labels: Record<string, [string, string]> | undefined,
+  locale: Locale,
 ): ChipFact[] {
   return Object.entries(entries).map(([key, count]) => ({
     label: labels ? storedLabel(labels, key, locale) : presentSystemOrVerbatim(key, locale),

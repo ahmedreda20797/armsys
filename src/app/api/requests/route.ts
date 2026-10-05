@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getAll, createRecord, sortByDateField, withEmployee } from '@/lib/db';
 import { verifyPermission, requireAuth } from '@/lib/verify-permission';
 import { asScopeViewer, employeeInScope, authScopeViewer, filterRowsByEmployeeScope, resolveEmployeeScopeFromDb } from '@/lib/scope/server';
+import { assertSimpleValueIsActive } from '@/lib/master-data/simple-lists';
 
 export async function GET(request: NextRequest) {
   try {
@@ -49,6 +50,14 @@ export async function POST(request: NextRequest) {
 
     if (!employeeId || !type || !date) {
       return NextResponse.json({ error: 'employeeId, type, and date are required' }, { status: 400 });
+    }
+
+    // ── §MASTER-DATA deactivation guard — a request type deactivated
+    // in the Settings Center cannot be selected for NEW requests
+    // (unknown/legacy values stay accepted; guard, not a whitelist).
+    const typeGuard = await assertSimpleValueIsActive('requestTypes', type);
+    if (typeGuard) {
+      return NextResponse.json({ error: typeGuard }, { status: 400 });
     }
 
     // ── TARGET-EMPLOYEE SCOPE (M0.4) ──

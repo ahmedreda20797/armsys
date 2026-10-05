@@ -57,7 +57,21 @@ export interface PageStateKeyInput {
  * isolation is structural (§6), not a load-time check.
  */
 export function pageStateStorageKey(input: PageStateKeyInput): string {
-  return `${KEY_PREFIX}:${input.storage[0]}:${input.userId}:${input.page}:v${input.version}`;
+  return `${pageStateKeyPrefix(input.userId, input.page, input.storage)}v${input.version}`;
+}
+
+/**
+ * Key-segment prefix shared by EVERY slot/version of one page's
+ * state. Used by the navigation layer to enumerate a page's full
+ * persisted state (all slots) when capturing per-entry snapshots —
+ * derived from the same single source of truth as the full key.
+ */
+export function pageStateKeyPrefix(
+  userId: string,
+  page: string,
+  storage: PageStateStorage,
+): string {
+  return `${KEY_PREFIX}:${storage[0]}:${userId}:${page}:`;
 }
 
 /** Serialize an envelope (pure — injectable clock for tests). */

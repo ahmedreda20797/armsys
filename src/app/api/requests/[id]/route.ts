@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { updateRecord, deleteRecord, getById, createRecord } from '@/lib/db';
 import { verifyPermission } from '@/lib/verify-permission';
 import { asScopeViewer, employeeInScope } from '@/lib/scope/server';
+import { assertSimpleValueIsActive } from '@/lib/master-data/simple-lists';
 
 export async function PATCH(
   request: NextRequest,
@@ -40,6 +41,16 @@ export async function PATCH(
         : await employeeInScope(viewer, permCheck.user!.permissions, reassignTarget);
       if (!storedOk || !targetOk) {
         return NextResponse.json({ error: 'Request not found' }, { status: 404 });
+      }
+
+      // ── §MASTER-DATA deactivation guard — a request type deactivated
+      // in the Settings Center cannot be (re)selected; unknown/legacy
+      // values stay accepted (guard, not a whitelist).
+      if (typeof body?.type === 'string') {
+        const typeGuard = await assertSimpleValueIsActive('requestTypes', body.type);
+        if (typeGuard) {
+          return NextResponse.json({ error: typeGuard }, { status: 400 });
+        }
       }
 
       const updated = await updateRecord('requests', id, body);

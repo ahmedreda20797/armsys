@@ -7,6 +7,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePermissions } from '@/hooks/usePermissions';
 import { usePageState } from '@/hooks/use-page-state';
+import { useMasterDataVocabulary } from '@/hooks/use-master-data';
 import { useRecordHighlight } from '@/hooks/use-record-highlight';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -92,6 +93,12 @@ const TYPE_OPTIONS = [
   { value: 'other', label: 'أخرى' },
 ];
 
+/** §MASTER-DATA — the historical static labels are the vocabulary FALLBACK;
+ *  the DB list (Settings → Master Data) is the source of truth once loaded. */
+const TYPE_FALLBACK: Record<string, string> = Object.fromEntries(
+  TYPE_OPTIONS.map((t) => [t.value, t.label]),
+);
+
 const PRIORITY_OPTIONS = [
   { value: 'low', label: 'منخفض' },
   { value: 'medium', label: 'متوسط' },
@@ -126,7 +133,7 @@ function pickLabel(labels: [string, string], locale: Locale): string {
   return locale === 'en' ? labels[1] : labels[0];
 }
 
-function getTypeBadge(type: string, locale: Locale) {
+function getTypeBadge(type: string, locale: Locale, resolveLabel?: (value: string) => string) {
   const map: Record<string, { label: [string, string]; color: string }> = {
     quality: { label: ['جودة', 'Quality'], color: 'bg-amber-500/15 text-amber-400 border-amber-500/30' },
     behavior: { label: ['سلوك', 'Behavior'], color: 'bg-brand-500/15 text-brand-400 border-brand-500/30' },
@@ -142,7 +149,7 @@ function getTypeBadge(type: string, locale: Locale) {
   const hit = map[type];
   return hit
     ? { label: pickLabel(hit.label, locale), color: hit.color }
-    : { label: type, color: 'bg-slate-500/15 text-slate-400 border-slate-500/30' };
+    : { label: (resolveLabel ? resolveLabel(type) : type) || type, color: 'bg-slate-500/15 text-slate-400 border-slate-500/30' };
 }
 
 function getPriorityBadge(priority: string, locale: Locale) {
@@ -258,6 +265,10 @@ export default function FollowUpsPage() {
   // opens the shared inline CAPA form HERE (no navigation). Gated by
   // the CAPA page's own create permission, not followUps'.
   const { canCreate: canCreateCapa } = usePermissions('capa');
+  // §MASTER-DATA — the follow-up TYPE vocabulary is DB-driven
+  // (Settings → Master Data) with the static list as fallback.
+  const typeVocabulary = useMasterDataVocabulary('followUpTypes', TYPE_FALLBACK);
+  const resolveTypeLabel = useCallback((v: string) => typeVocabulary.label(v), [typeVocabulary]);
   const isManagerOrAdmin = isAdmin || user?.role === 'admin' || user?.role === 'manager';
 
   // ═══ DATA STATE (cache-backed, §4) — records come from the canonical
@@ -609,7 +620,7 @@ export default function FollowUpsPage() {
   const openCapaFromFollowUp = (item: FollowUp) => {
     setCapaPrefill({
       source: 'followUp',
-      title: item.subject || TYPE_OPTIONS.find((t) => t.value === item.followUpType)?.label || '',
+      title: item.subject || resolveTypeLabel(item.followUpType) || '',
       department: item.department || '',
       priority: item.priorityLevel === 'critical' ? 'critical' : item.priorityLevel === 'high' ? 'high' : 'medium',
       employeeId: item.employeeId || '',
@@ -792,7 +803,7 @@ export default function FollowUpsPage() {
                   severity: f.priorityLevel === 'critical' ? 'critical' : 'urgent',
                   groupKey: 'overdue',
                   primary: empName,
-                  secondary: f.subject || translateUIText(TYPE_OPTIONS.find((t) => t.value === f.followUpType)?.label ?? '', locale) || f.followUpType,
+                  secondary: f.subject || translateUIText(resolveTypeLabel(f.followUpType), locale) || f.followUpType,
                   trailing: f.nextFollowUpDate && (
                     <span className="flex items-center gap-1">
                       <Clock className="size-2.5" /> {f.nextFollowUpDate}
@@ -815,7 +826,7 @@ export default function FollowUpsPage() {
                     severity: 'warning',
                     groupKey: 'due',
                     primary: empName,
-                    secondary: f.subject || translateUIText(TYPE_OPTIONS.find((t) => t.value === f.followUpType)?.label ?? '', locale) || f.followUpType,
+                    secondary: f.subject || translateUIText(resolveTypeLabel(f.followUpType), locale) || f.followUpType,
                     trailing: f.nextFollowUpDate && (
                       <span className="flex items-center gap-1">
                         <Clock className="size-2.5" /> <T>اليوم</T>
@@ -939,8 +950,8 @@ export default function FollowUpsPage() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all" className="text-white"><T>الكل</T></SelectItem>
-                {TYPE_OPTIONS.map(t => (
-                  <SelectItem key={t.value} value={t.value} className="text-white"><T>{t.label}</T></SelectItem>
+                {typeVocabulary.allOptions.map(t => (
+                  <SelectItem key={t.key} value={t.key} className="text-white"><T>{t.label}</T></SelectItem>
                 ))}
               </SelectContent>
             </Select>
@@ -1091,7 +1102,7 @@ export default function FollowUpsPage() {
                   </thead>
                   <tbody>
                     {filtered.map((item) => {
-                      const typeBadge = getTypeBadge(item.followUpType, locale);
+                      const typeBadge = getTypeBadge(item.followUpType, locale, resolveTypeLabel);
                       const priorityBadge = getPriorityBadge(item.priorityLevel, locale);
                       const statusBadge = getStatusBadge(item.status, locale);
                       const StatusIcon = getStatusIcon(item.status);
@@ -1242,7 +1253,7 @@ export default function FollowUpsPage() {
                         <CardContent className="p-3">
                           <div className="space-y-2">
                             {empFollowUps.map((item) => {
-                              const typeBadge = getTypeBadge(item.followUpType, locale);
+                              const typeBadge = getTypeBadge(item.followUpType, locale, resolveTypeLabel);
                               const priorityBadge = getPriorityBadge(item.priorityLevel, locale);
                               const statusBadge = getStatusBadge(item.status, locale);
                               const StatusIcon = getStatusIcon(item.status);
@@ -1423,8 +1434,8 @@ export default function FollowUpsPage() {
 
                 {/* Badges Row */}
                 <div className="flex flex-wrap gap-2">
-                  <div className={`flex items-center gap-1 px-2 py-1 rounded border text-[11px] font-medium ${getTypeBadge(viewingItem.followUpType, locale).color}`}>
-                    {getTypeBadge(viewingItem.followUpType, locale).label}
+                  <div className={`flex items-center gap-1 px-2 py-1 rounded border text-[11px] font-medium ${getTypeBadge(viewingItem.followUpType, locale, resolveTypeLabel).color}`}>
+                    {getTypeBadge(viewingItem.followUpType, locale, resolveTypeLabel).label}
                   </div>
                   <div className={`flex items-center gap-1.5 px-2 py-1 rounded border text-[11px] font-medium ${getPriorityBadge(viewingItem.priorityLevel, locale).color}`}>
                     <div className={`w-2 h-2 rounded-full ${getPriorityDot(viewingItem.priorityLevel)}`} />
@@ -1619,8 +1630,8 @@ export default function FollowUpsPage() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {TYPE_OPTIONS.map(t => (
-                    <SelectItem key={t.value} value={t.value} className="text-white"><T>{t.label}</T></SelectItem>
+                  {typeVocabulary.options.map(t => (
+                    <SelectItem key={t.key} value={t.key} className="text-white"><T>{t.label}</T></SelectItem>
                   ))}
                 </SelectContent>
               </Select>

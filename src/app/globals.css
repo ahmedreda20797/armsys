@@ -1812,16 +1812,18 @@ textarea:focus {
   margin: 0 0 2px;
 }
 
-/* §PRINT-IDENTITY-PARITY — the employee CODE sits directly under the
-   name (mono, logical dir), mirroring the live header's
+/* §PRINT-IDENTITY-PARITY — the employee CODE leads the compact context
+   line under the name (mono, logical dir), mirroring the live header's
    "الاسم (الكود)" identity pairing. */
 .print-doc-subject-code {
   font-size: 11px;
   font-weight: 600;
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   color: #4b5563;
-  margin: 0 0 3px;
 }
+
+/* §5 COMPACT IDENTITY — the dot separator inside the context line. */
+.print-doc-sep { color: #9ca3af; }
 
 /* §PRINT-IDENTITY — employee name / department / position STACKED on
    their own lines (top-right of the report), never joined inline. */
@@ -1893,6 +1895,8 @@ textarea:focus {
   grid-template-columns: repeat(4, 1fr);
   gap: 8px;
   margin: 14px 0 6px;
+  /* §21 — a stat grid never splits across pages (no orphaned chips). */
+  break-inside: avoid;
 }
 
 .print-stat {

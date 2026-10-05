@@ -16,6 +16,7 @@ import LoginPage from '@/components/pages/LoginPage';
 import { ShieldX } from 'lucide-react';
 import { useMarkSeen } from '@/hooks/use-unseen';
 import { QueryCacheIdentityGate } from '@/lib/cache/cache-identity';
+import { NavigationHistoryController } from '@/components/navigation/NavigationHistoryController';
 
 // ─── Page skeleton ────────────────────────────────────────────────────────────
 function PageSkeleton() {
@@ -214,6 +215,11 @@ function AppContent() {
           invalidation for the singleton query cache. Must render on
           BOTH sides of the login transition to catch logout. */}
       <QueryCacheIdentityGate />
+      {/* §NAVIGATION-HISTORY — browser History API integration
+          (Back/Forward/mobile Back stay inside Qnalys, page-state
+          continuity, identity boundaries). Also renders on BOTH
+          sides of the login transition. */}
+      <NavigationHistoryController />
       <PreloadPages />
 
       {/* Login overlay — fades in/out above the persistent background */}

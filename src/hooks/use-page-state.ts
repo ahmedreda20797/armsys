@@ -42,6 +42,7 @@ import {
   writePageState,
   type PageStateStorage,
 } from '@/lib/page-state/persistence';
+import { registerPageStateFlusher } from '@/lib/page-state/flush-registry';
 
 export interface UsePageStateOptions<T> {
   /** The PageRouter page key — the persistence namespace. */
@@ -91,6 +92,11 @@ export function usePageState<T>(options: UsePageStateOptions<T>) {
 
   const restoredRef = useRef(false);
   const touchedRef = useRef(false); // user interacted before auth resolved
+  // §NAVIGATION-HISTORY — a synchronous flush of THIS instance's
+  // pending write, used by the navigation layer before it captures
+  // the page's state snapshot at leave time (§11/§13: the snapshot
+  // must match what the user last saw, never a debounce remainder).
+  const persistNowRef = useRef<(() => void) | null>(null);
   useEffect(() => {
     if (restoredRef.current) return; // restore exactly once per mount
     if (!userId) return; // no identity yet → nothing to restore (§6)
@@ -125,6 +131,15 @@ export function usePageState<T>(options: UsePageStateOptions<T>) {
     if (!userId || value === null || value === undefined) return;
     writePageState({ userId, page: slot ? `${page}:${slot}` : page, version, storage }, value);
   }, [userId, page, slot, version, storage]);
+
+  // §NAVIGATION-HISTORY — register this instance's flusher so the
+  // navigation layer can capture the LATEST user-visible state when
+  // leaving the page (unmount-time flush is too late for snapshots).
+  // Re-registers when persistNow changes (identity resolution).
+  useEffect(() => {
+    persistNowRef.current = persistNow;
+    return registerPageStateFlusher(page, () => persistNowRef.current?.());
+  }, [page, persistNow]);
 
   const set = useCallback(
     (updater: T | ((prev: T) => T)) => {

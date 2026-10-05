@@ -4,20 +4,39 @@
 //  SettingsPage — §SETTINGS-CENTER the ONE centralized Settings
 //  Center for Qnalys.
 //
-//  INTERNAL NAVIGATION over the existing settings architecture:
+//  §SETTINGS-SECTIONS — ONE workspace, ONE internal navigation.
+//  Every right-side section is an INTERNAL section of this center;
+//  clicking one NEVER leaves Settings — only the content area swaps:
 //    • عام (General)                — personal preferences (embedded)
 //    • البيانات المرجعية            — Master Data & System Lists
 //      (Master Data)                  (embedded — new framework)
-//    • Links to the CANONICAL system-config pages, which keep their
-//      own registered pages, permission keys, APIs and sources of
-//      truth (zero duplication — consolidation, not re-creation):
-//        مركز التحكم (users/permissions/sessions/logs)
-//        الهيكل التنظيمي، إعدادات محرك الأداء، الأتمتة والقواعد،
-//        قواعد الخصم، إغلاق الشهر، سجل مراجعة الجودة، مصمم المسارات.
+//    • The CANONICAL system-config sections — their EXISTING page
+//      components render inside the content area (zero duplication:
+//      same components, registered page ids, permission keys, APIs
+//      and sources of truth — consolidation, not re-creation):
+//        مركز التحكم، الهيكل التنظيمي، إعدادات محرك الأداء،
+//        الأتمتة والقواعد، قواعد الخصم، إغلاق الشهر،
+//        سجل مراجعة الجودة، مصمم المسارات.
+//
+//  SECTION STATE is the canonical navigation surface: the active
+//  section lives in store.navParams.section on the 'settings' route,
+//  so the shell stays mounted while sections swap, and §NAVIGATION-
+//  HISTORY records every section shift as a real sub-destination
+//  entry (Browser Back/Forward move between sections while staying
+//  inside Settings; reload adoption restores the section — §14).
+//
+//  §SETTINGS-READINESS — sections/domains whose implementation is
+//  not finished render the canonical SectionUnderPreparation slot
+//  (never a fake screen, never a navigation elsewhere) and stay
+//  visible in the navigation with a 'قيد التهيئة' state.
 //
 //  The legacy `observationCategories` page id routes INTO this center
 //  (deep-linked to its Master Data domain) so existing permission
-//  grants keep working with exactly ONE settings UI.
+//  grants keep working with exactly ONE settings UI. On that compat
+//  route the embedded sections switch in place; a page-backed section
+//  navigates into the canonical center when the user holds the
+//  settings grant, else keeps the historical direct-page navigation
+//  (the PageRouter still gates every target — §15/§16).
 // ═══════════════════════════════════════════════════════════════
 
 import { useEffect, useMemo, useState } from 'react';
@@ -25,10 +44,9 @@ import dynamic from 'next/dynamic';
 import { useTheme } from 'next-themes';
 import {
   Languages, Moon, Sun, Monitor, Settings2, Database, Shield, Network,
-  Gauge, Zap, Scale, CalendarCog, ScrollText, Workflow, ChevronLeft, ChevronRight,
+  Gauge, Zap, Scale, CalendarCog, ScrollText, Workflow,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
 import { PageIdentity } from '@/components/shared/PageIdentity';
 import { useAppStore } from '@/lib/store';
 import { useLanguage } from '@/lib/i18n/language-context';
@@ -37,6 +55,9 @@ import { localizedPageDescription, localizedPageLabel } from '@/config/permissio
 import { cn } from '@/lib/utils';
 import { T } from '@/lib/i18n/T';
 import { translateUIText } from '@/lib/i18n/ui-text';
+import { sanitizeSettingsSection } from '@/lib/settings/sections';
+import { SectionUnderPreparation } from '@/components/pages/settings/SectionUnderPreparation';
+import { SettingsSectionNav } from '@/components/pages/settings/SettingsSectionNav';
 import type { Locale } from '@/lib/i18n/dictionary';
 
 const MasterDataSection = dynamic(
@@ -44,16 +65,65 @@ const MasterDataSection = dynamic(
   { ssr: false },
 );
 
+// §SETTINGS-SECTIONS — page-backed sections reuse their CANONICAL
+// page components (the same lazy chunks the page router mounts);
+// they simply render inside the Settings content area now.
+function SectionLoading() {
+  return (
+    <div className="space-y-3 animate-pulse" aria-busy="true">
+      <div className="h-9 w-56 rounded-lg bg-slate-800/50" />
+      <div className="h-44 rounded-2xl bg-slate-800/30" />
+    </div>
+  );
+}
+
+const ControlPanelSection = dynamic(
+  () => import('@/components/pages/ControlPanelPage'),
+  { ssr: false, loading: () => <SectionLoading /> },
+);
+const OrganizationSection = dynamic(
+  () => import('@/components/pages/organization/OrganizationPage'),
+  { ssr: false, loading: () => <SectionLoading /> },
+);
+const KpiSettingsSection = dynamic(
+  () => import('@/components/pages/quality-kpi/PerformanceEngineSettingsPage'),
+  { ssr: false, loading: () => <SectionLoading /> },
+);
+const RulesEngineSection = dynamic(
+  () => import('@/components/pages/RulesEnginePage'),
+  { ssr: false, loading: () => <SectionLoading /> },
+);
+const DeductionRulesSection = dynamic(
+  () => import('@/components/pages/RulesPage'),
+  { ssr: false, loading: () => <SectionLoading /> },
+);
+const MonthCloseSection = dynamic(
+  () => import('@/components/pages/quality-kpi/MonthClosePage'),
+  { ssr: false, loading: () => <SectionLoading /> },
+);
+const QualityAuditLogSection = dynamic(
+  () => import('@/components/pages/quality-kpi/QualityAuditLogPage'),
+  { ssr: false, loading: () => <SectionLoading /> },
+);
+const WorkflowDesignerSection = dynamic(
+  () => import('@/components/pages/workflow-designer/WorkflowDesignerPage'),
+  { ssr: false, loading: () => <SectionLoading /> },
+);
+
 type SettingsSectionId =
   | 'general' | 'masterData'
   | 'controlPanel' | 'organization' | 'kpiSettings' | 'rulesEngine'
   | 'rules' | 'monthClose' | 'qualityAuditLog' | 'workflowDesigner';
 
-/** Sections rendered INSIDE the center. */
+/** Sections rendered INSIDE the center as first-class workspaces. */
 const EMBEDDED_SECTIONS: SettingsSectionId[] = ['general', 'masterData'];
 
-/** Sections that deep-link to their canonical registered page. */
-const LINKED_SECTIONS: Array<{ id: SettingsSectionId; icon: React.ReactNode }> = [
+/**
+ * §SETTINGS-SECTIONS — sections backed by their canonical registered
+ * pages. They render INSIDE the center (the shell never navigates
+ * away); the registry page id remains their permission + API identity.
+ */
+const PAGE_SECTIONS: Array<{ id: SettingsSectionId; icon: React.ReactNode }> = [
   { id: 'controlPanel', icon: <Shield className="size-4" /> },
   { id: 'organization', icon: <Network className="size-4" /> },
   { id: 'kpiSettings', icon: <Gauge className="size-4" /> },
@@ -63,6 +133,28 @@ const LINKED_SECTIONS: Array<{ id: SettingsSectionId; icon: React.ReactNode }> =
   { id: 'qualityAuditLog', icon: <ScrollText className="size-4" /> },
   { id: 'workflowDesigner', icon: <Workflow className="size-4" /> },
 ];
+
+/**
+ * §SETTINGS-READINESS — the audited implementation state per section
+ * (renderer, data source, API, permissions, localization verified).
+ * An 'underPreparation' section renders the canonical SectionUnder-
+ * Preparation slot; it is NEVER hidden or removed (§10) and NEVER
+ * behaves like a finished section (§8). Every top-level section is
+ * implemented today — the not-ready slots live at the Master Data
+ * domain level (registry status 'planned').
+ */
+const SECTION_READINESS: Record<SettingsSectionId, 'ready' | 'underPreparation'> = {
+  general: 'ready',
+  masterData: 'ready',
+  controlPanel: 'ready',
+  organization: 'ready',
+  kpiSettings: 'ready',
+  rulesEngine: 'ready',
+  rules: 'ready',
+  monthClose: 'ready',
+  qualityAuditLog: 'ready',
+  workflowDesigner: 'ready',
+};
 
 function embeddedSectionTitle(id: SettingsSectionId, locale: Locale): string {
   if (id === 'general') return translateUIText('عام', locale);
@@ -176,17 +268,65 @@ export default function SettingsPage({
   routePageId?: string;
 }) {
   const navigateTo = useAppStore((s) => s.navigateTo);
-  const navParams = useAppStore((s) => s.navParams);
+  const navSection = useAppStore((s) => s.navParams.section);
   const { locale } = useLanguage();
-  const { visiblePages } = usePermissions();
-  const visiblePageIds = useMemo(() => new Set(visiblePages.map((p) => p.id)), [visiblePages]);
+  const { canViewPage } = usePermissions();
 
-  const requested = (initialSection ?? (navParams?.section as string | undefined)) as SettingsSectionId | undefined;
-  const [section, setSection] = useState<SettingsSectionId>(
-    requested && (EMBEDDED_SECTIONS.includes(requested) || LINKED_SECTIONS.some((s) => s.id === requested))
+  // ── §SETTINGS-SECTIONS — the ONE canonical active section ──
+  //  • Canonical 'settings' route: derived FROM navParams.section
+  //    (the navigation surface IS the state) — popstate restoration
+  //    and reload adoption restore it; unknown or permission-lost
+  //    values fail safe to the default section (§16).
+  //  • Legacy compat route: local state seeded from the deep-link —
+  //    the compat page keeps its registry identity, and its embedded
+  //    sections switch in place without any navigation.
+  const isLegacyRoute = Boolean(routePageId);
+  const [legacySection, setLegacySection] = useState<SettingsSectionId>(() => {
+    const requested = (initialSection ?? navSection) as SettingsSectionId | undefined;
+    return requested && (EMBEDDED_SECTIONS.includes(requested) || PAGE_SECTIONS.some((s) => s.id === requested))
       ? requested
-      : 'general',
-  );
+      : 'general';
+  });
+
+  // §SETTINGS-SECTIONS §12 — section access resolves from the CANONICAL
+  // PERMISSION (canViewPage), never from global-sidebar visibility:
+  // the section pages are overlayOnly (no sidebar destination) but
+  // remain full Settings sections for everyone who holds their grant.
+  const allowedSections = useMemo(() => {
+    const allowed = new Set<SettingsSectionId>(EMBEDDED_SECTIONS);
+    for (const { id } of PAGE_SECTIONS) {
+      if (canViewPage(id)) allowed.add(id);
+    }
+    return allowed;
+  }, [canViewPage]);
+
+  const section = isLegacyRoute
+    ? legacySection
+    : sanitizeSettingsSection(navSection, allowedSections, 'general');
+
+  const selectSection = (id: SettingsSectionId): void => {
+    if (id === section) return; // identical destination — no-op (§20)
+    if (routePageId) {
+      // §LEGACY-ROUTE — the compat deep-link keeps its registry page
+      // identity. Embedded sections switch in place; page-backed
+      // sections move into the canonical center when the user holds
+      // the settings grant.
+      if (EMBEDDED_SECTIONS.includes(id)) {
+        setLegacySection(id);
+        return;
+      }
+      if (canViewPage('settings')) {
+        navigateTo('settings', undefined, { section: id });
+        return;
+      }
+      navigateTo(id); // historical direct-page navigation — PageRouter gates it
+      return;
+    }
+    // §SETTINGS-SECTIONS — same-page sub-destination update: the
+    // shell stays mounted and the history controller records the
+    // section as a real Back/Forward-able entry.
+    navigateTo('settings', undefined, { section: id });
+  };
 
   const titleFor = (id: SettingsSectionId): string =>
     EMBEDDED_SECTIONS.includes(id)
@@ -197,8 +337,17 @@ export default function SettingsPage({
       ? embeddedSectionDescription(id, locale)
       : (localizedPageDescription(id, locale) ?? localizedPageDescription(id, 'ar'));
 
-  const isEmbedded = EMBEDDED_SECTIONS.includes(section);
-  const Chevron = locale === 'ar' ? ChevronLeft : ChevronRight;
+  const sectionRows = [
+    { id: 'general' as const, icon: <Settings2 className="size-3.5" /> },
+    { id: 'masterData' as const, icon: <Database className="size-3.5" /> },
+    ...PAGE_SECTIONS.filter(({ id }) => canViewPage(id)),
+  ].map(({ id, icon }) => ({
+    id,
+    icon,
+    title: titleFor(id),
+    description: descriptionFor(id),
+    underPreparation: SECTION_READINESS[id] === 'underPreparation',
+  }));
 
   return (
     <div className="space-y-5">
@@ -208,67 +357,45 @@ export default function SettingsPage({
         iconClassName="bg-slate-500/15 border-slate-500/30 text-slate-300"
         description={routePageId
           ? localizedPageDescription(routePageId, locale)
-          : localizedPageDescription('settings', locale)}
+          : titleFor(section)}
       />
 
-      <div className="flex flex-col lg:flex-row gap-4">
-        {/* Section navigation — RTL/LTR aware (start border flips) */}
-        <aside className="lg:w-64 shrink-0 space-y-1">
-          <p className="px-3 pb-1 text-[10px] font-bold uppercase tracking-wider text-slate-500">
-            <T>أقسام الإعدادات</T>
-          </p>
-          {/* Embedded sections first */}
-          {EMBEDDED_SECTIONS.map((id) => (
-            <button
-              key={id}
-              type="button"
-              onClick={() => setSection(id)}
-              aria-current={section === id ? 'true' : undefined}
-              className={cn(
-                'w-full flex items-center gap-2.5 rounded-xl border px-3 py-2 text-start transition-all',
-                section === id
-                  ? 'bg-brand-500/10 border-brand-500/40 text-brand-200'
-                  : 'bg-transparent border-transparent text-slate-400 hover:bg-slate-800/40 hover:text-slate-200',
+      {/* §SETTINGS-CENTER — ONE compact section navigation (collapsible
+          panel on desktop, drawer on mobile) above the workspace; the
+          oversized always-visible section rail is gone and the content
+          area reclaims its space. */}
+      <SettingsSectionNav
+        sections={sectionRows}
+        activeId={section}
+        onSelect={(id) => selectSection(id as SettingsSectionId)}
+      />
+
+      {/* Focused workspace — the ONLY thing that changes when a
+            section is selected; the Settings shell never unmounts. */}
+      <div className="min-w-0">
+          {SECTION_READINESS[section] === 'underPreparation' ? (
+            <SectionUnderPreparation />
+          ) : (
+            <>
+              {section === 'general' && <GeneralSection />}
+              {section === 'masterData' && <MasterDataSection initialDomain={initialDomain} />}
+              {section === 'controlPanel' && <ControlPanelSection />}
+              {section === 'organization' && <OrganizationSection />}
+              {section === 'kpiSettings' && <KpiSettingsSection />}
+              {section === 'rulesEngine' && <RulesEngineSection />}
+              {section === 'rules' && <DeductionRulesSection />}
+              {section === 'monthClose' && <MonthCloseSection />}
+              {section === 'qualityAuditLog' && <QualityAuditLogSection />}
+              {section === 'workflowDesigner' && (
+                // The designer is a full-viewport authoring tool — it
+                // keeps that ergonomics inside the workspace via a
+                // height-constrained host (its own layout is untouched).
+                <div className="h-[calc(100vh-14rem)] min-h-[560px] overflow-hidden rounded-2xl border border-slate-800/60 [&>div]:h-full">
+                  <WorkflowDesignerSection />
+                </div>
               )}
-            >
-              <span className={cn(
-                'flex items-center justify-center size-7 rounded-lg border shrink-0',
-                section === id ? 'bg-brand-500/15 border-brand-500/30 text-brand-300' : 'bg-slate-800/50 border-slate-700/50',
-              )}>
-                {id === 'general' ? <Settings2 className="size-3.5" /> : <Database className="size-3.5" />}
-              </span>
-              <span className="min-w-0 flex-1">
-                <span className="block text-xs font-bold truncate">{titleFor(id)}</span>
-                <span className="block text-[10px] text-slate-500 truncate">{descriptionFor(id)}</span>
-              </span>
-            </button>
-          ))}
-
-          {/* Canonical config pages — consolidated navigation */}
-          {LINKED_SECTIONS.filter(({ id }) => visiblePageIds.has(id)).map(({ id, icon }) => (
-            <button
-              key={id}
-              type="button"
-              onClick={() => navigateTo(id)}
-              className="w-full flex items-center gap-2.5 rounded-xl border border-transparent px-3 py-2 text-start transition-all text-slate-400 hover:bg-slate-800/40 hover:text-slate-200"
-            >
-              <span className="flex items-center justify-center size-7 rounded-lg border shrink-0 bg-slate-800/50 border-slate-700/50">
-                {icon}
-              </span>
-              <span className="min-w-0 flex-1">
-                <span className="block text-xs font-bold truncate">{titleFor(id)}</span>
-                <span className="block text-[10px] text-slate-500 truncate">{descriptionFor(id)}</span>
-              </span>
-              <Chevron className="size-3.5 text-slate-600 shrink-0" />
-            </button>
-          ))}
-        </aside>
-
-        {/* Focused workspace */}
-        <div className="flex-1 min-w-0">
-          {section === 'general' && <GeneralSection />}
-          {section === 'masterData' && <MasterDataSection initialDomain={initialDomain} />}
-        </div>
+            </>
+          )}
       </div>
     </div>
   );

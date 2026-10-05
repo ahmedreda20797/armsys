@@ -342,6 +342,15 @@ export function performanceDatasetToPrintModel(
     const exec = intel.executive;
     const execStats: Array<{ label: string; value: string }> = [
       { label: 'مؤشر الأداء (KPI)', value: exec.scoreDisplay },
+      // §KPI-INCOMPLETE — an incomplete calculation shows the partial
+      // calculated POINTS and the evaluation status, never a percentage
+      // that could read as the final KPI.
+      ...(exec.calculatedPointsDisplay
+        ? [{ label: 'النقاط المحتسبة', value: exec.calculatedPointsDisplay }]
+        : []),
+      ...(exec.evaluationStatusLabel
+        ? [{ label: 'حالة التقييم', value: exec.evaluationStatusLabel }]
+        : []),
       { label: 'نقطة مقارنة بالشهر السابق', value: exec.deltaDisplay ?? '—' },
       { label: 'الاتجاه', value: exec.trendLabel ?? '—' },
       { label: 'جودة الفترة', value: exec.qualityScoreDisplay },
@@ -352,10 +361,9 @@ export function performanceDatasetToPrintModel(
       { label: 'الصفقات الحالية', value: exec.currentDealsDisplay },
     ];
     const execParagraphs: string[] = [];
+    // §12 — incompleteMessage already names the missing components; no
+    // duplicate paragraph.
     if (exec.incompleteMessage) execParagraphs.push(exec.incompleteMessage);
-    if (exec.missingComponents.length > 0) {
-      execParagraphs.push(`مكونات KPI تحتاج إلى إعداد: ${exec.missingComponents.join('، ')}`);
-    }
     sections.push({
       heading: 'الملخص التنفيذي للأداء والجودة',
       stats: execStats,
@@ -384,12 +392,13 @@ export function performanceDatasetToPrintModel(
       });
     }
 
-    // Full configured KPI component breakdown.
+    // Full configured KPI component breakdown — percentage business
+    // terminology (Defined Rate / Achieved Rate / Calculated Points).
     sections.push({
-      heading: 'مكونات KPI المُهيأة',
+      heading: 'مكونات التقييم',
       table: {
-        columns: ['المكون', 'الوزن', 'الدرجة', 'الإسهام', 'الحالة'],
-        rows: intel.kpi.rows.map((r) => [r.name, r.weightDisplay, r.actualDisplay, r.contributionDisplay, r.statusLabel]),
+        columns: ['مكون التقييم', 'النسبة المحددة', 'النسبة المحققة', 'النقاط المحتسبة', 'الحالة'],
+        rows: intel.kpi.rows.map((r) => [r.name, r.definedRateDisplay, r.achievedRateDisplay, r.calculatedPointsDisplay, r.statusLabel]),
       },
     });
 
@@ -501,9 +510,14 @@ export function performanceDatasetToPrintModel(
         { label: 'عدد الخصومات', value: num(deductions.count) },
         { label: 'إجمالي الأيام', value: num(deductions.totalDays) },
         { label: 'إجمالي المبلغ', value: num(deductions.totalAmount) },
-        { label: 'أعلى خصم منفرد', value: highest ? `${num(highest.days)} يوم / ${num(highest.amount)}` : '—' },
+        // §I18N-BOUNDARY — the day/amount UNIT WORDS are system vocabulary.
+        { label: 'أعلى خصم منفرد', value: highest ? `${num(highest.days)} ${ui('يوم', 'day(s)')} / ${num(highest.amount)}` : '—' },
       ],
-      paragraphs: ['التفاصيل والأسباب تُعرض في تقرير الخصومات المخصص وفق الصلاحيات.'],
+      // §I18N-BOUNDARY — a fixed system sentence, self-localizing.
+      paragraphs: [ui(
+        'التفاصيل والأسباب تُعرض في تقرير الخصومات المخصص وفق الصلاحيات.',
+        'Details and reasons are shown in the dedicated deductions report, per permissions.',
+      )],
     });
   }
 
@@ -552,12 +566,20 @@ export function performanceDatasetToPrintModel(
   // employee gets the explicit unnamed label (the live header's own
   // fallback) — the team/department NEVER substitutes for the name.
   const employee = dataset.employee;
+  // §ORG-SEMANTICS — the department and the TEAM are distinct org-tree
+  // levels: when both resolve to the SAME node (an employee directly
+  // under a team whose stored department string repeats the team), the
+  // department is dropped rather than labeling the team as a department.
+  const sameOrgNode = employee?.department != null
+    && employee?.team != null
+    && employee.department.localeCompare(employee.team, 'ar') === 0;
+  const identityDepartment = sameOrgNode ? null : employee?.department ?? null;
   return {
     title: options?.title ?? 'تحليل الأداء',
     subject: [
       employee?.employeeName,
       employee?.employeeCode,
-      employee?.department,
+      identityDepartment,
     ].filter(Boolean).join(' — '),
     // §PRINT-HEADER — structured employee identity from authoritative
     // sources (employee record + org tree), never a generic label. The
@@ -568,7 +590,7 @@ export function performanceDatasetToPrintModel(
       code: employee?.employeeCode ?? null,
       position: employee?.position ?? null,
       team: employee?.team ?? null,
-      department: employee?.department ?? null,
+      department: identityDepartment,
       manager: employee?.manager ?? null,
       // §REPORT-IDENTITY — surfaced only when it applies (non-active),
       // mirroring the live header's lifecycle badge semantics.
@@ -579,11 +601,13 @@ export function performanceDatasetToPrintModel(
     },
     period: monthLabel(dataset.period?.monthKey),
     generatedAt: dataset.generatedAt,
+    // §TERMINOLOGY — percentage business language, no weight/weighting
+    // vocabulary anywhere in the printed document.
     stats: [
-      { label: 'درجة الجودة (خام)', value: pct(quality?.rawScore) },
-      { label: 'وزن الجودة', value: pct(quality?.weight) },
-      { label: 'مساهمة الجودة', value: num(quality?.weightedContribution) },
-      { label: 'الإجمالي الموزون', value: num(dataset.kpi?.weightedTotal) },
+      { label: 'نسبة الجودة', value: pct(quality?.rawScore) },
+      { label: 'النسبة المحددة للجودة', value: pct(quality?.weight) },
+      { label: 'النقاط المحتسبة للجودة', value: num(quality?.weightedContribution) },
+      { label: 'إجمالي النسبة المحتسبة', value: num(dataset.kpi?.weightedTotal) },
       { label: 'ملاحظات الجودة', value: num(observations?.total) },
       { label: 'خصومات الجودة (يوم)', value: num(deductions?.totalDays) },
     ],

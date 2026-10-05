@@ -62,7 +62,7 @@ export function AppLayout({ children }: AppLayoutProps) {
   // write (a selectorless useAppStore() re-renders it — and with it
   // the whole page tree — on each write, e.g. header registrations).
   const currentPage = useAppStore((s) => s.currentPage);
-  const setCurrentPage = useAppStore((s) => s.setCurrentPage);
+  const navigateTo = useAppStore((s) => s.navigateTo);
   const toggleSidebar = useAppStore((s) => s.toggleSidebar);
   const sidebarOpen = useAppStore((s) => s.sidebarOpen);
   const employee360Open = useAppStore((s) => s.employee360Open);
@@ -79,11 +79,14 @@ export function AppLayout({ children }: AppLayoutProps) {
 
   // Permission-gated navigation: only navigate if user has access.
   // 'home' + 'profile' are always accessible (self-scoped surfaces).
+  // §NAVIGATION-HISTORY — sidebar navigation is a REAL navigation:
+  // it goes through the canonical navigateTo boundary so browser
+  // Back/Forward traverse it (§26 Step 1 — one navigation path).
   const safeNavigate = useCallback((page: string) => {
     if (page === 'home' || page === 'profile' || canViewPage(page)) {
-      setCurrentPage(page);
+      navigateTo(page);
     }
-  }, [canViewPage, setCurrentPage]);
+  }, [canViewPage, navigateTo]);
 
   // Refresh permissions on every page navigation
   useEffect(() => {
@@ -135,6 +138,7 @@ export function AppLayout({ children }: AppLayoutProps) {
               <AnimatePresence mode="wait">
                 <motion.div
                   key={currentPage}
+                  data-active-page={currentPage}
                   variants={pageVariants}
                   initial="initial"
                   animate="animate"

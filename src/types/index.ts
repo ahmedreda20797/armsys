@@ -274,7 +274,12 @@ export interface FollowUp {
   employeeId: string;
   employeeName?: string;
   date: string;
-  followUpType: 'quality' | 'behavior' | 'attendance' | 'productivity' | 'training' | 'coaching' | 'complaint' | 'positive' | 'improvement' | 'other';
+  /**
+   * §MASTER-DATA — the canonical seed keys + any key added through
+   * Settings → Master Data (DB-driven vocabulary; labels resolve via
+   * the master-data records, never raw keys in the UI).
+   */
+  followUpType: 'quality' | 'behavior' | 'attendance' | 'productivity' | 'training' | 'coaching' | 'complaint' | 'positive' | 'improvement' | 'other' | (string & {});
   subject: string;
   detailedDescription: string;
   positiveNotes: string;
@@ -393,7 +398,11 @@ export interface CustomerComplaint {
   dealId: string | null;
   employeeId: string | null;
   employeeName?: string;
-  complaintType: 'service_quality' | 'pricing_error' | 'communication' | 'delay' | 'product_issue' | 'other';
+  /**
+   * §MASTER-DATA — the canonical seed keys + any key added through
+   * Settings → Master Data (DB-driven vocabulary).
+   */
+  complaintType: 'service_quality' | 'pricing_error' | 'communication' | 'delay' | 'product_issue' | 'other' | (string & {});
   description: string;
   severity: 'low' | 'medium' | 'high' | 'critical';
   status: 'open' | 'under_investigation' | 'pending_resolution' | 'resolved' | 'closed';
@@ -423,7 +432,7 @@ export interface KnowledgeArticle {
   updatedAt: string;
 }
 
-export type PageId = 'home' | 'employees' | 'biometric' | 'attendance' | 'requests' | 'rules' | 'quality' | 'hrDeductions' | 'travel' | 'reports' | 'followUps' | 'capa' | 'complaints' | 'knowledgeBase' | 'riskCenter' | 'operationsCenter' | 'employee360' | 'notifications' | 'rulesEngine' | 'controlPanel' | 'observations' | 'observationCategories' | 'observationTemplates' | 'kpiDashboard' | 'kpiReports' | 'monthClose' | 'kpiSettings' | 'qualityAuditLog' | 'qualityDeductionsReport' | 'smartQualityReport' | 'workflowDesigner' | 'organization';
+export type PageId = 'home' | 'employees' | 'biometric' | 'attendance' | 'requests' | 'rules' | 'quality' | 'hrDeductions' | 'travel' | 'reports' | 'followUps' | 'capa' | 'complaints' | 'knowledgeBase' | 'riskCenter' | 'operationsCenter' | 'employee360' | 'notifications' | 'rulesEngine' | 'controlPanel' | 'observations' | 'observationCategories' | 'observationTemplates' | 'kpiDashboard' | 'kpiReports' | 'monthClose' | 'kpiSettings' | 'qualityAuditLog' | 'qualityDeductionsReport' | 'smartQualityReport' | 'workflowDesigner' | 'organization' | 'masterData' | 'settings' | 'profile';
 
 export interface AppNotification {
   id: string;

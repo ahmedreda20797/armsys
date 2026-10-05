@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getById, updateRecord, deleteRecord } from '@/lib/db';
 import { asScopeViewer, employeeInScope } from '@/lib/scope/server';
+import { assertSimpleValueIsActive } from '@/lib/master-data/simple-lists';
 
 const SCORE_MAP: Record<string, number> = { low: 1, medium: 3, high: 5, critical: 10 };
 
@@ -35,6 +36,16 @@ export async function PUT(
       : await employeeInScope(viewer, permCheck.user!.permissions, reassignTarget);
     if (!storedOk || !targetOk) {
       return NextResponse.json({ error: 'Follow-up not found' }, { status: 404 });
+    }
+
+    // ── §MASTER-DATA deactivation guard — a follow-up type
+    // deactivated in the Settings Center cannot be (re)selected;
+    // unknown/legacy values stay accepted (guard, not a whitelist).
+    if (typeof body?.followUpType === 'string') {
+      const typeGuard = await assertSimpleValueIsActive('followUpTypes', body.followUpType);
+      if (typeGuard) {
+        return NextResponse.json({ error: typeGuard }, { status: 400 });
+      }
     }
 
     // Re-calculate score if priority changed

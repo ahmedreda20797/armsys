@@ -3,6 +3,7 @@ import { normalizeComplaintStatus } from '@/lib/complaints/complaint-status';
 import { getById, updateRecord, deleteRecord } from '@/lib/db';
 import type { VerifyResult } from '@/lib/verify-permission';
 import { asScopeViewer, employeeInScope } from '@/lib/scope/server';
+import { assertSimpleValueIsActive } from '@/lib/master-data/simple-lists';
 
 /** Scope guard for an OPTIONALLY employee-linked record (M0.4):
  *  a stored or incoming employee link must sit inside the caller's
@@ -62,6 +63,16 @@ export async function PUT(
     const inScope = await complaintInScope(permCheck, existing.employeeId, employeeId);
     if (!inScope) {
       return NextResponse.json({ error: 'Complaint not found' }, { status: 404 });
+    }
+
+    // ── §MASTER-DATA deactivation guard — a complaint type
+    // deactivated in the Settings Center cannot be (re)selected;
+    // unknown/legacy values stay accepted (guard, not a whitelist).
+    if (typeof complaintType === 'string') {
+      const typeGuard = await assertSimpleValueIsActive('complaintTypes', complaintType);
+      if (typeGuard) {
+        return NextResponse.json({ error: typeGuard }, { status: 400 });
+      }
     }
 
     // §COMPLAINT-STATUS — canonical vocabulary on write (legacy alias

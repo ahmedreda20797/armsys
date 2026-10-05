@@ -31,7 +31,6 @@ import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
 import { authFetch } from '@/lib/api-fetch';
@@ -409,7 +408,15 @@ export function PermissionManagerConsole({ users, selectedUserId, onSelectUser, 
           </div>
         </div>
 
-        <ScrollArea className="max-h-[58vh] rounded-xl border border-slate-700/40 bg-slate-800/30">
+        {/* §UX-SCROLL — the user list owns its OWN internal scroll
+            container: max-height + overflow on the SAME element (the
+            design-system arm-scroll utility — thin Qnalys tokens,
+            overscroll containment, touch scrolling). Unlike a
+            percentage-height viewport, max-height + overflow-y on one
+            element is viewport/container-readiness-based CSS: short
+            result sets shrink naturally, long ones scroll internally,
+            and the search/filter controls above stay visible. */}
+        <div className="arm-scroll max-h-[58vh] overscroll-contain rounded-xl border border-slate-700/40 bg-slate-800/30">
           <div className="p-1.5 space-y-1">
             {filteredUsers.length === 0 && (
               <p className="text-center text-xs text-slate-500 py-8">لا يوجد مستخدمون مطابقون للفلاتر</p>
@@ -462,7 +469,7 @@ export function PermissionManagerConsole({ users, selectedUserId, onSelectUser, 
               );
             })}
           </div>
-        </ScrollArea>
+        </div>
       </div>
 
       {/* ═══ AUTHORIZATION PROFILE ═══

@@ -3,12 +3,12 @@
 //
 //  Two complementary layers:
 //    A. VIEW-MODEL UNIT TESTS — every report section mapped from a
-//       full EmployeePerformanceDataset fixture: header, hero (raw
-//       vs contribution), component status, MTD/finalized display,
-//       trend (missing months never zero), observations, repeated
-//       issues, deductions, complaints, CAPA, follow-ups, deals,
-//       attendance context, evidence reconciliation, data quality,
-//       archived-employee history, explicit unavailable states.
+//       full EmployeePerformanceDataset fixture: compact header,
+//       MTD/finalized display, trend (missing months never zero),
+//       observations, repeated issues, deductions, complaints, CAPA,
+//       follow-ups, deals, attendance context, evidence
+//       reconciliation, data quality, archived-employee history,
+//       explicit unavailable states.
 //    B. STATIC SOURCE-CONTRACT TESTS — the same proven pattern as
 //       the Phase 3 route-contract tests: the page must keep its
 //       single Performance Intelligence data source, type-only
@@ -26,8 +26,6 @@ import type { EmployeePerformanceDataset } from '@/lib/performance-intelligence'
 import {
   UNAVAILABLE,
   buildReportHeader,
-  buildKpiHero,
-  buildKpiComponents,
   buildTrend,
   buildObservations,
   buildRepeatedIssues,
@@ -311,36 +309,46 @@ function makeDataset(overrides?: {
 //  A. View-model unit tests
 // ─────────────────────────────────────────────────────────────
 
-describe('smart report §32.1 — employee header', () => {
-  it('shows identity facts, scheme and period from the dataset', () => {
+describe('smart report §32.1 — employee header (compact §5)', () => {
+  it('shows the employee as the primary identity with a compact context line', () => {
     const header = buildReportHeader(makeDataset());
     assert.equal(header.employeeName, 'أحمد محمد');
     assert.equal(header.employeeCode, '001');
     assert.equal(header.periodLabel, 'أغسطس 2026');
     assert.equal(header.schemeLabel, 'مخطط جودة الحجوزات — إصدار 3');
-    const dept = header.facts.find((f) => f.label === 'القسم');
-    assert.equal(dept?.value, 'المبيعات');
-    // §REPORT-IDENTITY — the manager is a context fact; an active
-    // employee carries NO employment-status fact (badges handle it).
-    const manager = header.facts.find((f) => f.label === 'المدير المباشر');
-    assert.equal(manager?.value, UNAVAILABLE);
-    assert.equal(manager?.unavailable, true);
-    assert.equal(header.facts.some((f) => f.label === 'حالة التوظيف'), false);
+    // §5 COMPACT HEADER — position/org context is ONE metadata line.
+    // The fixture has a department and NO team/manager: the department
+    // renders under the neutral organizational-location label (§6 —
+    // the stored department is the legacy fallback, the tree is the
+    // authority), never as an invented duplicate row set.
+    assert.deepEqual(header.contextSegments, ['مستشار سفر', 'الموقع التنظيمي: المبيعات']);
+    // An active employee carries NO lifecycle badges.
     assert.equal(header.lifecycleBadges.length, 0);
   });
 
-  it('shows an explicit unavailable state for team and missing fields (never invented)', () => {
-    const header = buildReportHeader(makeDataset());
-    const team = header.facts.find((f) => f.label === 'الفريق');
-    assert.equal(team?.value, UNAVAILABLE);
-    assert.equal(team?.unavailable, true);
-
-    const noPosition = buildReportHeader(
-      makeDataset({ employee: { position: null } }),
+  it('keeps distinct department and team as separate context segments', () => {
+    const header = buildReportHeader(
+      makeDataset({ employee: { team: 'فريق الحجوزات', manager: 'أحمد صلاح' } }),
     );
-    const position = noPosition.facts.find((f) => f.label === 'المسمى الوظيفي');
-    assert.equal(position?.value, UNAVAILABLE);
-    assert.equal(position?.unavailable, true);
+    assert.deepEqual(
+      header.contextSegments,
+      ['مستشار سفر', 'المبيعات', 'فريق الحجوزات', 'المدير المباشر: أحمد صلاح'],
+    );
+  });
+
+  it('never labels the team as a department when both resolve to the same node', () => {
+    const header = buildReportHeader(
+      makeDataset({ employee: { department: "Salah' Sales Team", team: "Salah' Sales Team" } }),
+    );
+    // §ORG-SEMANTICS — one neutral organizational-location segment.
+    assert.deepEqual(header.contextSegments, ['مستشار سفر', "الموقع التنظيمي: Salah' Sales Team"]);
+  });
+
+  it('omits empty context segments instead of rendering unavailable placeholders', () => {
+    const header = buildReportHeader(
+      makeDataset({ employee: { position: null, department: null } }),
+    );
+    assert.deepEqual(header.contextSegments, []);
   });
 });
 
@@ -358,68 +366,10 @@ describe('smart report §32.21 — archived employee historical report', () => {
   });
 });
 
-describe('smart report §32.2/§32.3 — KPI hero: raw score vs contribution', () => {
-  it('displays the raw score and the weighted contribution as DISTINCT values', () => {
-    const hero = buildKpiHero(makeDataset());
-    assert.equal(hero.rawScoreDisplay, '91%');
-    assert.equal(hero.hasRawScore, true);
-    assert.equal(hero.contributionDisplay, '13.65 / 15');
-    assert.equal(hero.weightPercent, 15);
-  });
-
-  it('shows previous month score and the percentage-point change', () => {
-    const hero = buildKpiHero(makeDataset());
-    assert.equal(hero.previousScoreDisplay, '88%');
-    assert.equal(hero.deltaDisplay, '+3');
-    assert.equal(hero.deltaToneValue, 'good');
-    assert.equal(hero.directionLabel, '▲ اتجاه صاعد');
-  });
-
-  it('marks the company KPI INCOMPLETE when components are unavailable (never "Company KPI" complete)', () => {
-    const hero = buildKpiHero(makeDataset());
-    assert.equal(hero.rowStatusLabel, 'INCOMPLETE');
-    assert.equal(hero.overallStatusLabel, 'INCOMPLETE');
-  });
-
-  it('never renders a missing quality value as zero', () => {
-    const hero = buildKpiHero(
-      makeDataset({
-        kpi: {
-          outcomeStatus: 'PENDING' as EmployeePerformanceDataset['kpi']['outcomeStatus'],
-          message: 'لم يتم احتساب المؤشر بعد لهذه الفترة',
-          quality: null,
-          availableWeight: null,
-          weightedTotal: null,
-          overallStatus: null,
-          rowStatus: 'PENDING',
-        },
-        trendPoints: [],
-        mom: null,
-        direction: null,
-      }),
-    );
-    assert.equal(hero.rawScoreDisplay, UNAVAILABLE);
-    assert.equal(hero.hasRawScore, false);
-    assert.equal(hero.contributionDisplay, UNAVAILABLE);
-    assert.equal(hero.previousScoreDisplay, null);
-    assert.equal(hero.deltaDisplay, null);
-    assert.equal(hero.outcomeMessage, 'لم يتم احتساب المؤشر بعد لهذه الفترة');
-  });
-});
-
-describe('smart report §32.4 — KPI component status', () => {
-  it('lists the quality row as AVAILABLE and the overall row as INCOMPLETE', () => {
-    const view = buildKpiComponents(makeDataset());
-    assert.equal(view.rows.length, 2);
-    assert.equal(view.rows[0].label, 'الجودة');
-    assert.equal(view.rows[0].available, true);
-    assert.equal(view.rows[0].statusLabel, 'AVAILABLE');
-    assert.equal(view.rows[0].contributionDisplay, '13.65 / 15');
-    assert.equal(view.rows[1].isOverall, true);
-    assert.equal(view.rows[1].statusLabel, 'INCOMPLETE');
-    assert.equal(view.hasUnavailableComponents, true);
-  });
-});
+// §32.2-§32.4 — the legacy KPI hero/component-status builders were
+// REMOVED with the weight/contribution vocabulary (§SMART-REPORT-
+// REFINEMENT); the KPI presentation contract now lives in the
+// intelligence-view tests (buildKpiIntelView) and its section.
 
 describe('smart report §32.5/§32.22 — MTD vs finalized display', () => {
   it('labels the current month MTD and never FINALIZED', () => {

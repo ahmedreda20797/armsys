@@ -1,0 +1,187 @@
+QNALYS — SMART QUALITY REPORT FINAL REFINEMENT — DELIVERY NOTE
+================================================================
+Scope: presentation-layer refinement of the existing Smart Quality Report
+(Employee KPI Report). NO rebuild, NO second architecture, NO duplicated
+business logic. The canonical EmployeePerformanceDataset, KPI engine,
+deal semantics, permissions, section gates, caching, navigation
+(navigateTo/highlightId/navParams/useRecordHighlight/GlobalRecordHighlight)
+and Employee360 integration remain the authoritative sources, untouched.
+
+1. FILES / COMPONENTS CHANGED
+-----------------------------
+Canonical layer (§6 org semantics — the CORRECT layer, Employee360 parity):
+  src/lib/performance-intelligence/service.ts
+      - Department now resolves from the ORGANIZATION TREE (nearest
+        department-type ancestor, stored string as legacy fallback) the
+        same way Employee360 resolves it. Team + manager resolution
+        unchanged. An employee directly under a team with no department
+        ancestor no longer carries the team name mislabeled as a department.
+  src/lib/performance-intelligence/assemble.ts (+types.ts doc)
+      - New optional orgDepartment input; identity.department uses it.
+
+Report view layer (terminology + incomplete semantics + dedupe):
+  src/components/pages/quality-kpi/smart-report/intelligence-view.ts
+      - KPI table view: definedRateDisplay / achievedRateDisplay /
+        calculatedPointsDisplay; overall row flagged `incomplete`.
+      - SYSTEM component names (quality/direct_manager/hr/target) resolve
+        via stable componentId → localized label; custom names stay verbatim.
+      - Executive view: calculatedPointsDisplay ("11.7 / 15") +
+        evaluationStatusLabel for the INCOMPLETE state.
+      - Missing-component names localized inside interpolated sentences
+        (exec message, attention, narrative) via system-name matching.
+      - §12 dedupe: trend-direction patterns dropped when What-Changed
+        carries the quality row; NAR_DELTA dropped from the narrative;
+        Management Attention capped to the 3 highest-severity items.
+      - §9 bidi isolation: business-data slots carrying Arabic script are
+        wrapped in FSI/PDI isolates so English sentence order holds.
+      - `_unclassified` grouping key renders localized (Unclassified).
+      - Data-quality noteLines claim through translateUIText (system prose).
+  src/components/pages/quality-kpi/smart-report/view-model.ts
+      - Header rebuilt as COMPACT context segments (§5) + §6 org merge
+        (department === team → one neutral "الموقع التنظيمي" segment;
+        manager stays a LABELED fact).
+      - entriesToChips now always receives the ACTIVE locale (fixes
+        follow-up/CAPA/complaint status/type chips showing Arabic in EN).
+      - Removed the dead pre-intelligence KPI hero/component builders and
+        formatContribution (retired weight/contribution vocabulary).
+  src/components/pages/quality-kpi/smart-report/intelligence-sections.tsx
+      - KPI table: مكون التقييم | النسبة المحددة | النسبة المحققة |
+        النقاط المحتسبة | الحالة; overall row "إجمالي النسبة المحتسبة"
+        renders points X / Y with an Incomplete badge (never a bare %).
+      - Executive strip: incomplete state shows Calculated Points +
+        Evaluation status; "النسبة المحددة المتاحة" replaces الوزن المتاح;
+        duplicated missing-components list removed (§12).
+  src/components/pages/quality-kpi/smart-report/report-sections.tsx
+      - §5 compact header: title row + REAL Qnalys logo (theme-aware
+        qnlys.svg / qnlys-print.svg, print:block swap), name row, ONE
+        context line, secondary period/provenance row. No oversized
+        blocks, no per-field borders.
+      - Trend section: monthly series only (MoM delta lives in What-Changed).
+      - §18 zero states: compact meaningful lines ("الشكاوى: لا توجد حالات
+        مسجلة خلال الفترة." etc.) for Complaints/CAPA/Follow-ups/
+        Deductions/Deals; No-data vs Zero vs Withheld stay distinct.
+
+Print / PDF (parity — same dataset, same terminology, compact header):
+  src/components/print/print-adapters.ts
+      - Stats renamed: نسبة الجودة / النسبة المحددة للجودة /
+        النقاط المحتسبة للجودة / إجمالي النسبة المحتسبة (no weight/
+        contribution wording). Exec stats carry Calculated Points +
+        Evaluation Status when incomplete; redundant paragraph removed.
+      - KPI table columns = new terminology.
+      - §ORG-SEMANTICS: department dropped from identity when it equals
+        the team (never label the team as a department).
+      - Deduction unit words + summary sentence self-localize (ui()).
+  src/components/print/PrintReportDocument.tsx
+      - Compact identity: name row + ONE context line (code · position ·
+        department · team · manager), employment status only when it
+        applies; meta row (period/created) unchanged.
+
+Localization dictionaries:
+  src/lib/i18n/en-map.ts   — new terminology + compact zero states +
+                             print headings + attribution label + النمط.
+  src/lib/i18n/dictionary.ts — retired unused smart.* keys that carried
+                             the old weight/contribution vocabulary.
+
+Print CSS: src/app/globals.css
+      - .print-stats-grid break-inside: avoid (no orphaned stat chips);
+        .print-doc-sep + compact .print-doc-subject-code.
+
+Tests updated:
+  src/lib/__tests__/smart-quality-report-ui.test.ts
+  src/components/print/__tests__/smart-report-identity-parity.test.ts
+
+2. TERMINOLOGY CHANGES (user-facing; AR + EN)
+---------------------------------------------
+Old                          New (AR)              New (EN)
+Raw Score / الدرجة الخام  →  نسبة الجودة           Quality Rate
+Weight / الوزن            →  النسبة المحددة        Defined Rate
+Score (component)         →  النسبة المحققة        Achieved Rate
+Contribution / الإسهام / المساهمة → النقاط المحتسبة Calculated Points
+Weighted Total / الإجمالي الموزون → إجمالي النسبة المحتسبة Total Calculated Rate
+Available weight / الوزن المتاح → النسبة المحددة المتاحة Defined rate available
+Company KPI (partial)     →  النقاط المحتسبة + حالة التقييم: غير مكتمل
+                             Calculated Points + Evaluation status: Incomplete
+The words Weight/Weighted/Contribution no longer appear anywhere in the
+report's user-facing UI (screen or print). Internal identifiers
+(rawScore/weightedContribution/weight) are unchanged in code and engine.
+
+3. KPI INCOMPLETE SEMANTICS (§4)
+--------------------------------
+Quality-only periods now read: "النقاط المحتسبة: 11.7 / 15" +
+"حالة التقييم: غير مكتمل" — never "11.7% KPI". The KPI table's overall
+row always carries its points context (X / Y). A final percentage is
+shown ONLY when the engine verdict is complete ( AVAILABLE/FINALIZED).
+
+4. LOCALIZATION CHANGES (§7)
+----------------------------
+- Fixed: follow-up/CAPA/complaint chips, data-quality notes, component
+  names inside sentences, unclassified key, print patterns header, and
+  several print headings now translate in EN mode (previously Arabic).
+- User-generated business data (names, teams, categories, notes) passes
+  through verbatim in both locales (§8).
+- Raw enums/keys/NaN: no new leaks; the presentation-boundary resolvers
+  (presentStatus/presentEntity/presentSystemOrVerbatim) still guard all
+  system vocabulary. NaN cannot reach the views (formatters render the
+  explicit unavailable state for null/undefined/non-finite).
+
+5. HEADER / LAYOUT (§5/§10/§23)
+-------------------------------
+Header is ~4 light rows (title+logo / name / context / period), logo is
+the REAL asset (dark wordmark on dark screens, print variant on light
+theme and paper), balanced against the identity. Visual hierarchy:
+Identity → Evaluation status → Executive summary → What changed →
+Detail sections → Management attention (max 3) → Data quality → Analysis.
+
+6. DATA-MAPPING BUGS FOUND & FIXED
+----------------------------------
+a) Department mislabeled from stored team string — fixed at the service
+   layer via org-tree resolution (Employee360 parity).
+b) entriesToChips ignored the active locale (defaulted to 'ar') — chips
+   were Arabic in the English report (the exact defect class in the
+   reference screenshot).
+c) EmployeeKpiReport print adapter labeled the component WEIGHT as
+   "نسبة الجودة" (Quality Rate) — the mislabel is corrected to
+   النسبة المحددة/النقاط المحتسبة wording in that adapter's labels too.
+d) Arabic system sentences inside EN print doc (deductions summary,
+   unit words) — self-localizing now.
+e) Bidi scrambling of Arabic names inside English sentences — Unicode
+   isolates added at the interpolation boundary.
+
+7. VERIFICATION
+---------------
+- Typecheck: 0 errors.
+- Tests: 2692/2693 (.ts) + 45/47 (.mts) pass. The 3 failures
+  (global-search EmployeesPage useRecordHighlight contract,
+  download-opt rule-log count, find-user-by-email) were reproduced
+  byte-identical on the PRISTINE tree with this change stashed —
+  pre-existing, untouched here.
+- ESLint: clean on every touched file/directory.
+- Build: `next build` compiles successfully (97 static pages, 145
+  routes; verified in an isolated BUILD_DIST_DIR — the repo-root
+  `npm run build` copy step is blocked only by the concurrently running
+  dev server holding .next/standalone, not by the code).
+- Live visual verification (temporary /ui-preview harness over REAL
+  components + realistic fixture, deleted afterwards):
+    AR screen: RTL correct, compact header + logo, 11.7/15 points tile,
+      حالة التقييم غير مكتمل, Arabic KPI table, Arabic chips.
+    EN screen: LTR correct, no Arabic system labels, no raw enums,
+      Quality/Direct Manager/HR/Target localized, Unclassified localized,
+      user data preserved, attention capped at 3.
+    EN print: compact 2-row identity (name primary, code leading the
+      context line), new terminology in stats + table, English
+      throughout, logo correct.
+    AR print: fully RTL, Arabic terminology, Arabic-Indic numerals,
+      logo mirrored correctly.
+
+8. REMAINING LIMITATIONS / PRE-EXISTING NOTES
+---------------------------------------------
+- The 3 pre-existing test failures above (documented, not touched).
+- `npm run build`'s standalone copy step cannot run while a dev server
+  is using .next (Windows file lock); the compile itself is green.
+- A dev-only SSR/CSR Intl nuance in formatDateTime ("٤:٣٢ م" vs
+  "٤:٣٢:٠٠ م" separator) can log a hydration warning on first paint;
+  pre-existing (the original header used the same formatter), client
+  recovers immediately.
+- Other print adapters on SEPARATE KPI report pages (quality summary,
+  management report) still use the older "متوسط المساهمة/درجة" wording;
+  they are different deliverables outside this report's scope.

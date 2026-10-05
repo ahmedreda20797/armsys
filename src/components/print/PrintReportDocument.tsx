@@ -103,51 +103,63 @@ export function PrintReportDocument({ model }: { model: PrintReportModel }) {
   const { locale } = useLanguage();
   const generated = fmtGenerated(model.generatedAt) || fmtGenerated(new Date().toISOString());
   // §PRINT-HEADER — RTL professional report header:
-  //   RIGHT (first flex child in RTL): report title + the subject's
-  //   real identity STACKED on its own lines (employee name, then
-  //   department, then position — never joined inline) + metadata
-  //   (period, generated date). Identity fields render only when the
+  //   START (first flex child in RTL): report title + the subject's
+  //   real identity in TWO compact rows (§5) — the NAME row (name +
+  //   code) and ONE context line (position · department · team ·
+  //   manager, empties omitted). Identity fields render only when the
   //   model actually carries them.
-  //   LEFT: the Qnalys print logo ALONE — /qnlys-print.svg already
+  //   END: the Qnalys print logo ALONE — /qnlys-print.svg already
   //   contains the full wordmark; no second "Qnalys" text under it.
   //
   //   §I18N-BOUNDARY — identity VALUES (name, code, department, team,
   //   position) are business data: rendered exactly as stored. Only
   //   the fixed field labels around them are claimed UI.
   const identity = model.identity;
-  // §PRINT-IDENTITY-PARITY — contextual identity facts; the employee
-  // CODE renders directly under the NAME (never buried with the team).
-  const identitySecondary = identity?.team ? (<><T>الفريق: </T>{identity.team}</>) : null;
+  // §5 COMPACT IDENTITY — the employee CODE leads ONE dot-separated
+  // context line (code · position · department · team · manager);
+  // §REPORT-IDENTITY — the employee is the subject, these are context,
+  // never the headline.
+  const contextSegments = [
+    identity?.position ?? null,
+    identity?.department ?? null,
+    identity?.team ?? null,
+    identity?.manager ?? null,
+  ]
+    .filter((v): v is string => typeof v === 'string' && v.trim() !== '')
+    // §PRINT-IDENTITY — these are four SEPARATE fields; an employee whose
+    // department equals their team (common in sales-team orgs) printed the
+    // same value twice (duplicate React keys AND a duplicated segment on
+    // paper). The context line shows each distinct value once, keeping the
+    // first occurrence's stored text.
+    .filter((v, i, all) => all.findIndex((other) => other.trim() === v.trim()) === i);
   return (
     <div className="print-doc" lang={locale}>
       {/* Header — report identity + period */}
       <header className="print-doc-header">
         <div className="print-doc-header-row">
-          {/* RIGHT: title + stacked identity + meta */}
+          {/* START: title + compact stacked identity + meta */}
           <div className="print-doc-identity">
             <h1 className="print-doc-title"><T>{model.title}</T></h1>
             {identity?.name ? (
               <div className="print-doc-subject">
                 {/* §REPORT-IDENTITY — the EMPLOYEE is the primary subject;
-                    the team is contextual metadata, never the subject. */}
+                    the code + org context are ONE secondary line beneath. */}
                 <p className="print-doc-subject-name">{identity.name}</p>
-                {identity.code ? (
-                  <p className="print-doc-subject-code" dir="ltr">{identity.code}</p>
-                ) : null}
-                {identity.department ? (
-                  <p className="print-doc-subject-line"><T>القسم: </T>{identity.department}</p>
-                ) : null}
-                {identity.position ? (
-                  <p className="print-doc-subject-line"><T>الوظيفة: </T>{identity.position}</p>
-                ) : null}
-                {identity.manager ? (
-                  <p className="print-doc-subject-line"><T>المدير: </T>{identity.manager}</p>
+                {identity.code || contextSegments.length > 0 ? (
+                  <p className="print-doc-subject-line">
+                    {identity.code && (
+                      <span className="print-doc-subject-code" dir="ltr">{identity.code}</span>
+                    )}
+                    {contextSegments.map((segment, i) => (
+                      <span key={`${i}-${segment}`}>
+                        {(i > 0 || identity.code) && <span className="print-doc-sep"> · </span>}
+                        {segment}
+                      </span>
+                    ))}
+                  </p>
                 ) : null}
                 {identity.employmentStatusLabel ? (
                   <p className="print-doc-subject-line"><T>حالة التوظيف: </T>{identity.employmentStatusLabel}</p>
-                ) : null}
-                {identitySecondary ? (
-                  <p className="print-doc-subject-extra">{identitySecondary}</p>
                 ) : null}
               </div>
             ) : model.subject ? (
@@ -158,7 +170,7 @@ export function PrintReportDocument({ model }: { model: PrintReportModel }) {
               <span><strong><T>تاريخ الإنشاء: </T></strong>{generated}</span>
             </div>
           </div>
-          {/* LEFT: the Qnalys print logo (dark wordmark for white paper) —
+          {/* END: the Qnalys print logo (dark wordmark for white paper) —
               the asset IS the complete brand mark; nothing under it. */}
           <div className="print-doc-logo" dir="ltr">
             <img src="/qnlys-print.svg" alt="Qnalys" style={{ height: 44, width: 'auto', objectFit: 'contain' }} />

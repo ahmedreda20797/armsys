@@ -36,6 +36,7 @@ import { authFetch } from '@/lib/api-fetch';
 import { logCreate } from '@/lib/activity-logger';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLanguage } from '@/lib/i18n/language-context';
+import { useMasterDataVocabulary } from '@/hooks/use-master-data';
 import { categoryDisplayName } from '@/lib/observation-categories/presentation';
 import type { Employee } from '@/types';
 import { EMPLOYEE_STATUS_LABELS_AR, EMPLOYEE_STATUSES } from '@/lib/organization/employee-status';
@@ -57,6 +58,11 @@ const COMPLAINT_TYPES = [
   { value: 'product_issue', label: 'مشكلة في المنتج' },
   { value: 'other', label: 'أخرى' },
 ];
+
+/** §MASTER-DATA — static fallback; the DB list is authoritative. */
+const COMPLAINT_TYPE_FALLBACK: Record<string, string> = Object.fromEntries(
+  COMPLAINT_TYPES.map((t) => [t.value, t.label]),
+);
 
 const COMPLAINT_SEVERITY = [
   { value: 'low', label: 'منخفض' },
@@ -81,6 +87,11 @@ const REQUEST_TYPES = [
   { value: 'remote', label: 'ريموتلي' },
 ];
 
+/** §MASTER-DATA — static fallback; the DB list is authoritative. */
+const REQUEST_TYPE_FALLBACK: Record<string, string> = Object.fromEntries(
+  REQUEST_TYPES.map((t) => [t.value, t.label]),
+);
+
 const FOLLOWUP_TYPES = [
   { value: 'quality', label: 'مشكلة جودة' },
   { value: 'attendance', label: 'مشكلة حضور' },
@@ -93,6 +104,11 @@ const FOLLOWUP_TYPES = [
   { value: 'improvement', label: 'فرصة تحسين' },
   { value: 'other', label: 'أخرى' },
 ];
+
+/** §MASTER-DATA — static fallback; the DB list is authoritative. */
+const FOLLOWUP_TYPE_FALLBACK: Record<string, string> = Object.fromEntries(
+  FOLLOWUP_TYPES.map((t) => [t.value, t.label]),
+);
 
 const FOLLOWUP_PRIORITY = [
   { value: 'low', label: 'منخفض' },
@@ -268,6 +284,8 @@ export function ComplaintInlineForm({ onClose, employees, systemUsers, onCreated
   const { user } = useAuth();
   const qc = useQueryClient();
   const [form, setForm] = useState<ComplaintFormState>(() => ({ ...COMPLAINT_EMPTY, ...defaultValues }));
+  // §MASTER-DATA — DB-driven vocabulary with static fallback.
+  const complaintTypeVocabulary = useMasterDataVocabulary('complaintTypes', COMPLAINT_TYPE_FALLBACK);
   const [saving, setSaving] = useState(false);
   const upd = <K extends keyof ComplaintFormState>(k: K, v: ComplaintFormState[K]) =>
     setForm((p) => ({ ...p, [k]: v }));
@@ -340,7 +358,7 @@ export function ComplaintInlineForm({ onClose, employees, systemUsers, onCreated
           <Select value={form.complaintType} onValueChange={(v) => upd('complaintType', v)}>
             <SelectTrigger className="bg-slate-800 border-slate-600 text-white h-9 text-sm"><SelectValue /></SelectTrigger>
             <SelectContent>
-              {COMPLAINT_TYPES.map((t) => <SelectItem key={t.value} value={t.value} className="text-white">{t.label}</SelectItem>)}
+              {complaintTypeVocabulary.options.map((t) => <SelectItem key={t.key} value={t.key} className="text-white">{t.label}</SelectItem>)}
             </SelectContent>
           </Select>
         </div>
@@ -408,6 +426,8 @@ export function FollowUpInlineForm({ onClose, employees, systemUsers, onCreated 
   const { user } = useAuth();
   const qc = useQueryClient();
   const [form, setForm] = useState<FollowUpFormState>(FOLLOWUP_EMPTY());
+  // §MASTER-DATA — DB-driven vocabulary with static fallback.
+  const followUpTypeVocabulary = useMasterDataVocabulary('followUpTypes', FOLLOWUP_TYPE_FALLBACK);
   const [saving, setSaving] = useState(false);
   const upd = <K extends keyof FollowUpFormState>(k: K, v: FollowUpFormState[K]) =>
     setForm((p) => ({ ...p, [k]: v }));
@@ -476,7 +496,7 @@ export function FollowUpInlineForm({ onClose, employees, systemUsers, onCreated 
           <Select value={form.followUpType} onValueChange={(v) => upd('followUpType', v)}>
             <SelectTrigger className="bg-slate-800 border-slate-600 text-white h-9 text-sm"><SelectValue /></SelectTrigger>
             <SelectContent>
-              {FOLLOWUP_TYPES.map((t) => <SelectItem key={t.value} value={t.value} className="text-white">{t.label}</SelectItem>)}
+              {followUpTypeVocabulary.options.map((t) => <SelectItem key={t.key} value={t.key} className="text-white">{t.label}</SelectItem>)}
             </SelectContent>
           </Select>
         </div>
@@ -545,6 +565,8 @@ export function RequestInlineForm({ onClose, employees, onCreated }: {
   const { user } = useAuth();
   const qc = useQueryClient();
   const [form, setForm] = useState<RequestFormState>(REQUEST_EMPTY);
+  // §MASTER-DATA — DB-driven vocabulary with static fallback.
+  const requestTypeVocabulary = useMasterDataVocabulary('requestTypes', REQUEST_TYPE_FALLBACK);
   const [saving, setSaving] = useState(false);
   const upd = <K extends keyof RequestFormState>(k: K, v: RequestFormState[K]) =>
     setForm((p) => ({ ...p, [k]: v }));
@@ -593,7 +615,7 @@ export function RequestInlineForm({ onClose, employees, onCreated }: {
           <Select value={form.type} onValueChange={(v) => upd('type', v)}>
             <SelectTrigger className="bg-slate-800 border-slate-600 text-white h-9 text-sm"><SelectValue /></SelectTrigger>
             <SelectContent>
-              {REQUEST_TYPES.map((t) => <SelectItem key={t.value} value={t.value} className="text-white">{t.label}</SelectItem>)}
+              {requestTypeVocabulary.options.map((t) => <SelectItem key={t.key} value={t.key} className="text-white">{t.label}</SelectItem>)}
             </SelectContent>
           </Select>
         </div>

@@ -68,17 +68,22 @@ export async function getEmployeePerformanceDataset(
   const identity = await loaders.loadEmployeeIdentity(input.employeeId);
   if (!identity) return null;
 
-  // ── Team label + MANAGER from the ORGANIZATION TREE (§REPORT-IDENTITY) ──
+  // ── Department + Team + MANAGER from the ORGANIZATION TREE ──
   // One extra cached read; the tree is authoritative, subteams roll up
   // to their parent team, and an unassigned employee resolves to null
   // (explicit unavailable downstream — never an invented label). The
   // manager is the nearest team ancestor's manager display name.
+  // The DEPARTMENT resolves the same way Employee360 resolves it (the
+  // nearest department ancestor, falling back to the stored string) —
+  // an employee directly under a team with no department ancestor must
+  // NOT carry the team name mislabeled as a department.
   const orgNodes = await loaders.loadOrgNodes();
-  const teamNode = identity.orgNodeId
-    ? findAncestorOfType(buildOrgIndex(orgNodes as never), identity.orgNodeId, 'team')
-    : null;
+  const orgIndex = buildOrgIndex(orgNodes as never);
+  const teamNode = identity.orgNodeId ? findAncestorOfType(orgIndex, identity.orgNodeId, 'team') : null;
+  const deptNode = identity.orgNodeId ? findAncestorOfType(orgIndex, identity.orgNodeId, 'department') : null;
   const team = teamNode?.name ?? null;
   const manager = teamNode?.managerUserName ?? null;
+  const department = deptNode?.name ?? identity.department ?? null;
 
   // ── Canonical KPI report (Phase 2 → Phase 1 engine, same loaders) ──
   // ── Batched operational reads: ONE cached read per collection ──
@@ -109,6 +114,7 @@ export async function getEmployeePerformanceDataset(
     identity,
     orgTeam: team,
     orgManager: manager,
+    orgDepartment: department,
     kpiReport,
     observations,
     deductions,

@@ -336,18 +336,27 @@ export async function updateRecord(table: string, id: string, data: Record<strin
 /**
  * Bulk patch of MANY records of one table in a SINGLE RTDB multi-path
  * update (one round-trip, one cache invalidation). `updatesById` maps
- * record id → shallow patch merged into that record; unspecified
- * siblings are never touched (RTDB update() semantics per path).
- * The canonical writer for "mark all notifications read" — never a
- * sequential per-id updateRecord() fan-out.
+ * record id → shallow patch merged into that record.
+ *
+ * §RTDB-PATCH-SEMANTICS — the update map is expanded into PER-FIELD
+ * child paths (`id/field`). RTDB update() is shallow PER PATH: a bare
+ * `id` path would REPLACE the whole record with the patch object and
+ * silently destroy every sibling field (key/name/labels…). The
+ * `id/field` form merges into each record and leaves unspecified
+ * siblings untouched — the semantics this helper has always promised.
+ * The canonical writer for reorders and "mark all notifications read" —
+ * never a sequential per-id updateRecord() fan-out.
  */
 export async function updateRecords(table: string, updatesById: Record<string, Record<string, any>>): Promise<number> {
   const ids = Object.keys(updatesById);
   if (ids.length === 0) return 0;
   const now = new Date().toISOString();
-  const multiPath: Record<string, Record<string, any>> = {};
+  const multiPath: Record<string, any> = {};
   for (const id of ids) {
-    multiPath[id] = { ...updatesById[id], updatedAt: now };
+    const patch = { ...updatesById[id], updatedAt: now };
+    for (const [field, value] of Object.entries(patch)) {
+      multiPath[`${id}/${field}`] = value;
+    }
   }
   await rtdbRef(`arm_erp/${table}`).update(multiPath);
   invalidateCache(table);

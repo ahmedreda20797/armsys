@@ -1,6 +1,10 @@
 // src/lib/store.ts
 import { create } from 'zustand';
 import type { ReactNode } from 'react';
+import {
+  notifyNavigation,
+  requestNavigationBack,
+} from '@/lib/navigation/navigation-bridge';
 
 /**
  * The page's PRIMARY create action, registered by PageHeaderBar while
@@ -152,6 +156,35 @@ interface AppState {
   openDepartmentHealth: (departmentName: string) => void;
   closeDepartmentHealth: () => void;
   setCurrentPage: (page: string) => void;
+  /**
+   * §NAVIGATION-HISTORY — applies an entry restored by the browser
+   * history controller (Back/Forward). This is the ONLY navigation
+   * mutation that does NOT notify the navigation bridge: it is the
+   * explicit "popstate" navigation mode (§8) — pushing here would
+   * create a history loop.
+   */
+  applyHistoryEntry: (entry: {
+    page: string;
+    overlay: 'employee360' | 'departmentHealth' | null;
+    contextId: string | null;
+    highlightId: string | null;
+    /**
+     * §SETTINGS-SECTIONS — the Settings workspace's active section
+     * (`navParams.section`) is part of the entry identity, so
+     * popstate / reload adoption restores it (Back/Forward/refresh
+     * land on the same section). Deliberately scoped: other pages'
+     * transient navParams stay non-restored (their effects already
+     * live in the persisted page state — §13 history doctrine).
+     */
+    navParams?: Record<string, string> | null;
+  }) => void;
+  /**
+   * §NAVIGATION-HISTORY — hard identity-boundary reset (logout /
+   * user change, §15): the whole navigation surface returns to a
+   * clean home state. No previous-identity page, overlay intent or
+   * highlight survives.
+   */
+  resetNavigationToHome: () => void;
   toggleSidebar: () => void;
   setSidebarOpen: (open: boolean) => void;
   toggleSidebarPin: () => void;
@@ -189,7 +222,19 @@ export const useAppStore = create<AppState>((set) => ({
   employee360Open: false,
   employee360Id: null,
   departmentHealthName: null,
-  setCurrentPage: (page) => set({ currentPage: page, highlightId: null, navParams: {} }),
+  setCurrentPage: (page) => {
+    // §NAVIGATION-HISTORY — sidebar navigation is a real navigation
+    // (§26 Step 1: one canonical boundary), so it goes through the
+    // same notify path as navigateTo. The bridge is a silent no-op
+    // until the history controller registers.
+    notifyNavigation({
+      type: 'page',
+      page,
+      highlightId: null,
+      navParams: {},
+    });
+    set({ currentPage: page, highlightId: null, navParams: {} });
+  },
   toggleSidebar: () => set((s) => ({ sidebarOpen: !s.sidebarOpen })),
   setSidebarOpen: (open) => set({ sidebarOpen: open }),
   toggleSidebarPin: () => set((s) => ({ sidebarPinned: !s.sidebarPinned })),
@@ -222,14 +267,30 @@ export const useAppStore = create<AppState>((set) => ({
     }),
   setNotificationPanelOpen: (open) => set({ notificationPanelOpen: open }),
   setHighlightId: (id) => set({ highlightId: id }),
-  navigateTo: (page, highlightId, params) =>
-    set((s) => {
-      // §NOTIFICATIONS-V2 — the standalone Notification Center page was
-      // removed. Any legacy navigation to 'notifications' now opens the
-      // Header's notification panel IN PLACE instead of changing page.
-      if (page === 'notifications') {
-        return { notificationPanelOpen: true };
+  navigateTo: (page, highlightId, params) => {
+    // §NAVIGATION-HISTORY — notify the history controller BEFORE the
+    // state change so the outgoing entry's page state + scroll are
+    // captured while the old page is still mounted. No-op until the
+    // controller registers (tests, SSR).
+    if (page === 'notifications') {
+      // §NOTIFICATIONS-V2 — an ephemeral popover (§19), never a
+      // history entry.
+      set({ notificationPanelOpen: true });
+      return;
+    }
+    if (page === 'employee360' || page === 'departmentHealth') {
+      if (highlightId) {
+        notifyNavigation({ type: 'overlay-open', overlay: page, contextId: highlightId });
       }
+    } else {
+      notifyNavigation({
+        type: 'page',
+        page,
+        highlightId: highlightId ?? null,
+        navParams: params ?? {},
+      });
+    }
+    set((s) => {
       // Employee 360 is an OVERLAY, never a routed page: a navigation
       // carrying the employee id (highlightId) opens the overlay.
       if (page === 'employee360') {
@@ -254,14 +315,93 @@ export const useAppStore = create<AppState>((set) => ({
         highlightId: highlightId || null,
         navParams: params || {},
       };
+    });
+  },
+  applyHistoryEntry: (entry) => {
+    // §NAVIGATION-HISTORY — popstate restoration path (§8): the
+    // controller applies the restored entry DIRECTLY. This action
+    // never notifies the bridge (no pushState here — that would
+    // loop), and never creates a new page instance intent: the
+    // restored page remounts and rehydrates from the existing
+    // persistence layers (page state + per-entry snapshot).
+    set((s) => {
+      if (entry.overlay === 'employee360') {
+        return {
+          currentPage: entry.page,
+          employee360Open: true,
+          employee360Id: entry.contextId,
+          highlightId: entry.highlightId,
+          navParams: {},
+        };
+      }
+      if (entry.overlay === 'departmentHealth') {
+        return {
+          currentPage: entry.page,
+          departmentHealthName: entry.contextId,
+          highlightId: entry.highlightId,
+          navParams: {},
+        };
+      }
+      return {
+        previousPage: s.currentPage,
+        currentPage: entry.page,
+        employee360Open: false,
+        employee360Id: null,
+        departmentHealthName: null,
+        sidebarOpen: false,
+        highlightId: entry.highlightId,
+        // §SETTINGS-SECTIONS — the settings section is entry identity
+        // (sub-destination); every other page's navParams stay
+        // transient and are NOT re-fired on restoration.
+        navParams: entry.page === 'settings' ? (entry.navParams ?? {}) : {},
+      };
+    });
+  },
+  resetNavigationToHome: () =>
+    set({
+      currentPage: 'home',
+      previousPage: 'home',
+      sidebarOpen: false,
+      highlightId: null,
+      navParams: {},
+      employee360Open: false,
+      employee360Id: null,
+      departmentHealthName: null,
     }),
-  goBack: () => set((s) => ({
-    currentPage: s.previousPage,
-    navParams: {},
-    highlightId: null,
-  })),
-  openEmployee360: (employeeId) => set({ employee360Open: true, employee360Id: employeeId }),
-  closeEmployee360: () => set({ employee360Open: false, employee360Id: null }),
-  openDepartmentHealth: (departmentName) => set({ departmentHealthName: departmentName }),
-  closeDepartmentHealth: () => set({ departmentHealthName: null }),
+  goBack: () => {
+    // §NAVIGATION-HISTORY — browser history is the canonical back.
+    // The controller drives history.back() and restoration arrives
+    // via popstate (applyHistoryEntry). When no in-app entry exists
+    // before the current one, fall back to the legacy previousPage
+    // swap so in-app Back buttons keep working at the boundary.
+    if (requestNavigationBack()) return;
+    set((s) => ({
+      currentPage: s.previousPage,
+      navParams: {},
+      highlightId: null,
+    }));
+  },
+  openEmployee360: (employeeId) => {
+    // Direct overlay openers (§19 page-level destinations) also join
+    // the navigation history so Back returns the user to their spot.
+    notifyNavigation({ type: 'overlay-open', overlay: 'employee360', contextId: employeeId });
+    set({ employee360Open: true, employee360Id: employeeId });
+  },
+  closeEmployee360: () => {
+    // §NAVIGATION-HISTORY — the overlay has a history entry; closing
+    // it is a navigation BACK to the underlying page entry (standard
+    // overlay-as-destination semantics). Restoration arrives via
+    // popstate → applyHistoryEntry. When the controller is absent /
+    // at the first entry, close directly (legacy behavior).
+    if (requestNavigationBack()) return;
+    set({ employee360Open: false, employee360Id: null });
+  },
+  closeDepartmentHealth: () => {
+    if (requestNavigationBack()) return;
+    set({ departmentHealthName: null });
+  },
+  openDepartmentHealth: (departmentName) => {
+    notifyNavigation({ type: 'overlay-open', overlay: 'departmentHealth', contextId: departmentName });
+    set({ departmentHealthName: departmentName });
+  },
 }));

@@ -83,15 +83,29 @@ test('Manager role — sees Quality KPI management pages', () => {
   assert.ok(hasPage(visible, 'observations'));
   assert.ok(hasPage(visible, 'kpiDashboard'));
   assert.ok(hasPage(visible, 'qualityAuditLog'));
-  assert.ok(hasPage(visible, 'monthClose'), 'manager closes/reopens months');
-  assert.ok(hasPage(visible, 'kpiSettings'));
+  // §SETTINGS-CENTER — monthClose/kpiSettings are Settings-internal
+  // sections now (overlayOnly): NOT sidebar destinations anymore, but
+  // the manager's GRANTS are unchanged.
+  assert.ok(!hasPage(visible, 'monthClose'), 'monthClose is Settings-internal');
+  assert.ok(!hasPage(visible, 'kpiSettings'), 'kpiSettings is Settings-internal');
+  assert.equal(migratePermission(MANAGER_PERMISSIONS.monthClose as never).level, 'edit');
+  assert.equal(migratePermission(MANAGER_PERMISSIONS.kpiSettings as never).level, 'edit');
 });
 
-test('Admin role — sees all Quality KPI pages', () => {
+test('Admin role — holds every Quality KPI page', () => {
   const visible = visiblePageKeys('admin');
   for (const key of KPI_PAGE_KEYS) {
-    if (key === 'observationCategories' || key === 'observationTemplates') continue; // overlayOnly
+    // §SETTINGS-CENTER — Settings-internal config sections stay out of
+    // the sidebar universe (observationCategories/observationTemplates/
+    // monthClose/kpiSettings) while the ADMIN GRANTS remain intact.
+    if (key === 'observationCategories' || key === 'observationTemplates'
+      || key === 'monthClose' || key === 'kpiSettings') continue; // overlayOnly
     assert.ok(hasPage(visible, key), `admin sees ${key}`);
+  }
+  for (const key of ['observationCategories', 'observationTemplates', 'monthClose', 'kpiSettings'] as const) {
+    const page = APP_PAGES.find((p) => p.id === key)!;
+    assert.equal(page.overlayOnly, true, `${key} is overlayOnly`);
+    assert.equal(migratePermission(ADMIN_PERMISSIONS[key] as never).level, 'edit', `admin keeps ${key}`);
   }
 });
 

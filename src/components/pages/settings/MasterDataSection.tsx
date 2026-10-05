@@ -18,7 +18,7 @@ import { useState } from 'react';
 import dynamic from 'next/dynamic';
 import {
   Tags, Plane, Briefcase, MessageSquare, FileText, ClipboardList,
-  ChevronLeft, ChevronRight, Lock, Info,
+  ChevronLeft, ChevronRight, Lock,
 } from 'lucide-react';
 import { MASTER_DATA_DOMAINS, type MasterDataDomain } from '@/lib/master-data/registry';
 import { usePermissions } from '@/hooks/usePermissions';
@@ -26,10 +26,16 @@ import { useLanguage } from '@/lib/i18n/language-context';
 import { cn } from '@/lib/utils';
 import { T } from '@/lib/i18n/T';
 import { translateUIText } from '@/lib/i18n/ui-text';
+import { SectionUnderPreparation } from '@/components/pages/settings/SectionUnderPreparation';
+import type { MasterDataSimpleDomain } from '@/types/master-data';
 
-// Lazy workspace — the management UI ships only when its domain opens.
+// Lazy workspaces — each management UI ships only when its domain opens.
 const ObservationCategoriesWorkspace = dynamic(
   () => import('@/components/pages/settings/ObservationCategoriesWorkspace'),
+  { ssr: false, loading: () => <WorkspaceSkeleton /> },
+);
+const SimpleMasterDataWorkspace = dynamic(
+  () => import('@/components/pages/settings/SimpleMasterDataWorkspace'),
   { ssr: false, loading: () => <WorkspaceSkeleton /> },
 );
 
@@ -128,7 +134,9 @@ export default function MasterDataSection({ initialDomain }: { initialDomain?: s
       {selected.status === 'available' && domainAccessible(selected) ? (
         selected.workspace === 'observationCategories'
           ? <ObservationCategoriesWorkspace />
-          : null
+          : selected.workspace === 'simpleList'
+            ? <SimpleMasterDataWorkspace domainId={selected.id as MasterDataSimpleDomain} />
+            : null
       ) : selected.status === 'available' ? (
         <div className="flex items-start gap-2.5 rounded-xl border border-slate-700/40 bg-slate-800/20 px-4 py-3 text-xs text-slate-400">
           <Lock className="size-4 shrink-0 mt-0.5" />
@@ -137,9 +145,10 @@ export default function MasterDataSection({ initialDomain }: { initialDomain?: s
           </p>
         </div>
       ) : (
-        <div className="flex items-start gap-2.5 rounded-xl border border-slate-700/40 bg-slate-800/20 px-4 py-3 text-xs text-slate-400">
-          <Info className="size-4 shrink-0 mt-0.5" />
-          <p>
+        <div className="space-y-2">
+          {/* §SETTINGS-READINESS — the canonical under-preparation slot. */}
+          <SectionUnderPreparation />
+          <p className="px-1 text-[11px] leading-relaxed text-slate-500">
             <T>هذا النطاق محجوز على إطار البيانات المرجعية — يُفعّل عند اكتمال مصدره الحالي في النظام. النمط نفسه (إضافة، تعديل، تعطيل، ترتيب) سيُطبق دون تطوير جديد.</T>
           </p>
         </div>

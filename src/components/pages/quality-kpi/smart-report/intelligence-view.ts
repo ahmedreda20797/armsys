@@ -33,6 +33,7 @@ import type { EmployeePerformanceDataset } from '@/lib/performance-intelligence'
 import { formatPercent, formatSignedPoints, uiLabelSafe } from './view-model-helpers';
 import { previousMonthKey, unavailableLabel } from './view-model';
 import { presentStatus, presentRule, presentEntity } from '@/lib/i18n/presentation';
+import { translateUIText } from '@/lib/i18n/ui-text';
 
 // ─────────────────────────────────────────────────────────────
 //  The API payload (dataset + §QUALITY-INTELLIGENCE extensions)
@@ -63,9 +64,26 @@ const RISK_LEVEL_LABELS: Record<string, [string, string]> = {
   critical: ['حرج', 'Critical'],
 };
 
-/** Substitute {slot} placeholders with pre-formatted strings. */
+const ARABIC_SCRIPT = /[\u0600-\u06FF]/;
+
+/**
+ * §9 BIDI-ISOLATION — a business-data slot (a category name, a team
+ * name) embedded in a localized sentence is wrapped in Unicode FSI/PDI
+ * isolates so the surrounding sentence keeps its own visual order in
+ * BOTH directions. Without isolation an Arabic name inside an English
+ * sentence visually scrambles the segments around the neutral
+ * punctuation (— « »). Isolates are inert for pure-ASCII values.
+ */
+function isolateValue(value: string): string {
+  return ARABIC_SCRIPT.test(value) ? `\u2068${value}\u2069` : value;
+}
+
+/** Substitute {slot} placeholders with pre-formatted (bidi-isolated) strings. */
 function interpolate(template: string, slots: Record<string, string>): string {
-  return template.replace(/\{(\w+)\}/g, (_, key: string) => slots[key] ?? `{${key}}`);
+  return template.replace(/\{(\w+)\}/g, (_, key: string) => {
+    const value = slots[key];
+    return value === undefined ? `{${key}}` : isolateValue(value);
+  });
 }
 
 function pct(value: number | null | undefined, locale: Locale): string {
@@ -78,9 +96,17 @@ function pct(value: number | null | undefined, locale: Locale): string {
 
 export interface ExecutiveSummaryView {
   scoreState: ExecutiveSummaryFacts['scoreState'];
-  /** The big number — overall KPI weighted total when valued. */
+  /** The big number — overall KPI total when the calculation is COMPLETE. */
   scoreDisplay: string;
   hasScore: boolean;
+  /**
+   * §KPI-INCOMPLETE — partial calculated points ("11.7 / 15") shown ONLY
+   * when the overall KPI is INCOMPLETE. Never labeled as a percentage —
+   * a partial point total must not read as the employee's final KPI.
+   */
+  calculatedPointsDisplay: string | null;
+  /** §KPI-INCOMPLETE — human evaluation-status label for the score state. */
+  evaluationStatusLabel: string | null;
   qualityScoreDisplay: string;
   deltaDisplay: string | null;
   deltaPositive: boolean | null;
@@ -113,18 +139,32 @@ const DECISION_STATUS_LABELS: Record<string, [string, string]> = {
   UNKNOWN: ['غير محدد', 'Unknown'],
 };
 
+/** §KPI-INCOMPLETE — the score state as a human evaluation-status label. */
+const EVALUATION_STATE_LABELS: Record<ExecutiveSummaryFacts['scoreState'], [string, string]> = {
+  value: ['مكتمل', 'Complete'],
+  incomplete: ['غير مكتمل', 'Incomplete'],
+  pending: ['قيد الانتظار', 'Pending'],
+  configuration_required: ['يتطلب إعدادًا', 'Configuration required'],
+  not_eligible: ['غير مؤهل للفترة', 'Not eligible'],
+};
+
 export function buildExecutiveSummaryView(
   executive: ExecutiveSummaryFacts,
   locale: Locale,
 ): ExecutiveSummaryView {
   const hasScore = executive.scoreState === 'value' && executive.performanceScore !== null;
+  // §7 — the missing-component NAMES are system vocabulary (the engine
+  // slots carry the stored Arabic names); they resolve to localized
+  // labels, never raw in an English report.
+  const missingNames = executive.missingComponents.map((m) => m.name);
+  const missingNamesLocalized = missingNames.map((n) => localizeComponentNameText(n, locale));
   let incompleteMessage: string | null = null;
   if (executive.scoreState === 'incomplete') {
     incompleteMessage = interpolate(
       locale === 'en'
         ? 'Overall KPI calculation is incomplete — missing components: {missing}'
         : 'الحساب الكامل لمؤشر KPI غير مكتمل — مكونات بلا قيمة: {missing}',
-      { missing: executive.missingComponents.map((m) => m.name).join('، ') || '—' },
+      { missing: missingNamesLocalized.join('، ') || '—' },
     );
   } else if (executive.scoreState === 'configuration_required') {
     incompleteMessage = locale === 'en'
@@ -132,10 +172,25 @@ export function buildExecutiveSummaryView(
       : 'مخطط KPI غير مهيأ لهذه الفترة';
   }
 
+  // §KPI-INCOMPLETE — the partial total is POINTS within the Defined
+  // Rate covered so far, never a percentage: "11.7 / 15" (X of the
+  // defined rate available). Rendered only for the incomplete state.
+  const calculatedPointsDisplay = executive.scoreState === 'incomplete'
+    && executive.performanceScore !== null && executive.performanceScore !== undefined
+    && executive.availableWeight !== null && executive.availableWeight !== undefined
+    ? `${Math.round(executive.performanceScore * 100) / 100} / ${executive.availableWeight}`
+    : null;
+
   return {
     scoreState: executive.scoreState,
     scoreDisplay: hasScore ? pct(executive.performanceScore, locale) : unavailableLabel(locale),
     hasScore,
+    calculatedPointsDisplay,
+    evaluationStatusLabel: uiLabelSafe(
+      EVALUATION_STATE_LABELS as Record<string, [string, string]>,
+      executive.scoreState,
+      locale,
+    ),
     qualityScoreDisplay: executive.qualityScore !== null ? pct(executive.qualityScore, locale) : unavailableLabel(locale),
     deltaDisplay: formatSignedPoints(executive.deltaPoints, locale),
     deltaPositive: executive.deltaPoints === null || executive.deltaPoints === undefined ? null : executive.deltaPoints > 0,
@@ -149,7 +204,7 @@ export function buildExecutiveSummaryView(
       // safe generic label; the raw key never reaches the report.
       ? uiLabelSafe(DECISION_STATUS_LABELS, executive.decisionStatus, locale) ?? presentStatus(executive.decisionStatus, locale)
       : null,
-    missingComponents: executive.missingComponents.map((m) => m.name),
+    missingComponents: missingNamesLocalized,
     availableWeightDisplay: executive.availableWeight !== null ? `${executive.availableWeight}` : null,
     incompleteMessage,
     closedDuringPeriodDisplay: `${executive.closedDuringPeriod}`,
@@ -165,9 +220,12 @@ export function buildExecutiveSummaryView(
 
 export interface KpiComponentRow {
   name: string;
-  weightDisplay: string;
-  actualDisplay: string;
-  contributionDisplay: string;
+  /** The component's Defined Rate — its percent share of the overall evaluation. */
+  definedRateDisplay: string;
+  /** Achieved Rate — the component's own 0–100 quality percentage. */
+  achievedRateDisplay: string;
+  /** Calculated Points — the partial points earned within the Defined Rate. */
+  calculatedPointsDisplay: string;
   hasValue: boolean;
   statusLabel: string;
 }
@@ -176,9 +234,13 @@ export interface KpiIntelView {
   rows: KpiComponentRow[];
   missingNames: string[];
   configurationComplete: boolean;
+  /** Total Calculated Rate — shown as the overall KPI ONLY when complete. */
   weightedTotalDisplay: string;
+  /** The Defined Rate covered by the components that produced points. */
   availableWeightDisplay: string | null;
   schemeLabel: string | null;
+  /** True when the engine verdict says the overall KPI is INCOMPLETE. */
+  incomplete: boolean;
 }
 
 const COMPONENT_STATUS_LABELS: Record<string, [string, string]> = {
@@ -186,7 +248,7 @@ const COMPONENT_STATUS_LABELS: Record<string, [string, string]> = {
   PENDING: ['قيد الانتظار', 'Pending'],
   NOT_AVAILABLE: ['غير متاح', 'Not available'],
   NOT_ELIGIBLE: ['غير مؤهل للفترة', 'Not eligible'],
-  FINALIZED: ['مجمّد نهائي', 'Finalized'],
+  FINALIZED: ['نهائي', 'Finalized'],
   ZERO: ['صفر مسجل', 'Recorded zero'],
   EXCLUDED: ['مستثنى', 'Excluded'],
   NO_CONFIG: ['يتطلب إعدادًا', 'Configuration required'],
@@ -197,13 +259,50 @@ const COMPONENT_STATUS_LABELS: Record<string, [string, string]> = {
   OVERRIDE_NOT_RESOLVABLE: ['تجاوز إعدادات غير قابل للحل', 'Override not resolvable'],
 };
 
+/**
+ * §KPI-COMPONENT-NAMES — the SYSTEM-seeded KPI components carry stable
+ * componentIds; their stored Arabic names are system vocabulary and
+ * resolve to the localized label. Custom/renamed components keep the
+ * stored name verbatim (user-entered business data is never translated).
+ */
+const SYSTEM_COMPONENT_NAME_LABELS: Record<string, [string, string]> = {
+  quality: ['الجودة', 'Quality'],
+  direct_manager: ['المدير المباشر', 'Direct Manager'],
+  hr: ['الموارد البشرية', 'HR'],
+  target: ['المستهدف', 'Target'],
+};
+
+function componentDisplayName(componentId: string, storedName: string, locale: Locale): string {
+  const pair = SYSTEM_COMPONENT_NAME_LABELS[componentId];
+  return pair ? (locale === 'en' ? pair[1] : pair[0]) : storedName;
+}
+
+/**
+ * Localize a stored SYSTEM component name inside an interpolated
+ * sentence (the engine's fact slots carry the joined stored names, not
+ * ids). A stored name that matches a known system component's Arabic
+ * name resolves to its localized label; custom/renamed components pass
+ * through verbatim (user-entered data is never translated).
+ */
+function localizeComponentNameText(storedText: string, locale: Locale): string {
+  if (locale !== 'en') return storedText;
+  return storedText
+    .split(', ')
+    .map((part) => {
+      const trimmed = part.trim();
+      const match = Object.values(SYSTEM_COMPONENT_NAME_LABELS).find(([ar]) => ar === trimmed);
+      return match ? match[1] : part;
+    })
+    .join(', ');
+}
+
 export function buildKpiIntelView(kpi: KpiIntel, locale: Locale): KpiIntelView {
   return {
     rows: kpi.components.map((c) => ({
-      name: c.name,
-      weightDisplay: `${c.weight}%`,
-      actualDisplay: c.actual !== null ? pct(c.actual, locale) : unavailableLabel(locale),
-      contributionDisplay: c.contribution !== null
+      name: componentDisplayName(c.componentId, c.name, locale),
+      definedRateDisplay: `${c.weight}%`,
+      achievedRateDisplay: c.actual !== null ? pct(c.actual, locale) : unavailableLabel(locale),
+      calculatedPointsDisplay: c.contribution !== null
         ? `${Math.round(c.contribution * 100) / 100} / ${c.maxContribution}`
         : unavailableLabel(locale),
       hasValue: c.hasValue,
@@ -214,6 +313,7 @@ export function buildKpiIntelView(kpi: KpiIntel, locale: Locale): KpiIntelView {
     weightedTotalDisplay: kpi.weightedTotal !== null ? `${Math.round(kpi.weightedTotal * 100) / 100}` : unavailableLabel(locale),
     availableWeightDisplay: kpi.availableWeight !== null ? `${kpi.availableWeight}%` : null,
     schemeLabel: kpi.schemeLabel,
+    incomplete: kpi.rowStatus === 'INCOMPLETE',
   };
 }
 
@@ -239,6 +339,20 @@ export interface QualityIntelView {
   previousDeltaLine: string | null;
 }
 
+/** The analytical engine's unclassified grouping key. */
+const UNCLASSIFIED_KEY = '_unclassified';
+
+const UNCLASSIFIED_LABELS: [string, string] = ['غير مصنّف', 'Unclassified'];
+
+/** §7 — the engine's grouping key is a SYSTEM label, localized per locale;
+ *  admin-named categories are business data and pass through verbatim. */
+function categoryDisplayName(categoryId: string | null, storedName: string, locale: Locale): string {
+  if (categoryId === UNCLASSIFIED_KEY) {
+    return locale === 'en' ? UNCLASSIFIED_LABELS[1] : UNCLASSIFIED_LABELS[0];
+  }
+  return storedName;
+}
+
 export function buildQualityIntelView(quality: QualityIntelligence['quality'], locale: Locale): QualityIntelView {
   let topIssueLine: string | null = null;
   if (quality.topIssue && quality.topIssue.share !== null) {
@@ -248,7 +362,7 @@ export function buildQualityIntelView(quality: QualityIntelligence['quality'], l
         : '{share} من ملاحظات الجودة في هذه الفترة جاءت من «{category}»',
       {
         share: pct(quality.topIssue.share, locale),
-        category: quality.topIssue.categoryName,
+        category: categoryDisplayName(quality.topIssue.categoryId, quality.topIssue.categoryName, locale),
       },
     );
   }
@@ -275,7 +389,7 @@ export function buildQualityIntelView(quality: QualityIntelligence['quality'], l
     pending: quality.pending,
     issueCategoryCount: quality.issueCategoryCount,
     concentration: quality.concentration.map((c) => ({
-      categoryName: c.categoryName,
+      categoryName: categoryDisplayName(c.categoryId, c.categoryName, locale),
       count: c.count,
       shareDisplay: c.share !== null ? pct(c.share, locale) : unavailableLabel(locale),
       shareValue: c.share,
@@ -454,6 +568,11 @@ export function buildAttentionViews(items: AttentionItemFact[], locale: Locale):
       const unit = typeof item.values.unit === 'string' ? (UNIT_LABELS[item.values.unit]?.[lang === 'en' ? 1 : 0] ?? item.values.unit) : '';
       slots.value = typeof item.values.value === 'number' ? `${Math.round(item.values.value * 100) / 100}${unit ? ` ${unit}` : ''}` : '—';
     }
+    // §7 — the engine's joined missing-component names are system
+    // vocabulary; they localize instead of rendering raw in English.
+    if (typeof slots.missing === 'string') {
+      slots.missing = localizeComponentNameText(slots.missing, locale);
+    }
     const whatTemplate = ATTENTION_WHAT[item.code][lang];
     const whyTemplate = ATTENTION_WHY[item.code]?.[lang] ?? null;
     // §12 — the rendered SOURCE is the human-readable domain label;
@@ -545,6 +664,11 @@ export function buildNarrativeViews(narrative: NarrativeFact[], locale: Locale):
           ? (locale === 'en' ? 'declined' : 'وتراجع مؤشر الأداء')
           : (locale === 'en' ? 'remained stable' : 'واستقر مؤشر الأداء');
       slots.direction = direction;
+    }
+    // §7 — the engine's joined missing-component names are system
+    // vocabulary; they localize instead of rendering raw in English.
+    if (typeof slots.missing === 'string') {
+      slots.missing = localizeComponentNameText(slots.missing, locale);
     }
     if (fact.code === 'NAR_OPEN_ITEMS' && typeof fact.values.items === 'string') {
       const labels: Record<string, string> = {
@@ -753,7 +877,12 @@ export function buildDataQualityIntelView(
         label: uiLabelSafe(SOURCE_LABELS, u.collection, locale) ?? presentEntity(u.collection, locale),
         count: u.count,
       })),
-    noteLines: [...(extras?.notes ?? [])],
+    // §I18N-BOUNDARY — the dataset's data-quality notes are SYSTEM-
+    // generated fixed sentences (assemble.ts), application-owned UI by
+    // construction: they claim through translateUIText so an English
+    // report never shows Arabic system prose. User-entered business data
+    // never reaches this list.
+    noteLines: (extras?.notes ?? []).map((note) => translateUIText(note, locale)),
   };
 }
 
@@ -798,6 +927,12 @@ export interface IntelligenceViews {
   } | null;
 }
 
+const PATTERN_SEVERITY_ORDER: Record<PatternFact['severity'], number> = {
+  critical: 0,
+  warning: 1,
+  info: 2,
+};
+
 export function buildIntelligenceViews(payload: ReportPayload, locale: Locale): IntelligenceViews {
   const previousMonth = previousMonthKey(payload.period.monthKey);
   const input: QualityIntelligenceInput = {
@@ -807,15 +942,43 @@ export function buildIntelligenceViews(payload: ReportPayload, locale: Locale): 
     previousMonthKey: previousMonth,
   };
   const intel = buildQualityIntelligence(input);
+  // §12 REPETITION DOCTRINE — Fact → Meaning → Action, each fact ONCE:
+  //   • The trend-direction patterns restate the MoM delta the "What
+  //     Changed" table already carries as the quality row — the
+  //     insufficient-data pattern stays (it explains a MISSING row).
+  //   • NAR_DELTA repeats the same delta as prose — dropped from the
+  //     closing analysis.
+  //   • Management attention is capped to the three highest-severity
+  //     actions (§14) — stable order within a severity keeps the
+  //     engine's own priority.
+  const whatChanged = buildWhatChangedView(intel.whatChanged, locale);
+  const hasQualityChangeRow = whatChanged.some((r) => r.metric === 'quality_score');
+  const patterns = buildPatternViews(
+    intel.patterns.filter((p) => {
+      if (!hasQualityChangeRow) return true;
+      return p.code !== 'IMPROVING_TREND' && p.code !== 'DECLINING_TREND' && p.code !== 'STABLE_TREND';
+    }),
+    locale,
+  );
+  const narrative = buildNarrativeViews(
+    intel.narrative.filter((n) => n.code !== 'NAR_DELTA'),
+    locale,
+  );
+  const attention = buildAttentionViews(
+    [...intel.attention]
+      .sort((a, b) => PATTERN_SEVERITY_ORDER[a.severity] - PATTERN_SEVERITY_ORDER[b.severity])
+      .slice(0, 3),
+    locale,
+  );
   return {
     executive: buildExecutiveSummaryView(intel.executive, locale),
     signals: buildSignalViews(intel.signals, locale),
     kpi: buildKpiIntelView(intel.kpi, locale),
     quality: buildQualityIntelView(intel.quality, locale),
-    patterns: buildPatternViews(intel.patterns, locale),
-    attention: buildAttentionViews(intel.attention, locale),
-    whatChanged: buildWhatChangedView(intel.whatChanged, locale),
-    narrative: buildNarrativeViews(intel.narrative, locale),
+    patterns,
+    attention,
+    whatChanged,
+    narrative,
     dataQuality: buildDataQualityIntelView(intel.dataQuality, locale, {
       unattributedRecords: payload.dataQuality.unattributedRecords,
       notes: payload.dataQuality.notes,

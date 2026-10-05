@@ -72,6 +72,12 @@ export interface EmployeeIdentityFacts {
   employeeId: string;
   employeeName: string;
   employeeCode: string | null;
+  /**
+   * §ORG-SEMANTICS — the employee's DEPARTMENT resolved from the
+   * ORGANIZATION TREE (nearest department-type ancestor; the stored
+   * string is the legacy fallback). Null when neither exists — the
+   * team name is never mislabeled as a department.
+   */
   department: string | null;
   /**
    * The employee's TEAM resolved from the ORGANIZATION TREE (nearest

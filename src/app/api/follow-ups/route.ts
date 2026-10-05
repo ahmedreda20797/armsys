@@ -5,6 +5,7 @@ import { asScopeViewer, employeeInScope, authScopeViewer, filterRowsByEmployeeSc
 import { computeRisk, isOverdueFollowUp } from '@/lib/metrics';
 import { createSmartNotification } from '@/lib/rules-engine';
 import { dispatchAutomationEvent } from '@/lib/automation/event-bridge';
+import { assertSimpleValueIsActive } from '@/lib/master-data/simple-lists';
 
 const SCORE_MAP: Record<string, number> = { low: 1, medium: 3, high: 5, critical: 10 };
 const ACTIVE_FOLLOWUP_STATUSES = ['open', 'under_review', 'under_follow_up'] as const;
@@ -138,6 +139,14 @@ export async function POST(request: NextRequest) {
         { error: 'Employee, date, type, and subject are required' },
         { status: 400 }
       );
+    }
+
+    // ── §MASTER-DATA deactivation guard — a type deactivated in the
+    // Settings Center cannot be selected for NEW records (unknown /
+    // legacy values stay accepted; deactivation guard, not a whitelist).
+    const masterDataGuard = await assertSimpleValueIsActive('followUpTypes', followUpType);
+    if (masterDataGuard) {
+      return NextResponse.json({ error: masterDataGuard }, { status: 400 });
     }
 
     // ── TARGET-EMPLOYEE SCOPE (M0.4) ──

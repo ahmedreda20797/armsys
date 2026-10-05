@@ -13,7 +13,8 @@
 //  interpretation copy (spec §9/§19/§30).
 // ══════════════════════════════════════════════════════════════
 
-import type { MouseEvent as ReactMouseEvent, ReactNode } from 'react';
+import { useEffect, useState, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react';
+import { useTheme } from 'next-themes';
 import {
   Activity,
   ChevronDown,
@@ -165,56 +166,88 @@ function ChipRow({ chips }: { chips: ChipFact[] }) {
 }
 
 // ─────────────────────────────────────────────────────────────
-//  §3  Employee report header
+//  §3  Employee report header — COMPACT (§5)
 // ─────────────────────────────────────────────────────────────
 
+/**
+ * §5 COMPACT HEADER — the whole identity block fits ~3 light rows:
+ *   title row (document name + logo) · name row · context row ·
+ *   period row. No oversized title area, no per-field borders, no
+ *   large empty block. §10 — the REAL Qnalys logo asset (never a
+ *   recreation): dark-theme wordmark on screen, the print variant on
+ *   light theme AND on paper (both assets render; CSS picks one).
+ */
 export function ReportHeaderSection({ view }: { view: ReportHeaderView }) {
+  const { resolvedTheme } = useTheme();
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => {
+    const raf = requestAnimationFrame(() => setMounted(true));
+    return () => cancelAnimationFrame(raf);
+  }, []);
+
   return (
     <Card data-report-card className="bg-slate-800/30 border-slate-700/40 print:border-slate-300">
-      <CardContent className="p-4 space-y-3">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div className="space-y-1 min-w-0">
-            {/* §REPORT-IDENTITY — the EMPLOYEE is the report subject; the
-                report title names the document, the name names the person. */}
-            <p className="text-[11px] text-slate-500"><T>تقرير الجودة والأداء الذكي</T></p>
-            <div className="flex flex-wrap items-center gap-2">
-              <h2 className="text-xl font-bold text-slate-100">{view.employeeName}</h2>
-              {view.employeeCode && (
-                <span className="text-xs font-mono text-slate-400">({view.employeeCode})</span>
-              )}
-              {view.lifecycleBadges.map((b) => (
-                <Badge key={b.label} variant="outline" className={cn('text-[10px]', TONE_CLASSES[b.tone])}>
-                  {b.label}
-                </Badge>
-              ))}
-            </div>
-            <p className="text-xs text-slate-400">
-              <T>الفترة: </T><span className="text-slate-300 font-medium">{view.periodLabel}</span>
-              <span className="mx-1.5 text-slate-600">·</span>
-              <ValueBasisBadge basis={view.valueBasis} />
-              <span className="mx-1.5 text-slate-600">·</span>
-              <T>تاريخ الإصدار: </T>{view.generatedAtLabel}
-            </p>
+      <CardContent className="px-4 py-3 space-y-2">
+        {/* Row 1 — document title + brand lockup (balanced, not dominant) */}
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-2 pt-0.5">
+            <p className="text-[11px] font-medium text-slate-500"><T>تقرير الجودة والأداء الذكي</T></p>
+            {/* §19 — the report shows VERIFIED FACTS only (no AI layer). */}
+            <Badge variant="outline" className="bg-emerald-500/15 text-emerald-300 border-emerald-500/30 text-[9px] no-print">
+              <T>حقائق موثقة</T>
+            </Badge>
           </div>
-          {/* §19 — the report shows VERIFIED FACTS only (no AI layer). */}
-          <Badge variant="outline" className="bg-emerald-500/15 text-emerald-300 border-emerald-500/30 text-[10px] no-print">
-            <T>حقائق موثقة — VERIFIED FACTS</T>
-          </Badge>
+          <div className="shrink-0" dir="ltr">
+            <img
+              src={mounted && resolvedTheme === 'light' ? '/qnlys-print.svg' : '/qnlys.svg'}
+              alt="Qnalys"
+              className="h-8 w-auto object-contain print:hidden"
+            />
+            <img
+              src="/qnlys-print.svg"
+              alt="Qnalys"
+              className="h-8 w-auto object-contain hidden print:block"
+            />
+          </div>
         </div>
 
-        {/* Context facts — position/department/team/manager describe the
-            employee; the team NEVER replaces the employee as subject. */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-3 pt-1 border-t border-slate-700/40">
-          {view.facts.map((f) => (
-            <Fact key={f.label} label={f.label} value={f.value} unavailable={f.unavailable} />
+        {/* Row 2 — the EMPLOYEE is the primary identity; the code is
+            secondary; lifecycle warnings stay inline. */}
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+          <h2 className="text-lg font-bold text-slate-100 leading-tight">{view.employeeName}</h2>
+          {view.employeeCode && (
+            <span className="text-xs font-mono text-slate-400" dir="ltr">({view.employeeCode})</span>
+          )}
+          {view.lifecycleBadges.map((b) => (
+            <Badge key={b.label} variant="outline" className={cn('text-[10px]', TONE_CLASSES[b.tone])}>
+              {b.label}
+            </Badge>
           ))}
         </div>
 
-        {view.schemeLabel && (
-          <p className="text-xs text-slate-500 pt-1 border-t border-slate-700/40">
-            <T>مخطط KPI: </T>{view.schemeLabel}
+        {/* Row 3 — position · organizational location · manager as ONE
+            compact metadata line (§5/§6 semantics, no field borders). */}
+        {view.contextSegments.length > 0 && (
+          <p className="text-xs text-slate-400 flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
+            {view.contextSegments.map((segment, i) => (
+              <span key={segment} className="flex items-center gap-1.5 min-w-0">
+                {i > 0 && <span className="text-slate-600">·</span>}
+                <span className="truncate">{segment}</span>
+              </span>
+            ))}
           </p>
         )}
+
+        {/* Row 4 — period + provenance, visually secondary (§5). */}
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-slate-500 border-t border-slate-700/40 pt-2">
+          <span>
+            <T>الفترة: </T>
+            <span className="text-slate-300 font-medium">{view.periodLabel}</span>
+          </span>
+          <ValueBasisBadge basis={view.valueBasis} />
+          <span><T>تاريخ الإصدار: </T>{view.generatedAtLabel}</span>
+          {view.schemeLabel && <span className="text-slate-500">{view.schemeLabel}</span>}
+        </div>
       </CardContent>
     </Card>
   );
@@ -231,48 +264,26 @@ export function TrendSection({ view }: { view: TrendView }) {
       {view.insufficient ? (
         <p className="text-sm text-slate-400 py-3 text-center"><T>لا توجد بيانات تاريخية كافية لعرض الاتجاه</T></p>
       ) : (
-        <>
-          <div className="flex flex-wrap gap-2">
-            {view.points.map((p) => (
-              <Badge
-                key={p.monthKey}
-                variant="outline"
-                className={cn(
-                  'font-mono text-[11px] whitespace-nowrap',
-                  p.available
-                    ? 'bg-slate-800/50 text-slate-200 border-slate-700/60'
-                    : 'bg-slate-900/40 text-slate-600 border-slate-800',
-                )}
-                title={p.available ? undefined : translateUIText('شهر بدون نتيجة — لا يُعرض كصفر', locale)}
-              >
-                {p.monthLabel}: {p.scoreDisplay}
-                {p.available && p.finalized ? ' 🔒' : ''}
-              </Badge>
-            ))}
-          </div>
-          <div className="flex flex-wrap gap-x-6 gap-y-1 text-xs border-t border-slate-700/40 pt-2">
-            {view.previousMonthLabel && view.previousScoreDisplay && (
-              <span className="text-slate-400">
-                {view.previousMonthLabel}: <span className="font-mono tabular-nums">{view.previousScoreDisplay}</span>
-              </span>
-            )}
-            {view.deltaDisplay && (
-              <span className="text-slate-400">
-                <T>التغير عن الشهر السابق: </T>
-                <span
-                  className={cn(
-                    'font-mono tabular-nums',
-                    view.deltaToneValue === 'good' && 'text-emerald-300',
-                    view.deltaToneValue === 'bad' && 'text-red-300',
-                  )}
-                >
-                  {view.deltaDisplay} <T>نقطة مئوية</T>
-                </span>
-              </span>
-            )}
-            {view.directionLabel && <span className="text-slate-400">{view.directionLabel}</span>}
-          </div>
-        </>
+        /* §12 — the section shows the monthly series only; the MoM
+            comparison lives ONCE in "What Changed" (no repeated -16). */
+        <div className="flex flex-wrap gap-2">
+          {view.points.map((p) => (
+            <Badge
+              key={p.monthKey}
+              variant="outline"
+              className={cn(
+                'font-mono text-[11px] whitespace-nowrap',
+                p.available
+                  ? 'bg-slate-800/50 text-slate-200 border-slate-700/60'
+                  : 'bg-slate-900/40 text-slate-600 border-slate-800',
+              )}
+              title={p.available ? undefined : translateUIText('شهر بدون نتيجة — لا يُعرض كصفر', locale)}
+            >
+              {p.monthLabel}: {p.scoreDisplay}
+              {p.available && p.finalized ? ' 🔒' : ''}
+            </Badge>
+          ))}
+        </div>
       )}
     </SectionCard>
   );
@@ -294,7 +305,7 @@ export function DeductionsSection({ view, canDrill, onDrill }: {
   return (
     <SectionCard icon={Scale} title={t('smart.section.deductions')} subtitle={<T>ملخص خصومات الجودة للفترة</T>}>
       {view.empty ? (
-        <SectionEmpty />
+        <SectionEmpty message={translateUIText('خصومات الجودة: لا توجد خصومات مسجلة خلال الفترة.', locale)} />
       ) : (
         <>
           <div className="flex flex-wrap gap-1.5">
@@ -336,7 +347,7 @@ export function ComplaintsSection({ view }: { view: ComplaintsView }) {
     <SectionCard
       icon={MessageSquareWarning}
       title={t('smart.section.complaints')}
-      subtitle={<><T>إسناد </T>{view.relationshipLabel}</>}
+      subtitle={<><T>الإسناد: </T>{view.relationshipLabel}</>}
     >
       {indirect ? (
         <p className="text-xs text-amber-300/90 border-r-2 border-amber-500/40 pr-2">
@@ -344,7 +355,8 @@ export function ComplaintsSection({ view }: { view: ComplaintsView }) {
         </p>
       ) : null}
       {view.total === 0 ? (
-        <SectionEmpty />
+        /* §18 — a zero is a compact meaningful line, never a large card. */
+        <SectionEmpty message={translateUIText('الشكاوى: لا توجد حالات مسجلة خلال الفترة.', locale)} />
       ) : (
         <>
           <div className="flex flex-wrap gap-1.5">
@@ -379,7 +391,8 @@ export function CapaSection({ view }: { view: CapaView }) {
   return (
     <SectionCard icon={ShieldCheck} title={t('smart.section.capa')} subtitle={<>{t('smart.section.capaSub')}: {view.relationshipLabel}</>}>
       {view.total === 0 ? (
-        <SectionEmpty />
+        /* §18 — a zero is a compact meaningful line, never a large card. */
+        <SectionEmpty message={translateUIText('حالات CAPA: لا توجد حالات مسجلة خلال الفترة.', locale)} />
       ) : (
         <>
           <div className="flex flex-wrap gap-1.5">
@@ -428,7 +441,8 @@ export function FollowUpsSection({ view }: { view: FollowUpsView }) {
   return (
     <SectionCard icon={ClipboardCheck} title={t('smart.section.followUps')} subtitle={t('smart.section.followUpsSub')}>
       {view.total === 0 ? (
-        <SectionEmpty />
+        /* §18 — a zero is a compact meaningful line, never a large card. */
+        <SectionEmpty message={translateUIText('المتابعات: لا توجد متابعات مسجلة خلال الفترة.', locale)} />
       ) : (
         <>
           <div className="flex flex-wrap gap-1.5">
@@ -492,7 +506,7 @@ export function DealsSection({ view, canDrill, onDrill }: {
   return (
     <SectionCard icon={Plane} title={t('smart.section.deals')} subtitle={<T>أداء الصفقات — أساس تاريخ صريح لكل رقم</T>}>
       {!hasAnyDealData ? (
-        <SectionEmpty />
+        <SectionEmpty message={translateUIText('صفقات السفر: لا توجد صفقات مرتبطة بالموظف خلال الفترة.', locale)} />
       ) : (
         <>
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">

@@ -51,6 +51,13 @@ export interface AssembleEmployeePerformanceDatasetInput {
    * ORGANIZATION TREE. Null when unassigned/managerless — never invented.
    */
   orgManager?: string | null;
+  /**
+   * §ORG-SEMANTICS — the employee's department label resolved by the
+   * caller from the ORGANIZATION TREE (nearest department ancestor,
+   * stored string as legacy fallback). Null when neither exists — the
+   * team name is never mislabeled as a department.
+   */
+  orgDepartment?: string | null;
   kpiReport: EmployeeKpiReport;
   observations: ReadonlyArray<QualityObservation>;
   deductions: ReadonlyArray<QualityDeduction>;
@@ -73,9 +80,11 @@ function buildIdentityFacts(args: {
   orgTeam: string | null;
   /** §REPORT-IDENTITY — org-tree manager display name (null when none). */
   orgManager: string | null;
+  /** §ORG-SEMANTICS — org-tree department label (null when none). */
+  orgDepartment: string | null;
   kpiReport: EmployeeKpiReport;
 }): EmployeeIdentityFacts {
-  const { employeeId, identity, orgTeam, orgManager, kpiReport } = args;
+  const { employeeId, identity, orgTeam, orgManager, orgDepartment, kpiReport } = args;
   const eligible =
     kpiReport.outcomeStatus !== 'NOT_ELIGIBLE_PERIOD' && kpiReport.outcomeStatus !== 'EMPLOYEE_NOT_FOUND';
 
@@ -105,7 +114,7 @@ function buildIdentityFacts(args: {
     employeeId,
     employeeName: identity.name,
     employeeCode: identity.code,
-    department: identity.department,
+    department: orgDepartment,
     team: orgTeam,
     manager: orgManager,
     position: identity.position,
@@ -291,6 +300,7 @@ export function assembleEmployeePerformanceDataset(
       identity: input.identity,
       orgTeam: input.orgTeam ?? null,
       orgManager: input.orgManager ?? null,
+      orgDepartment: input.orgDepartment ?? null,
       kpiReport: input.kpiReport,
     }),
     period: {

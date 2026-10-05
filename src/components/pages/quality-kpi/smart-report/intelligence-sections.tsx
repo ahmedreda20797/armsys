@@ -53,6 +53,15 @@ import type {
 
 export function ExecutiveSummarySection({ view }: { view: ExecutiveSummaryView }) {
   const incomplete = view.scoreState === 'incomplete' || view.scoreState === 'configuration_required';
+  // §KPI-INCOMPLETE — the headline number is the overall KPI percentage
+  // ONLY when the calculation is complete; otherwise the tile shows the
+  // partial calculated points (never a misleading partial percentage).
+  const headlineDisplay = view.hasScore
+    ? view.scoreDisplay
+    : view.calculatedPointsDisplay ?? <span className="text-slate-500"><T>غير متاح</T></span>;
+  const headlineLabel = view.hasScore
+    ? <T>مؤشر الأداء (KPI)</T>
+    : <T>النقاط المحتسبة</T>;
   return (
     <Card data-report-card className="bg-slate-800/30 border-slate-700/40 print:border-slate-300">
       <CardContent className="p-4 space-y-3">
@@ -72,9 +81,9 @@ export function ExecutiveSummarySection({ view }: { view: ExecutiveSummaryView }
             incomplete ? 'border-amber-500/40 bg-amber-500/10' : view.hasScore ? 'border-emerald-500/30 bg-emerald-500/10' : 'border-slate-600/50 bg-slate-800/40',
           )}>
             <div className={cn('text-2xl font-bold tabular-nums', incomplete ? 'text-amber-300' : view.hasScore ? 'text-emerald-300' : 'text-slate-400')} dir="ltr">
-              {view.scoreDisplay}
+              {headlineDisplay}
             </div>
-            <div className="text-[10px] text-slate-500 mt-0.5"><T>مؤشر الأداء (KPI)</T></div>
+            <div className="text-[10px] text-slate-500 mt-0.5">{headlineLabel}</div>
           </div>
           <div className="rounded-xl border border-slate-700/40 bg-slate-900/40 px-3 py-2.5 text-center">
             <div className={cn(
@@ -113,23 +122,23 @@ export function ExecutiveSummarySection({ view }: { view: ExecutiveSummaryView }
           {view.decisionStatusLabel && (
             <span className="text-slate-400"><span className="text-slate-500"><T>حالة القرار: </T></span>{view.decisionStatusLabel}</span>
           )}
+          {view.evaluationStatusLabel && (
+            <span className="text-slate-400"><span className="text-slate-500"><T>حالة التقييم: </T></span>{view.evaluationStatusLabel}</span>
+          )}
         </div>
 
-        {/* Incomplete configuration — never a fabricated total */}
+        {/* Incomplete configuration — never a fabricated total. §12 —
+            incompleteMessage already names the missing components, so no
+            duplicated list line. */}
         {incomplete && (
           <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2.5 text-xs space-y-1">
             <p className="text-amber-300 font-medium flex items-center gap-1.5">
               <AlertTriangle className="h-3.5 w-3.5" />
               {view.incompleteMessage}
             </p>
-            {view.missingComponents.length > 0 && (
-              <p className="text-amber-200/70">
-                <T>مكونات تحتاج إلى إعداد: </T>{view.missingComponents.join('، ')}
-              </p>
-            )}
             {view.availableWeightDisplay && (
               <p className="text-slate-400">
-                <T>الوزن المتاح: </T><span dir="ltr">{view.availableWeightDisplay}%</span>
+                <T>النسبة المحددة المتاحة: </T><span dir="ltr">{view.availableWeightDisplay}%</span>
               </p>
             )}
           </div>
@@ -280,11 +289,11 @@ export function KpiIntelligenceSection({ view }: { view: KpiIntelView }) {
       <CardContent className="p-4 space-y-3">
         <div className="flex flex-wrap items-center gap-2 text-sm text-slate-200 font-medium">
           <Target className="h-4 w-4 text-emerald-400" />
-          <T>مكونات KPI المُهيأة</T>
+          <T>مكونات التقييم</T>
           {view.schemeLabel && <span className="text-xs font-normal text-slate-500">{view.schemeLabel}</span>}
           {!view.configurationComplete && (
             <Badge variant="outline" className="text-[10px] border-amber-500/40 text-amber-300 bg-amber-500/10">
-              <T>الحساب الكامل غير مكتمل</T>
+              <T>حالة التقييم: غير مكتمل</T>
             </Badge>
           )}
         </div>
@@ -293,10 +302,10 @@ export function KpiIntelligenceSection({ view }: { view: KpiIntelView }) {
           <table className="w-full text-xs">
             <thead>
               <tr className="text-slate-500 border-b border-slate-700/50">
-                <th className="text-start font-medium py-1.5 pe-2"><T>المكون</T></th>
-                <th className="text-start font-medium py-1.5 pe-2"><T>الوزن</T></th>
-                <th className="text-start font-medium py-1.5 pe-2"><T>الدرجة</T></th>
-                <th className="text-start font-medium py-1.5 pe-2"><T>الإسهام</T></th>
+                <th className="text-start font-medium py-1.5 pe-2"><T>مكون التقييم</T></th>
+                <th className="text-start font-medium py-1.5 pe-2"><T>النسبة المحددة</T></th>
+                <th className="text-start font-medium py-1.5 pe-2"><T>النسبة المحققة</T></th>
+                <th className="text-start font-medium py-1.5 pe-2"><T>النقاط المحتسبة</T></th>
                 <th className="text-start font-medium py-1.5"><T>الحالة</T></th>
               </tr>
             </thead>
@@ -304,12 +313,12 @@ export function KpiIntelligenceSection({ view }: { view: KpiIntelView }) {
               {view.rows.map((row) => (
                 <tr key={row.name} className="border-b border-slate-800/50 last:border-0">
                   <td className="py-1.5 pe-2 text-slate-200 font-medium">{row.name}</td>
-                  <td className="py-1.5 pe-2 text-slate-300 tabular-nums" dir="ltr">{row.weightDisplay}</td>
+                  <td className="py-1.5 pe-2 text-slate-300 tabular-nums" dir="ltr">{row.definedRateDisplay}</td>
                   <td className={cn('py-1.5 pe-2 tabular-nums', row.hasValue ? 'text-slate-200' : 'text-slate-500 italic')} dir="ltr">
-                    {row.actualDisplay}
+                    {row.achievedRateDisplay}
                   </td>
                   <td className={cn('py-1.5 pe-2 tabular-nums', row.hasValue ? 'text-slate-200' : 'text-slate-500 italic')} dir="ltr">
-                    {row.contributionDisplay}
+                    {row.calculatedPointsDisplay}
                   </td>
                   <td className="py-1.5">
                     <span className={cn(
@@ -324,20 +333,34 @@ export function KpiIntelligenceSection({ view }: { view: KpiIntelView }) {
                 </tr>
               ))}
               <tr className="border-t border-slate-700/50">
-                <td className="py-1.5 pe-2 text-slate-100 font-semibold"><T>إجمالي KPI (المتاح)</T></td>
+                <td className="py-1.5 pe-2 text-slate-100 font-semibold"><T>إجمالي النسبة المحتسبة</T></td>
                 <td className="py-1.5 pe-2 text-slate-400 tabular-nums" dir="ltr">
                   {view.availableWeightDisplay ?? '—'}
                 </td>
                 <td className="py-1.5 pe-2" />
-                <td className="py-1.5 pe-2 text-slate-100 font-semibold tabular-nums" dir="ltr">{view.weightedTotalDisplay}</td>
-                <td className="py-1.5" />
+                {/* §KPI-INCOMPLETE — the total always carries its points
+                    context (X within the defined rate Y); an incomplete
+                    calculation never renders as a bare percentage. */}
+                <td className={cn('py-1.5 pe-2 font-semibold tabular-nums', view.incomplete ? 'text-amber-300' : 'text-slate-100')} dir="ltr">
+                  {view.weightedTotalDisplay}
+                  {view.availableWeightDisplay
+                    ? ` / ${view.availableWeightDisplay.replace('%', '')}`
+                    : ''}
+                </td>
+                <td className="py-1.5">
+                  {view.incomplete && (
+                    <span className="text-[10px] px-1.5 py-0.5 rounded-full border border-amber-500/30 text-amber-300 bg-amber-500/10">
+                      <T>غير مكتمل</T>
+                    </span>
+                  )}
+                </td>
               </tr>
             </tbody>
           </table>
         </div>
         {!view.configurationComplete && (
           <p className="text-[11px] text-amber-300/80">
-            <T>مكونات بلا قيمة تُعرض كـ«قيد الانتظار/غير متاح» — لا تُحتسب صفرًا ولا تُستكمل بقيم مختلقة.</T>
+            <T>النقاط المعروضة نقاط جزئية ضمن النسبة المحددة المتاحة — ليست النتيجة النهائية للمؤشر. المكونات بلا قيمة تبقى قيد الانتظار ولا تُحتسب صفرًا.</T>
           </p>
         )}
       </CardContent>
