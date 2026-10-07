@@ -2,10 +2,11 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getAll, withEmployee, sortByDateField, createRecord, getById } from '@/lib/db';
 import { requireAuth, verifyPermission } from '@/lib/verify-permission';
 import { asScopeViewer, employeeInScope, authScopeViewer, filterRowsByEmployeeScope, resolveEmployeeScopeFromDb } from '@/lib/scope/server';
-import { computeRisk, isOverdueFollowUp } from '@/lib/metrics';
+import { computeRisk, isOverdueFollowUp, isDueToday } from '@/lib/metrics';
 import { createSmartNotification } from '@/lib/rules-engine';
 import { dispatchAutomationEvent } from '@/lib/automation/event-bridge';
 import { assertSimpleValueIsActive } from '@/lib/master-data/simple-lists';
+import { monthBounds, resolveFollowUpsMonth } from '@/lib/followups-period';
 
 const SCORE_MAP: Record<string, number> = { low: 1, medium: 3, high: 5, critical: 10 };
 const ACTIVE_FOLLOWUP_STATUSES = ['open', 'under_review', 'under_follow_up'] as const;
@@ -39,6 +40,21 @@ export async function GET(request: NextRequest) {
     const startDate = searchParams.get('startDate');
     const endDate = searchParams.get('endDate');
     const followedBy = searchParams.get('followedBy');
+    // §PERF-FOLLOWUPS — the PERIOD dimension, server-side. The selected
+    // month ("YYYY-MM", project-wide convention) bounds the RESPONSE:
+    // the client never receives history outside the requested period.
+    // An explicit startDate/endDate range (custom window) overrides the
+    // month when present; with NEITHER, the period defaults to the
+    // CURRENT calendar month — an unparameterized request can never
+    // return the full historical dataset again. The RTDB read itself
+    // stays the proven full-node .get() behind the shared table cache:
+    // indexed orderByChild range queries hang on this network (see the
+    // user-lookup breaker in lib/db), so the safe bound is applied
+    // here, post-scope, pre-serialization.
+    const hasExplicitRange = Boolean(startDate || endDate);
+    const month = hasExplicitRange ? null : resolveFollowUpsMonth(searchParams.get('month'));
+
+    const t0 = performance.now();
 
     let records = await getAll('followUps');
 
@@ -51,14 +67,43 @@ export async function GET(request: NextRequest) {
     const scopeCtx = await resolveEmployeeScopeFromDb(authScopeViewer(auth), undefined, auth.permissions);
     records = filterRowsByEmployeeScope(records as Array<{ employeeId?: string | null }>, scopeCtx);
 
+    // The authorized population — the attention set below is derived
+    // from it (no month window), the period-bounded list from
+    // `records` after the restriction.
+    const scopedRecords = records;
+
+    // ── PERIOD RESTRICTION (after scope, before any other filter) ──
+    // Membership uses the canonical record `date` (YYYY-MM-DD day key
+    // → pure string comparison against the month bounds; no UTC
+    // arithmetic). Due/overdue logic is NOT part of this window —
+    // nextFollowUpDate drives the attention set below, untouched.
+    if (hasExplicitRange) {
+      if (startDate) records = records.filter((r: any) => r.date >= startDate);
+      if (endDate) records = records.filter((r: any) => r.date <= endDate);
+    } else {
+      const { start, endExclusive } = monthBounds(month!);
+      records = records.filter((r: any) => r.date >= start && r.date < endExclusive);
+    }
+
+    // ── ATTENTION SET (§PERF-FOLLOWUPS) ──
+    // The AttentionPanel must keep showing the REAL overdue / due-today
+    // population across ALL months (Home's cards count this same set),
+    // so it is computed over the SAME authorized (scope-filtered)
+    // dataset with the CANONICAL predicates — one request, one data
+    // source, no second fetch, no month window.
+    const attentionOverdue = sortByDateField(
+      scopedRecords.filter((r: any) => isOverdueFollowUp(r)),
+      'nextFollowUpDate',
+      'asc',
+    );
+    const attentionDueToday = scopedRecords.filter((r: any) => isDueToday(r));
+
     if (employeeId) records = records.filter((r: any) => r.employeeId === employeeId);
     if (status) records = records.filter((r: any) => r.status === status);
     if (type) records = records.filter((r: any) => r.followUpType === type);
     if (priority) records = records.filter((r: any) => r.priorityLevel === priority);
     if (responsiblePerson) records = records.filter((r: any) => r.responsiblePerson === responsiblePerson);
     if (department) records = records.filter((r: any) => r.department === department);
-    if (startDate) records = records.filter((r: any) => r.date >= startDate);
-    if (endDate) records = records.filter((r: any) => r.date <= endDate);
     if (followedBy) records = records.filter((r: any) => r.createdById === followedBy);
 
     records = sortByDateField(records, 'date', 'desc');
@@ -71,6 +116,8 @@ export async function GET(request: NextRequest) {
     const merged = records.map((r: any) => enrichedMap.get(r.id) || r);
 
     // Calculate risk scores for employee summary — canonical computeRisk()
+    // (derived from the PERIOD-BOUNDED dataset — the grouped view these
+    // scores feed shows exactly that period).
     const empFollowUpMap = new Map<string, any[]>();
     for (const r of merged) {
       const eid = (r as any).employeeId;
@@ -95,7 +142,23 @@ export async function GET(request: NextRequest) {
       empRiskMap.set(eid, risk.score);
     }
 
-    return NextResponse.json({ data: merged, employeeRiskScores: Object.fromEntries(empRiskMap) });
+    // §PERF-FOLLOWUPS diagnostics — prove the bound (records considered
+    // post-scope vs returned) in DEV only; no verbose production logging.
+    const durationMs = Math.round(performance.now() - t0);
+    if (process.env.NODE_ENV !== 'production') {
+      console.info(
+        `[follow-ups] period=${hasExplicitRange ? `${startDate ?? ''}..${endDate ?? ''}` : month} `
+        + `scoped=${scopedRecords.length} returned=${merged.length} `
+        + `attention(overdue=${attentionOverdue.length},dueToday=${attentionDueToday.length}) ${durationMs}ms`,
+      );
+    }
+
+    return NextResponse.json({
+      data: merged,
+      employeeRiskScores: Object.fromEntries(empRiskMap),
+      attention: { overdue: attentionOverdue, dueToday: attentionDueToday },
+      meta: { month: hasExplicitRange ? null : month, count: merged.length },
+    });
   } catch (error) {
     console.error('Fetch follow-ups error:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });

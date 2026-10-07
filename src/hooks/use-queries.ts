@@ -9,6 +9,7 @@ import { queryKeys } from '@/lib/cache/query-keys';
 import { freshnessFor } from '@/lib/cache/cache-policy';
 import { invalidateDomain, invalidateDomains, REFRESH_ALL_DOMAINS, type MutationDomain } from '@/lib/cache/invalidation';
 import { TRAVEL_SAVE_TIMEOUT_MS } from '@/lib/travel-form';
+import { followUpsPeriodToken, type FollowUpsAttentionPayload } from '@/lib/followups-period';
 
 // ═════════════════════════════════════════════════════════════
 //  Query Key Factory — canonical definitions live in
@@ -676,16 +677,41 @@ export function useDashboardUsers(variant: 'basic' | 'full' = 'full', enabled = 
   });
 }
 
-/** Full follow-up list + per-employee risk scores (single endpoint). */
-export function useFollowUpsList(enabled = true) {
+/** Full follow-up list + per-employee risk scores + the canonical
+ *  attention set (overdue / dueToday), all for ONE period. The period
+ *  is part of the cache identity (§16) — October and September never
+ *  collide — and the server restricts the response to it, so the
+ *  client never receives the full historical dataset. Identity rules:
+ *    • `dateRange` set (either bound) → explicit startDate/endDate
+ *      request (pre-existing custom-range semantics, server-side).
+ *    • Otherwise the `month` key ("YYYY-MM") is sent; omitted/blank →
+ *      current month on both ends. */
+export function useFollowUpsList(
+  month: string | null,
+  dateRange: { start?: string; end?: string } | null,
+  enabled = true,
+) {
+  const hasRange = Boolean(dateRange?.start || dateRange?.end);
+  const params = new URLSearchParams();
+  if (hasRange) {
+    if (dateRange!.start) params.set('startDate', dateRange!.start);
+    if (dateRange!.end) params.set('endDate', dateRange!.end);
+  } else if (month) {
+    params.set('month', month);
+  }
+  const periodToken = followUpsPeriodToken(month, dateRange);
   return useQuery({
-    queryKey: queryKeys.followUpsList,
-    queryFn: () => apiFetch<{ data?: any[]; employeeRiskScores?: Record<string, number> } | any[]>('/api/follow-ups'),
+    queryKey: [...queryKeys.followUpsList, periodToken],
+    queryFn: () => apiFetch<{ data?: any[]; employeeRiskScores?: Record<string, number>; attention?: FollowUpsAttentionPayload } | any[]>(
+      `/api/follow-ups?${params.toString()}`,
+    ),
     select: (payload) => {
       const items = Array.isArray(payload) ? payload : payload?.data || [];
+      const empty = { overdue: [] as any[], dueToday: [] as any[] };
       return {
         followUps: Array.isArray(items) ? items : [],
         employeeRiskScores: (Array.isArray(payload) ? {} : payload?.employeeRiskScores) || {},
+        attention: (!Array.isArray(payload) && payload?.attention) || empty,
       };
     },
     staleTime: freshnessFor('followUps').staleTime,

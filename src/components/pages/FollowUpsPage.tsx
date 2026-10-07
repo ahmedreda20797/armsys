@@ -60,7 +60,10 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useFollowUpsList, useEmployees, useDashboardUsers } from '@/hooks/use-queries';
 import { invalidateDomain } from '@/lib/cache/invalidation';
 import { useAppStore } from '@/lib/store';
-import { addDays, todayDayKey } from '@/lib/date-utils';
+import { addDays, todayDayKey, currentMonthKey } from '@/lib/date-utils';
+import { resolveFollowUpsMonth, followUpMonthOptions } from '@/lib/followups-period';
+import { isValidMonthKey } from '@/lib/month-utils';
+import { formatMonthLabelAr } from '@/lib/month-label';
 
 // ═══════════════════════════════════════════════════
 //  Animation Variants
@@ -276,22 +279,6 @@ export default function FollowUpsPage() {
   //  last snapshot instantly and revalidate in the background (§9/§28).
   //  PAGE STATE (filters/view) above stays in usePageState — untouched.
   const queryClient = useQueryClient();
-  const followUpsQuery = useFollowUpsList(canView);
-  const employeesQuery = useEmployees(canView);
-  const systemUsersQuery = useDashboardUsers('full', canView);
-  const followUps = followUpsQuery.data?.followUps ?? [];
-  const employeeRiskScores = followUpsQuery.data?.employeeRiskScores ?? {};
-  const employees = employeesQuery.data ?? [];
-  const systemUsers = systemUsersQuery.data ?? [];
-  // Full-page skeleton ONLY when there is no snapshot to show (§11).
-  const loading = canView && (followUpsQuery.isLoading || employeesQuery.isLoading);
-  // Background revalidation on an existing snapshot → subtle state only.
-  const revalidating = canView && (followUpsQuery.isFetching || employeesQuery.isFetching) && !loading;
-  // Blocking error ONLY when there is no snapshot to show (§33) —
-  // a failed background revalidation keeps the last valid data.
-  const error = canView && followUpsQuery.isError && !followUpsQuery.data
-    ? 'تعذّر تحميل المتابعات'
-    : null;
   // Phase 6.3 (§8): filter/view context persists per user (session-scoped).
   // collapsedEmployees (§25 container state) persists as an array so a
   // returning user finds the same groups collapsed.
@@ -300,13 +287,24 @@ export default function FollowUpsPage() {
   // the EmployeesPage status seed). Keys: overdue / status / priority
   // / type / dueToday — e.g. "22 متابعة متأخرة" → exactly those 22.
   const navSeed = useAppStore((s) => s.navParams);
-  const hasNavSeed = Boolean(navSeed.overdue || navSeed.status || navSeed.priority || navSeed.type || navSeed.dueToday);
+  // §PERF-FOLLOWUPS — a deep navigation may carry an EXPLICIT period
+  // (navParams.month = "YYYY-MM", e.g. a report linking September).
+  // With no explicit period the default is the CURRENT CALENDAR MONTH
+  // (local semantics). Either way the seed wins over restored state
+  // for this mount, exactly like the status/priority/type seeds.
+  const hasMonthSeed = isValidMonthKey(navSeed.month);
+  const hasNavSeed = hasMonthSeed
+    || Boolean(navSeed.overdue || navSeed.status || navSeed.priority || navSeed.type || navSeed.dueToday);
   const [followUpsView, setFollowUpsView, resetFollowUpsView] = usePageState<{
     search: string;
     statusFilter: string;
     typeFilter: string;
     priorityFilter: string;
     deptFilter: string;
+    /** §PERF-FOLLOWUPS — the selected period "YYYY-MM" (server query
+     *  identity). Defaults to the current month; an explicit deep-link
+     *  period always wins. */
+    month: string;
     startDate: string;
     endDate: string;
     overdueOnly?: boolean;
@@ -328,6 +326,9 @@ export default function FollowUpsPage() {
         typeFilter: typeof navSeed.type === 'string' && navSeed.type ? navSeed.type : 'all',
         priorityFilter: typeof navSeed.priority === 'string' && navSeed.priority ? navSeed.priority : 'all',
         deptFilter: 'all',
+        // §PERF-FOLLOWUPS — explicit deep-link period, else the current
+        // month (resolveFollowUpsMonth: local calendar semantics).
+        month: resolveFollowUpsMonth(navSeed.month),
         startDate: '',
         endDate: '',
         // §DEEP-LINK — dueToday filters the DUE dimension
@@ -342,7 +343,10 @@ export default function FollowUpsPage() {
     validate: (raw) =>
       raw && typeof raw === 'object' && !Array.isArray(raw)
         && typeof (raw as { viewMode?: unknown }).viewMode === 'string'
-        ? raw
+        ? // §PERF-FOLLOWUPS — state persisted before the period existed
+          // has no `month`: fill it with the current month instead of
+          // rejecting the whole snapshot (old filter state survives).
+          { ...raw, month: isValidMonthKey((raw as { month?: unknown }).month) ? (raw as { month: string }).month : currentMonthKey() }
         : null,
   });
   const search = followUpsView.search;
@@ -355,6 +359,10 @@ export default function FollowUpsPage() {
   const setPriorityFilter = (v: string) => setFollowUpsView((s) => ({ ...s, priorityFilter: v }));
   const deptFilter = followUpsView.deptFilter;
   const setDeptFilter = (v: string) => setFollowUpsView((s) => ({ ...s, deptFilter: v }));
+  // §PERF-FOLLOWUPS — the effective period; every change flows into
+  // the request AND the query identity below.
+  const month = followUpsView.month || currentMonthKey();
+  const setMonth = (v: string) => setFollowUpsView((s) => ({ ...s, month: v }));
   const startDate = followUpsView.startDate;
   const setStartDate = (v: string) => setFollowUpsView((s) => ({ ...s, startDate: v }));
   const endDate = followUpsView.endDate;
@@ -363,6 +371,38 @@ export default function FollowUpsPage() {
   const setOverdueOnly = (v: boolean) => setFollowUpsView((s) => ({ ...s, overdueOnly: v }));
   const dueTodayOnly = followUpsView.dueTodayOnly === true;
   const setDueTodayOnly = (v: boolean) => setFollowUpsView((s) => ({ ...s, dueTodayOnly: v }));
+
+  // ═══ DATA (§PERF-FOLLOWUPS) — the period-bounded request. The period
+  //  (selected month, or an explicit date range) is part of the query
+  //  identity, so periods never overwrite each other's cached snapshot
+  //  and the server returns ONLY the selected period's records (plus
+  //  the cross-month canonical attention set).
+  const followUpsQuery = useFollowUpsList(
+    month,
+    (startDate || endDate) ? { start: startDate, end: endDate } : null,
+    canView,
+  );
+  const employeesQuery = useEmployees(canView);
+  const systemUsersQuery = useDashboardUsers('full', canView);
+  const followUps = followUpsQuery.data?.followUps ?? [];
+  const employeeRiskScores = followUpsQuery.data?.employeeRiskScores ?? {};
+  // §8/§11 — the AttentionPanel keeps the REAL overdue / due-today
+  // population across ALL months: the server computes it over the same
+  // authorized dataset with the same canonical predicates and ships it
+  // in the SAME response (no second fetch, no different dataset).
+  const attentionOverdue = followUpsQuery.data?.attention.overdue ?? [];
+  const attentionDueToday = followUpsQuery.data?.attention.dueToday ?? [];
+  const employees = employeesQuery.data ?? [];
+  const systemUsers = systemUsersQuery.data ?? [];
+  // Full-page skeleton ONLY when there is no snapshot to show (§11).
+  const loading = canView && (followUpsQuery.isLoading || employeesQuery.isLoading);
+  // Background revalidation on an existing snapshot → subtle state only.
+  const revalidating = canView && (followUpsQuery.isFetching || employeesQuery.isFetching) && !loading;
+  // Blocking error ONLY when there is no snapshot to show (§33) —
+  // a failed background revalidation keeps the last valid data.
+  const error = canView && followUpsQuery.isError && !followUpsQuery.data
+    ? 'تعذّر تحميل المتابعات'
+    : null;
   const viewMode = followUpsView.viewMode;
   const setViewMode = (v: 'table' | 'cards') => setFollowUpsView((s) => ({ ...s, viewMode: v }));
   const collapsedEmployees = useMemo(
@@ -431,27 +471,14 @@ export default function FollowUpsPage() {
   }, [highlightId, loading, followUps]);
 
   const todayStr = getTodayStr();
-  const todaysFollowUps = useMemo(() =>
-    // §26 — the SAME canonical isDueToday predicate the dashboard and
-    // performance-intelligence use (all active statuses; 'under_review'
-    // was silently dropped before, so page and Home disagreed).
-    followUps.filter(f => isDueToday(f)),
-    [followUps]
-  );
-  // §8: overdue active follow-ups join the alert area as structured
-  // items (display-only derivation — the canonical status/timing rules
-  // in lib/metrics/followUpMetrics stay untouched).
-  const overdueFollowUps = useMemo(() =>
-    followUps
-      // §17/§26 — the SAME canonical predicate the dashboard uses, so
-      // the deep-link target list always matches the card's count.
-      .filter(f => isOverdueFollowUp(f))
-      .sort((a, b) => (a.nextFollowUpDate || '').localeCompare(b.nextFollowUpDate || '')),
-    [followUps, todayStr]
-    // §10 DATA INTEGRITY: no silent cap — the panel body scrolls
-    // (bodyMaxHeight), so the group count and rows ALWAYS match the
-    // real overdue records. The old slice(0, 6) under-counted.
-  );
+  // §8/§26 — the SAME canonical isDueToday / isOverdueFollowUp
+  // predicates the dashboard and performance-intelligence use — now
+  // applied SERVER-side over the full authorized population (not just
+  // the displayed month), so this panel still counts an overdue
+  // follow-up created in a previous month. The server sorts overdue
+  // oldest-due first (the pre-existing page order).
+  const todaysFollowUps = attentionDueToday;
+  const overdueFollowUps = attentionOverdue;
 
   // ═══ Departments ═══
   const departmentList = useMemo(() => {
@@ -459,6 +486,16 @@ export default function FollowUpsPage() {
     for (const e of employees) if (e.department) depts.add(e.department);
     return Array.from(depts).sort((a, b) => a.localeCompare(b, 'ar'));
   }, [employees]);
+
+  // ═══ Period selector options (§PERF-FOLLOWUPS) — next month + the
+  //  last 12 months, the shared generateMonthOptions window. Labels are
+  //  locale-aware: "أكتوبر 2026" / "October 2026" (the EN form routes
+  //  through the UI translation boundary — month names are UI-owned).
+  const monthOptions = useMemo(() => followUpMonthOptions(), []);
+  const monthOptionLabel = useCallback(
+    (m: string) => translateUIText(formatMonthLabelAr(m), locale),
+    [locale],
+  );
 
   // ═══ Manual refresh / mutation-triggered revalidation (§26).
   //  invalidateDomain marks the affected cache entries stale and
@@ -912,6 +949,25 @@ export default function FollowUpsPage() {
       <Card className="border-slate-700/40 bg-slate-800/30">
         <CardContent className="p-3">
           <div className="flex flex-wrap gap-2">
+            {/* §PERF-FOLLOWUPS — PERIOD: the selected month IS the server
+                query identity. Changing it refetches ONLY that month. */}
+            <Select value={month} onValueChange={setMonth}>
+              <SelectTrigger
+                className="bg-slate-800/70 border-sky-500/40 text-white w-44 h-9 text-sm"
+                aria-label={translateUIText('الفترة', locale)}
+              >
+                <CalendarDays className="size-3.5 ml-1.5 text-sky-400" />
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {monthOptions.map((m) => (
+                  <SelectItem key={m} value={m} className="text-white">
+                    {translateUIText('الفترة:', locale)} {monthOptionLabel(m)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
             {/* Search */}
             <div className="relative flex-1 min-w-[180px] max-w-xs">
               <Search className="absolute right-3 top-1/2 -translate-y-1/2 size-4 text-slate-500" />
