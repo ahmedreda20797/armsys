@@ -848,11 +848,11 @@ describe('smart report §33 — registration & regression safety', () => {
     assert.equal(appPageSrc.includes("case 'qualityAuditLog':"), true);
   });
 
-  it('the performance analysis tab (Phase 3) remains unmodified', () => {
-    const tabSrc = readFileSync(
-      join(PROJECT_ROOT, 'src', 'components', 'pages', 'quality-kpi', 'PerformanceAnalysisTab.tsx'),
+  it('the smart report remains the surviving performance-intelligence surface (the Phase 3 tab was removed with KPI Reports 2.0)', () => {
+    const smartSrc = readFileSync(
+      join(PROJECT_ROOT, 'src', 'components', 'pages', 'quality-kpi', 'smart-report', 'SmartQualityReportPage.tsx'),
       'utf8',
     );
-    assert.equal(tabSrc.includes('MINIMAL verification view'), true);
+    assert.equal(smartSrc.includes('usePerformanceIntelligence'), true);
   });
 });

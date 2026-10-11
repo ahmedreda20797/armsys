@@ -32,6 +32,7 @@ import {
   setTable,
   bearerHeaders,
   mintToken,
+  dbStubs,
   type TestTokens,
 } from '../../../../lib/__tests__/m01-test-support';
 import { monthBounds } from '@/lib/followups-period';
@@ -48,6 +49,19 @@ const dayKey = (d: Date) =>
   `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 const yesterday = dayKey(new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1));
 const today = dayKey(now);
+
+// withEmployee's internal closure reaches the REAL Firebase loader
+// (module-internal call — invisible to the export stubs). Swap the
+// export for an in-memory equivalent reading the same employees table.
+dbStubs.withEmployee = async (records: Array<Record<string, any>>) => {
+  const empRows = (await dbStubs.getAll('employees')) as Array<Record<string, any>>;
+  const empMap = new Map(empRows.map((e) => [e.id, e]));
+  return records.map((r) => ({
+    ...r,
+    employeeName: empMap.get(r.employeeId)?.name || 'غير معروف',
+    employeeDepartment: empMap.get(r.employeeId)?.department || null,
+  }));
+};
 
 function fu(id: string, over: Record<string, unknown>): Record<string, unknown> {
   return {
@@ -156,9 +170,10 @@ describe('GET /api/follow-ups — server-side period filtering', () => {
   });
 
   it('4. explicit startDate/endDate range keeps custom-window semantics', async () => {
-    const { start } = monthBounds(PREV);
-    const { body } = await get(`?startDate=${start}&endDate=${today}`, t.adminToken);
-    // Previous-month rows + previous-month attention rows (f-cur-* excluded).
+    const { start, endExclusive } = monthBounds(PREV);
+    const lastDayOfPrev = endExclusive.slice(0, 8) + String(Number(endExclusive.slice(8, 10)) - 1).padStart(2, '0');
+    const { body } = await get(`?startDate=${start}&endDate=${lastDayOfPrev}`, t.adminToken);
+    // Only previous-month rows — the range ends before the current month.
     const ids = body.data.map((r: any) => r.id).sort();
     assert.ok(ids.includes('f-prev-a'));
     assert.ok(ids.includes('f-prev-b'));
@@ -203,7 +218,15 @@ describe('GET /api/follow-ups — server-side period filtering', () => {
   });
 
   it('8. a viewer without followUps permission is denied', async () => {
-    const { status } = await get('', t.userToken);
+    registerUser({
+      id: 'u-nofu',
+      email: 'nofu@test.local',
+      name: 'بدون صلاحية',
+      role: 'user',
+      permissions: { followUps: 'none' },
+    });
+    const noFuToken = await mintToken({ userId: 'u-nofu', email: 'nofu@test.local', role: 'user' });
+    const { status } = await get('', noFuToken);
     assert.equal(status, 403);
   });
 });

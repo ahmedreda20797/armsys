@@ -160,17 +160,32 @@ describe('ReportsPage report continuity (§13-§20, §49-18/19/21/23)', () => {
 describe('KPI Reports view persistence + period visibility (§38/§39/§50)', () => {
   const src = readSource('src/components/pages/quality-kpi/KpiReportsPage.tsx');
 
-  it('persists tab + month per user (§49-50)', () => {
-    assert.match(src, /usePageState<\{[\s\S]*?tab: TabKey;[\s\S]*?month: string;[\s\S]*?\}>/);
+  it('persists the work context (report type · period · scope · selection) per user (§49-50, KPI Reports 2.0)', () => {
+    // KPI Reports 2.0: the tabs (tab/basis) became report TYPES +
+    // SCOPE; the persisted shape lives in the extracted view-state
+    // module and restores through the SPA history snapshots.
+    assert.match(src, /usePageState<WorkspaceView>/);
     assert.match(src, /page: 'kpiReports'/);
+    assert.match(src, /slot: 'view'/);
+    assert.match(src, /version: 3/);
+    assert.match(src, /validate: \(raw\) => normalizeView\(raw\)/);
+    const stateSrc = readSource('src/components/pages/quality-kpi/kpi-reports/view-state.ts');
+    assert.match(stateSrc, /reportType: KpiReportType/);
+    assert.match(stateSrc, /month: string/);
+    assert.match(stateSrc, /scopeMode: KpiScopeMode/);
   });
 
-  it('shows the current period with MTD/FINALIZED distinction (§39)', () => {
-    assert.match(src, /<T>الفترة الحالية: <\/T>\{formatMonthKey\(effectiveMonth, locale\)\}/);
+  it('ONE canonical period selector with open/closed distinction (§2/§39, KPI Reports 2.0)', () => {
+    // The single period selector lives in the control bar; the page
+    // identity shows the period read-only. No duplicated month state.
+    assert.match(src, /<T>الفترة: <\/T>\{formatMonthKey\(month, locale\)\}/);
     // §PRESENTATION-BOUNDARY — the frozen marker is a human label; the
     // raw engine key (FINALIZED) never renders in the report UI.
     assert.match(src, /شهر مغلق \(نتائج مجمّدة\)/);
     assert.doesNotMatch(src, /شهر مغلق \(FINALIZED\)/);
+    // The former period MODES (monthly/MTD/historical) are gone.
+    assert.doesNotMatch(src, /BASIS_OPTIONS/);
+    assert.doesNotMatch(src, /KpiMonthlyTableTab/);
   });
 });
 
@@ -185,7 +200,7 @@ describe('Smart Quality Report — live view, persisted selection only (§51)', 
 });
 
 describe('KPI visibility diagnose surface (§33-§37)', () => {
-  const tabSrc = readSource('src/components/pages/quality-kpi/KpiEmployeeReportTab.tsx');
+  const tabSrc = readSource('src/components/pages/quality-kpi/kpi-reports/KpiEmployeeReportDialog.tsx');
   const routeSrc = readSource('src/app/api/kpi-reports/diagnose/route.ts');
 
   it('on-demand diagnose UI exists (read-only, explicit button)', () => {

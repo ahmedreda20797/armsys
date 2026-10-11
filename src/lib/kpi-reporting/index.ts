@@ -81,3 +81,33 @@ export { buildEmployeeKpiReport, buildMomComparison } from './employee-report';
 export type { BuildEmployeeKpiReportInput } from './employee-report';
 
 export { buildKpiManagementSummary, buildSummaryPayload, KPI_SUMMARY_LABEL } from './summary';
+
+// KPI Reports 2.0 — insights workspace (composes the engines above)
+export {
+  buildKpiInsightsReport,
+  defaultKpiInsightsLoaders,
+  INSIGHTS_ATTENTION_DELTA_POINTS,
+  INSIGHTS_TEAM_SIGNAL_DELTA_POINTS,
+  INSIGHTS_PATTERN_EMPLOYEE_COUNT,
+} from './insights';
+export type {
+  KpiInsightsReport,
+  KpiInsightsSelection,
+  KpiInsightsFilters,
+  KpiInsightsLoaders,
+  BuildKpiInsightsInput,
+  EmployeeInsightFacts,
+  UnitInsights,
+  CategoryInsight,
+  SeverityInsight,
+  RepeatedIssueInsight,
+  WindowRecurrenceInsight,
+  InsightSignal,
+  InsightSignalKind,
+  InsightSignalLevel,
+  ImprovementOpportunity,
+  DataQualityEntry,
+  InsightDataSource,
+  InsightDataStatus,
+  InsightSeverity,
+} from './insights';

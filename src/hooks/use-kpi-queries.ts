@@ -715,3 +715,42 @@ export function useHrDecisionEmployeeReport(
     retry: 1,
   });
 }
+
+// ═══════════════════════════════════════════════════
+//  KPI Reports 2.0 — insights workspace
+// ═══════════════════════════════════════════════════
+
+/** The insights query identity: period + scope + selected ids + filters. */
+export interface KpiInsightsParams {
+  /** Selected employee ids (presentation narrowing — the server
+   *  intersects them with the authorized scope). */
+  employeeIds?: ReadonlyArray<string>;
+  /** Selected team/department org-node ids (canonical tree). */
+  orgNodeIds?: ReadonlyArray<string>;
+  includeArchived?: boolean;
+  /** Fetch gate (e.g. skip when the HR-only report type is active). */
+  enabled?: boolean;
+}
+
+/**
+ * Operational insights workspace payload (one canonical assembly:
+ * monthly rows + quality intelligence + signals + opportunities).
+ * The query key carries the FULL selection identity so distinct
+ * report contexts cache distinctly (spec §29) — no cache clearing.
+ */
+export function useKpiInsights(month: string | null, params: KpiInsightsParams = {}) {
+  const employeeIdsKey = params.employeeIds?.length ? [...params.employeeIds].sort().join(',') : '';
+  const orgNodesKey = params.orgNodeIds?.length ? [...params.orgNodeIds].sort().join(',') : '';
+  const qs = buildQueryString({
+    month: month ?? undefined,
+    employees: employeeIdsKey || undefined,
+    orgNodes: orgNodesKey || undefined,
+    includeArchived: params.includeArchived ? 'true' : undefined,
+  });
+  return useQuery({
+    queryKey: [...reportsKey('insights'), month ?? 'none', employeeIdsKey, orgNodesKey, params.includeArchived ? 'archived' : 'active'],
+    queryFn: () => apiFetch(`/api/kpi-reports/insights${qs}`),
+    enabled: !!month && (params.enabled ?? true),
+    staleTime: 15_000,
+  });
+}

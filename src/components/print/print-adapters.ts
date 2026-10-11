@@ -1183,3 +1183,225 @@ export function hrDecisionEmployeeToPrintModel(report: HrDecisionEmployeeReportL
     footerNote: `${report.action?.actionAr ?? '—'} — ${report.action?.rationaleAr ?? ''} · ${report.action?.disclaimerAr ?? hrDecisionDisclaimer()}`,
   };
 }
+
+// ─────────────────────────────────────────────────────────────
+//  8) مساحة ذكاء الأداء — KPI Reports 2.0 insights workspace
+//
+//     Pure projection of the ALREADY-BUILT KpiInsightsReport (the
+//     canonical insights assembly). Percentage terminology only —
+//     no weight/contribution wording on paper (spec §25). Missing
+//     data renders '—', never 0.
+// ─────────────────────────────────────────────────────────────
+
+interface InsightsRowLike {
+  employeeName?: string | null;
+  employeeCode?: string | null;
+  department?: string | null;
+  team?: string | null;
+  quality?: { rawScore?: number | null } | null;
+  rowStatus?: string | null;
+}
+
+interface InsightsReportLike {
+  reportKind?: 'INSIGHTS';
+  monthKey?: string;
+  valueBasis?: string;
+  statisticsKind?: string;
+  selection?: { employeeCount?: number; teamLabels?: string[]; departmentLabels?: string[] };
+  overview?: {
+    avgQuality?: number | null;
+    qualityDeltaPoints?: number | null;
+    observationsApproved?: number;
+    observationsPending?: number;
+    observationsRejected?: number;
+    repeatedIssues?: number;
+    highCritical?: number;
+    needsAttention?: number;
+  };
+  rows?: InsightsRowLike[];
+  teamUnits?: Array<{
+    key?: string; label?: string; employeeCount?: number;
+    avgQuality?: number | null; deltaPoints?: number | null;
+    observationsApproved?: number; repeatedIssues?: number; highCritical?: number;
+    improving?: number; declining?: number;
+  }>;
+  categoryDistribution?: Array<{ label?: string; count?: number; pct?: number | null }>;
+  severityDistribution?: Array<{ severity?: string; count?: number; pct?: number | null }>;
+  repeatedIssues?: Array<{
+    label?: string; occurrenceCount?: number; employeeCount?: number;
+    affectedTeamLabels?: string[]; firstOccurrence?: string | null; lastOccurrence?: string | null;
+  }>;
+  opportunities?: Array<{
+    label?: string; occurrenceCount?: number; employeeCount?: number; teamCount?: number; changePct?: number | null;
+  }>;
+  dataQuality?: Array<{ source?: string; status?: string }>;
+  generatedAt?: string;
+}
+
+const INSIGHTS_SEVERITY: Record<string, [string, string]> = {
+  low: ['منخفضة', 'Low'], medium: ['متوسطة', 'Medium'], high: ['مرتفعة', 'High'], critical: ['حرجة', 'Critical'],
+};
+
+const INSIGHTS_DATA_SOURCE: Record<string, [string, string]> = {
+  kpi: ['إطار KPI', 'KPI framework'],
+  quality: ['ملاحظات الجودة', 'Quality observations'],
+  followUps: ['المتابعات', 'Follow-ups'],
+  complaints: ['الشكاوى', 'Complaints'],
+  capa: ['تحليل المشكلات (CAPA)', 'CAPA'],
+  attendance: ['الحضور والانصراف', 'Attendance'],
+  hrDeductions: ['خصومات الموارد البشرية', 'HR deductions'],
+};
+
+const INSIGHTS_DATA_STATUS: Record<string, [string, string]> = {
+  available: ['متاح', 'Available'],
+  no_data: ['لا توجد بيانات', 'No data'],
+  not_configured: ['غير مُهيأ', 'Not configured'],
+  restricted: ['محجوب — لا صلاحية', 'Withheld — no permission'],
+};
+
+/** KPI Reports 2.0 insights workspace → print. */
+export function kpiInsightsToPrintModel(
+  report: InsightsReportLike,
+  subject?: string,
+): PrintReportModel {
+  const o = report.overview ?? {};
+  const delta = o.qualityDeltaPoints;
+
+  const employeeRows = (report.rows ?? []).map((r) => [
+    r.employeeName ?? '—',
+    r.employeeCode ?? '—',
+    r.department ?? '—',
+    r.team ?? '—',
+    r.quality?.rawScore === null || r.quality?.rawScore === undefined ? '—' : pct(r.quality!.rawScore!),
+    presentStatus(r.rowStatus ?? '', displayLocale() === 'en' ? 'en' : 'ar'),
+  ]);
+
+  const sections: PrintSection[] = [];
+
+  sections.push({
+    heading: ui('أداء الموظفين', 'Employee performance'),
+    table: {
+      columns: [
+        ui('الموظف', 'Employee'), ui('الكود', 'Code'), ui('القسم', 'Department'), ui('الفريق', 'Team'),
+        ui('نسبة الجودة', 'Quality %'), ui('حالة التقييم', 'Evaluation status'),
+      ],
+      rows: employeeRows,
+      ltrColumns: [1, 4],
+    },
+  });
+
+  if ((report.teamUnits ?? []).length > 0) {
+    sections.push({
+      heading: ui('الفرق كوحدات تشغيلية', 'Teams as operating units'),
+      table: {
+        columns: [
+          ui('الفريق', 'Team'), ui('الموظفون', 'Employees'), ui('متوسط نسبة الجودة', 'Avg quality'),
+          ui('التغير', 'Change'), ui('الملاحظات المعتمدة', 'Approved obs'),
+          ui('مشكلات متكررة', 'Repeated'), ui('مرتفعة/حرجة', 'High/Crit'),
+        ],
+        rows: (report.teamUnits ?? []).map((u) => [
+          u.label ?? u.key ?? '—',
+          num(u.employeeCount ?? 0),
+          u.avgQuality === null || u.avgQuality === undefined ? '—' : pct(u.avgQuality),
+          u.deltaPoints === null || u.deltaPoints === undefined ? '—' : `${u.deltaPoints > 0 ? '+' : ''}${u.deltaPoints}`,
+          num(u.observationsApproved ?? 0),
+          num(u.repeatedIssues ?? 0),
+          num(u.highCritical ?? 0),
+        ]),
+        ltrColumns: [1, 2, 3, 4, 5, 6],
+      },
+    });
+  }
+
+  if ((report.categoryDistribution ?? []).length > 0) {
+    sections.push({
+      heading: ui('التوزيع حسب التصنيف (الملاحظات المعتمدة)', 'Distribution by category (approved observations)'),
+      table: {
+        columns: [ui('التصنيف', 'Category'), ui('العدد', 'Count'), ui('النسبة', 'Share')],
+        rows: (report.categoryDistribution ?? []).map((c) => [
+          c.label ?? '—',
+          num(c.count ?? 0),
+          c.pct === null || c.pct === undefined ? '—' : pct(c.pct),
+        ]),
+        ltrColumns: [1, 2],
+      },
+    });
+  }
+
+  if ((report.repeatedIssues ?? []).length > 0) {
+    sections.push({
+      heading: ui('المشكلات المتكررة', 'Repeated issues'),
+      table: {
+        columns: [
+          ui('التصنيف', 'Category'), ui('مرات التكرار', 'Occurrences'), ui('موظفون متأثرون', 'Employees affected'),
+          ui('الفرق', 'Teams'), ui('أول ظهور', 'First'), ui('آخر ظهور', 'Last'),
+        ],
+        rows: (report.repeatedIssues ?? []).map((g) => [
+          g.label ?? '—',
+          num(g.occurrenceCount ?? 0),
+          num(g.employeeCount ?? 0),
+          (g.affectedTeamLabels ?? []).join(' · ') || '—',
+          g.firstOccurrence ?? '—',
+          g.lastOccurrence ?? '—',
+        ]),
+        ltrColumns: [1, 2, 4, 5],
+      },
+    });
+  }
+
+  if ((report.opportunities ?? []).length > 0) {
+    sections.push({
+      heading: ui('فرص التحسين التشغيلي (أنماط متكررة — مؤشر مراجعة، لا سبب نهائي)',
+        'Operational improvement opportunities (repeated patterns — review indicators, not final causes)'),
+      table: {
+        columns: [
+          ui('المجال', 'Area'), ui('مرات التكرار', 'Occurrences'), ui('موظفون', 'Employees'),
+          ui('فرق', 'Teams'), ui('التغير عن الفترة السابقة', 'Change vs previous'),
+        ],
+        rows: (report.opportunities ?? []).map((op) => [
+          op.label ?? '—',
+          num(op.occurrenceCount ?? 0),
+          num(op.employeeCount ?? 0),
+          num(op.teamCount ?? 0),
+          op.changePct === null || op.changePct === undefined ? '—' : `${op.changePct > 0 ? '+' : ''}${op.changePct}%`,
+        ]),
+        ltrColumns: [1, 2, 3, 4],
+      },
+    });
+  }
+
+  sections.push({
+    heading: ui('جودة البيانات', 'Data quality'),
+    table: {
+      columns: [ui('المصدر', 'Source'), ui('الحالة', 'Status')],
+      rows: (report.dataQuality ?? []).map((entry) => [
+        uiMap(INSIGHTS_DATA_SOURCE, entry.source ?? '', entry.source ?? '—'),
+        uiMap(INSIGHTS_DATA_STATUS, entry.status ?? '', entry.status ?? '—'),
+      ]),
+    },
+  });
+
+  const severityStats = (report.severityDistribution ?? []).map((s) => ({
+    label: uiMap(INSIGHTS_SEVERITY, s.severity ?? '', s.severity ?? '—'),
+    value: num(s.count ?? 0),
+    hint: s.pct === null || s.pct === undefined ? undefined : `${s.pct}%`,
+  }));
+
+  return {
+    title: ui('تقرير ذكاء الأداء التشغيلي', 'Operational Performance Intelligence Report'),
+    subject: subject ?? undefined,
+    period: monthLabel(report.monthKey),
+    generatedAt: report.generatedAt,
+    stats: [
+      { label: ui('الموظفون', 'Employees'), value: num(report.selection?.employeeCount ?? 0) },
+      { label: ui('متوسط نسبة الجودة', 'Average quality'), value: o.avgQuality === null || o.avgQuality === undefined ? '—' : pct(o.avgQuality) },
+      { label: ui('التغير عن الفترة السابقة', 'Change vs previous'), value: delta === null || delta === undefined ? '—' : `${delta > 0 ? '+' : ''}${delta}` },
+      { label: ui('الملاحظات المعتمدة', 'Approved observations'), value: num(o.observationsApproved ?? 0) },
+      { label: ui('مشكلات متكررة', 'Repeated issues'), value: num(o.repeatedIssues ?? 0) },
+      { label: ui('بحاجة إلى متابعة', 'Needs attention'), value: num(o.needsAttention ?? 0) },
+      ...severityStats,
+    ],
+    sections,
+    footerNote: reportSourceFooter(),
+  };
+}

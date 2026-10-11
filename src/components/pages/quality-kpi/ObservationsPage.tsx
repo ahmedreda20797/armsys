@@ -159,12 +159,23 @@ export default function ObservationsPage() {
     const m = s.navParams.month;
     return typeof m === 'string' && m.length === 7 && m[4] === '-' ? m : null;
   });
+  // KPI Reports 2.0 — category drill-down seed: a navigation intent
+  // (repeated issue / category distribution) preselects the category
+  // filter for this mount, same doctrine as the month seed.
+  const navCategoryId = useAppStore((s) => {
+    const c = s.navParams.categoryId;
+    return typeof c === 'string' && c.length > 0 && c !== '_unclassified' ? c : null;
+  });
+  const hasNavSeed = navMonth !== null || navCategoryId !== null;
   const [filters, setFilters, resetFilters] = usePageState<ObservationsParams>({
     page: 'observations',
     slot: 'filters',
     version: 1,
-    initial: () => ({ month: navMonth ?? CURRENT_MONTH }),
-    skipRestore: navMonth !== null,
+    initial: () => ({
+      month: navMonth ?? CURRENT_MONTH,
+      ...(navCategoryId ? { categoryId: navCategoryId } : {}),
+    }),
+    skipRestore: hasNavSeed,
     validate: (raw) =>
       raw && typeof raw === 'object' && !Array.isArray(raw) ? (raw as ObservationsParams) : null,
   });

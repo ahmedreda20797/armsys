@@ -1,243 +1,367 @@
 'use client';
 
 // ══════════════════════════════════════════════════════════════
-//  KPI Reports Page — Quality KPI Reporting Layer (Phase 2 + §10)
+//  KPI Reports Page 2.0 — Operational Performance Intelligence
+//  Workspace
 //
-//  §10 TAB AUDIT RESULT (was 7 tabs, several functionally duplicated):
-//    • الشهري / MTD / التاريخي were THREE tabs over ONE component and
-//      ONE runner differing only in value basis → merged into ONE
-//      "جدول الأداء" tab with an explicit basis switcher (شهري · MTD ·
-//      تاريخي) — the basis banners still label the data's nature.
-//    • الملخص الإداري (quality-only statistics) and التقرير الإداري
-//      الشامل (quality KPI + cross-domain operational counts) kept
-//      SEPARATE: different questions — "كيف أداء الجودة؟" vs
-//      "كيف الأداء التشغيلي عبر كل المجالات؟". Both are labeled.
-//    Each tab carries a one-line PURPOSE so a business user knows
-//    what question it answers before opening it.
-//  The reporting work context (tab · month · basis) persists per user.
+//  RESTRUCTURE CONTRACT (KPI Reports 2.0):
+//    • The former الشهري / MTD / تاريخي period tabs are REMOVED —
+//      they were period modes, not report types. ONE canonical
+//      period selector lives in the control bar; the value basis
+//      (MTD / LIVE / FINALIZED) is displayed as read-only context.
+//    • Report TYPES: أداء الموظفين · أداء الفرق · مقارنة الأداء ·
+//      دعم قرارات الموارد البشرية.
+//    • SCOPE: الشركة / موظفون / فرق / أقسام — canonical Organization
+//      Tree node ids; the server intersects the selection with the
+//      AUTHORIZED scope (a selection can only narrow).
+//    • Quality Observations are the analytical explanation layer:
+//      overview → signals → quality intelligence → improvement
+//      opportunities → management attention → data quality.
+//    • All calculations reuse the canonical engines (insights
+//      endpoint composes buildMonthlyKpiReport + the deterministic
+//      observation analysis). No AI anywhere in the numbers.
+//    • Page state persists per user (v3) and restores through the
+//      SPA history snapshots (browser Back) — legacy v2 shapes map
+//      forward.
 // ══════════════════════════════════════════════════════════════
 
-import { useMemo } from 'react';
-import { FileBarChart } from 'lucide-react';
+import { useMemo, useState } from 'react';
+import { FileBarChart, Printer, Sheet as SheetIcon } from 'lucide-react';
 import { PageIdentity } from '@/components/shared/PageIdentity';
 import { Card, CardContent } from '@/components/ui/card';
-import { Label } from '@/components/ui/label';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from '@/components/ui/select';
-import { useMonthSnapshots } from '@/hooks/use-kpi-queries';
+import { Skeleton } from '@/components/ui/skeleton';
+import { Button } from '@/components/ui/button';
+import { useMonthSnapshots, useKpiInsights } from '@/hooks/use-kpi-queries';
+import { useEmployees } from '@/hooks/use-queries';
 import { usePageState } from '@/hooks/use-page-state';
 import { usePermissions } from '@/hooks/usePermissions';
-import KpiEmployeeReportTab from './KpiEmployeeReportTab';
-import KpiMonthlyTableTab, { type TableTabKind } from './KpiMonthlyTableTab';
-import KpiSummaryTab from './KpiSummaryTab';
-import ManagementReportTab from './ManagementReportTab';
-import PerformanceAnalysisTab from './PerformanceAnalysisTab';
+import { useAuth } from '@/contexts/AuthContext';
+import {
+  audienceMayReceiveTechnicalReports,
+  resolveReportAudience,
+} from '@/lib/report-audience/profiles';
+import type { KpiInsightsReport } from '@/lib/kpi-reporting';
+import { buildMonthOptions, currentMonthKey, downloadKpiReportExcel } from './kpi-reports-shared';
 import HrPerformanceReportTab from './HrPerformanceReportTab';
-import { buildMonthOptions, currentMonthKey } from './kpi-reports-shared';
+import { openPrintReport } from '@/components/print/print-report-store';
+import { kpiInsightsToPrintModel } from '@/components/print/print-adapters';
 import { T } from '@/lib/i18n/T';
 import { useLanguage } from '@/lib/i18n/language-context';
-import { translateUIText } from '@/lib/i18n/ui-text';
 import { formatMonthKey } from '@/lib/i18n/format';
-
-type TabKey = 'table' | 'employee' | 'summary' | 'management' | 'performance' | 'hr';
-/** Legacy tab values (pre-§10) map onto the merged table tab. */
-type LegacyTabKey = 'monthly' | 'mtd' | 'historical' | TabKey;
-type BasisKind = TableTabKind;
-
-const TAB_PURPOSE: Record<TabKey, string> = {
-  table: 'جدول أداء الجودة لكل موظف في الشهر — الدرجة الخام والوزن والمساهمة وحالة التقرير.',
-  employee: 'ملف أداء موظف واحد في الشهر: المكونات والأدلة والاتجاه — يفتح من اختيار موظف.',
-  summary: 'إحصائيات جودة الفترة: كم موظفاً متاحاً/معلقاً/غير مكتمل، المتوسطات، وأفضل وأدنى درجة.',
-  management: 'التقرير الإداري الشامل: ملخص الجودة + أعداد تشغيلية (شكاوى، كابا، متابعات، خصومات HR) لكل قسم.',
-  performance: 'تحليل الأداء بالوقائع: ما حدث فعلاً لكل موظف خلال الفترة (سجلات، حالات، أدلة).',
-  hr: 'تقرير الموارد البشرية: نتيجة الأداء النهائية لكل موظف والسياق التنظيمي — دون أي تفاصيل فنية أو أدلة.',
-};
-
-const BASIS_OPTIONS: Array<{ value: BasisKind; label: string; hint: string }> = [
-  { value: 'monthly', label: 'الشهري', hint: 'قيمة الشهر حسب أساس الحساب الحالي' },
-  { value: 'mtd', label: 'MTD', hint: 'حساب حي حتى تاريخه من بيانات الجودة الحالية' },
-  { value: 'historical', label: 'تاريخي', hint: 'القيم المجمّدة من لقطة إغلاق الشهر' },
-];
-
-function normalizeView(raw: { tab?: unknown; month?: unknown; basis?: unknown } | null): {
-  tab: TabKey;
-  month: string;
-  basis: BasisKind;
-} | null {
-  if (!raw || typeof raw !== 'object' || typeof raw.month !== 'string') return null;
-  const tabRaw = raw.tab as string | undefined;
-  let tab: TabKey = 'table';
-  let basis: BasisKind = 'monthly';
-  if (tabRaw === 'monthly' || tabRaw === 'mtd' || tabRaw === 'historical') {
-    // Legacy 3-tab values → merged table tab with the matching basis.
-    basis = tabRaw;
-  } else if (tabRaw === 'employee' || tabRaw === 'summary' || tabRaw === 'management' || tabRaw === 'performance' || tabRaw === 'hr') {
-    tab = tabRaw;
-  }
-  if (typeof raw.basis === 'string' && (raw.basis === 'monthly' || raw.basis === 'mtd' || raw.basis === 'historical')) {
-    basis = raw.basis;
-  }
-  return { tab, month: raw.month, basis };
-}
+import {
+  KpiReportsControlBar,
+  type KpiReportType,
+  type KpiScopeMode,
+  type KpiReportsFilters,
+} from './kpi-reports/KpiReportsControlBar';
+import { PerformanceOverview } from './kpi-reports/PerformanceOverview';
+import { QualityIntelligenceSection } from './kpi-reports/QualityIntelligenceSection';
+import { EmployeePerformanceReport } from './kpi-reports/EmployeePerformanceReport';
+import { TeamPerformanceReport } from './kpi-reports/TeamPerformanceReport';
+import { ComparisonReport } from './kpi-reports/ComparisonReport';
+import {
+  ImprovementOpportunitiesSection,
+  ManagementAttentionSection,
+  DataQualitySection,
+} from './kpi-reports/InsightsSections';
+import { KpiEmployeeReportDialog } from './kpi-reports/KpiEmployeeReportDialog';
+import { normalizeView, DEFAULT_FILTERS, type WorkspaceView } from './kpi-reports/view-state';
+import { useAppStore } from '@/lib/store';
 
 export default function KpiReportsPage() {
-  // Phase 6.3 (§8/§38/§39/§50): the reporting work context — active tab
-  // + selected period + table basis — persists per user across navigation.
-  const [kpiReportsView, setKpiReportsView] = usePageState<{
-    tab: TabKey;
-    month: string;
-    basis: BasisKind;
-  }>({
+  const { locale } = useLanguage();
+  const { user } = useAuth();
+  const { canView: canViewHrReport } = usePermissions('reports');
+
+  // ── Audience (client mirror of the SERVER gates — the routes
+  //    enforce the same resolution): technical detail reaches only
+  //    TECHNICAL audiences; HR / TEAM_LEADER use the HR report type.
+  const audience = useMemo(
+    () => resolveReportAudience({ role: user?.role, permissions: user?.permissions }),
+    [user?.role, user?.permissions],
+  );
+  const technical = audienceMayReceiveTechnicalReports(audience);
+  const availableReportTypes: ReadonlyArray<KpiReportType> = technical
+    ? ['employees', 'teams', 'comparison', 'hr']
+    : ['hr'];
+
+  // ── Navigation seeds (existing nav params — win for this mount) ──
+  const navMonth = useAppStore((s) => {
+    const m = s.navParams.month;
+    return typeof m === 'string' && m.length === 7 && m[4] === '-' ? m : null;
+  });
+  const navEmployeeId = useAppStore((s) => {
+    const e = s.navParams.employeeId;
+    return typeof e === 'string' && e.length > 0 ? e : null;
+  });
+  const hasNavSeed = navMonth !== null || navEmployeeId !== null;
+
+  // ── The work context persists per user (v3) and restores on Back ──
+  const [view, setView] = usePageState<WorkspaceView>({
     page: 'kpiReports',
     slot: 'view',
-    version: 2,
-    initial: () => ({ tab: 'table', month: currentMonthKey(), basis: 'monthly' }),
-    validate: (raw) => normalizeView(raw as { tab?: unknown; month?: unknown; basis?: unknown } | null),
+    version: 3,
+    skipRestore: hasNavSeed,
+    initial: () => ({
+      reportType: 'employees',
+      month: navMonth ?? currentMonthKey(),
+      scopeMode: navEmployeeId ? 'employees' : 'company',
+      employeeIds: navEmployeeId ? [navEmployeeId] : [],
+      orgNodeIds: [],
+      filters: { ...DEFAULT_FILTERS },
+    }),
+    validate: (raw) => normalizeView(raw),
   });
-  // ── Audience-aware tab visibility (client mirror of the SERVER
-  //    gate in /api/reports/hr-performance): the HR tab renders only
-  //    for callers the route would admit — an existing 'reports'
-  //    page view grant (usePermissions resolves role → position →
-  //    override with the admin bypass, same map the server reads).
-  //    A hidden tab is UX only; the route enforces the same rule.
-  const { canView: canViewHrReport } = usePermissions('reports');
-  const tab = kpiReportsView.tab;
-  const setTab = (v: TabKey) => setKpiReportsView((s) => ({ ...s, tab: v }));
-  // A persisted 'hr' tab for a viewer without the grant falls back to
-  // the table tab (UX only — the route denies the data regardless).
-  const activeTab: TabKey = tab === 'hr' && !canViewHrReport ? 'table' : tab;
-  const month = kpiReportsView.month;
-  const setMonth = (v: string) => setKpiReportsView((s) => ({ ...s, month: v }));
-  const basis = kpiReportsView.basis;
-  const setBasis = (v: BasisKind) => setKpiReportsView((s) => ({ ...s, basis: v }));
-  const snapshotsQuery = useMonthSnapshots();
-  const { locale } = useLanguage();
 
+  const snapshotsQuery = useMonthSnapshots();
   const monthOptions = useMemo(
-    () => buildMonthOptions(snapshotsQuery.data as Array<{ monthKey: string; status: 'open' | 'closed' }> | undefined, locale),
+    () =>
+      buildMonthOptions(
+        snapshotsQuery.data as Array<{ monthKey: string; status: 'open' | 'closed' }> | undefined,
+        locale,
+      ),
     [snapshotsQuery.data, locale],
   );
+  const month = monthOptions.some((o) => o.value === view.month) ? view.month : monthOptions[0]?.value ?? view.month;
+  const reportType: KpiReportType = availableReportTypes.includes(view.reportType)
+    ? view.reportType
+    : availableReportTypes[0];
 
-  // Keep the selector valid when options load/refresh.
-  const effectiveMonth = monthOptions.some((o) => o.value === month)
-    ? month
-    : monthOptions[0]?.value ?? month;
+  const setViewPart = (patch: Partial<WorkspaceView>) => setView((s) => ({ ...s, ...patch }));
+
+  // ── Canonical insights payload (one assembly for the workspace) ──
+  const insightsParams = {
+    employeeIds: view.scopeMode === 'employees' ? view.employeeIds : [],
+    orgNodeIds:
+      view.scopeMode === 'teams' || view.scopeMode === 'departments' ? view.orgNodeIds : [],
+    includeArchived: view.filters.includeArchived,
+  };
+  const insightsQuery = useKpiInsights(month, {
+    ...insightsParams,
+    enabled: reportType !== 'hr',
+  });
+  const report = (insightsQuery.data ?? null) as KpiInsightsReport | null;
+
+  const employeesQuery = useEmployees();
+  const employeeOptions = useMemo(
+    () =>
+      ((employeesQuery.data ?? []) as Array<{ id: string; name: string; department?: string | null }>).map(
+        (e) => ({ id: e.id, label: e.name, hint: e.department ?? null }),
+      ),
+    [employeesQuery.data],
+  );
+
+  const teamOptions = useMemo(
+    () => (report?.vocab.teams ?? []).map((t) => ({ id: t.nodeId, label: t.label, hint: `${t.employeeCount}` })),
+    [report],
+  );
+  const departmentOptions = useMemo(
+    () => (report?.vocab.departments ?? []).map((d) => ({ id: d.nodeId, label: d.label, hint: `${d.employeeCount}` })),
+    [report],
+  );
+
+  // Exactly one org unit selected → the shared distributions ARE that
+  // unit's report (server-side canonical narrowing).
+  const singleUnitLabel =
+    (view.scopeMode === 'teams' || view.scopeMode === 'departments') && view.orgNodeIds.length === 1
+      ? [...(report?.vocab.teams ?? []), ...(report?.vocab.departments ?? [])].find(
+          (v) => v.nodeId === view.orgNodeIds[0],
+        )?.label ?? null
+      : null;
+
+  const rowNameById = useMemo(
+    () => new Map((report?.rows ?? []).map((r) => [r.employeeId, r.employeeName])),
+    [report],
+  );
+  const employeeNameOf = (employeeId: string): string => rowNameById.get(employeeId) ?? employeeId;
+
+  // ── Drill-down: employee report dialog ──
+  const [employeeDialogId, setEmployeeDialogId] = useState<string | null>(null);
+
+  // ── Unit drill = canonical narrowing through the selection ──
+  const drillToUnit = (unitKey: string, kind: 'team' | 'department') => {
+    const vocab = kind === 'team' ? report?.vocab.teams : report?.vocab.departments;
+    const nodeId = vocab?.find((v) => v.label === unitKey)?.nodeId;
+    if (nodeId) {
+      setViewPart({ scopeMode: kind === 'team' ? 'teams' : 'departments', orgNodeIds: [nodeId] });
+    } else {
+      // No matching active node → narrow by the unit's members.
+      const unit = kind === 'team'
+        ? report?.teamUnits.find((u) => u.key === unitKey)
+        : report?.departmentUnits.find((u) => u.key === unitKey);
+      if (unit) {
+        setViewPart({ scopeMode: 'employees', employeeIds: [...unit.employeeIds], orgNodeIds: [] });
+      }
+    }
+  };
+
+  const handleClear = () => {
+    setViewPart({ scopeMode: 'company', employeeIds: [], orgNodeIds: [], filters: { ...DEFAULT_FILTERS } });
+  };
+
+  const handlePrint = () => {
+    if (!report) return;
+    const scopeLabels =
+      view.scopeMode === 'employees'
+        ? view.employeeIds.map(employeeNameOf).join(' · ')
+        : singleUnitLabel ?? undefined;
+    openPrintReport(
+      kpiInsightsToPrintModel(
+        report,
+        scopeLabels
+          ? `${locale === 'en' ? 'Scope' : 'النطاق'}: ${scopeLabels}`
+          : undefined,
+      ),
+    );
+  };
+
+  const handleExcelExport = () => {
+    void downloadKpiReportExcel(
+      'kpi-monthly',
+      { monthKey: month, employeeScope: 'all', filters: insightsParams.includeArchived ? { includeArchived: 'true' } : {} },
+      `kpi_report_${month}.xlsx`,
+    );
+  };
 
   return (
-    <div className="space-y-5 p-1">
-      {/* ── §7 unified page identity ── */}
+    <div className="space-y-5 p-1" data-active-page="kpiReports">
       <PageIdentity
         pageId="kpiReports"
         icon={<FileBarChart className="size-5" />}
         iconClassName="bg-emerald-500/15 border-emerald-500/30 text-emerald-400"
         description={
           <>
-            <T>تقارير جودة KPI فوق إطار مؤشرات الأداء القابل للتهيئة — مع تمييز واضح بين MTD والقيم المجمّدة.</T>
-            <span className="block text-[11px] text-slate-500 mt-0.5 no-print">
-              <T>الفترة الحالية: </T>{formatMonthKey(effectiveMonth, locale)}
-              {monthOptions.find((o) => o.value === effectiveMonth)?.closed
+            <T>مساحة ذكاء الأداء التشغيلي — تشرح أنماط الجودة وراء المؤشرات وتحدد مواضع التحسين ومسار المراجعة الإدارية.</T>
+            <span className="block text-[11px] text-slate-500 mt-0.5">
+              <T>الفترة: </T>{formatMonthKey(month, locale)}
+              {monthOptions.find((o) => o.value === month)?.closed
                 ? <T>{' — شهر مغلق (نتائج مجمّدة)'}</T>
                 : <T>{' — شهر مفتوح'}</T>}
             </span>
           </>
         }
         actions={
-          <div className="no-print">
-            <Select value={effectiveMonth} onValueChange={setMonth}>
-              <SelectTrigger className="h-9 w-44"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                {monthOptions.map((o) => (
-                  <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+          <div className="no-print flex items-center gap-1.5">
+            {report && (
+              <Button variant="outline" size="sm" className="gap-1.5" onClick={handlePrint}>
+                <Printer className="size-4" />
+                <T>طباعة</T>
+              </Button>
+            )}
+            {technical && (
+              <Button variant="outline" size="sm" className="gap-1.5" onClick={handleExcelExport}>
+                <SheetIcon className="size-4" />
+                <T>Excel</T>
+              </Button>
+            )}
           </div>
         }
       />
 
-      <Tabs
-        value={activeTab}
-        onValueChange={(v) => setTab(v as TabKey)}
-        className="space-y-4"
-      >
-        <TabsList className="no-print bg-slate-800/50 flex-wrap h-auto">
-          <TabsTrigger value="table"><T>جدول الأداء</T></TabsTrigger>
-          <TabsTrigger value="employee"><T>أداء الموظف</T></TabsTrigger>
-          <TabsTrigger value="summary"><T>ملخص الجودة</T></TabsTrigger>
-          <TabsTrigger value="management"><T>التقرير الإداري الشامل</T></TabsTrigger>
-          <TabsTrigger value="performance"><T>تحليل الأداء</T></TabsTrigger>
-          {canViewHrReport && <TabsTrigger value="hr"><T>تقرير الموارد البشرية</T></TabsTrigger>}
-        </TabsList>
+      <KpiReportsControlBar
+        reportType={reportType}
+        onReportTypeChange={(type) => setViewPart({ reportType: type })}
+        availableReportTypes={availableReportTypes}
+        monthOptions={monthOptions}
+        month={month}
+        onMonthChange={(m) => setViewPart({ month: m })}
+        valueBasis={report?.valueBasis ?? null}
+        finalized={report?.finalized ?? monthOptions.find((o) => o.value === month)?.closed ?? false}
+        scopeMode={view.scopeMode}
+        onScopeModeChange={(mode) => setViewPart({ scopeMode: mode })}
+        employeeOptions={employeeOptions}
+        teamOptions={teamOptions}
+        departmentOptions={departmentOptions}
+        selectedEmployeeIds={view.employeeIds}
+        onSelectedEmployeesChange={(ids) => setViewPart({ employeeIds: ids })}
+        selectedOrgNodeIds={view.orgNodeIds}
+        onSelectedOrgNodesChange={(ids) => setViewPart({ orgNodeIds: ids })}
+        filters={view.filters}
+        onFiltersChange={(filters) => setViewPart({ filters })}
+        onClear={handleClear}
+        loading={insightsQuery.isFetching}
+      />
 
-        {/* §10 — every tab states its purpose up-front */}
-        <p className="no-print text-[11px] text-slate-500 -mt-2 px-1"><T>{TAB_PURPOSE[activeTab]}</T></p>
-
-        <TabsContent value="table" className="space-y-3">
-          {/* §16 — Period + Month TOGETHER: the basis switcher (the former
-              3 duplicated tabs) sits in the same filter row as the month
-              selector, so Report → Period → Month reads as one unit. */}
-          <div className="no-print flex items-center gap-2 flex-wrap">
-            <div className="flex items-center gap-1 rounded-xl border border-slate-700/60 bg-slate-950/40 p-1 w-fit">
-              {BASIS_OPTIONS.map((opt) => (
-                <button
-                  key={opt.value}
-                  type="button"
-                  title={translateUIText(opt.hint, locale)}
-                  onClick={() => setBasis(opt.value)}
-                  className={`px-4 py-1.5 text-xs rounded-lg font-medium transition-colors ${
-                    basis === opt.value
-                      ? 'bg-brand-500/20 text-brand-200'
-                      : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
-                  }`}
-                >
-                  <T>{opt.label}</T>
-                </button>
-              ))}
-            </div>
-            <Select value={effectiveMonth} onValueChange={setMonth}>
-              <SelectTrigger className="h-8 w-44 text-xs bg-slate-900/60 border-slate-700/60">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {monthOptions.map((o) => (
-                  <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <span className="text-[10px] text-slate-500">
-              <T>{monthOptions.find((o) => o.value === effectiveMonth)?.closed ? 'شهر مغلق (نتائج مجمّدة)' : 'شهر مفتوح'}</T>
+      {reportType === 'hr' && canViewHrReport ? (
+        <HrPerformanceReportTab month={month} />
+      ) : reportType === 'hr' ? (
+        <Card className="bg-slate-800/30 border-slate-700/40">
+          <CardContent className="p-6 text-sm text-slate-400">
+            <T>تقرير الموارد البشرية غير متاح لصلاحياتك الحالية.</T>
+          </CardContent>
+        </Card>
+      ) : insightsQuery.isLoading ? (
+        <div className="space-y-4">
+          <Skeleton className="h-24 w-full rounded-2xl bg-slate-800/40" />
+          <Skeleton className="h-64 w-full rounded-2xl bg-slate-800/40" />
+        </div>
+      ) : insightsQuery.isError ? (
+        <Card className="bg-red-950/20 border-red-800/40">
+          <CardContent className="p-5 text-sm text-red-300">
+            <T>تعذر تحميل مساحة التقارير.</T>
+            <span className="block text-xs text-red-300/80 mt-1">
+              {(insightsQuery.error as Error | null)?.message ?? ''}
             </span>
-          </div>
-          <KpiMonthlyTableTab kind={basis} month={effectiveMonth} />
-        </TabsContent>
-        <TabsContent value="employee">
-          <KpiEmployeeReportTab month={effectiveMonth} />
-        </TabsContent>
-        <TabsContent value="summary">
-          <KpiSummaryTab month={effectiveMonth} />
-        </TabsContent>
-        <TabsContent value="management">
-          <ManagementReportTab month={effectiveMonth} />
-        </TabsContent>
-        <TabsContent value="performance">
-          <PerformanceAnalysisTab month={effectiveMonth} />
-        </TabsContent>
-        {canViewHrReport && (
-          <TabsContent value="hr">
-            <HrPerformanceReportTab month={effectiveMonth} />
-          </TabsContent>
-        )}
-      </Tabs>
+          </CardContent>
+        </Card>
+      ) : report ? (
+        <div className="space-y-5">
+          <PerformanceOverview report={report} />
 
-      {!snapshotsQuery.isLoading && monthOptions.length === 0 && (
+          {reportType === 'employees' && (
+            <EmployeePerformanceReport
+              report={report}
+              filters={view.filters}
+              onOpenEmployeeReport={setEmployeeDialogId}
+            />
+          )}
+          {reportType === 'teams' && (
+            <TeamPerformanceReport
+              report={report}
+              filters={view.filters}
+              onOpenEmployeeReport={setEmployeeDialogId}
+              onDrillToTeam={(unit) => drillToUnit(unit.key, 'team')}
+              onDrillToDepartment={(unit) => drillToUnit(unit.key, 'department')}
+              singleUnitLabel={singleUnitLabel}
+            />
+          )}
+          {reportType === 'comparison' && (
+            <ComparisonReport
+              report={report}
+              initialEntityIds={
+                view.scopeMode === 'employees'
+                  ? view.employeeIds
+                  : view.orgNodeIds
+                    .map((nodeId) =>
+                      [...report.vocab.teams, ...report.vocab.departments].find((v) => v.nodeId === nodeId)?.label,
+                    )
+                    .filter((label): label is string => !!label)
+              }
+            />
+          )}
+
+          <QualityIntelligenceSection report={report} />
+          <ImprovementOpportunitiesSection report={report} employeeNameOf={employeeNameOf} />
+          <ManagementAttentionSection report={report} />
+          <DataQualitySection report={report} />
+        </div>
+      ) : !snapshotsQuery.isLoading && monthOptions.length === 0 ? (
         <Card className="bg-slate-800/30 border-slate-700/40">
           <CardContent className="p-6 text-sm text-slate-400">
             <T>لا توجد فترات متاحة بعد — تُضاف الأشهر تلقائيًا بعد أول إغلاق شهر.</T>
           </CardContent>
         </Card>
-      )}
+      ) : null}
+
+      <KpiEmployeeReportDialog
+        employeeId={employeeDialogId}
+        month={month}
+        employeeName={employeeDialogId ? employeeNameOf(employeeDialogId) : null}
+        open={!!employeeDialogId}
+        onOpenChange={(open) => {
+          if (!open) setEmployeeDialogId(null);
+        }}
+      />
     </div>
   );
 }
