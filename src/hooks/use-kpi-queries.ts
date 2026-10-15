@@ -565,6 +565,23 @@ export function usePerformanceIntelligence(employeeId: string | null, month: str
 }
 
 /**
+ * Employee Performance Hub dataset (مركز أداء الموظف) — the
+ * consumer/analysis layer over the canonical engines. Read-only
+ * service; risk/HR blocks are server-gated by the employee360
+ * section permissions, so a restricted role simply receives them
+ * as null (the UI renders explicit restricted states).
+ */
+export function usePerformanceHub(employeeId: string | null, month: string | null) {
+  const qs = buildQueryString({ employeeId: employeeId ?? undefined, month: month ?? undefined });
+  return useQuery({
+    queryKey: [...reportsKey('performance-hub'), employeeId ?? 'none', month ?? 'none'],
+    queryFn: () => apiFetch(`/api/performance-hub${qs}`),
+    enabled: !!employeeId && !!month,
+    staleTime: 15_000,
+  });
+}
+
+/**
  * Deterministic analytics for one employee + period (Phase 5.3 —
  * TypeScript engine, in-process on the server).
  * Analytics layer ONLY — never a KPI source. The server responds

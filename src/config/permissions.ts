@@ -178,6 +178,16 @@ export const APP_PAGES: PageConfig[] = [
   // ═══ 👥 إدارة الموظفين ═══
   { id: 'employees', title: 'الموظفين', description: 'قاعدة بيانات الموظفين — إضافة، تعديل، وحذف السجلات', titleEn: 'Employees', descriptionEn: 'Employee database — add, edit, and delete records', icon: 'Users', permissionKey: 'employees', availableActions: ['create', 'update', 'delete', 'export'], groupId: 'employee_mgmt' },
   { id: 'employee360', title: 'ملف الموظف', description: 'الملف الشامل للموظف — كل الجوانب في مكان واحد', titleEn: 'Employee Profile', descriptionEn: 'The employee’s comprehensive file — everything in one place', icon: 'UserCircle', permissionKey: 'employee360', availableActions: [], groupId: 'employee_mgmt', overlayOnly: true },
+  // ── Employee Performance Hub (مركز أداء الموظف): the dedicated
+  //    employee-analysis WORKSPACE. READ-ONLY consumer/analysis layer
+  //    over the canonical engines (KPI/quality/follow-up/risk/
+  //    attendance/deals/HR/complaints/CAPA) — no new calculations.
+  //    Mounts under the SAME 'employee360' permission key — existing
+  //    role grants apply unchanged (same doctrine as
+  //    smartQualityReport / 'kpiReports'); the Hub's restricted blocks
+  //    (risk / HR deductions / benchmark membership) are withheld
+  //    SERVER-SIDE through the employee360 SECTION gate.
+  { id: 'employeePerformanceHub', title: 'مركز أداء الموظف', description: 'صورة الأداء الكاملة للموظف — الأبعاد، التغيرات، الأدلة، والتوصيات', titleEn: 'Employee Performance Hub', descriptionEn: 'The employee’s complete performance view — dimensions, changes, evidence, and recommendations', icon: 'Target', permissionKey: 'employee360', availableActions: [], groupId: 'employee_mgmt' },
   { id: 'attendance', title: 'الحضور والانصراف', description: 'سجل الحضور والانصراف والتأخيرات اليومية', titleEn: 'Attendance & Check-out', descriptionEn: 'Attendance, check-out, and daily delay records', icon: 'Clock', permissionKey: 'attendance', availableActions: ['create', 'update', 'delete', 'export'], groupId: 'employee_mgmt' },
   { id: 'biometric', title: 'البصمة', description: 'رفع ومراجعة بيانات بصمة الحضور', titleEn: 'Biometric', descriptionEn: 'Upload and review biometric attendance data', icon: 'Fingerprint', permissionKey: 'biometric', availableActions: ['create', 'update', 'delete', 'upload'], groupId: 'employee_mgmt' },
   { id: 'requests', title: 'الطلبات', description: 'طلبات الموظفين — اعتماد ورفض ومتابعة الحالة', titleEn: 'Requests', descriptionEn: 'Employee requests — approve, reject, and track status', icon: 'FileText', permissionKey: 'requests', availableActions: ['create', 'update', 'delete', 'approve'], groupId: 'employee_mgmt' },

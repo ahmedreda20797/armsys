@@ -551,6 +551,8 @@ export default function RiskCenterPage() {
                   overflowItems: [
                     { key: 'view', label: translateUIText('عرض التفاصيل', locale), icon: <Eye className="size-3.5" />, onSelect: () => setSelectedEmployee(emp) },
                     { key: 'employee360', label: translateUIText('فتح ملف الموظف', locale), icon: <UserCheck className="size-3.5" />, separatorBefore: true, onSelect: () => useAppStore.getState().openEmployee360(emp.employeeId) },
+                    // §EMPLOYEE-PERFORMANCE-HUB — the analytical workspace for this employee.
+                    { key: 'performanceHub', label: translateUIText('مركز أداء الموظف', locale), icon: <Target className="size-3.5" />, onSelect: () => useAppStore.getState().navigateTo('employeePerformanceHub', undefined, { employeeId: emp.employeeId }) },
                   ],
                 };
               })}

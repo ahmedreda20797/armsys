@@ -432,7 +432,7 @@ export interface KnowledgeArticle {
   updatedAt: string;
 }
 
-export type PageId = 'home' | 'employees' | 'biometric' | 'attendance' | 'requests' | 'rules' | 'quality' | 'hrDeductions' | 'travel' | 'reports' | 'followUps' | 'capa' | 'complaints' | 'knowledgeBase' | 'riskCenter' | 'operationsCenter' | 'employee360' | 'notifications' | 'rulesEngine' | 'controlPanel' | 'observations' | 'observationCategories' | 'observationTemplates' | 'kpiDashboard' | 'kpiReports' | 'monthClose' | 'kpiSettings' | 'qualityAuditLog' | 'qualityDeductionsReport' | 'smartQualityReport' | 'workflowDesigner' | 'organization' | 'masterData' | 'settings' | 'profile';
+export type PageId = 'home' | 'employees' | 'biometric' | 'attendance' | 'requests' | 'rules' | 'quality' | 'hrDeductions' | 'travel' | 'reports' | 'followUps' | 'capa' | 'complaints' | 'knowledgeBase' | 'riskCenter' | 'operationsCenter' | 'employee360' | 'employeePerformanceHub' | 'notifications' | 'rulesEngine' | 'controlPanel' | 'observations' | 'observationCategories' | 'observationTemplates' | 'kpiDashboard' | 'kpiReports' | 'monthClose' | 'kpiSettings' | 'qualityAuditLog' | 'qualityDeductionsReport' | 'smartQualityReport' | 'workflowDesigner' | 'organization' | 'masterData' | 'settings' | 'profile';
 
 export interface AppNotification {
   id: string;

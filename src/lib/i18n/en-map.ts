@@ -35,6 +35,16 @@ export const EN_MAP: Record<string, string> = {
   'الفترة: ': 'Period: ',
   'تاريخ الإصدار: ': 'Generated: ',
     'المدير: ': 'Manager: ',
+
+  // ── Employee Performance Hub (مركز أداء الموظف) — claimed UI strings ──
+  'مركز أداء الموظف': 'Employee Performance Hub',
+  'مركز الأداء': 'Performance Hub',
+  'اختر موظفًا لعرض مركز أدائه': 'Select an employee to open their performance hub',
+  'يجمع المركز الجودة والمتابعات والحضور والصفقات والمخاطر والموارد البشرية في صورة واحدة مدعومة بالأدلة.': 'The hub brings quality, follow-ups, attendance, deals, risk and HR together in one evidence-backed view.',
+  'تعذر تحميل مركز الأداء': 'Failed to load the performance hub',
+  'لا تملك صلاحية عرض مركز أداء الموظف. هذه الصفحة تتطلب صلاحية ملف الموظف.': 'You do not have permission to view the Employee Performance Hub. This page requires the Employee Profile permission.',
+  'أخرى (الأشهر المغلقة والسابقة)': 'Other (closed & previous months)',
+  'تقرير رسمي — مصدر البيانات: قاعدة بيانات النظام للفترة المحددة. تُعرض القيم كما أنتجتها المحركات الحتمية دون أي تقدير.': 'Official report — data source: the system database for the selected period. Values are shown exactly as produced by the deterministic engines, with no estimation.',
   'أهم 3 إشارات': 'Top 3 Signals',
   'مستمدة من بيانات الفترة — كل رقم من مصدره الفعلي': 'Derived from the period data — every number from its actual source',
   'ماذا تغير؟': 'What Changed?',

@@ -243,6 +243,8 @@ export const DICTIONARY = {
   // ── §I18N-BILINGUAL — Smart Quality Report ──
   'smart.print': { ar: 'طباعة / PDF', en: 'Print / PDF' },
   'smart.printTitle': { ar: 'تقرير الجودة الذكي', en: 'Smart Quality Report' },
+  // §EMPLOYEE-PERFORMANCE-HUB — cross-navigation from the smart report.
+  'hub.openFromReport': { ar: 'مركز الأداء', en: 'Performance Hub' },
   'smart.identityDescription': { ar: 'تقرير أداء الموظف فوق بيانات ذكاء الأداء المتحقق منها — حقائق منظمة قابلة للتتبع، بلا أي سرد أو تفسير.', en: 'Employee performance over verified performance-intelligence data — organized, traceable facts with no narrative.' },
   'smart.employee': { ar: 'الموظف', en: 'Employee' },
   'smart.employeePlaceholder': { ar: 'ابحث بالاسم أو الرقم الوظيفي...', en: 'Search by name or employee ID...' },

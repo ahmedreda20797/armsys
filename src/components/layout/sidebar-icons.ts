@@ -43,6 +43,7 @@ import {
   FileBarChart,
   FileSearch,
   UserCircle,
+  Target,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -81,4 +82,5 @@ export const SIDEBAR_ICON_MAP: Record<string, LucideIcon> = {
   FileBarChart,
   FileSearch,
   UserCircle,
+  Target,
 };

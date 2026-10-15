@@ -19,7 +19,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
-import { AlertCircle, ArrowRight, Loader2, UserCircle, XCircle } from 'lucide-react';
+import { AlertCircle, ArrowRight, Loader2, Target, UserCircle, XCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { usePermissions } from '@/hooks/usePermissions';
@@ -123,6 +123,7 @@ export default function Employee360Page({ employeeId: propEmployeeId, onClose }:
   const { canView } = usePermissions('employees');
   const storeNavParams = useAppStore((s) => s.navParams);
   const storeGoBack = useAppStore((s) => s.goBack);
+  const storeNavigateTo = useAppStore((s) => s.navigateTo);
   const employeeId = propEmployeeId || storeNavParams.employeeId || '';
   const handleClose = onClose || storeGoBack;
 
@@ -211,14 +212,29 @@ export default function Employee360Page({ employeeId: propEmployeeId, onClose }:
               </p>
             </div>
           </div>
-          <button
-            type="button"
-            onClick={handleClose}
-            className="flex size-9 shrink-0 items-center justify-center rounded-xl border border-border/60 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-            aria-label="close"
-          >
-            <XCircle className="size-4" />
-          </button>
+          <div className="flex shrink-0 items-center gap-2">
+            {/* §EMPLOYEE-PERFORMANCE-HUB — the analytical workspace entry:
+                carries the employee + the currently selected period. */}
+            {employeeId && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="border-brand-500/30 text-brand-300 hover:bg-brand-500/10"
+                onClick={() => storeNavigateTo('employeePerformanceHub', undefined, { employeeId, month })}
+              >
+                <Target className="me-1.5 size-4" />
+                <T>مركز الأداء</T>
+              </Button>
+            )}
+            <button
+              type="button"
+              onClick={handleClose}
+              className="flex size-9 shrink-0 items-center justify-center rounded-xl border border-border/60 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              aria-label="close"
+            >
+              <XCircle className="size-4" />
+            </button>
+          </div>
         </div>
       </div>
 

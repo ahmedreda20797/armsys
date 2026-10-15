@@ -27,6 +27,7 @@ import {
   Printer,
   Search,
   ShieldX,
+  Target,
 } from 'lucide-react';
 import { openPrintReport } from '@/components/print/print-report-store';
 import { performanceDatasetToPrintModel } from '@/components/print/print-adapters';
@@ -290,10 +291,25 @@ function ReportBody() {
         description={t('smart.identityDescription')}
         className="flex-wrap items-start no-print"
         actions={
-          <Button variant="outline" size="sm" onClick={handlePrint} className="border-slate-700/50 text-slate-300 hover:bg-slate-800/60">
-            <Printer className="h-4 w-4 ml-1.5" />
-            {t('smart.print')}
-          </Button>
+          <>
+            {/* §EMPLOYEE-PERFORMANCE-HUB — same employee + period into the
+                full performance workspace (visible only with the page). */}
+            {employeeId && visibleSet.has('employeePerformanceHub') && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => navigateTo('employeePerformanceHub', undefined, { employeeId, month: effectiveMonth })}
+                className="border-brand-500/30 text-brand-300 hover:bg-brand-500/10"
+              >
+                <Target className="h-4 w-4 ml-1.5" />
+                {t('hub.openFromReport')}
+              </Button>
+            )}
+            <Button variant="outline" size="sm" onClick={handlePrint} className="border-slate-700/50 text-slate-300 hover:bg-slate-800/60">
+              <Printer className="h-4 w-4 ml-1.5" />
+              {t('smart.print')}
+            </Button>
+          </>
         }
       />
 

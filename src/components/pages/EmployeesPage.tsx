@@ -18,7 +18,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Archive, UserCircle } from 'lucide-react';
+import { Archive, Target, UserCircle } from 'lucide-react';
 import { SmartActionMenu } from '@/components/shared/SmartActionMenu';
 import { EmployeeLink } from '@/components/shared/EmployeeLink';
 import {
@@ -172,6 +172,8 @@ const EmployeeRowActions = memo(function EmployeeRowActions({
       label={`إجراءات الموظف ${emp.name}`}
       actions={[
         { key: 'view', label: 'الملف الشخصي', icon: <UserCircle className="size-3.5" />, onSelect: () => onOpen360(emp.id), hidden: !canOpenEmployee360 },
+        // §EMPLOYEE-PERFORMANCE-HUB — the analytical workspace entry.
+        { key: 'performanceHub', label: 'مركز أداء الموظف', icon: <Target className="size-3.5" />, onSelect: () => useAppStore.getState().navigateTo('employeePerformanceHub', undefined, { employeeId: emp.id }), hidden: !canOpenEmployee360 },
         { key: 'edit', label: 'تعديل', icon: <Pencil className="size-3.5" />, onSelect: () => onEdit(emp), hidden: !canUpdate },
         {
           key: 'favorite',

@@ -9,7 +9,7 @@
 //  report endpoint — no second assembly.
 // ══════════════════════════════════════════════════════════════
 
-import { Printer, Stethoscope } from 'lucide-react';
+import { Printer, Stethoscope, Target } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   Sheet, SheetContent, SheetHeader, SheetTitle,
@@ -18,6 +18,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { openPrintReport } from '@/components/print/print-report-store';
 import { employeeKpiReportToPrintModel } from '@/components/print/print-adapters';
 import { useKpiEmployeeReport, useKpiVisibilityDiagnose } from '@/hooks/use-kpi-queries';
+import { useAppStore } from '@/lib/store';
 import type { EmployeeKpiReport } from '@/lib/kpi-reporting';
 import { T } from '@/lib/i18n/T';
 import { useState } from 'react';
@@ -53,6 +54,22 @@ export function KpiEmployeeReportDialog({
               {employeeName ? <span className="text-brand-300"> — {employeeName}</span> : null}
             </span>
             <span className="flex items-center gap-1.5">
+              {/* §EMPLOYEE-PERFORMANCE-HUB — open the full performance
+                  workspace for this employee + period. */}
+              {employeeId && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="gap-1.5 border-brand-500/30 text-brand-300 hover:bg-brand-500/10"
+                  onClick={() => {
+                    onOpenChange(false);
+                    useAppStore.getState().navigateTo('employeePerformanceHub', undefined, { employeeId, month });
+                  }}
+                >
+                  <Target className="h-4 w-4" />
+                  <T>مركز الأداء</T>
+                </Button>
+              )}
               <Button
                 variant="outline"
                 size="sm"
