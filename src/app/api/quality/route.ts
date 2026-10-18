@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getAll, findWhere, createRecord, getById, sortByDateField, withEmployeeFull } from '@/lib/db';
+import { createId } from '@paralleldrive/cuid2';
+import { getAll, findWhere, createRecordWithId, getById, sortByDateField, withEmployeeFull } from '@/lib/db';
 import { verifyPermission, requireAuth, type AuthenticatedCaller } from '@/lib/verify-permission';
 import { maySeeAuditIdentity, stripAuditIdentity } from '@/lib/audit/audit-identity';
 import { asScopeViewer, employeeInScope, authScopeViewer, filterRowsByEmployeeScope, resolveEmployeeScopeFromDb } from '@/lib/scope/server';
@@ -12,6 +13,16 @@ import { notifyQualityDiscountPending } from '@/lib/notifications/quality-approv
 import {
   QUALITY_DEDUCTIONS_TABLE, deductionTypeLabel,
 } from '@/lib/quality-deductions/domain';
+import {
+  assertAttachableEvidenceImages,
+  evidenceImageItems,
+  projectLegacyEvidenceFields,
+  sanitizeEvidenceItems,
+  stampEvidenceItems,
+} from '@/lib/evidence-items';
+import { deleteEvidenceObjects, promoteEvidenceImages } from '@/lib/evidence-storage';
+import { FirebaseConfigError } from '@/lib/firebase-server';
+import type { EvidenceItem } from '@/types';
 
 /** Global quality audit trail table (same store observations use). */
 export const AUDIT_LOG_TABLE = 'qualityAuditLog';
@@ -92,7 +103,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { employeeId, date, type, description, deductionDays, deductionAmount, evidence, month, relatedCapaId } = body;
+    const { employeeId, date, type, description, deductionDays, deductionAmount, evidence, evidenceItems, month, relatedCapaId } = body;
 
     if (!employeeId || !date || !type || !month) {
       return NextResponse.json({ error: 'Employee ID, date, type, and month are required' }, { status: 400 });
@@ -149,26 +160,67 @@ export async function POST(request: NextRequest) {
     });
     const approvalHistory = [submitEvent];
 
-    const qualityDeduction = await createRecord(QUALITY_DEDUCTIONS_TABLE, {
-      employeeId,
-      date,
-      type,
-      description: description || '',
-      deductionDays: deductionDays || 0,
-      deductionAmount: deductionAmount || 0,
-      evidence: evidence || null,
-      month,
-      relatedCapaId: relatedCapaId || null,
-      // ── hidden audit metadata (stripped from responses for
-      // non-audit viewers — see GET) ──
-      createdById: actor.id,
-      createdByUserId: actor.id,
-      createdByName: actor.name,
-      createdByEmail: userRecord?.email || null,
-      // ── approval workflow ──
-      approvalStatus: projectLatestApprovalStatus(approvalHistory),
-      approvalHistory,
-    });
+    // ── §EVIDENCE-ITEMS — normalized multi-item evidence ──
+    // Authoritative sanitize; staged images promote to parent-bound
+    // paths BEFORE the write; a failed write rolls the promoted
+    // objects back (no orphans §21). The legacy single-string
+    // `evidence` is PROJECTED from the items so reports/exports and
+    // the WhatsApp/print text builders stay correct (§17).
+    let savedEvidenceItems: EvidenceItem[] | null = null;
+    if (evidenceItems !== undefined) {
+      const parsedEvidence = sanitizeEvidenceItems(evidenceItems);
+      if (!parsedEvidence.ok) return NextResponse.json({ error: parsedEvidence.error }, { status: 400 });
+      const attachError = assertAttachableEvidenceImages(parsedEvidence.items, null);
+      if (attachError) return NextResponse.json({ error: attachError }, { status: 400 });
+      savedEvidenceItems = stampEvidenceItems(parsedEvidence.items, new Date().toISOString(), actor.id);
+    }
+    const legacyEvidence = savedEvidenceItems
+      ? (projectLegacyEvidenceFields(savedEvidenceItems, 'nullable-string').evidence as string | null)
+      : (evidence || null);
+
+    const recordId = createId();
+    let promotedItems = savedEvidenceItems;
+    if (savedEvidenceItems && evidenceImageItems(savedEvidenceItems).length > 0) {
+      try {
+        promotedItems = await promoteEvidenceImages(QUALITY_DEDUCTIONS_TABLE, recordId, savedEvidenceItems);
+      } catch (error) {
+        if (error instanceof FirebaseConfigError) {
+          return NextResponse.json({ error: error.message, errorKey: 'FIREBASE_CONFIG' }, { status: 503 });
+        }
+        console.error('Promote evidence images error:', error);
+        return NextResponse.json({ error: 'فشل حفظ أدلة الصورة — حاول مرة أخرى' }, { status: 500 });
+      }
+    }
+
+    let qualityDeduction: Record<string, unknown>;
+    try {
+      qualityDeduction = await createRecordWithId(QUALITY_DEDUCTIONS_TABLE, recordId, {
+        employeeId,
+        date,
+        type,
+        description: description || '',
+        deductionDays: deductionDays || 0,
+        deductionAmount: deductionAmount || 0,
+        evidence: legacyEvidence,
+        evidenceItems: promotedItems ?? null,
+        month,
+        relatedCapaId: relatedCapaId || null,
+        // ── hidden audit metadata (stripped from responses for
+        // non-audit viewers — see GET) ──
+        createdById: actor.id,
+        createdByUserId: actor.id,
+        createdByName: actor.name,
+        createdByEmail: userRecord?.email || null,
+        // ── approval workflow ──
+        approvalStatus: projectLatestApprovalStatus(approvalHistory),
+        approvalHistory,
+      });
+    } catch (error) {
+      if (promotedItems) {
+        void deleteEvidenceObjects(evidenceImageItems(promotedItems).map((i) => i.image!.storagePath));
+      }
+      throw error;
+    }
 
     // Fire-and-forget audit trail + automation event.
     void writeAudit({

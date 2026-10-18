@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getAll, withEmployee, sortByDateField, createRecord, getById } from '@/lib/db';
+import { createId } from '@paralleldrive/cuid2';
+import { getAll, withEmployee, sortByDateField, createRecordWithId, getById } from '@/lib/db';
 import { requireAuth, verifyPermission } from '@/lib/verify-permission';
 import { asScopeViewer, employeeInScope, authScopeViewer, filterRowsByEmployeeScope, resolveEmployeeScopeFromDb } from '@/lib/scope/server';
 import { computeRisk, isOverdueFollowUp, isDueToday } from '@/lib/metrics';
@@ -7,6 +8,16 @@ import { createSmartNotification } from '@/lib/rules-engine';
 import { dispatchAutomationEvent } from '@/lib/automation/event-bridge';
 import { assertSimpleValueIsActive } from '@/lib/master-data/simple-lists';
 import { monthBounds, resolveFollowUpsMonth } from '@/lib/followups-period';
+import {
+  assertAttachableEvidenceImages,
+  evidenceImageItems,
+  projectLegacyEvidenceFields,
+  sanitizeEvidenceItems,
+  stampEvidenceItems,
+} from '@/lib/evidence-items';
+import { deleteEvidenceObjects, promoteEvidenceImages } from '@/lib/evidence-storage';
+import { FirebaseConfigError } from '@/lib/firebase-server';
+import type { EvidenceItem } from '@/types';
 
 const SCORE_MAP: Record<string, number> = { low: 1, medium: 3, high: 5, critical: 10 };
 const ACTIVE_FOLLOWUP_STATUSES = ['open', 'under_review', 'under_follow_up'] as const;
@@ -193,6 +204,7 @@ export async function POST(request: NextRequest) {
       status,
       attachments,
       evidence,
+      evidenceItems,
       relatedDeductionId,
       relatedCapaId,
     } = body;
@@ -250,34 +262,79 @@ export async function POST(request: NextRequest) {
     const autoPos = position || empRecord?.position || '';
     const empName = empRecord?.name || '';
 
-    const followUp = await createRecord('followUps', {
-      employeeId,
-      employeeName: empName,
-      date,
-      followUpType,
-      subject: subject || '',
-      detailedDescription: detailedDescription || '',
-      positiveNotes: positiveNotes || '',
-      negativeNotes: negativeNotes || '',
-      rootCause: rootCause || '',
-      actionTaken: actionTaken || '',
-      department: autoDept,
-      position: autoPos,
-      priorityLevel: priorityLevel || 'medium',
-      responsiblePerson: responsiblePerson || '',
-      nextFollowUpDate: nextFollowUpDate || null,
-      followUpRequired: followUpRequired !== false,
-      status: status || 'open',
-      score,
-      attachments: attachments || [],
-      // §EVIDENCE — dedicated evidence/link field (URL, Drive link,
-      // document link). Never scraped from the description text.
-      evidence: typeof evidence === 'string' && evidence.trim() !== '' ? evidence.trim() : null,
-      createdById: userId,
-      createdByName: userName,
-      relatedDeductionId: relatedDeductionId || null,
-      relatedCapaId: relatedCapaId || null,
-    });
+    // ── §EVIDENCE-ITEMS — normalized multi-item evidence ──
+    // Authoritative sanitize; staged images promote to parent-bound
+    // paths BEFORE the write; a failed write rolls the promoted
+    // objects back (§21). The legacy `evidence` string + `attachments`
+    // URL list are PROJECTED from the items so every existing reader
+    // (details card, attachments chips) stays correct (§17).
+    let savedEvidenceItems: EvidenceItem[] | null = null;
+    if (evidenceItems !== undefined) {
+      const parsedEvidence = sanitizeEvidenceItems(evidenceItems);
+      if (!parsedEvidence.ok) return NextResponse.json({ error: parsedEvidence.error }, { status: 400 });
+      const attachError = assertAttachableEvidenceImages(parsedEvidence.items, null);
+      if (attachError) return NextResponse.json({ error: attachError }, { status: 400 });
+      savedEvidenceItems = stampEvidenceItems(parsedEvidence.items, new Date().toISOString(), userId);
+    }
+    const legacyFields = savedEvidenceItems
+      ? projectLegacyEvidenceFields(savedEvidenceItems, 'followup')
+      : {
+          evidence: typeof evidence === 'string' && evidence.trim() !== '' ? evidence.trim() : null,
+          attachments: attachments || [],
+        };
+
+    // §21 — promote staged images before the record write.
+    const recordId = createId();
+    let promotedItems = savedEvidenceItems;
+    if (savedEvidenceItems && evidenceImageItems(savedEvidenceItems).length > 0) {
+      try {
+        promotedItems = await promoteEvidenceImages('followUps', recordId, savedEvidenceItems);
+      } catch (error) {
+        if (error instanceof FirebaseConfigError) {
+          return NextResponse.json({ error: error.message, errorKey: 'FIREBASE_CONFIG' }, { status: 503 });
+        }
+        console.error('Promote evidence images error:', error);
+        return NextResponse.json({ error: 'فشل حفظ أدلة الصورة — حاول مرة أخرى' }, { status: 500 });
+      }
+    }
+
+    let followUp: Record<string, unknown>;
+    try {
+      followUp = await createRecordWithId('followUps', recordId, {
+        employeeId,
+        employeeName: empName,
+        date,
+        followUpType,
+        subject: subject || '',
+        detailedDescription: detailedDescription || '',
+        positiveNotes: positiveNotes || '',
+        negativeNotes: negativeNotes || '',
+        rootCause: rootCause || '',
+        actionTaken: actionTaken || '',
+        department: autoDept,
+        position: autoPos,
+        priorityLevel: priorityLevel || 'medium',
+        responsiblePerson: responsiblePerson || '',
+        nextFollowUpDate: nextFollowUpDate || null,
+        followUpRequired: followUpRequired !== false,
+        status: status || 'open',
+        score,
+        attachments: legacyFields.attachments as string[],
+        // §EVIDENCE — dedicated evidence/link field (URL, Drive link,
+        // document link). Never scraped from the description text.
+        evidence: legacyFields.evidence as string | null,
+        evidenceItems: promotedItems ?? null,
+        createdById: userId,
+        createdByName: userName,
+        relatedDeductionId: relatedDeductionId || null,
+        relatedCapaId: relatedCapaId || null,
+      });
+    } catch (error) {
+      if (promotedItems) {
+        void deleteEvidenceObjects(evidenceImageItems(promotedItems).map((i) => i.image!.storagePath));
+      }
+      throw error;
+    }
 
     // ═══ Create notifications (using AppNotification schema) ═══
     // §13: automation event — active followUps-module rules fire here.

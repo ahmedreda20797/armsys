@@ -1,0 +1,24 @@
+rules_version = '2';
+
+// ══════════════════════════════════════════════════════════════
+//  §EVIDENCE-STORAGE — Firebase Storage security rules
+//
+//  The application NEVER talks to Storage through the client SDK:
+//  every byte flows through the Next.js API routes (Bearer JWT +
+//  verifyPermission + employee-scope on the PARENT RECORD — see
+//  src/app/api/evidence/image). The Admin SDK bypasses these rules
+//  by design; the rules exist so DIRECT client access (someone with
+//  the public web config) can neither read nor write anything —
+//  evidence can never become a permission bypass (§13).
+//
+//  Deployed via `firebase deploy --only storage` (firebase.json
+//  declares this file). Locked-down by default: allow nothing.
+// ══════════════════════════════════════════════════════════════
+
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

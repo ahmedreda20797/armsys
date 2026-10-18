@@ -30,7 +30,7 @@ import {
 } from '@/components/ui/select';
 import {
   Eye, Plus, Search, Filter, Trash2, Pencil, Check, X, Star, Clock,
-  ClipboardList, FileText, Info, Lock, ShieldAlert, Copy, ExternalLink, Link2,
+  ClipboardList, FileText, Info, Lock, ShieldAlert,
   CalendarDays,
 } from 'lucide-react';
 import { formatMonth } from './kpi-reports-shared';
@@ -50,11 +50,10 @@ import { TimelineView } from '@/components/shared/audit';
 import { ApprovalHistoryTimeline } from '@/components/shared/approval';
 import { buildTimeline } from '@/lib/audit/timeline-builder';
 import { latestApprovalDecision } from '@/lib/approvals/approval-history';
-import {
-  classifyEvidence,
-  truncateEvidenceForDisplay,
-  EVIDENCE_EMPTY_LABEL,
-} from '@/lib/quality-observations/evidence';
+// §EVIDENCE-ITEMS — unified evidence collection UI + model helpers
+import { EvidenceCollectionInput, EvidenceItemsView } from '@/components/shared/evidence';
+import { isCompleteEvidenceItem, normalizeEvidenceItems } from '@/lib/evidence-items';
+import type { EvidenceItem } from '@/types';
 import { useEmployees } from '@/hooks/use-queries';
 import { usePageState } from '@/hooks/use-page-state';
 import {
@@ -868,8 +867,11 @@ function ObservationDetailDialog({
             </div>
           )}
 
-          {/* Evidence viewer — read-only presentation of the stored evidence field */}
-          <ObservationEvidenceSection evidence={obs.evidence} />
+          {/* §EVIDENCE-ITEMS — unified read-only evidence display.
+              Legacy single-string records normalize through the read
+              adapter (verbatim, never re-guessed); new records render
+              their normalized items, each independently actionable. */}
+          <EvidenceItemsView items={normalizeEvidenceItems(obs, 'required-string')} showEmpty />
 
           {/* Action buttons */}
           {monthClosed ? (
@@ -934,146 +936,11 @@ function ObservationDetailDialog({
   );
 }
 
-// ─── Evidence viewer (الدليل / الإثبات) ──────────────────────
-
-/**
- * Dedicated evidence section inside the Observation Detail dialog.
- *
- * Renders the STORED `evidence` field as-is (no new fetch, no
- * mutation, no audit event). Three kinds, classified by the pure
- * lib helper:
- *   • url   → link preview (visually truncated, break-all) +
- *             نسخ الدليل / عرض الدليل / فتح الرابط
- *   • text  → wrapped, scrollable preview + نسخ الدليل / عرض الدليل
- *   • empty → explicit empty state, NO action buttons
- *
- * Copy always copies the ORIGINAL stored value exactly; فتح الرابط
- * is a real <a target="_blank" rel="noopener noreferrer"> whose href
- * is guaranteed http(s) by classification (javascript:/data:/… are
- * classified as text and never linked).
- */
-function ObservationEvidenceSection({ evidence }: { evidence: string }) {
-  const [previewOpen, setPreviewOpen] = useState(false);
-  const classified = useMemo(() => classifyEvidence(evidence), [evidence]);
-
-  // Copy the ORIGINAL stored value — no trimming, no formatting changes.
-  const copyEvidence = async () => {
-    try {
-      await navigator.clipboard.writeText(evidence);
-      toast.success('تم نسخ الدليل');
-    } catch {
-      toast.error('فشل نسخ الدليل');
-    }
-  };
-
-  if (classified.kind === 'empty') {
-    return (
-      <div className="rounded-lg border border-slate-700/40 bg-slate-800/30 p-3">
-        <p className="text-[11px] text-slate-400 mb-1 flex items-center gap-1.5">
-          <Link2 className="size-3.5" /><T> الدليل / الإثبات
-        </T></p>
-        <p className="text-sm text-slate-500">{EVIDENCE_EMPTY_LABEL}</p>
-      </div>
-    );
-  }
-
-  const isUrl = classified.kind === 'url';
-
-  return (
-    <div className="rounded-lg border border-cyan-500/25 bg-cyan-500/5 p-3 min-w-0">
-      <p className="text-[11px] text-slate-400 mb-1.5 flex items-center gap-1.5">
-        <Link2 className="size-3.5 text-cyan-400" /><T> الدليل / الإثبات
-      </T></p>
-
-      {isUrl ? (
-        // Visual truncation only — Copy/View/Open always use the full URL.
-        <p className="text-sm text-blue-300 break-all leading-relaxed" dir="ltr">
-          {truncateEvidenceForDisplay(classified.url)}
-        </p>
-      ) : (
-        <div className="max-h-28 overflow-y-auto rounded border border-slate-700/30 bg-slate-800/30 p-2">
-          <p className="text-sm text-slate-200 whitespace-pre-wrap break-words">{classified.text}</p>
-        </div>
-      )}
-
-      <div className="flex flex-wrap gap-2 mt-2.5">
-        <Button size="sm" variant="outline" className="gap-1.5 h-7" onClick={copyEvidence}>
-          <Copy className="size-3.5" /><T> نسخ الدليل
-        </T></Button>
-        <Button size="sm" variant="outline" className="gap-1.5 h-7" onClick={() => setPreviewOpen(true)}>
-          <Eye className="size-3.5" /><T> عرض الدليل
-        </T></Button>
-        {isUrl && (
-          <a
-            href={classified.url}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center justify-center gap-1.5 h-7 rounded-md border border-blue-500/40 bg-blue-500/10 px-3 text-xs font-medium text-blue-300 hover:bg-blue-500/20 transition-colors"
-          >
-            <ExternalLink className="size-3.5" /><T> فتح الرابط
-          </T></a>
-        )}
-      </div>
-
-      <EvidencePreviewDialog
-        open={previewOpen}
-        onOpenChange={setPreviewOpen}
-        evidence={evidence}
-        url={isUrl ? classified.url : null}
-        onCopy={copyEvidence}
-      />
-    </div>
-  );
-}
-
-/** Small full-evidence viewer — complete value, never truncated. */
-function EvidencePreviewDialog({
-  open, onOpenChange, evidence, url, onCopy,
-}: {
-  open: boolean;
-  onOpenChange: (o: boolean) => void;
-  evidence: string;
-  url: string | null;
-  onCopy: () => void;
-}) {
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-1.5">
-            <Link2 className="size-4 text-cyan-400" /><T> الدليل / الإثبات
-          </T></DialogTitle>
-          <DialogDescription><T>القيمة الكاملة للدليل كما تم تسجيلها — بدون أي اقتطاع</T></DialogDescription>
-        </DialogHeader>
-
-        <div className="rounded-lg border border-slate-700/40 bg-slate-800/30 p-3 min-w-0 max-h-[45vh] overflow-y-auto">
-          {url ? (
-            <p className="text-sm text-blue-300 break-all whitespace-pre-wrap select-text" dir="ltr">{evidence}</p>
-          ) : (
-            <p className="text-sm text-slate-200 break-words whitespace-pre-wrap select-text">{evidence}</p>
-          )}
-        </div>
-
-        <DialogFooter>
-          <Button variant="outline" className="gap-1.5" onClick={onCopy}>
-            <Copy className="size-3.5" /><T> نسخ الدليل
-          </T></Button>
-          {url && (
-            <a
-              href={url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center justify-center gap-1.5 h-9 rounded-md border border-blue-500/40 bg-blue-500/10 px-4 text-sm font-medium text-blue-300 hover:bg-blue-500/20 transition-colors"
-            >
-              <ExternalLink className="size-4" /><T> فتح الرابط
-            </T></a>
-          )}
-          <Button onClick={() => onOpenChange(false)}><T>إغلاق</T></Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
+// ─── Evidence viewer ─────────────────────────────────────────
+// §EVIDENCE-ITEMS: the per-observation evidence presentation moved to
+// the shared EvidenceItemsView (src/components/shared/evidence/) —
+// one viewer for every module. Legacy single-string evidence still
+// displays through the read adapter (verbatim, never re-guessed).
 
 function InfoCell({ label, value, onClick }: { label: ReactNode; value: string; onClick?: () => void }) {
   return (
@@ -1107,7 +974,7 @@ function CreateObservationDialog({
   const [type, setType] = useState('quality_observation');
   const [categoryId, setCategoryId] = useState('');
   const [notes, setNotes] = useState('');
-  const [evidence, setEvidence] = useState('');
+  const [evidenceItems, setEvidenceItems] = useState<EvidenceItem[]>([]);
   const [severity, setSeverity] = useState('medium');
   const [applyPoints, setApplyPoints] = useState(true);
   const [points, setPoints] = useState<number | ''>('');
@@ -1128,6 +995,12 @@ function CreateObservationDialog({
       toast.error('الموظف والتصنيف والنوع مطلوبة');
       return;
     }
+    // §20 — per-item validation before any network work; the API
+    // re-validates authoritatively.
+    if (evidenceItems.some((it) => !isCompleteEvidenceItem(it))) {
+      toast.error('أكمل بيانات الأدلة غير المكتملة أو أزلها قبل الحفظ');
+      return;
+    }
     try {
       await createMut.mutateAsync({
         employeeId,
@@ -1136,7 +1009,7 @@ function CreateObservationDialog({
         categoryId,
         severity,
         notes,
-        evidence,
+        evidenceItems,
         applyPointDeduction: applyPoints,
         points: applyPoints ? (points === '' ? undefined : points) : 0,
         isBonus: applyPoints ? isBonus : false,
@@ -1145,7 +1018,7 @@ function CreateObservationDialog({
       logCreate('observations', 'ملاحظة', employeeId);
       toast.success('تم إنشاء الملاحظة');
       onOpenChange(false);
-      setEmployeeId(''); setNotes(''); setEvidence(''); setPoints('');
+      setEmployeeId(''); setNotes(''); setEvidenceItems([]); setPoints('');
     } catch (e) {
       toast.error('فشل الإنشاء', { description: e instanceof Error ? e.message : undefined });
     }
@@ -1220,10 +1093,7 @@ function CreateObservationDialog({
             <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} className="bg-slate-800/50 border-slate-700" />
           </div>
 
-          <div className="space-y-1">
-            <Label><T>الأدلة</T></Label>
-            <Textarea value={evidence} onChange={(e) => setEvidence(e.target.value)} rows={1} className="bg-slate-800/50 border-slate-700" />
-          </div>
+          <EvidenceCollectionInput moduleKey="qualityObservations" items={evidenceItems} onChange={setEvidenceItems} />
 
           <div className="flex items-center justify-between rounded-lg border border-slate-700/40 bg-slate-800/30 p-3">
             <div>
@@ -1276,7 +1146,7 @@ function EditObservationDialog({
 }) {
   const { locale } = useLanguage();
   const [notes, setNotes] = useState(obs.notes);
-  const [evidence, setEvidence] = useState(obs.evidence);
+  const [evidenceItems, setEvidenceItems] = useState<EvidenceItem[]>(() => normalizeEvidenceItems(obs, 'required-string'));
   const [categoryId, setCategoryId] = useState(obs.categoryId);
   const [severity, setSeverity] = useState(obs.severity);
   const [points, setPoints] = useState<number | ''>(obs.points);
@@ -1285,10 +1155,14 @@ function EditObservationDialog({
   const editingApproved = obs.approvalStatus === 'approved';
 
   async function handleSubmit() {
+    if (evidenceItems.some((it) => !isCompleteEvidenceItem(it))) {
+      toast.error('أكمل بيانات الأدلة غير المكتملة أو أزلها قبل الحفظ');
+      return;
+    }
     try {
       await updateMut.mutateAsync({
         id: obs.id,
-        data: { notes, evidence, categoryId, severity, points: points === '' ? 0 : points },
+        data: { notes, evidenceItems, categoryId, severity, points: points === '' ? 0 : points },
       });
       logUpdate('observations', 'ملاحظة', obs.employeeName);
       toast.success('تم تحديث الملاحظة');
@@ -1349,10 +1223,7 @@ function EditObservationDialog({
             <Label><T>الملاحظات</T></Label>
             <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} className="bg-slate-800/50 border-slate-700" />
           </div>
-          <div className="space-y-1">
-            <Label><T>الأدلة</T></Label>
-            <Textarea value={evidence} onChange={(e) => setEvidence(e.target.value)} rows={1} className="bg-slate-800/50 border-slate-700" />
-          </div>
+          <EvidenceCollectionInput moduleKey="qualityObservations" items={evidenceItems} onChange={setEvidenceItems} />
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}><T>إلغاء</T></Button>

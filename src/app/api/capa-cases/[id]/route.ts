@@ -3,7 +3,14 @@ import { updateRecord, deleteRecord, getById, getEmployeeMap, invalidateCache } 
 import { requireAuth, verifyPermission } from '@/lib/verify-permission';
 import { asScopeViewer, employeeInScope, authScopeViewer, linkedRecordInScope, resolveEmployeeScopeFromDb } from '@/lib/scope/server';
 import { createSmartNotification } from '@/lib/rules-engine';
-import type { CAPACase } from '@/types';
+import {
+  assertAttachableEvidenceImages,
+  sanitizeEvidenceItems,
+  stampEvidenceItems,
+} from '@/lib/evidence-items';
+import { commitEvidenceItems, deleteEvidenceObjects, evidenceImageItemPaths } from '@/lib/evidence-storage';
+import { FirebaseConfigError } from '@/lib/firebase-server';
+import type { CAPACase, EvidenceItem } from '@/types';
 
 // ══════════════════════════════════════════════════════════════
 //  GET /api/capa-cases/[id] — Fetch single CAPA case
@@ -163,11 +170,42 @@ export async function PUT(
       updateData.timeline = [...existingTimeline, newEvent];
     }
 
-    if (Object.keys(updateData).length === 0) {
+    if (Object.keys(updateData).length === 0 && body.evidenceItems === undefined) {
       return NextResponse.json({ error: 'No valid fields to update' }, { status: 400 });
     }
 
-    const updated = await updateRecord('capaCases', id, updateData);
+    // ── §EVIDENCE-ITEMS — normalized multi-item evidence. Transactional
+    // commit: promote staged images → persist with the promoted items →
+    // cleanup removed objects only after a successful write (§21).
+    let updatedEvidenceItems: EvidenceItem[] | null = null;
+    if (body.evidenceItems !== undefined) {
+      const parsedEvidence = sanitizeEvidenceItems(body.evidenceItems);
+      if (!parsedEvidence.ok) return NextResponse.json({ error: parsedEvidence.error }, { status: 400 });
+      const attachError = assertAttachableEvidenceImages(parsedEvidence.items, existing.evidenceItems ?? null);
+      if (attachError) return NextResponse.json({ error: attachError }, { status: 400 });
+      updatedEvidenceItems = stampEvidenceItems(parsedEvidence.items, new Date().toISOString(), actorId);
+      updateData.evidenceItems = updatedEvidenceItems;
+    }
+
+    let updated: CAPACase | null = null;
+    if (updatedEvidenceItems) {
+      try {
+        await commitEvidenceItems(
+          'capaCases', id, updatedEvidenceItems, existing.evidenceItems ?? null,
+          async (items) => {
+            updated = await updateRecord('capaCases', id, { ...updateData, evidenceItems: items }) as CAPACase | null;
+          },
+        );
+      } catch (error) {
+        if (error instanceof FirebaseConfigError) {
+          return NextResponse.json({ error: error.message, errorKey: 'FIREBASE_CONFIG' }, { status: 503 });
+        }
+        console.error('[PUT /api/capa-cases/:id] Commit evidence items error:', error);
+        return NextResponse.json({ error: 'فشل حفظ أدلة الصورة — حاول مرة أخرى' }, { status: 500 });
+      }
+    } else {
+      updated = await updateRecord('capaCases', id, updateData) as CAPACase | null;
+    }
     invalidateCache('capaCases');
 
     // ══════════════════════════════════════════════════════════
@@ -337,6 +375,11 @@ export async function DELETE(
 
     await deleteRecord('capaCases', id);
     invalidateCache('capaCases');
+
+    // §EVIDENCE-ITEMS — the record is gone; its parent-bound image
+    // objects (record-scoped paths) go with it. Best-effort.
+    void deleteEvidenceObjects(evidenceImageItemPaths(existing.evidenceItems));
+
     return NextResponse.json({ message: 'CAPA case deleted successfully' });
   } catch (error) {
     console.error('[DELETE /api/capa-cases/:id] Error:', error);

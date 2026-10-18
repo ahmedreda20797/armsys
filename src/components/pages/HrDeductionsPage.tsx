@@ -36,6 +36,10 @@ import {
   TableCell,
 } from '@/components/ui/table';
 import { Textarea } from '@/components/ui/textarea';
+// §EVIDENCE-ITEMS — unified evidence collection + read-only view
+import { EvidenceCollectionInput, EvidenceSummaryButton } from '@/components/shared/evidence';
+import { isCompleteEvidenceItem, normalizeEvidenceItems } from '@/lib/evidence-items';
+import type { EvidenceItem } from '@/types';
 import {
   Banknote,
   Plus,
@@ -116,6 +120,7 @@ const EMPTY_FORM = {
   month: MONTH_OPTIONS[1]?.value || MONTH_OPTIONS[0]?.value || '',
   reason: '',
   deductionDate: '',
+  evidenceItems: [] as EvidenceItem[],
 };
 
 export default function HrDeductionsPage() {
@@ -188,6 +193,11 @@ export default function HrDeductionsPage() {
 
   const handleAdd = async () => {
     if (!addForm.employeeId || !addForm.type || !addForm.amount || !addForm.unit || !addForm.month) return;
+    // §20 — per-item evidence validation before any network work.
+    if (addForm.evidenceItems.some((it) => !isCompleteEvidenceItem(it))) {
+      toast.error(translateUIText('أكمل بيانات الأدلة غير المكتملة أو أزلها قبل الحفظ', locale));
+      return;
+    }
     setSaving(true);
     try {
       await apiFetch('/api/hr-deductions', {
@@ -200,6 +210,7 @@ export default function HrDeductionsPage() {
           month: addForm.month,
           reason: addForm.reason,
           deductionDate: addForm.deductionDate || null,
+          evidenceItems: addForm.evidenceItems,
         }),
       });
       await invalidateDomain(queryClient, 'hrDeductions', { employeeId: addForm.employeeId });
@@ -214,6 +225,11 @@ export default function HrDeductionsPage() {
 
   const handleEdit = async () => {
     if (!editForm.id) return;
+    // §20 — per-item evidence validation before any network work.
+    if (editForm.evidenceItems.some((it) => !isCompleteEvidenceItem(it))) {
+      toast.error(translateUIText('أكمل بيانات الأدلة غير المكتملة أو أزلها قبل الحفظ', locale));
+      return;
+    }
     setSaving(true);
     try {
       await apiFetch(`/api/hr-deductions/${editForm.id}`, {
@@ -225,6 +241,7 @@ export default function HrDeductionsPage() {
           month: editForm.month,
           reason: editForm.reason,
           deductionDate: editForm.deductionDate || null,
+          evidenceItems: editForm.evidenceItems,
         }),
       });
       await invalidateDomain(queryClient, 'hrDeductions', { employeeId: editForm.employeeId });
@@ -317,6 +334,9 @@ export default function HrDeductionsPage() {
       month: deduction.month,
       reason: deduction.reason,
       deductionDate: deduction.deductionDate || '',
+      // §EVIDENCE-ITEMS — read adapter (HR deductions carry no legacy
+      // evidence fields; stored items pass through).
+      evidenceItems: normalizeEvidenceItems(deduction, 'none'),
     });
     setIsEditOpen(true);
   };
@@ -507,6 +527,8 @@ export default function HrDeductionsPage() {
                           <p className="text-slate-400 text-sm">{ded.reason}</p>
                         </div>
                         <div className="flex items-center gap-2 shrink-0">
+                          {/* §EVIDENCE-ITEMS — count chip opening the item list. */}
+                          <EvidenceSummaryButton items={normalizeEvidenceItems(ded, 'none')} />
                           {canUpdate && (
                             <Button
                               size="sm"
@@ -786,6 +808,14 @@ export default function HrDeductionsPage() {
                 required
               />
             </div>
+            <div className="sm:col-span-2">
+              {/* §EVIDENCE-ITEMS — unified multi-item evidence collection */}
+              <EvidenceCollectionInput
+                moduleKey="hrDeductions"
+                items={addForm.evidenceItems}
+                onChange={(items) => setAddForm((p) => ({ ...p, evidenceItems: items }))}
+              />
+            </div>
           </div>
           <DialogFooter>
             <Button
@@ -896,6 +926,14 @@ export default function HrDeductionsPage() {
                 className="bg-slate-800 border-slate-600 text-white"
                 placeholder={translateUIText('اكتب سبب الخصم...', locale)}
                 required
+              />
+            </div>
+            <div className="sm:col-span-2">
+              {/* §EVIDENCE-ITEMS — unified multi-item evidence collection */}
+              <EvidenceCollectionInput
+                moduleKey="hrDeductions"
+                items={editForm.evidenceItems}
+                onChange={(items) => setEditForm((p) => ({ ...p, evidenceItems: items }))}
               />
             </div>
           </div>

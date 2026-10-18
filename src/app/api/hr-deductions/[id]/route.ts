@@ -2,6 +2,14 @@ import { NextRequest, NextResponse } from 'next/server';
 import { updateRecord, deleteRecord, getById } from '@/lib/db';
 import { verifyPermission } from '@/lib/verify-permission';
 import { asScopeViewer, employeeInScope } from '@/lib/scope/server';
+import {
+  assertAttachableEvidenceImages,
+  sanitizeEvidenceItems,
+  stampEvidenceItems,
+} from '@/lib/evidence-items';
+import { commitEvidenceItems, deleteEvidenceObjects, evidenceImageItemPaths } from '@/lib/evidence-storage';
+import { FirebaseConfigError } from '@/lib/firebase-server';
+import type { EvidenceItem } from '@/types';
 
 export async function PATCH(
   request: NextRequest,
@@ -84,6 +92,41 @@ export async function PATCH(
       return NextResponse.json(updatedArchived);
     }
 
+    // ── §EVIDENCE-ITEMS — normalized multi-item evidence. The raw
+    // body is never trusted with the items: sanitize, anti-attach
+    // check against the stored record, then transactional commit
+    // (promote staged images → persist → cleanup removed objects).
+    let updatedEvidenceItems: EvidenceItem[] | null = null;
+    if (body.evidenceItems !== undefined) {
+      const parsedEvidence = sanitizeEvidenceItems(body.evidenceItems);
+      if (!parsedEvidence.ok) return NextResponse.json({ error: parsedEvidence.error }, { status: 400 });
+      const attachError = assertAttachableEvidenceImages(parsedEvidence.items, existing.evidenceItems ?? null);
+      if (attachError) return NextResponse.json({ error: attachError }, { status: 400 });
+      updatedEvidenceItems = stampEvidenceItems(
+        parsedEvidence.items, new Date().toISOString(), permCheck.user?.id || 'system',
+      );
+    }
+
+    if (updatedEvidenceItems) {
+      let updatedEvidence: Record<string, unknown> | null = null;
+      try {
+        await commitEvidenceItems(
+          'hrDeductions', id, updatedEvidenceItems, existing.evidenceItems ?? null,
+          async (items) => {
+            const { evidenceItems: _ignored, ...rest } = body;
+            updatedEvidence = await updateRecord('hrDeductions', id, { ...rest, evidenceItems: items });
+          },
+        );
+      } catch (error) {
+        if (error instanceof FirebaseConfigError) {
+          return NextResponse.json({ error: error.message, errorKey: 'FIREBASE_CONFIG' }, { status: 503 });
+        }
+        console.error('Commit evidence items error:', error);
+        return NextResponse.json({ error: 'فشل حفظ أدلة الصورة — حاول مرة أخرى' }, { status: 500 });
+      }
+      return NextResponse.json(updatedEvidence);
+    }
+
     const updated = await updateRecord('hrDeductions', id, body);
     return NextResponse.json(updated);
   } catch (error) {
@@ -122,6 +165,11 @@ export async function DELETE(
 
     // Allow deletion of any deduction (pending, approved, or rejected)
     await deleteRecord('hrDeductions', id);
+
+    // §EVIDENCE-ITEMS — the record is gone; its parent-bound image
+    // objects (record-scoped paths) go with it. Best-effort.
+    void deleteEvidenceObjects(evidenceImageItemPaths(existing.evidenceItems));
+
     return NextResponse.json({ message: 'HR deduction deleted successfully' });
   } catch (error) {
     console.error('Delete HR deduction error:', error);

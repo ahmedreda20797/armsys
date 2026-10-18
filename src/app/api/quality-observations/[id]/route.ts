@@ -35,6 +35,15 @@ import {
 } from '@/lib/quality-observations/admin-approved-override';
 import { getEmployeeMap, TTL, invalidateCache } from '@/lib/db';
 import { validateEmployeeActive } from '@/lib/db-validation';
+import {
+  assertAttachableEvidenceImages,
+  projectLegacyEvidenceFields,
+  sanitizeEvidenceItems,
+  stampEvidenceItems,
+} from '@/lib/evidence-items';
+import { commitEvidenceItems, deleteEvidenceObjects, evidenceImageItemPaths } from '@/lib/evidence-storage';
+import { FirebaseConfigError } from '@/lib/firebase-server';
+import type { EvidenceItem } from '@/types';
 import type { QualityObservation } from '@/types/quality-kpi';
 import { OBSERVATIONS_TABLE, deriveMonth } from '../route';
 
@@ -193,6 +202,20 @@ export async function PUT(
     // Numeric coercion for points.
     if (patch.points !== undefined) patch.points = Number(patch.points);
 
+    // ── §EVIDENCE-ITEMS — normalized multi-item evidence ──
+    // Image items must be freshly staged (pending) or already on THIS
+    // record; the legacy `evidence` string is re-projected from the
+    // canonical items so existing readers stay correct (§17).
+    let updatedEvidenceItems: EvidenceItem[] | null = null;
+    if (body.evidenceItems !== undefined) {
+      const parsedEvidence = sanitizeEvidenceItems(body.evidenceItems);
+      if (!parsedEvidence.ok) return validationError(parsedEvidence.error);
+      const attachError = assertAttachableEvidenceImages(parsedEvidence.items, existing.evidenceItems ?? null);
+      if (attachError) return validationError(attachError);
+      updatedEvidenceItems = stampEvidenceItems(parsedEvidence.items, new Date().toISOString(), actor.id);
+      patch.evidence = projectLegacyEvidenceFields(updatedEvidenceItems, 'required-string').evidence as string;
+    }
+
     // ── Admin override policy on an APPROVED observation ──
     // KPI-affecting edits invalidate the approval: the previous events stay
     // in the append-only history, a 'reopen' event records the admin
@@ -222,7 +245,28 @@ export async function PUT(
     });
     patch.auditLog = [...(existing.auditLog || []), auditEvent];
 
-    const updated = await updateRecord(OBSERVATIONS_TABLE, id, patch);
+    let updated: QualityObservation | null = null;
+    if (updatedEvidenceItems) {
+      // §21 — staged images promote to final parent-bound paths, the
+      // record persists with the promoted items, and removed image
+      // objects are cleaned up only after a successful write.
+      try {
+        await commitEvidenceItems(
+          OBSERVATIONS_TABLE, id, updatedEvidenceItems, existing.evidenceItems ?? null,
+          async (items) => {
+            updated = await updateRecord(OBSERVATIONS_TABLE, id, { ...patch, evidenceItems: items }) as QualityObservation | null;
+          },
+        );
+      } catch (error) {
+        if (error instanceof FirebaseConfigError) {
+          return Response.json({ error: error.message, errorKey: 'FIREBASE_CONFIG' }, { status: 503 });
+        }
+        logServerFailure('quality-observations/[id]', 'PUT', error);
+        return Response.json({ error: 'فشل حفظ أدلة الصورة — حاول مرة أخرى' }, { status: 500 });
+      }
+    } else {
+      updated = await updateRecord(OBSERVATIONS_TABLE, id, patch) as QualityObservation | null;
+    }
     if (!updated) return notFoundError('الملاحظة غير موجودة');
 
     // Audit trail (fire-and-forget).
@@ -298,6 +342,10 @@ export async function DELETE(
     }
 
     await deleteRecord(OBSERVATIONS_TABLE, id);
+
+    // §EVIDENCE-ITEMS — the record is gone; its parent-bound image
+    // objects (record-scoped paths) go with it. Best-effort.
+    void deleteEvidenceObjects(evidenceImageItemPaths(existing.evidenceItems));
 
     const actor = await resolveActor(permCheck.user?.id);
     await writeAudit({

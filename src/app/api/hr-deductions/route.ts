@@ -1,7 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getAll, createRecord, sortByDateField, withEmployee } from '@/lib/db';
+import { createId } from '@paralleldrive/cuid2';
+import { getAll, createRecordWithId, sortByDateField, withEmployee } from '@/lib/db';
 import { verifyPermission, requireAuth } from '@/lib/verify-permission';
 import { asScopeViewer, employeeInScope, authScopeViewer, filterRowsByEmployeeScope, resolveEmployeeScopeFromDb } from '@/lib/scope/server';
+import {
+  assertAttachableEvidenceImages,
+  evidenceImageItems,
+  sanitizeEvidenceItems,
+  stampEvidenceItems,
+} from '@/lib/evidence-items';
+import { deleteEvidenceObjects, promoteEvidenceImages } from '@/lib/evidence-storage';
+import { FirebaseConfigError } from '@/lib/firebase-server';
+import type { EvidenceItem } from '@/types';
 
 export async function GET(request: NextRequest) {
   try {
@@ -61,7 +71,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { employeeId, type, amount, unit, reason, month, relatedCapaId } = body;
+    const { employeeId, type, amount, unit, reason, month, relatedCapaId, evidenceItems } = body;
 
     if (!employeeId || !type || amount === undefined || !unit || !month) {
       return NextResponse.json(
@@ -91,19 +101,57 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: empValidation.error }, { status: 400 });
     }
 
-    const record = await createRecord('hrDeductions', {
-      employeeId,
-      type,
-      amount: Number(amount),
-      unit,
-      reason: reason || '',
-      month,
-      deductionDate: body.deductionDate || null,
-      status: 'pending',
-      approvedBy: null,
-      approvedAt: null,
-      relatedCapaId: relatedCapaId || null,
-    });
+    // ── §EVIDENCE-ITEMS — normalized multi-item evidence (net-new
+    // field for HR deductions). Authoritative sanitize; staged images
+    // promote to parent-bound paths BEFORE the write; a failed write
+    // rolls the promoted objects back (§21).
+    let savedEvidenceItems: EvidenceItem[] | null = null;
+    if (evidenceItems !== undefined) {
+      const parsedEvidence = sanitizeEvidenceItems(evidenceItems);
+      if (!parsedEvidence.ok) return NextResponse.json({ error: parsedEvidence.error }, { status: 400 });
+      const attachError = assertAttachableEvidenceImages(parsedEvidence.items, null);
+      if (attachError) return NextResponse.json({ error: attachError }, { status: 400 });
+      savedEvidenceItems = stampEvidenceItems(
+        parsedEvidence.items, new Date().toISOString(), permCheck.user?.id || 'system',
+      );
+    }
+
+    const recordId = createId();
+    let promotedItems = savedEvidenceItems;
+    if (savedEvidenceItems && evidenceImageItems(savedEvidenceItems).length > 0) {
+      try {
+        promotedItems = await promoteEvidenceImages('hrDeductions', recordId, savedEvidenceItems);
+      } catch (error) {
+        if (error instanceof FirebaseConfigError) {
+          return NextResponse.json({ error: error.message, errorKey: 'FIREBASE_CONFIG' }, { status: 503 });
+        }
+        console.error('Promote evidence images error:', error);
+        return NextResponse.json({ error: 'فشل حفظ أدلة الصورة — حاول مرة أخرى' }, { status: 500 });
+      }
+    }
+
+    let record: Record<string, unknown>;
+    try {
+      record = await createRecordWithId('hrDeductions', recordId, {
+        employeeId,
+        type,
+        amount: Number(amount),
+        unit,
+        reason: reason || '',
+        month,
+        deductionDate: body.deductionDate || null,
+        status: 'pending',
+        approvedBy: null,
+        approvedAt: null,
+        relatedCapaId: relatedCapaId || null,
+        evidenceItems: promotedItems ?? null,
+      });
+    } catch (error) {
+      if (promotedItems) {
+        void deleteEvidenceObjects(evidenceImageItems(promotedItems).map((i) => i.image!.storagePath));
+      }
+      throw error;
+    }
 
     return NextResponse.json(record, { status: 201 });
   } catch (error) {

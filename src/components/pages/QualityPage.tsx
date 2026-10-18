@@ -27,13 +27,15 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
+import { EvidenceCollectionInput, EvidenceSummaryButton } from '@/components/shared/evidence';
+import { isCompleteEvidenceItem, normalizeEvidenceItems } from '@/lib/evidence-items';
+import type { EvidenceItem } from '@/types';
 import { Archive,
   Award,
   Plus,
   Pencil,
   Search,
   X,
-  Link as LinkIcon,
   Trash2,
   ChevronDown,
   ChevronUp,
@@ -295,7 +297,7 @@ export default function QualityPage() {
     dayPreset: '0.25',
     customDays: '',
     deductionAmount: '',
-    evidence: '',
+    evidenceItems: [] as EvidenceItem[],
     month: '',
   });
 
@@ -312,6 +314,13 @@ export default function QualityPage() {
 
   const handleSaveDeduction = async () => {
     if (!addForm.employeeId || !addForm.date) return;
+
+    // §20 — per-item evidence validation before any network work;
+    // the API re-validates authoritatively.
+    if (addForm.evidenceItems.some((it) => !isCompleteEvidenceItem(it))) {
+      toast.error('أكمل بيانات الأدلة غير المكتملة أو أزلها قبل الحفظ');
+      return;
+    }
 
     const deductionDays =
       addForm.dayPreset === 'custom'
@@ -330,7 +339,7 @@ export default function QualityPage() {
             description: addForm.description || '',
             deductionDays,
             deductionAmount: parseFloat(addForm.deductionAmount) || 0,
-            evidence: addForm.evidence || null,
+            evidenceItems: addForm.evidenceItems,
             month: addForm.month,
           }),
         });
@@ -347,7 +356,7 @@ export default function QualityPage() {
           dayPreset: '0.25',
           customDays: '',
           deductionAmount: '',
-          evidence: '',
+          evidenceItems: [],
           month: '',
         });
       } else {
@@ -361,7 +370,7 @@ export default function QualityPage() {
             description: addForm.description || '',
             deductionDays,
             deductionAmount: parseFloat(addForm.deductionAmount) || 0,
-            evidence: addForm.evidence || null,
+            evidenceItems: addForm.evidenceItems,
             month: addForm.month,
           }),
         });
@@ -378,7 +387,7 @@ export default function QualityPage() {
           dayPreset: '0.25',
           customDays: '',
           deductionAmount: '',
-          evidence: '',
+          evidenceItems: [],
           month: '',
         });
       }
@@ -513,7 +522,9 @@ export default function QualityPage() {
       dayPreset: isPreset ? daysStr : 'custom',
       customDays: isPreset ? '' : daysStr,
       deductionAmount: deduction.deductionAmount > 0 ? String(deduction.deductionAmount) : '',
-      evidence: deduction.evidence || '',
+      // §EVIDENCE-ITEMS — legacy single-string evidence normalizes
+      // through the read adapter (verbatim, never re-guessed).
+      evidenceItems: normalizeEvidenceItems(deduction, 'nullable-string'),
       month: deduction.month || '',
     });
     setIsAddOpen(true);
@@ -1207,18 +1218,12 @@ export default function QualityPage() {
                                           )}
                                         </div>
                                       )}
-                                      {d.evidence && (
-                                        <a
-                                          href={d.evidence}
-                                          target="_blank"
-                                          rel="noopener noreferrer"
-                                          onClick={(e) => e.stopPropagation()}
-                                          className="inline-flex items-center gap-1 mt-2 text-cyan-400 hover:text-cyan-300 text-[11px] bg-cyan-500/10 px-2 py-1 rounded-md border border-cyan-500/20"
-                                        >
-                                          <LinkIcon className="size-2.5" />
-                                          <T>عرض الدليل</T>
-                                        </a>
-                                      )}
+                                      {/* §EVIDENCE-ITEMS — count chip opening the
+                                          item list; each item independently
+                                          actionable (no concatenated string). */}
+                                      <div className="mt-2" onClick={(e) => e.stopPropagation()}>
+                                        <EvidenceSummaryButton items={normalizeEvidenceItems(d, 'nullable-string')} />
+                                      </div>
                                       {/* ═══ CAPA Integration (Bidirectional) ═══ */}
                                       {(d as any).relatedCapaId && (
                                         <div className="mt-2" onClick={(e) => e.stopPropagation()}>
@@ -1415,13 +1420,11 @@ export default function QualityPage() {
               />
             </div>
             <div className="space-y-2 sm:col-span-2">
-              <Label className="text-slate-300 text-sm"><T>رابط الدليل (اختياري)</T></Label>
-              <Input
-                value={addForm.evidence}
-                onChange={(e) => setAddForm((p) => ({ ...p, evidence: e.target.value }))}
-                className="bg-slate-800 border-slate-600 text-white"
-                placeholder="https://..."
-                dir="ltr"
+              {/* §EVIDENCE-ITEMS — unified multi-item evidence collection */}
+              <EvidenceCollectionInput
+                moduleKey="qualityDeductions"
+                items={addForm.evidenceItems}
+                onChange={(items) => setAddForm((p) => ({ ...p, evidenceItems: items }))}
               />
             </div>
           </div>

@@ -193,6 +193,10 @@ export interface QualityObservation {
   // ── Content ──
   notes: string;
   evidence: string;
+  /** §EVIDENCE-ITEMS — normalized multi-item evidence (new records);
+   *  the legacy `evidence` string is projected back onto on write so
+   *  every existing reader (reports, KPI pipeline) stays correct. */
+  evidenceItems?: import('./index').EvidenceItem[] | null;
   // ── Resolution / corrective action ──
   status: ObservationStatus;
   relatedCapaId: string | null;

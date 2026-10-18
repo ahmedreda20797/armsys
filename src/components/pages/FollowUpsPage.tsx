@@ -27,7 +27,10 @@ import { DataFreshnessIndicator } from '@/components/shared/DataFreshnessIndicat
 import { SmartActionMenu, type SmartAction } from '@/components/shared/SmartActionMenu';
 import type { OverflowMenuItem } from '@/components/shared/OverflowMenu';
 import { InlineFormPanel } from '@/components/shared/InlineFormPanel';
-import { EvidenceLinkButton } from '@/components/shared/EvidenceLinkButton';
+// §EVIDENCE-ITEMS — unified evidence collection + read-only view
+import { EvidenceCollectionInput, EvidenceItemsView } from '@/components/shared/evidence';
+import { isCompleteEvidenceItem, normalizeEvidenceItems } from '@/lib/evidence-items';
+import type { EvidenceItem } from '@/types';
 import { CAPAInlineForm, type CapaInlineFormState } from '@/components/shared/inline-forms';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
@@ -42,7 +45,7 @@ import { BarChart3,
   CheckCircle2, AlertTriangle, Clock, ClipboardList, UserCheck,
   ArrowUpCircle, ArrowDownCircle, ShieldAlert, Ban, Bell, ShieldCheck,
   ChevronDown, ChevronUp, Filter, Eye, FileText,
-  TrendingUp, AlertOctagon, LayoutList, Table2, Paperclip,
+  TrendingUp, AlertOctagon, LayoutList, Table2,
   ExternalLink,
 } from 'lucide-react';
 import type { FollowUp, Employee } from '@/types';
@@ -253,7 +256,7 @@ const emptyForm = {
   followUpRequired: true,
   status: 'open',
   attachments: [] as string[],
-  evidence: '',
+  evidenceItems: [] as EvidenceItem[],
 };
 
 // ═══════════════════════════════════════════════════
@@ -645,7 +648,9 @@ export default function FollowUpsPage() {
       followUpRequired: item.followUpRequired !== false,
       status: item.status,
       attachments: item.attachments || [],
-      evidence: item.evidence || '',
+      // §EVIDENCE-ITEMS — legacy evidence + attachments normalize into
+      // canonical items through the read adapter (verbatim).
+      evidenceItems: normalizeEvidenceItems(item, 'followup'),
     };
   };
 
@@ -682,6 +687,11 @@ export default function FollowUpsPage() {
       toast.error(translateUIText('الرجاء ملء الحقول المطلوبة (الموظف، التاريخ، النوع، الموضوع)', locale));
       return;
     }
+    // §20 — per-item evidence validation before any network work.
+    if (form.evidenceItems.some((it) => !isCompleteEvidenceItem(it))) {
+      toast.error(translateUIText('أكمل بيانات الأدلة غير المكتملة أو أزلها قبل الحفظ', locale));
+      return;
+    }
     setSaving(true);
     try {
       const payload: Record<string, any> = {
@@ -701,8 +711,7 @@ export default function FollowUpsPage() {
         nextFollowUpDate: form.nextFollowUpDate || addDays(form.date, 7),
         followUpRequired: form.followUpRequired,
         status: isManagerOrAdmin || editingItem ? form.status : 'open',
-        attachments: form.attachments || [],
-        evidence: form.evidence || null,
+        evidenceItems: form.evidenceItems,
       };
 
       if (editingItem) {
@@ -1559,30 +1568,16 @@ export default function FollowUpsPage() {
                   </div>
                 </div>
 
-                {/* §EVIDENCE — dedicated evidence/link button (same shared
-                    pattern as Risk Center / Quality; opens safely in a new
-                    tab, http(s) only). */}
-                {viewingItem.evidence && (
-                  <div>
-                    <p className="text-slate-500 text-[11px] mb-1.5"><T>الدليل / الرابط</T></p>
-                    <EvidenceLinkButton evidence={viewingItem.evidence} />
-                  </div>
-                )}
-
-                {/* Attachments */}
-                {viewingItem.attachments && viewingItem.attachments.length > 0 && (
-                  <div>
-                    <p className="text-slate-500 text-[11px] mb-1.5"><T>المرفقات</T></p>
-                    <div className="flex flex-wrap gap-2">
-                      {viewingItem.attachments.map((url: any, i: any) => (
-                        <a key={i} href={url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-slate-800/60 border border-slate-700/30 text-cyan-400 text-[11px] hover:bg-cyan-500/10 transition-colors">
-                          <Paperclip className="size-3" />
-                          <T>مرفق</T> {formatInteger(i + 1, locale)}
-                        </a>
-                      ))}
-                    </div>
-                  </div>
-                )}
+                {/* §EVIDENCE-ITEMS — unified evidence display: the legacy
+                    `evidence` string + `attachments` array normalize into
+                    independent items through the read adapter; new records
+                    carry normalized items. Each item is independently
+                    actionable (open / copy / preview) — no concatenated
+                    strings, no unguarded hrefs. */}
+                <div>
+                  <p className="text-slate-500 text-[11px] mb-1.5"><T>الدليل / الرابط</T></p>
+                  <EvidenceItemsView items={normalizeEvidenceItems(viewingItem, 'followup')} showEmpty />
+                </div>
 
                 {/* ═══ CAPA Integration (Bidirectional) ═══ */}
                 {(viewingItem as any).relatedCapaId && (
@@ -1710,19 +1705,14 @@ export default function FollowUpsPage() {
               />
             </div>
 
-            {/* §EVIDENCE — dedicated evidence/link field. NOT scraped from
-                the description: a real field (URL, Drive link, screenshot
-                or document link) rendered as a button in the details card. */}
-            <div className="space-y-2 sm:col-span-2">
-              <Label className="text-slate-300 text-sm"><T>دليل / رابط</T></Label>
-              <Input
-                value={form.evidence}
-                onChange={e => setForm(p => ({ ...p, evidence: e.target.value }))}
-                className="bg-slate-800 border-slate-600 text-white"
-                placeholder={translateUIText('https://… رابط Google Drive أو مستند أو لقطة شاشة', locale)}
-                dir="ltr"
+            {/* §EVIDENCE-ITEMS — unified multi-item evidence collection
+                (link / number / image). Replaces the single URL field. */}
+            <div className="sm:col-span-2">
+              <EvidenceCollectionInput
+                moduleKey="followUps"
+                items={form.evidenceItems}
+                onChange={items => setForm(p => ({ ...p, evidenceItems: items }))}
               />
-              <p className="text-[10px] text-slate-500"><T>رابط خارجي يظهر كزر «عرض الدليل» في بطاقة التفاصيل.</T></p>
             </div>
 
             {/* Priority */}

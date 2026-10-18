@@ -126,6 +126,51 @@ export interface DeductionRule {
   updatedAt: string;
 }
 
+// ══════════════════════════════════════════════════════════════
+//  §EVIDENCE-ITEMS — normalized multi-item evidence model.
+//
+//  One record may carry ANY number of independent evidence items
+//  (same interaction philosophy as Travel bookingItems). Each item
+//  owns its type and its type-specific value — evidence values are
+//  NEVER concatenated into one string field.
+//
+//  Image bytes live in Firebase Storage (`image.storagePath`);
+//  RTDB stores metadata only — never Base64/binary payloads.
+//
+//  'text' is a LEGACY-ONLY kind: read-time adapters preserve old
+//  free-text evidence verbatim; the add-evidence UI offers only
+//  link/number/image.
+// ══════════════════════════════════════════════════════════════
+
+export type EvidenceItemType = 'link' | 'number' | 'image' | 'text';
+
+/** Image evidence metadata — the actual bytes live in Firebase Storage. */
+export interface EvidenceItemImage {
+  /** Storage object path, e.g. evidence/pending/<id>.webp or
+   *  evidence/<table>/<recordId>/<itemId>.webp. */
+  storagePath: string;
+  fileName: string;
+  mimeType: string;
+  size: number;
+  width?: number | null;
+  height?: number | null;
+}
+
+export interface EvidenceItem {
+  id: string;
+  type: EvidenceItemType;
+  /** link evidence — exact stored URL (validated http(s)). */
+  url?: string | null;
+  /** number evidence — exact string; leading zeros are meaningful. */
+  number?: string | null;
+  /** image evidence — metadata only. */
+  image?: EvidenceItemImage | null;
+  /** legacy text evidence — preserved verbatim, never guessed. */
+  text?: string | null;
+  createdAt?: string | null;
+  createdBy?: string | null;
+}
+
 export interface QualityDeduction {
   id: string;
   employeeId: string;
@@ -135,6 +180,8 @@ export interface QualityDeduction {
   deductionDays: number;
   deductionAmount: number;
   evidence: string | null;
+  /** §EVIDENCE-ITEMS — normalized multi-item evidence (new records). */
+  evidenceItems?: EvidenceItem[] | null;
   month: string;
   relatedCapaId: string | null;
   createdAt: string;
@@ -173,6 +220,8 @@ export interface HrDeduction {
   month: string;
   deductionDate: string | null;
   relatedCapaId: string | null;
+  /** §EVIDENCE-ITEMS — normalized multi-item evidence. */
+  evidenceItems?: EvidenceItem[] | null;
   createdAt: string;
   updatedAt: string;
   /** §ARCHIVE — archived = historical, excluded from active totals/KPI. */
@@ -300,6 +349,10 @@ export interface FollowUp {
    *  document link…). Not parsed out of the description text.
    *  Optional: legacy records predate the field. */
   evidence?: string | null;
+  /** §EVIDENCE-ITEMS — normalized multi-item evidence (new records);
+   *  the legacy `evidence`/`attachments` fields are projected back
+   *  onto on write so every existing reader stays correct. */
+  evidenceItems?: EvidenceItem[] | null;
   createdById: string;
   createdByName: string;
   relatedDeductionId: string | null;
@@ -368,6 +421,8 @@ export interface CAPACase {
   closedAt: string | null;
   timeline: CAPATimelineEvent[];
   attachments: CAPAAttachment[];
+  /** §EVIDENCE-ITEMS — normalized multi-item evidence (new records). */
+  evidenceItems?: EvidenceItem[] | null;
   lessonsLearned: string;
   // SLA
   slaDays: number;
@@ -413,6 +468,8 @@ export interface CustomerComplaint {
   updatedAt: string;
   resolvedAt: string | null;
   relatedCapaIds: string[];
+  /** §EVIDENCE-ITEMS — normalized multi-item evidence. */
+  evidenceItems?: EvidenceItem[] | null;
 }
 
 export interface KnowledgeArticle {

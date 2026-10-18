@@ -2,9 +2,14 @@
 
 import { useState, useMemo, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { toast } from 'sonner';
 import { usePermissions } from '@/hooks/usePermissions';
 import { usePageState } from '@/hooks/use-page-state';
 import { useRecordHighlight } from '@/hooks/use-record-highlight';
+// §EVIDENCE-ITEMS — unified evidence collection + display
+import { EvidenceCollectionInput, EvidenceSummaryButton } from '@/components/shared/evidence';
+import { isCompleteEvidenceItem, normalizeEvidenceItems } from '@/lib/evidence-items';
+import type { EvidenceItem } from '@/types';
 import {
   useComplaints,
   useEmployees,
@@ -104,6 +109,8 @@ interface Complaint {
   resolution?: string;
   responsiblePersonId?: string;
   compensation?: string;
+  /** §EVIDENCE-ITEMS — normalized multi-item evidence. */
+  evidenceItems?: EvidenceItem[] | null;
   createdAt: string;
   updatedAt: string;
   employee?: { id: string; name: string; department: string | null } | null;
@@ -122,6 +129,8 @@ interface ComplaintFormData {
   resolution: string;
   responsiblePersonId: string;
   compensation: string;
+  /** §EVIDENCE-ITEMS — normalized multi-item evidence. */
+  evidenceItems: EvidenceItem[];
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -170,6 +179,7 @@ const emptyForm: ComplaintFormData = {
   resolution: '',
   responsiblePersonId: '',
   compensation: '',
+  evidenceItems: [],
 };
 
 // ═══════════════════════════════════════════════════════════════
@@ -456,12 +466,20 @@ export default function ComplaintsPage() {
       resolution: complaint.resolution || '',
       responsiblePersonId: complaint.responsiblePersonId || '',
       compensation: complaint.compensation || '',
+      // §EVIDENCE-ITEMS — read adapter (complaints carry no legacy
+      // evidence fields; stored items pass through).
+      evidenceItems: normalizeEvidenceItems(complaint, 'none'),
     });
     setIsDialogOpen(true);
   };
 
   const handleSave = async () => {
     if (!form.customerName.trim() || !form.description.trim()) return;
+    // §20 — per-item evidence validation before any network work.
+    if (form.evidenceItems.some((it) => !isCompleteEvidenceItem(it))) {
+      toast.error(translateUIText('أكمل بيانات الأدلة غير المكتملة أو أزلها قبل الحفظ', locale));
+      return;
+    }
 
     const payload: Record<string, any> = {
       customerName: form.customerName.trim(),
@@ -477,6 +495,7 @@ export default function ComplaintsPage() {
       // compensationProvided) so user input persists.
       responsiblePerson: form.responsiblePersonId || '',
       compensationProvided: form.compensation.trim() || null,
+      evidenceItems: form.evidenceItems,
     };
     // Source trace (additive — Milestone 7 §7): a complaint opened from
     // Travel carries its source page + record for the audit trail.
@@ -841,6 +860,11 @@ export default function ComplaintsPage() {
                         </div>
                       )}
 
+                      {/* §EVIDENCE-ITEMS — count chip opening the item list. */}
+                      <div onClick={(e) => e.stopPropagation()}>
+                        <EvidenceSummaryButton items={normalizeEvidenceItems(complaint, 'none')} />
+                      </div>
+
                       {/* ═══ CAPA Integration (Bidirectional) ═══ */}
                       {(complaint as any).relatedCapaIds && (complaint as any).relatedCapaIds.length > 0 && (
                         <div className="space-y-2" onClick={(e) => e.stopPropagation()}>
@@ -1027,6 +1051,13 @@ export default function ComplaintsPage() {
               />
             </div>
           </div>
+
+          {/* §EVIDENCE-ITEMS — unified multi-item evidence collection */}
+          <EvidenceCollectionInput
+            moduleKey="complaints"
+            items={form.evidenceItems}
+            onChange={(items) => setForm((p) => ({ ...p, evidenceItems: items }))}
+          />
 
           <DialogFooter className="gap-2 sm:gap-0">
             <Button

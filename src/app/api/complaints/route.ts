@@ -1,10 +1,20 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { createId } from '@paralleldrive/cuid2';
 import { normalizeComplaintStatus } from '@/lib/complaints/complaint-status';
-import { getAll, withEmployee, sortByDateField } from '@/lib/db';
+import { getAll, withEmployee, sortByDateField, createRecordWithId } from '@/lib/db';
 import { requireAuth } from '@/lib/verify-permission';
 import { asScopeViewer, employeeInScope, authScopeViewer, filterRowsByEmployeeScope, resolveEmployeeScopeFromDb } from '@/lib/scope/server';
 import { dispatchAutomationEvent } from '@/lib/automation/event-bridge';
 import { assertSimpleValueIsActive } from '@/lib/master-data/simple-lists';
+import {
+  assertAttachableEvidenceImages,
+  evidenceImageItems,
+  sanitizeEvidenceItems,
+  stampEvidenceItems,
+} from '@/lib/evidence-items';
+import { deleteEvidenceObjects, promoteEvidenceImages } from '@/lib/evidence-storage';
+import { FirebaseConfigError } from '@/lib/firebase-server';
+import type { EvidenceItem } from '@/types';
 
 export async function GET(request: NextRequest) {
   try {
@@ -87,6 +97,7 @@ export async function POST(request: NextRequest) {
       responsiblePerson,
       compensationProvided,
       relatedCapaIds,
+      evidenceItems,
       // Milestone 7 §7 — additive source trace (Travel → Complaint):
       // optional, length-capped so the payload cannot bloat storage.
       sourcePage,
@@ -141,27 +152,66 @@ export async function POST(request: NextRequest) {
     }
 
     const { createRecord } = await import('@/lib/db');
-    const complaint = await createRecord('complaints', {
-      customerName,
-      customerContact: customerContact || '',
-      dealId: dealId || null,
-      employeeId: employeeId || null,
-      complaintType,
-      description,
-      severity: severity || 'medium',
-      status: normalizedStatus,
-      resolution: resolution || null,
-      responsiblePerson: responsiblePerson || '',
-      compensationProvided: compensationProvided || null,
-      resolvedAt: null,
-      relatedCapaIds: relatedCapaIds || [],
-      ...(typeof sourcePage === 'string' && sourcePage && sourcePage.length <= 50
-        ? { sourcePage }
-        : {}),
-      ...(typeof sourceRecordId === 'string' && sourceRecordId && sourceRecordId.length <= 100
-        ? { sourceRecordId }
-        : {}),
-    });
+
+    // ── §EVIDENCE-ITEMS — normalized multi-item evidence (net-new
+    // field for complaints). Authoritative sanitize; staged images
+    // promote to parent-bound paths BEFORE the write; a failed write
+    // rolls the promoted objects back (§21).
+    let savedEvidenceItems: EvidenceItem[] | null = null;
+    if (evidenceItems !== undefined) {
+      const parsedEvidence = sanitizeEvidenceItems(evidenceItems);
+      if (!parsedEvidence.ok) return NextResponse.json({ error: parsedEvidence.error }, { status: 400 });
+      const attachError = assertAttachableEvidenceImages(parsedEvidence.items, null);
+      if (attachError) return NextResponse.json({ error: attachError }, { status: 400 });
+      savedEvidenceItems = stampEvidenceItems(
+        parsedEvidence.items, new Date().toISOString(), permCheck.user?.id || 'system',
+      );
+    }
+
+    const recordId = createId();
+    let promotedItems = savedEvidenceItems;
+    if (savedEvidenceItems && evidenceImageItems(savedEvidenceItems).length > 0) {
+      try {
+        promotedItems = await promoteEvidenceImages('complaints', recordId, savedEvidenceItems);
+      } catch (error) {
+        if (error instanceof FirebaseConfigError) {
+          return NextResponse.json({ error: error.message, errorKey: 'FIREBASE_CONFIG' }, { status: 503 });
+        }
+        console.error('Promote evidence images error:', error);
+        return NextResponse.json({ error: 'فشل حفظ أدلة الصورة — حاول مرة أخرى' }, { status: 500 });
+      }
+    }
+
+    let complaint: Record<string, unknown>;
+    try {
+      complaint = await createRecordWithId('complaints', recordId, {
+        customerName,
+        customerContact: customerContact || '',
+        dealId: dealId || null,
+        employeeId: employeeId || null,
+        complaintType,
+        description,
+        severity: severity || 'medium',
+        status: normalizedStatus,
+        resolution: resolution || null,
+        responsiblePerson: responsiblePerson || '',
+        compensationProvided: compensationProvided || null,
+        resolvedAt: null,
+        relatedCapaIds: relatedCapaIds || [],
+        evidenceItems: promotedItems ?? null,
+        ...(typeof sourcePage === 'string' && sourcePage && sourcePage.length <= 50
+          ? { sourcePage }
+          : {}),
+        ...(typeof sourceRecordId === 'string' && sourceRecordId && sourceRecordId.length <= 100
+          ? { sourceRecordId }
+          : {}),
+      });
+    } catch (error) {
+      if (promotedItems) {
+        void deleteEvidenceObjects(evidenceImageItems(promotedItems).map((i) => i.image!.storagePath));
+      }
+      throw error;
+    }
 
     // §13: automation event — active complaints-module rules fire here.
     void dispatchAutomationEvent('record_created', 'complaints', {

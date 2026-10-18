@@ -2,6 +2,15 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getById, updateRecord, deleteRecord } from '@/lib/db';
 import { asScopeViewer, employeeInScope } from '@/lib/scope/server';
 import { assertSimpleValueIsActive } from '@/lib/master-data/simple-lists';
+import {
+  assertAttachableEvidenceImages,
+  projectLegacyEvidenceFields,
+  sanitizeEvidenceItems,
+  stampEvidenceItems,
+} from '@/lib/evidence-items';
+import { commitEvidenceItems, deleteEvidenceObjects, evidenceImageItemPaths } from '@/lib/evidence-storage';
+import { FirebaseConfigError } from '@/lib/firebase-server';
+import type { EvidenceItem } from '@/types';
 
 const SCORE_MAP: Record<string, number> = { low: 1, medium: 3, high: 5, critical: 10 };
 
@@ -67,7 +76,43 @@ export async function PUT(
       updateData.score = SCORE_MAP[body.priorityLevel] || 3;
     }
 
-    const followUp = await updateRecord('followUps', id, updateData);
+    // ── §EVIDENCE-ITEMS — normalized multi-item evidence; the legacy
+    // `evidence` string + `attachments` URL list are re-projected from
+    // the canonical items (§17).
+    let updatedEvidenceItems: EvidenceItem[] | null = null;
+    if (body.evidenceItems !== undefined) {
+      const parsedEvidence = sanitizeEvidenceItems(body.evidenceItems);
+      if (!parsedEvidence.ok) return NextResponse.json({ error: parsedEvidence.error }, { status: 400 });
+      const attachError = assertAttachableEvidenceImages(parsedEvidence.items, existing.evidenceItems ?? null);
+      if (attachError) return NextResponse.json({ error: attachError }, { status: 400 });
+      updatedEvidenceItems = stampEvidenceItems(parsedEvidence.items, new Date().toISOString(), permCheck.user?.id || 'system');
+      const legacy = projectLegacyEvidenceFields(updatedEvidenceItems, 'followup');
+      updateData.evidenceItems = updatedEvidenceItems;
+      updateData.evidence = legacy.evidence;
+      updateData.attachments = legacy.attachments;
+    }
+
+    let followUp: Record<string, unknown> | null = null;
+    if (updatedEvidenceItems) {
+      // §21 — promote staged images, persist, then clean removed
+      // objects only after a successful write.
+      try {
+        await commitEvidenceItems(
+          'followUps', id, updatedEvidenceItems, existing.evidenceItems ?? null,
+          async (items) => {
+            followUp = await updateRecord('followUps', id, { ...updateData, evidenceItems: items });
+          },
+        );
+      } catch (error) {
+        if (error instanceof FirebaseConfigError) {
+          return NextResponse.json({ error: error.message, errorKey: 'FIREBASE_CONFIG' }, { status: 503 });
+        }
+        console.error('Commit evidence items error:', error);
+        return NextResponse.json({ error: 'فشل حفظ أدلة الصورة — حاول مرة أخرى' }, { status: 500 });
+      }
+    } else {
+      followUp = await updateRecord('followUps', id, updateData);
+    }
 
     return NextResponse.json(followUp);
   } catch (error) {
@@ -106,6 +151,11 @@ export async function DELETE(
     }
 
     await deleteRecord('followUps', id);
+
+    // §EVIDENCE-ITEMS — the record is gone; its parent-bound image
+    // objects (record-scoped paths) go with it. Best-effort.
+    void deleteEvidenceObjects(evidenceImageItemPaths(existing.evidenceItems));
+
     return NextResponse.json({ message: 'Follow-up deleted successfully' });
   } catch (error) {
     console.error('Delete follow-up error:', error);

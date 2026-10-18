@@ -38,6 +38,9 @@ import {
   formatDate, formatDateTime, isOverdue, getSLAInfo,
   getProgressSteps, calculateProgress, CATEGORY_LABELS,
 } from '@/lib/capa-helpers';
+// §EVIDENCE-ITEMS — unified read-only evidence display
+import { EvidenceItemsView } from '@/components/shared/evidence';
+import { normalizeCapaEvidenceItems } from '@/lib/evidence-items';
 import type { CAPACase, CAPATimelineEvent, Employee } from '@/types';
 
 // ═══════════════════════════════════════════════════
@@ -637,6 +640,16 @@ export default function CAPADetailPage({ capaId, onBack }: CAPADetailPageProps) 
               </div>
             ) : (
               <p className="text-slate-600 text-xs text-center py-4">لا توجد مرفقات</p>
+            )}
+          </SectionCard>
+
+          {/* 8b. §EVIDENCE-ITEMS — unified evidence display. Legacy
+              correctiveEvidence text / attachment URLs normalize through
+              the CAPA read adapter; new items render independently. */}
+          <SectionCard title="الأدلة" icon={Paperclip} color="text-cyan-400" defaultOpen={false}>
+            <EvidenceItemsView items={normalizeCapaEvidenceItems(capa)} />
+            {normalizeCapaEvidenceItems(capa).length === 0 && (
+              <p className="text-slate-600 text-xs text-center py-4">لا توجد أدلة</p>
             )}
           </SectionCard>
 

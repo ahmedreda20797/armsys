@@ -10,7 +10,8 @@
 // ══════════════════════════════════════════════════════════════
 
 import { NextRequest } from 'next/server';
-import { getAll, findWhere, createRecord, sortByDateField, getEmployeeMap, invalidateCache, TTL } from '@/lib/db';
+import { createId } from '@paralleldrive/cuid2';
+import { getAll, findWhere, createRecordWithId, sortByDateField, getEmployeeMap, invalidateCache, TTL } from '@/lib/db';
 import { requireAuth, verifyPermission } from '@/lib/verify-permission';
 import { shapeAuditIdentityForViewer } from '@/lib/audit/audit-identity';
 import { validationError, unauthorizedError, forbiddenError, internalError, conflictError, lockedError, logServerFailure } from '@/lib/api-error';
@@ -26,7 +27,17 @@ import { AUDIT_LOG_TABLE } from '@/app/api/quality-audit-log/route';
 import { ensureObservationCategoryMasterData } from '@/lib/observation-categories';
 import { notifyObservationAwaitingApproval } from '@/lib/notifications/quality-events';
 import { dispatchAutomationEvent } from '@/lib/automation/event-bridge';
+import {
+  assertAttachableEvidenceImages,
+  evidenceImageItems,
+  projectLegacyEvidenceFields,
+  sanitizeEvidenceItems,
+  stampEvidenceItems,
+} from '@/lib/evidence-items';
+import { deleteEvidenceObjects, promoteEvidenceImages } from '@/lib/evidence-storage';
+import { FirebaseConfigError } from '@/lib/firebase-server';
 import type { QualityObservation, ApprovalEvent } from '@/types/quality-kpi';
+import type { EvidenceItem } from '@/types';
 
 export const OBSERVATIONS_TABLE = 'qualityObservations';
 
@@ -114,6 +125,7 @@ export async function POST(request: NextRequest) {
       categoryId,
       notes,
       evidence,
+      evidenceItems,
       status,
       relatedCapaId,
       correctiveAction,
@@ -238,38 +250,80 @@ export async function POST(request: NextRequest) {
       details: 'إنشاء ملاحظة جودة',
     });
 
-    const observation = await createRecord<QualityObservation>(OBSERVATIONS_TABLE, {
-      schemaVersion: 1,
-      employeeId,
-      employeeName,
-      department,
-      positionSnapshot,
-      observerId,
-      observerName,
-      observationDate,
-      month,
-      type,
-      severity: severity || 'medium',
-      categoryId,
-      categoryName,
-      categoryWeight,
-      notes: notes || '',
-      evidence: evidence || '',
-      status: status || 'open',
-      relatedCapaId: relatedCapaId || null,
-      correctiveAction: correctiveAction || '',
-      dueDate: dueDate || null,
-      resolvedDate: resolvedDate || null,
-      applyPointDeduction: wantsPoints,
-      points: effectivePoints,
-      isBonus: effectiveIsBonus,
-      approvalStatus,
-      approvalHistory,
-      auditLog: [auditEvent],
-      createdById: observerId,
-      createdByName: observerName,
-      clientRequestId: clientRequestId || null,
-    });
+    // ── §EVIDENCE-ITEMS — normalized multi-item evidence ──
+    // Authoritative sanitize; image items must be freshly staged
+    // (pending). The legacy single string is PROJECTED from the items
+    // so every existing reader stays correct (§17).
+    let savedEvidenceItems: EvidenceItem[] | null = null;
+    if (evidenceItems !== undefined) {
+      const parsedEvidence = sanitizeEvidenceItems(evidenceItems);
+      if (!parsedEvidence.ok) return validationError(parsedEvidence.error);
+      const attachError = assertAttachableEvidenceImages(parsedEvidence.items, null);
+      if (attachError) return validationError(attachError);
+      savedEvidenceItems = stampEvidenceItems(parsedEvidence.items, new Date().toISOString(), observerId);
+    }
+    const legacyEvidence = savedEvidenceItems
+      ? (projectLegacyEvidenceFields(savedEvidenceItems, 'required-string').evidence as string)
+      : evidence || '';
+
+    // §21 — promote staged images to their final parent-bound paths
+    // BEFORE the record write; if the write then fails, the promoted
+    // objects are deleted so no orphan survives.
+    const recordId = createId();
+    let promotedItems = savedEvidenceItems;
+    if (savedEvidenceItems && evidenceImageItems(savedEvidenceItems).length > 0) {
+      try {
+        promotedItems = await promoteEvidenceImages(OBSERVATIONS_TABLE, recordId, savedEvidenceItems);
+      } catch (error) {
+        if (error instanceof FirebaseConfigError) {
+          return Response.json({ error: error.message, errorKey: 'FIREBASE_CONFIG' }, { status: 503 });
+        }
+        logServerFailure('quality-observations', 'POST', error);
+        return Response.json({ error: 'فشل حفظ أدلة الصورة — حاول مرة أخرى' }, { status: 500 });
+      }
+    }
+
+    let observation: QualityObservation;
+    try {
+      observation = await createRecordWithId<QualityObservation>(OBSERVATIONS_TABLE, recordId, {
+        schemaVersion: 1,
+        employeeId,
+        employeeName,
+        department,
+        positionSnapshot,
+        observerId,
+        observerName,
+        observationDate,
+        month,
+        type,
+        severity: severity || 'medium',
+        categoryId,
+        categoryName,
+        categoryWeight,
+        notes: notes || '',
+        evidence: legacyEvidence,
+        evidenceItems: promotedItems ?? null,
+        status: status || 'open',
+        relatedCapaId: relatedCapaId || null,
+        correctiveAction: correctiveAction || '',
+        dueDate: dueDate || null,
+        resolvedDate: resolvedDate || null,
+        applyPointDeduction: wantsPoints,
+        points: effectivePoints,
+        isBonus: effectiveIsBonus,
+        approvalStatus,
+        approvalHistory,
+        auditLog: [auditEvent],
+        createdById: observerId,
+        createdByName: observerName,
+        clientRequestId: clientRequestId || null,
+      });
+    } catch (error) {
+      if (promotedItems) {
+        void deleteEvidenceObjects(evidenceImageItems(promotedItems).map((i) => i.image!.storagePath));
+      }
+      throw error;
+    }
 
     // ── Audit + notification + automation (fire-and-forget, never block) ──
     await writeAudit({

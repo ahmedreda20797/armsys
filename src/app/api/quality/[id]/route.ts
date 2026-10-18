@@ -8,6 +8,15 @@ import { writeAudit } from '@/lib/audit';
 import { isMonthClosed } from '@/lib/month-lock';
 import { QUALITY_DEDUCTIONS_TABLE } from '@/lib/quality-deductions/domain';
 import { AUDIT_LOG_TABLE } from '../route';
+import {
+  assertAttachableEvidenceImages,
+  projectLegacyEvidenceFields,
+  sanitizeEvidenceItems,
+  stampEvidenceItems,
+} from '@/lib/evidence-items';
+import { commitEvidenceItems, deleteEvidenceObjects, evidenceImageItemPaths } from '@/lib/evidence-storage';
+import { FirebaseConfigError } from '@/lib/firebase-server';
+import type { EvidenceItem } from '@/types';
 
 /** §WORKFLOW — business fields whose change invalidates an approval. */
 const AUDITED_FIELDS = [
@@ -84,6 +93,21 @@ export async function PUT(
       ...(relatedCapaId !== undefined && { relatedCapaId }),
     };
 
+    // ── §EVIDENCE-ITEMS — normalized multi-item evidence ──
+    // The projected legacy `evidence` lands in `updates` too, so the
+    // audited-business-field logic below treats an evidence edit the
+    // same way it always has (approval invalidation §WORKFLOW).
+    let updatedEvidenceItems: EvidenceItem[] | null = null;
+    if (body.evidenceItems !== undefined) {
+      const parsedEvidence = sanitizeEvidenceItems(body.evidenceItems);
+      if (!parsedEvidence.ok) return NextResponse.json({ error: parsedEvidence.error }, { status: 400 });
+      const attachError = assertAttachableEvidenceImages(parsedEvidence.items, existing.evidenceItems ?? null);
+      if (attachError) return NextResponse.json({ error: attachError }, { status: 400 });
+      updatedEvidenceItems = stampEvidenceItems(parsedEvidence.items, new Date().toISOString(), actor.id);
+      updates.evidenceItems = updatedEvidenceItems;
+      updates.evidence = projectLegacyEvidenceFields(updatedEvidenceItems, 'nullable-string').evidence as string | null;
+    }
+
     updates.updatedBy = actor.id;
     updates.updatedByName = actor.name;
 
@@ -118,7 +142,28 @@ export async function PUT(
       updates.approvalHistory = newHistory;
     }
 
-    const qualityDeduction = await updateRecord(QUALITY_DEDUCTIONS_TABLE, id, updates);
+    let qualityDeduction: Record<string, unknown> | null = null;
+    if (updatedEvidenceItems) {
+      // §21 — staged images promote to final parent-bound paths, the
+      // record persists with the promoted items, removed image objects
+      // are cleaned up only after a successful write.
+      try {
+        await commitEvidenceItems(
+          QUALITY_DEDUCTIONS_TABLE, id, updatedEvidenceItems, existing.evidenceItems ?? null,
+          async (items) => {
+            qualityDeduction = await updateRecord(QUALITY_DEDUCTIONS_TABLE, id, { ...updates, evidenceItems: items });
+          },
+        );
+      } catch (error) {
+        if (error instanceof FirebaseConfigError) {
+          return NextResponse.json({ error: error.message, errorKey: 'FIREBASE_CONFIG' }, { status: 503 });
+        }
+        console.error('Commit evidence items error:', error);
+        return NextResponse.json({ error: 'فشل حفظ أدلة الصورة — حاول مرة أخرى' }, { status: 500 });
+      }
+    } else {
+      qualityDeduction = await updateRecord(QUALITY_DEDUCTIONS_TABLE, id, updates);
+    }
 
     // Fire-and-forget audit trail.
     void writeAudit({
@@ -176,6 +221,10 @@ export async function DELETE(
     }
 
     await deleteRecord(QUALITY_DEDUCTIONS_TABLE, id);
+
+    // §EVIDENCE-ITEMS — the record is gone; its parent-bound image
+    // objects (record-scoped paths) go with it. Best-effort.
+    void deleteEvidenceObjects(evidenceImageItemPaths(existing.evidenceItems));
 
     // Fire-and-forget audit trail (after removal — snapshot is in `before`).
     const actor = await resolveActor(permCheck.user?.id);

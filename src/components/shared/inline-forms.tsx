@@ -38,6 +38,9 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useLanguage } from '@/lib/i18n/language-context';
 import { useMasterDataVocabulary } from '@/hooks/use-master-data';
 import { categoryDisplayName } from '@/lib/observation-categories/presentation';
+// §EVIDENCE-ITEMS — shared evidence collection for inline observation form
+import { EvidenceCollectionInput } from '@/components/shared/evidence';
+import type { EvidenceItem } from '@/types';
 import type { Employee } from '@/types';
 import { EMPLOYEE_STATUS_LABELS_AR, EMPLOYEE_STATUSES } from '@/lib/organization/employee-status';
 import { PRIORITY_OPTIONS, DEPARTMENTS, SOURCE_OPTIONS } from '@/lib/capa-constants';
@@ -261,12 +264,14 @@ interface ComplaintFormState {
   employeeId: string; complaintType: string; description: string;
   severity: string; status: string; resolution: string;
   responsiblePersonId: string; compensation: string;
+  evidenceItems: EvidenceItem[];
 }
 
 const COMPLAINT_EMPTY: ComplaintFormState = {
   customerName: '', customerContact: '', dealId: '', employeeId: '',
   complaintType: 'service_quality', description: '', severity: 'medium',
   status: 'open', resolution: '', responsiblePersonId: '', compensation: '',
+  evidenceItems: [],
 };
 
 export function ComplaintInlineForm({ onClose, employees, systemUsers, onCreated, defaultValues, sourceContext }: {
@@ -382,6 +387,10 @@ export function ComplaintInlineForm({ onClose, employees, systemUsers, onCreated
         <div className="space-y-1.5 sm:col-span-2">
           <Label className="text-slate-300 text-xs">المسؤول</Label>
           <UserSearchInput users={systemUsers} value={form.responsiblePersonId} onChange={(id) => upd('responsiblePersonId', id)} placeholder="ابحث عن مستخدم..." allowClear clearLabel="— بدون —" />
+        </div>
+        <div className="sm:col-span-2">
+          {/* §EVIDENCE-ITEMS — shared collection, same as the page dialog */}
+          <EvidenceCollectionInput moduleKey="complaints" items={form.evidenceItems} onChange={(items) => upd('evidenceItems', items)} />
         </div>
       </div>
       <div className="flex items-center gap-2 pt-2 border-t border-slate-700/50">
@@ -645,7 +654,7 @@ export function RequestInlineForm({ onClose, employees, onCreated }: {
 
 interface ObservationFormState {
   employeeId: string; observationDate: string; type: string;
-  categoryId: string; severity: string; notes: string; evidence: string;
+  categoryId: string; severity: string; notes: string; evidenceItems: EvidenceItem[];
   applyPoints: boolean; points: number | ''; isBonus: boolean;
   categories: Array<{ id: string; name: string; defaultPointValue: number; isBonusDefault: boolean }>;
 }
@@ -657,7 +666,7 @@ const OBSERVATION_EMPTY = (categories: ObservationFormState['categories']): Obse
   categoryId: '',
   severity: 'medium',
   notes: '',
-  evidence: '',
+  evidenceItems: [],
   applyPoints: true,
   points: '',
   isBonus: false,
@@ -694,7 +703,7 @@ export function ObservationInlineForm({ onClose, employees, categories, onCreate
           categoryId: form.categoryId,
           severity: form.severity,
           notes: form.notes,
-          evidence: form.evidence,
+          evidenceItems: form.evidenceItems,
           applyPointDeduction: form.applyPoints,
           points: form.applyPoints ? (form.points === '' ? undefined : form.points) : 0,
           isBonus: form.applyPoints ? form.isBonus : false,
@@ -773,9 +782,9 @@ export function ObservationInlineForm({ onClose, employees, categories, onCreate
           <Label className="text-slate-300 text-xs">الملاحظات</Label>
           <Textarea value={form.notes} onChange={(e) => upd('notes', e.target.value)} rows={2} className="bg-slate-800 border-slate-600 text-white text-sm resize-none" />
         </div>
-        <div className="space-y-1.5 sm:col-span-2">
-          <Label className="text-slate-300 text-xs">الأدلة</Label>
-          <Textarea value={form.evidence} onChange={(e) => upd('evidence', e.target.value)} rows={1} className="bg-slate-800 border-slate-600 text-white text-sm resize-none" />
+        <div className="sm:col-span-2">
+          {/* §EVIDENCE-ITEMS — shared collection, same as the main form */}
+          <EvidenceCollectionInput moduleKey="qualityObservations" items={form.evidenceItems} onChange={(items) => upd('evidenceItems', items)} />
         </div>
       </div>
       <div className="flex items-center gap-2 pt-2 border-t border-slate-700/50">
