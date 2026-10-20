@@ -1400,7 +1400,7 @@ export function kpiInsightsToPrintModel(
   }));
 
   return {
-    title: ui('تقرير ذكاء الأداء التشغيلي', 'Operational Performance Intelligence Report'),
+    title: ui('تقرير الأداء التشغيلي', 'Operational Performance Report'),
     subject: subject ?? undefined,
     period: monthLabel(report.monthKey),
     generatedAt: report.generatedAt,
