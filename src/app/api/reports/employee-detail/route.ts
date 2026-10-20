@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAll, findWhereContains, findWhere, getById } from '@/lib/db';
+import { loadOrgIndex, resolveEmployeeOrgLabels } from '@/lib/reports/employee-org';
+import { normalizeEvidenceItems } from '@/lib/evidence-items';
 import { verifyPermission } from '@/lib/verify-permission';
 import { asScopeViewer, employeeInScope } from '@/lib/scope/server';
 import { validateMonthKey } from '@/lib/month-utils';
@@ -92,6 +94,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'الموظف غير موجود' }, { status: 404 });
     }
 
+    // Canonical organization label (org-tree migration): the report's
+    // department value resolves from orgNodeId through the shared
+    // resolver — same value the Employees page and Employee 360 show.
+    const orgIndex = await loadOrgIndex();
+    const orgLabels = resolveEmployeeOrgLabels(orgIndex, employee as never);
+
     // Policy from the deductionRules collection (canonical defaults for
     // missing rows). No write-on-read sync — Milestone 2 §27.
     const policy = resolveAttendancePolicy(deductionRules);
@@ -183,6 +191,9 @@ export async function POST(request: NextRequest) {
       deductionDays: q.deductionDays || 0,
       deductionAmount: q.deductionAmount || 0,
       evidence: q.evidence || null,
+      // §EVIDENCE-PRESENTATION — the COMPLETE collection (all items,
+      // stored order; legacy single-value adapted). Never evidence[0].
+      evidenceItems: normalizeEvidenceItems(q, 'nullable-string'),
       createdAt: q.createdAt,
     }));
 
@@ -202,7 +213,7 @@ export async function POST(request: NextRequest) {
         id: employee.id,
         name: employee.name,
         code: employee.code || null,
-        department: employee.department || null,
+        department: orgLabels.department,
         position: employee.position || null,
         shiftStart: employee.shiftStart || null,
         shiftEnd: employee.shiftEnd || null,

@@ -27,6 +27,7 @@ import { getAll, TTL } from '@/lib/db';
 import { isValidMonthKey } from '@/lib/month-utils';
 import { previousMonthKey, defaultKpiReportingLoaders } from '@/lib/kpi-reporting';
 import { buildOrgIndex, findAncestorOfType } from '@/lib/organization/graph';
+import { findAncestorAtLevel } from '@/lib/organization/levels';
 import {
   getEmployeePerformanceDataset,
   defaultPerformanceIntelligenceLoaders,
@@ -182,7 +183,10 @@ export async function getEmployeePerformanceHubDataset(
   const orgIndex = buildOrgIndex(orgNodes as never);
   const orgNodeId = identity?.orgNodeId ?? null;
   const teamNode = orgNodeId ? findAncestorOfType(orgIndex, orgNodeId, 'team') : null;
-  const companyNode = orgNodeId ? findAncestorOfType(orgIndex, orgNodeId, 'company') : null;
+  // §ORG-LEVELS — the company is the nearest ancestor whose SEMANTIC
+  // level is 'company' (derived, never assumed from the stored type:
+  // a legacy GA root is company-typed but is General Administration).
+  const companyNode = orgNodeId ? findAncestorAtLevel(orgIndex, orgNodeId, 'company') : null;
 
   let teamBenchmark: EmployeePerformanceHubDataset['teamBenchmark'] = null;
   if (input.scopeIncludes) {

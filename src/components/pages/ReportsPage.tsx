@@ -21,6 +21,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { EmployeeLink } from '@/components/shared/EmployeeLink';
+import { EvidenceDisplay } from '@/components/shared/evidence';
 import {
   Select,
   SelectContent,
@@ -203,6 +204,8 @@ interface EmployeeDetail {
     deductionDays: number;
     deductionAmount: number;
     evidence: string | null;
+    /** §EVIDENCE-PRESENTATION — COMPLETE canonical collection. */
+    evidenceItems?: import('@/types').EvidenceItem[] | null;
     createdAt: string;
   }[];
 }
@@ -1186,6 +1189,9 @@ export default function ReportsPage() {
                                                 </div>
                                               </div>
                                               {q.description && <p className="text-slate-400 text-sm">{q.description}</p>}
+                                              {/* §EVIDENCE-PRESENTATION — ALL items in order through
+                                                  the shared compact renderer (never evidence[0]). */}
+                                              <EvidenceDisplay items={q.evidenceItems ?? []} />
                                             </div>
                                           ))}
                                         </div>

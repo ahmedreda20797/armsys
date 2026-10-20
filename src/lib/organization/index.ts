@@ -2,6 +2,7 @@
 export * from './types';
 export * from './graph';
 export * from './levels';
+export * from './labels';
 export * from './assignment';
 export * from './positions';
 export * from './employee-status';

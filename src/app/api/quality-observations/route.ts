@@ -12,6 +12,7 @@
 import { NextRequest } from 'next/server';
 import { createId } from '@paralleldrive/cuid2';
 import { getAll, findWhere, createRecordWithId, sortByDateField, getEmployeeMap, invalidateCache, TTL } from '@/lib/db';
+import { loadOrgIndex, resolveEmployeeOrgLabelsMap } from '@/lib/reports/employee-org';
 import { requireAuth, verifyPermission } from '@/lib/verify-permission';
 import { shapeAuditIdentityForViewer } from '@/lib/audit/audit-identity';
 import { validationError, unauthorizedError, forbiddenError, internalError, conflictError, lockedError, logServerFailure } from '@/lib/api-error';
@@ -86,7 +87,23 @@ export async function GET(request: NextRequest) {
     if (month) records = records.filter((r) => r.month === month);
     if (status) records = records.filter((r) => r.status === status);
     if (approvalStatus) records = records.filter((r) => r.approvalStatus === approvalStatus);
-    if (department) records = records.filter((r) => r.department === department);
+    if (department) {
+      // ── Canonical org filter (org-tree migration) ──
+      // "Department" = the employee's CURRENT organization (resolved
+      // from orgNodeId through the shared resolver — the same labels
+      // the filter dropdown offers). The record's stored department
+      // is a creation-time display snapshot and is never rewritten;
+      // filtering by it would break the moment a node is renamed.
+      const [obsEmployees, obsOrgIndex] = await Promise.all([
+        getAll<Record<string, unknown>>('employees', TTL.MEDIUM),
+        loadOrgIndex(),
+      ]);
+      const orgLabels = resolveEmployeeOrgLabelsMap(
+        obsOrgIndex,
+        obsEmployees.filter((e) => e && typeof e.id === 'string') as Array<{ id: string }>,
+      );
+      records = records.filter((r) => orgLabels.get(r.employeeId)?.department === department);
+    }
     if (employeeId) records = records.filter((r) => r.employeeId === employeeId);
     if (categoryId) records = records.filter((r) => r.categoryId === categoryId);
     if (isBonusParam === 'true') records = records.filter((r) => r.isBonus === true);

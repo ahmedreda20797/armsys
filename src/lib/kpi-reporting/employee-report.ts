@@ -25,6 +25,7 @@ import { computeEmployeeKpiResultWithLoaders } from '@/lib/kpi-framework/employe
 import { isValidMonthKey } from '@/lib/month-utils';
 import { roundTo2 } from '@/lib/kpi-framework/validation';
 import { classifyEvidence } from '@/lib/quality-observations/evidence';
+import { normalizeEvidenceItems } from '@/lib/evidence-items';
 import type {
   EmployeeKpiReport,
   KpiDataContractComponent,
@@ -237,6 +238,9 @@ function toReportObservation(o: QualityObservation): KpiReportObservation {
     approvalStatus: o.approvalStatus,
     notes: o.notes,
     evidence: classifyEvidence(o.evidence),
+    // §EVIDENCE-ITEMS — the COMPLETE collection (all items, stored
+    // order; legacy single-value adapted at read). Never evidence[0].
+    evidenceItems: normalizeEvidenceItems(o, 'required-string'),
     relatedCapaId: o.relatedCapaId,
     effect: {
       applies,

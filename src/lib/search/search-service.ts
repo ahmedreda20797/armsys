@@ -34,6 +34,7 @@ import { logServerFailure } from '@/lib/api-error';
 import { normalizeForSearch, splitQueryTerms } from './search-normalize';
 import { SEARCH_DOMAINS, SEARCH_DOMAIN_ORDER } from './search-domains';
 import { SEARCH_ADAPTERS, type AdapterContext } from './adapters';
+import { loadOrgIndex, resolveEmployeeOrgLabels } from '@/lib/reports/employee-org';
 import {
   isRecordIdMatch,
   matchRecord,
@@ -187,7 +188,22 @@ export async function runGlobalSearch(
     const adapter = SEARCH_ADAPTERS[domain];
     try {
       const rows = await deps.getAll(descriptor.table);
-      const scoped = applyScope(rows, descriptor.scopeKind, descriptor.scopeOptions, scopeCtx);
+      let scoped = applyScope(rows, descriptor.scopeKind, descriptor.scopeOptions, scopeCtx);
+
+      // ── Canonical org labels (org-tree migration) ──
+      // The employees domain's `department` (searchable field +
+      // subtitle) resolves from orgNodeId through the ONE shared
+      // resolver — searching/displaying "القسم" then matches what
+      // the Employees page shows. Lazy: only the employees domain
+      // pays the (cached) orgNodes read; record-owned department
+      // snapshots on other domains keep their historical values.
+      if (domain === 'employees') {
+        const index = await loadOrgIndex();
+        scoped = scoped.map((r) => ({
+          ...r,
+          department: resolveEmployeeOrgLabels(index, r as never).department,
+        }));
+      }
 
       const matches: InternalMatch[] = [];
       for (const record of scoped) {

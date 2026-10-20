@@ -5,6 +5,7 @@ import { validateMonthKey } from '@/lib/month-utils';
 import { isEffectiveDeduction } from '@/lib/quality-deductions/domain';
 import { asScopeViewer, filterEmployeesInScope, resolveEmployeeScopeFromDb } from '@/lib/scope/server';
 import { filterCurrentEmployees } from '@/lib/organization';
+import { loadOrgIndex, resolveEmployeeOrgLabelsMap } from '@/lib/reports/employee-org';
 import {
   buildReportRow,
   computeMonthlyAttendance,
@@ -85,6 +86,15 @@ export async function POST(request: NextRequest) {
     // missing rows). No write-on-read sync — Milestone 2 §27.
     const policy = resolveAttendancePolicy(deductionRules);
 
+    // ── Canonical organization labels (org-tree migration) ──
+    // Row department values resolve from employee.orgNodeId through
+    // the ONE shared resolver; the stored free-text string survives
+    // only for employees without a node. One batched orgNodes read.
+    const orgIndex = await loadOrgIndex();
+    const orgLabelsByEmp = resolveEmployeeOrgLabelsMap(orgIndex, employees as Array<{ id: string; department?: string | null; orgNodeId?: string | null }>);
+    const departmentOf = (employeeId: unknown): string =>
+      orgLabelsByEmp.get(String(employeeId))?.department ?? '—';
+
     // ── Lookup Maps (malformed legacy dates can never match a calendar
     //    key and are excluded here, mirroring legacy behavior) ──
     const bioByEmp = new Map<string, Map<string, any>>();
@@ -164,7 +174,7 @@ export async function POST(request: NextRequest) {
 
       rows.push(buildReportRow(result, {
         employeeName: emp.name,
-        department: emp.department || '—',
+        department: departmentOf(emp.id),
         position: emp.position || null,
         quality: {
           days: empQuality.reduce((sum: number, q: any) => sum + (q.deductionDays || 0), 0),

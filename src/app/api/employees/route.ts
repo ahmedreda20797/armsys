@@ -14,6 +14,7 @@ import {
   resolveDepartmentDisplayName,
   type OrgNode,
 } from '@/lib/organization';
+import { loadOrgIndex, resolveEmployeeOrgLabels } from '@/lib/reports/employee-org';
 
 export async function GET(request: NextRequest) {
   try {
@@ -88,6 +89,20 @@ export async function GET(request: NextRequest) {
       return (b.createdAt || 0) - (a.createdAt || 0);
     });
 
+    // ─── CANONICAL ORGANIZATION LABELS (org-tree migration) ───
+    // The Organization Tree is the source of current organizational
+    // identity: the `department` value returned here resolves from
+    // employee.orgNodeId through the ONE shared resolver (lib/reports/
+    // employee-org). The stored free-text string survives only for
+    // employees without an orgNodeId. Property name unchanged — the
+    // contract keeps its shape, the value changes source (§23). One
+    // batched orgNodes read; pure per-row resolution (no N+1).
+    const orgIndex = await loadOrgIndex();
+    const enrichWithOrgLabels = (e: Record<string, any>) => {
+      const labels = resolveEmployeeOrgLabels(orgIndex, e as never);
+      return { ...e, department: labels.department };
+    };
+
     // Field-level access (Part J): sensitive employee fields (mobile)
     // are stripped server-side for users without edit access —
     // restricted data must never reach the browser.
@@ -98,10 +113,12 @@ export async function GET(request: NextRequest) {
     // This avoids 5 extra table scans on the default list view
     if (includeCounts) {
       const employeesWithCounts = await withRelatedCounts(employees as any[]);
-      return NextResponse.json(employeesWithCounts.map(stripForViewer));
+      return NextResponse.json(employeesWithCounts.map((e: any) => enrichWithOrgLabels(e)).map(stripForViewer));
     }
 
-    return NextResponse.json((employees as Record<string, any>[]).map(stripForViewer));
+    return NextResponse.json(
+      (employees as Record<string, any>[]).map(enrichWithOrgLabels).map(stripForViewer),
+    );
   } catch (error) {
     console.error('Fetch employees error:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });

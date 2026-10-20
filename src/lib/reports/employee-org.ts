@@ -1,26 +1,53 @@
 // ══════════════════════════════════════════════════════════════
 //  Report employee context — ORG-AWARE labels (Qnalys milestone)
 //
-//  ONE mechanism that resolves every employee's REAL organization
-//  assignment for report filtering:
-//    • department = nearest DEPARTMENT org-node name (org tree is
-//      the authority) with the employee's stored free-text
-//      `department` as fallback for legacy records.
-//    • team = nearest TEAM org-node name (subteam employees roll up
-//      to their parent team), null when unassigned.
+//  THE canonical read-side import surface for employee organization
+//  resolution. The PURE label/context logic lives in lib/organization/
+//  labels (cycle-free, unit-tested) and is re-exported here — the
+//  historical import path every report consumer already uses:
+//
+//    resolveEmployeeOrgLabels / resolveEmployeeOrgLabelsMap
+//    resolveEmployeeOrganizationContext / buildEmployeeOrgIndex
+//
+//  DB-bound helpers (kept here, the only db-coupled part):
+//    • loadOrgIndex() — ONE cached orgNodes read → shared index
+//    • loadEmployeeOrgRefs() — annotated refs for report filtering
+//
+//  Semantics (mirrors lib/organization/labels):
+//    • department = nearest DEPARTMENT node name → the node's own
+//      name (creation-time rule); stored free-text string ONLY for
+//      employees without a node (or an empty tree).
+//    • team = nearest TEAM node name (subteams roll up), null else.
+//    • dangling orgNodeId (populated tree, missing node) → null +
+//      orgUnavailable — controlled unavailable, never legacy text.
 //    • searchKey = normalized "name + code" blob for name search.
 //
-//  Pure resolution over canonically loaded records — no N+1 reads,
-//  no duplicated org logic (reuses lib/organization/graph).
+//  Batched reads only — no N+1, no duplicated org logic.
 // ══════════════════════════════════════════════════════════════
 
-import { getAll } from '@/lib/db';
+import { getAll, TTL } from '@/lib/db';
 import type { Employee } from '@/types';
-import { buildOrgIndex, findAncestorOfType, type OrgIndex } from '@/lib/organization/graph';
-import type { OrgNode } from '@/lib/organization/types';
+import {
+  buildEmployeeOrgIndex,
+  resolveEmployeeOrgLabels,
+  type EmployeeOrgInput,
+} from '@/lib/organization/labels';
+import type { OrgIndex } from '@/lib/organization/graph';
+import { ORG_NODES_TABLE, type OrgNode } from '@/lib/organization/types';
 import { normalizeForSearch } from '@/lib/search/search-normalize';
 
-const ORG_NODES_TABLE = 'orgNodes';
+// ── ONE resolver: the pure implementations are the canonical ones ──
+export {
+  resolveEmployeeOrgLabels,
+  resolveEmployeeOrgLabelsMap,
+  resolveEmployeeOrganizationContext,
+  buildEmployeeOrgIndex,
+} from '@/lib/organization/labels';
+export type {
+  EmployeeOrgInput,
+  EmployeeOrgLabels,
+  EmployeeOrganizationContext,
+} from '@/lib/organization/labels';
 
 /** An employee annotated with its real org labels for report filters. */
 export interface EmployeeOrgRef {
@@ -36,28 +63,15 @@ export interface EmployeeOrgRef {
   searchKey: string;
 }
 
-/** Pure label resolution for one employee against a built org index. */
-export function resolveEmployeeOrgLabels(
-  index: OrgIndex,
-  employee: Pick<Employee, 'id' | 'name' | 'code' | 'department' | 'orgNodeId'>,
-): { department: string | null; team: string | null } {
-  const nodeId = employee.orgNodeId ?? null;
-  if (!nodeId) {
-    return { department: employee.department ?? null, team: null };
-  }
-  const deptNode = findAncestorOfType(index, nodeId, 'department');
-  const teamNode = findAncestorOfType(index, nodeId, 'team');
-  return {
-    // The org tree is authoritative when present; the stored string
-    // remains the fallback so legacy records keep their label.
-    department: deptNode?.name ?? employee.department ?? null,
-    team: teamNode?.name ?? null,
-  };
-}
-
-/** Build the org index once for a batch of label resolutions. */
-export function buildEmployeeOrgIndex(nodes: ReadonlyArray<OrgNode>): OrgIndex {
-  return buildOrgIndex([...nodes]);
+/**
+ * Load the org tree index ONCE (one cached batched read) — the shared
+ * entry point for every list/route that resolves employee labels.
+ * Tolerates a missing table result (mocked/legacy environments) by
+ * yielding an EMPTY index, for which the resolver keeps legacy labels.
+ */
+export async function loadOrgIndex(): Promise<OrgIndex> {
+  const nodes = await getAll<OrgNode>(ORG_NODES_TABLE, TTL.MEDIUM);
+  return buildEmployeeOrgIndex(nodes);
 }
 
 /**
@@ -71,7 +85,7 @@ export async function loadEmployeeOrgRefs(): Promise<EmployeeOrgRef[]> {
   ]);
   const index = buildEmployeeOrgIndex(nodes);
   return employees.map((e) => {
-    const labels = resolveEmployeeOrgLabels(index, e);
+    const labels = resolveEmployeeOrgLabels(index, e as EmployeeOrgInput);
     const code = e.code ?? null;
     return {
       id: e.id,

@@ -24,6 +24,7 @@ import { defaultKpiFrameworkLoaders } from '@/lib/kpi-framework/employee-result'
 import type { KpiFrameworkEmployee, KpiScheme, KpiSchemeOverride } from '@/lib/kpi-framework/types';
 import { ORG_NODES_TABLE, type OrgNode } from '@/lib/organization';
 import { normalizeEmployeeStatus } from '@/lib/organization/employee-status';
+import { loadOrgIndex, resolveEmployeeOrgLabelsMap } from '@/lib/reports/employee-org';
 
 // ─────────────────────────────────────────────────────────────
 //  Reporting employee view
@@ -113,6 +114,25 @@ function toReportEmployee(raw: Record<string, unknown>, id: string): ReportEmplo
   };
 }
 
+/**
+ * Canonical org labels (org-tree migration): the reporting layer's
+ * `department` resolves from orgNodeId through the ONE shared
+ * resolver (lib/reports/employee-org) — the stored free-text string
+ * survives only for employees without a node. One extra CACHED
+ * orgNodes read per TTL window; pure per-row resolution (no N+1).
+ * `team` keeps flowing through loadTeamNames (already canonical).
+ */
+async function resolveReportEmployeeDepartments(
+  employees: ReportEmployee[],
+): Promise<ReportEmployee[]> {
+  const index = await loadOrgIndex();
+  const labels = resolveEmployeeOrgLabelsMap(index, employees);
+  return employees.map((e) => ({
+    ...e,
+    department: labels.get(e.id)?.department ?? e.department,
+  }));
+}
+
 /** DB-backed default loader set (all reads cached by lib/db). */
 export const defaultKpiReportingLoaders: KpiReportingLoaders = {
   // ── Engine pipeline loaders (canonical, reused verbatim) ──
@@ -121,14 +141,17 @@ export const defaultKpiReportingLoaders: KpiReportingLoaders = {
   // ── Reporting extras ──
   loadEmployeeRecord: async (employeeId) => {
     const raw = await getById<Record<string, unknown>>('employees', employeeId);
-    return raw ? toReportEmployee(raw, employeeId) : null;
+    if (!raw) return null;
+    const [record] = await resolveReportEmployeeDepartments([toReportEmployee(raw, employeeId)]);
+    return record;
   },
 
   loadEmployees: async () => {
     const all = await getAll<Record<string, unknown>>('employees', TTL.MEDIUM);
-    return all
+    const mapped = all
       .filter((e) => e && typeof e.id === 'string')
       .map((e) => toReportEmployee(e, String(e.id)));
+    return resolveReportEmployeeDepartments(mapped);
   },
 
   loadEmploymentEventsByEmployee: async () => {

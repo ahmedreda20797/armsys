@@ -122,12 +122,29 @@ export function EvidencePreviewModal({
                   data-testid="evidence-preview-field"
                 >
                   <dt className="text-slate-500">{field.label}</dt>
-                  <dd className={cn(
-                    'text-slate-200 whitespace-pre-wrap break-words',
-                    field.label === 'معرف السجل' && 'font-mono text-[10px] text-slate-500',
-                  )}>
-                    {field.value}
-                  </dd>
+                  {field.href ? (
+                    // §EVIDENCE-PRESENTATION — evidence fields carry the
+                    // authorized clickable URL (http(s) link or the
+                    // authorized image route; parent-record authorization
+                    // applies per request).
+                    <dd>
+                      <a
+                        href={field.href}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-cyan-300 underline underline-offset-2 break-all"
+                      >
+                        {field.value}
+                      </a>
+                    </dd>
+                  ) : (
+                    <dd className={cn(
+                      'text-slate-200 whitespace-pre-wrap break-words',
+                      field.label === 'معرف السجل' && 'font-mono text-[10px] text-slate-500',
+                    )}>
+                      {field.value}
+                    </dd>
+                  )}
                 </div>
               ))}
             </dl>

@@ -624,28 +624,12 @@ export default function CAPADetailPage({ capaId, onBack }: CAPADetailPageProps) 
             )}
           </SectionCard>
 
-          {/* 8. Attachments Section */}
-          <SectionCard title="المرفقات" icon={Paperclip} color="text-slate-400" defaultOpen={false}>
-            {capa.attachments && capa.attachments.length > 0 ? (
-              <div className="space-y-2">
-                {capa.attachments.map((att) => (
-                  <div key={att.id} className="flex items-center justify-between rounded-lg border border-slate-700/30 bg-slate-800/30 px-3 py-2">
-                    <div className="flex items-center gap-2">
-                      <FileText className="size-4 text-slate-500" />
-                      <span className="text-slate-300 text-xs">{att.name}</span>
-                    </div>
-                    <span className="text-slate-600 text-[10px]" dir="ltr">{formatDate(att.uploadedAt)}</span>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <p className="text-slate-600 text-xs text-center py-4">لا توجد مرفقات</p>
-            )}
-          </SectionCard>
-
-          {/* 8b. §EVIDENCE-ITEMS — unified evidence display. Legacy
+          {/* 8. §EVIDENCE-ITEMS — the ONE unified evidence section. Legacy
               correctiveEvidence text / attachment URLs normalize through
-              the CAPA read adapter; new items render independently. */}
+              the CAPA read adapter; new items render independently. The
+              former separate «المرفقات» card was the SAME attachment
+              URLs displayed twice — the unified collection below is the
+              single authoritative display (never duplicate legacy+new). */}
           <SectionCard title="الأدلة" icon={Paperclip} color="text-cyan-400" defaultOpen={false}>
             <EvidenceItemsView items={normalizeCapaEvidenceItems(capa)} />
             {normalizeCapaEvidenceItems(capa).length === 0 && (

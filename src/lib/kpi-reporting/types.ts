@@ -32,6 +32,7 @@ import type {
 // vocabularies from this barrel without reaching into the engine.
 export type { KpiComponentResultStatus, KpiOverallStatus };
 import type { QualityObservation } from '@/types/quality-kpi';
+import type { EvidenceItem } from '@/types';
 import type { ClassifiedEvidence } from '@/lib/quality-observations/evidence';
 
 // ─────────────────────────────────────────────────────────────
@@ -357,8 +358,16 @@ export interface KpiReportObservation {
   status: QualityObservation['status'];
   approvalStatus: QualityObservation['approvalStatus'];
   notes: string;
-  /** Safe classified evidence (empty | url | text). */
+  /** Safe classified evidence (empty | url | text) — LEGACY single-value
+   *  shape, kept for backward compatibility with older serialized
+   *  reports; presentation reads evidenceItems below. */
   evidence: ClassifiedEvidence;
+  /**
+   * §EVIDENCE-ITEMS — the COMPLETE canonical evidence collection
+   * (ALL items, stored order; legacy single-value adapted at read).
+   * Never evidence[0]: every report surface renders from this.
+   */
+  evidenceItems: EvidenceItem[];
   /** Related record reference (existing CAPA link — never duplicated). */
   relatedCapaId: string | null;
   effect: KpiReportObservationEffect;

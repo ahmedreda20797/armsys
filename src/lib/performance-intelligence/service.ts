@@ -18,6 +18,7 @@
 import { isValidMonthKey } from '@/lib/month-utils';
 import { buildEmployeeKpiReport, trendWindow } from '@/lib/kpi-reporting';
 import { buildOrgIndex, findAncestorOfType } from '@/lib/organization/graph';
+import { resolveEmployeeOrgLabels } from '@/lib/reports/employee-org';
 import type { PerformanceIntelligenceLoaders } from './loaders';
 import { defaultPerformanceIntelligenceLoaders } from './loaders';
 import { assembleEmployeePerformanceDataset } from './assemble';
@@ -69,21 +70,21 @@ export async function getEmployeePerformanceDataset(
   if (!identity) return null;
 
   // ── Department + Team + MANAGER from the ORGANIZATION TREE ──
-  // One extra cached read; the tree is authoritative, subteams roll up
-  // to their parent team, and an unassigned employee resolves to null
-  // (explicit unavailable downstream — never an invented label). The
-  // manager is the nearest team ancestor's manager display name.
-  // The DEPARTMENT resolves the same way Employee360 resolves it (the
-  // nearest department ancestor, falling back to the stored string) —
-  // an employee directly under a team with no department ancestor must
-  // NOT carry the team name mislabeled as a department.
+  // One extra cached read; the tree is authoritative. Labels resolve
+  // through the ONE shared resolver (lib/reports/employee-org) so this
+  // dataset agrees with the Employees page, Employee 360 and every
+  // report: department = nearest department ancestor → the node's own
+  // name (the creation-time rule), team = nearest team ancestor,
+  // dangling/unassigned → explicit null (never an invented label).
+  // The manager stays the nearest TEAM ancestor's manager display name
+  // (the dataset's established orgManager semantics).
   const orgNodes = await loaders.loadOrgNodes();
   const orgIndex = buildOrgIndex(orgNodes as never);
+  const orgLabels = resolveEmployeeOrgLabels(orgIndex, identity as never);
   const teamNode = identity.orgNodeId ? findAncestorOfType(orgIndex, identity.orgNodeId, 'team') : null;
-  const deptNode = identity.orgNodeId ? findAncestorOfType(orgIndex, identity.orgNodeId, 'department') : null;
-  const team = teamNode?.name ?? null;
+  const team = orgLabels.team;
   const manager = teamNode?.managerUserName ?? null;
-  const department = deptNode?.name ?? identity.department ?? null;
+  const department = orgLabels.department;
 
   // ── Canonical KPI report (Phase 2 → Phase 1 engine, same loaders) ──
   // ── Batched operational reads: ONE cached read per collection ──

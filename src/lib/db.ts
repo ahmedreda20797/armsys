@@ -3,6 +3,12 @@
 import 'server-only';
 import { createId } from '@paralleldrive/cuid2';
 import { getAdminDb } from './firebase-server';
+// §ORG-LABELS — the PURE canonical label resolver (lib/organization
+// is Firebase-free) + the graph index builder. db.ts performs the
+// orgNodes read itself through its OWN cached getAll, so NO import
+// cycle exists (lib/reports/employee-org is db-bound and stays out
+// of this module's graph).
+import { buildEmployeeOrgIndex, resolveEmployeeOrgLabels } from '@/lib/organization/labels';
 // firebase-admin v14: get/set/update/remove are methods on Reference objects, not standalone exports
 
 // ═══════════════════════════════════════════════════
@@ -442,9 +448,33 @@ export async function groupByCount(table: string, field: string, whereFilters?: 
 //  Employee helpers (with longer cache)
 // ═══════════════════════════════════════════════════
 
-export async function getEmployeeMap(): Promise<Map<string, { id: string; name: string; department: string | null; position: string | null; shiftStart: string | null }>> {
-  const employees = await getAll('employees', TTL.MEDIUM);
-  return new Map(employees.map((e: any) => [e.id, { id: e.id, name: e.name, department: e.department || null, position: e.position || null, shiftStart: e.shiftStart || null }]));
+/**
+ * Employee display map with CANONICAL organization labels: `department`
+ * resolves from the Organization Tree via the shared pure resolver
+ * (lib/organization/labels) — the stored free-text string survives
+ * only for employees without an orgNodeId (or an empty tree). One
+ * extra CACHED orgNodes read per TTL window (orgNodes is small and
+ * rarely changing); pure in-memory resolution per row — no N+1.
+ */
+export async function getEmployeeMap(): Promise<Map<string, { id: string; name: string; department: string | null; position: string | null; shiftStart: string | null; team: string | null }>> {
+  const [employees, orgNodes] = await Promise.all([
+    getAll('employees', TTL.MEDIUM),
+    getAll('orgNodes', TTL.MEDIUM),
+  ]);
+  const index = buildEmployeeOrgIndex(orgNodes as never);
+  const out = new Map<string, { id: string; name: string; department: string | null; position: string | null; shiftStart: string | null; team: string | null }>();
+  for (const e of employees as Array<Record<string, any>>) {
+    const labels = resolveEmployeeOrgLabels(index, e as never);
+    out.set(e.id, {
+      id: e.id,
+      name: e.name,
+      department: labels.department,
+      position: e.position || null,
+      shiftStart: e.shiftStart || null,
+      team: labels.team,
+    });
+  }
+  return out;
 }
 
 export async function withEmployee<T extends { employeeId: string }>(records: T[], selectFields?: string[]): Promise<(T & { employeeName: string; employeeDepartment: string | null })[]> {

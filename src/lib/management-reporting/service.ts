@@ -14,15 +14,19 @@
 
 import { getAll, TTL } from '@/lib/db';
 import { ORG_NODES_TABLE } from '@/lib/organization';
+import { loadOrgIndex, resolveEmployeeOrgLabelsMap } from '@/lib/reports/employee-org';
 import { buildKpiManagementSummary } from '@/lib/kpi-reporting';
 import type { ManagementReportLoaders } from './types';
 
 type Row = Record<string, unknown>;
 
 export const defaultManagementReportLoaders: ManagementReportLoaders = {
+  // Canonical org labels (org-tree migration): department resolves
+  // from orgNodeId via the ONE shared resolver; the stored free-text
+  // string survives only for employees without a node.
   loadEmployees: async () => {
     const all = await getAll<Row>('employees', TTL.MEDIUM);
-    return all
+    const mapped = all
       .filter((e) => e && typeof e.id === 'string')
       .map((e) => ({
         id: String(e.id),
@@ -30,6 +34,9 @@ export const defaultManagementReportLoaders: ManagementReportLoaders = {
         department: typeof e.department === 'string' ? e.department : null,
         orgNodeId: typeof e.orgNodeId === 'string' ? e.orgNodeId : null,
       }));
+    const index = await loadOrgIndex();
+    const labels = resolveEmployeeOrgLabelsMap(index, mapped);
+    return mapped.map((e) => ({ ...e, department: labels.get(e.id)?.department ?? e.department }));
   },
 
   loadComplaints: () => getAll<Row>('complaints', TTL.MEDIUM),

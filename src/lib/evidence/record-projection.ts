@@ -20,10 +20,17 @@ import type { EvidenceCollection } from './evidence-collections';
 import { getDealMonthKey, type DealDateSource } from '@/lib/deal-dates';
 import { DEDUCTION_TYPE_LABELS } from '@/lib/quality-deductions/domain';
 import { presentSystemOrVerbatim } from '@/lib/i18n/presentation';
+import { normalizeEvidenceItems, normalizeCapaEvidenceItems, type LegacyEvidenceKind } from '@/lib/evidence-items';
+import { resolveEvidenceLines, evidenceLineValue } from '@/lib/evidence/presentation';
 
 export interface ProjectedField {
   label: string;
   value: string;
+  /**
+   * Authorized clickable URL when the field opens evidence (http(s)
+   * link or the authorized evidence-image route). Absent → plain text.
+   */
+  href?: string;
 }
 
 export interface ProjectedRecordMeta {
@@ -162,7 +169,21 @@ function builder(title: string) {
     const resolved = map ? label(map, value) : str(value);
     if (resolved !== null) fields.push({ label: labelText, value: resolved });
   };
-  return { add, done: (): ProjectedRecord => ({ title, fields }) };
+  const addHref = (labelText: string, value: string, href?: string | null) => {
+    fields.push(href ? { label: labelText, value, href } : { label: labelText, value });
+  };
+  /**
+   * §EVIDENCE-PRESENTATION — append the COMPLETE canonical evidence
+   * collection as one numbered field per item (stored order, item
+   * values verbatim, authorized image URLs as clickable hrefs). Never
+   * evidence[0]; legacy single-value records adapt through the same
+   * read adapter every other surface uses.
+   */
+  const addEvidence = (record: Rec, legacy: LegacyEvidenceKind) => {
+    const lines = resolveEvidenceLines(normalizeEvidenceItems(record as never, legacy));
+    lines.forEach((line, i) => addHref(`دليل ${i + 1}`, evidenceLineValue(line), line.href));
+  };
+  return { add, addHref, addEvidence, done: (): ProjectedRecord => ({ title, fields }) };
 }
 
 // ── Per-collection projections (§31 — only existing fields) ───
@@ -185,6 +206,7 @@ function projectQualityObservation(r: Rec): ProjectedRecord {
   }
   b.add('الإجراء التصحيحي', r.correctiveAction);
   b.add('تفاصيل الملاحظة', r.notes);
+  b.addEvidence(r, 'required-string');
   return b.done();
 }
 
@@ -198,6 +220,7 @@ function projectQualityDeduction(r: Rec): ProjectedRecord {
   b.add('الأيام', r.days);
   b.add('المبلغ', r.amount);
   b.add('السبب', r.reason ?? r.notes);
+  b.addEvidence(r, 'nullable-string');
   return b.done();
 }
 
@@ -210,6 +233,7 @@ function projectComplaint(r: Rec): ProjectedRecord {
   b.add('تاريخ الإنشاء', r.createdAt);
   b.add('تفاصيل الشكوى', r.description);
   b.add('الإجراء/الحل', r.resolution);
+  b.addEvidence(r, 'none');
   return b.done();
 }
 
@@ -225,6 +249,11 @@ function projectCapaCase(r: Rec): ProjectedRecord {
   b.add('حالة الإجراء الوقائي', r.preventiveStatus, CAPA_ACTION_STATUS);
   b.add('تاريخ الإنشاء', r.createdAt);
   b.add('وصف المشكلة', r.problemDescription);
+  // CAPA carries DIFFERENT legacy fields (correctiveEvidence narrative +
+  // structured attachments) — the CAPA read adapter, same collection rule.
+  resolveEvidenceLines(normalizeCapaEvidenceItems(r as never)).forEach((line, i) => {
+    b.addHref(`دليل ${i + 1}`, evidenceLineValue(line), line.href);
+  });
   return b.done();
 }
 
@@ -239,6 +268,7 @@ function projectFollowUp(r: Rec): ProjectedRecord {
   b.add('موعد المتابعة القادم', r.nextFollowUpDate);
   b.add('الوصف التفصيلي', r.detailedDescription);
   b.add('الإجراء المتخذ', r.actionTaken);
+  b.addEvidence(r, 'followup');
   return b.done();
 }
 

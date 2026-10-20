@@ -23,8 +23,9 @@
 // ══════════════════════════════════════════════════════════════
 
 import type { OrgIndex } from './graph';
+import { ancestorIds } from './graph';
 import type { OrgNodeLevel } from './level-types';
-import type { OrgTreeNode } from './types';
+import type { OrgNode, OrgTreeNode } from './types';
 
 export type { OrgNodeLevel } from './level-types';
 
@@ -78,6 +79,28 @@ export function resolveOrgNodeLevel(index: OrgIndex, nodeId: string): OrgNodeLev
     default:
       return null;
   }
+}
+
+/**
+ * Nearest node (self → root) whose SEMANTIC level is `level`, or null.
+ * The derived level — never the raw stored type — decides: e.g. a
+ * legacy General-Administration root is company-typed but resolves to
+ * level 'general_administration', so `findAncestorAtLevel(i, id,
+ * 'company')` skips it. Missing node → null.
+ */
+export function findAncestorAtLevel(
+  index: OrgIndex,
+  nodeId: string,
+  level: OrgNodeLevel,
+): OrgNode | null {
+  if (!index.byId.has(nodeId)) return null;
+  const path = [...ancestorIds(index, nodeId), nodeId];
+  for (let i = path.length - 1; i >= 0; i--) {
+    if (resolveOrgNodeLevel(index, path[i]) === level) {
+      return index.byId.get(path[i]) ?? null;
+    }
+  }
+  return null;
 }
 
 /**

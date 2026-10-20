@@ -583,6 +583,7 @@ export const EN_MAP: Record<string, string> = {
   'دليل': 'Guide',
   'عرض الدليل': 'View evidence',
   'رابط الدليل': 'Evidence link',
+  'صورة دليل': 'Image evidence',
   'حادث': 'Incident',
   'ترحيل خصم جودة: ': 'Quality deduction carry-over: ',
   'هذه الملاحظة غير مفعّل عليها خصم النقاط': 'No point deduction applies to this observation',

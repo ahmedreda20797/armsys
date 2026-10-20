@@ -28,6 +28,7 @@ import { T } from '@/lib/i18n/T';
 import { useLanguage } from '@/lib/i18n/language-context';
 import { translateUIText } from '@/lib/i18n/ui-text';
 import { presentStatus } from '@/lib/i18n/presentation';
+import { EvidenceDisplay } from '@/components/shared/evidence';
 import { formatMonthKey, formatDate, formatNumber, formatInteger } from '@/lib/i18n/format';
 import { pick, TERMS } from './insights-labels';
 
@@ -221,8 +222,15 @@ function EvidenceCard({ report }: { report: EmployeeKpiReport }) {
                       <span className="text-slate-500"><T>لا يؤثر</T></span>
                     )}
                   </TableCell>
-                  <TableCell>
-                    {obs.evidence.kind === 'url' ? (
+                  <TableCell className="max-w-[200px]">
+                    {/* §EVIDENCE-PRESENTATION — ALL items through the shared
+                        resolver (links clickable, numbers as text, images as
+                        authorized shortcuts). The classified single value is
+                        only a fallback for reports serialized before the
+                        multi-item model. */}
+                    {obs.evidenceItems && obs.evidenceItems.length > 0 ? (
+                      <EvidenceDisplay items={obs.evidenceItems} />
+                    ) : obs.evidence.kind === 'url' ? (
                       <a
                         href={obs.evidence.url}
                         target="_blank"

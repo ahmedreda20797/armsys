@@ -20,16 +20,25 @@ import React, { useState } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { ReportView } from '@/components/shared/reports/ReportView';
 import type { ReportColumnSpec } from '@/lib/reports/types';
-import { Rows3, Layers, ChevronDown, ChevronLeft, Link as LinkIcon } from 'lucide-react';
+import { Rows3, Layers, ChevronDown, ChevronLeft } from 'lucide-react';
 import { PageIdentity } from '@/components/shared/PageIdentity';
-import { parseSafeHttpUrl } from '@/lib/quality-observations/evidence';
+import { EvidenceDisplay } from '@/components/shared/evidence';
+import type { EvidenceItem } from '@/types';
 import { useLanguage } from '@/lib/i18n/language-context';
 import { T } from '@/lib/i18n/T';
-import { translateUIText } from '@/lib/i18n/ui-text';
 import { presentSystemOrVerbatim } from '@/lib/i18n/presentation';
 import { formatNumber, formatInteger, displayLocale } from '@/lib/i18n/format';
 
 type ViewMode = 'grouped' | 'flat';
+
+/** §EVIDENCE-PRESENTATION — read the COMPLETE canonical collection off
+ *  a report row (runner-normalized; legacy cached payloads degrade to
+ *  their projected string as one text line — never silently dropped). */
+function rowEvidenceItems(row: Record<string, unknown>): EvidenceItem[] {
+  if (Array.isArray(row.evidenceItems)) return row.evidenceItems as EvidenceItem[];
+  const legacy = typeof row.evidence === 'string' ? row.evidence.trim() : '';
+  return legacy ? [{ id: 'legacy-evidence', type: 'text', text: legacy }] : [];
+}
 
 export default function QualityDeductionsReport() {
   const [viewMode, setViewMode] = useState<ViewMode>('grouped');
@@ -79,26 +88,6 @@ export default function QualityDeductionsReport() {
         />
       )}
     </div>
-  );
-}
-
-/** Safe evidence link — same guard as the evidence system (http/https only). */
-function EvidenceCellLink({ url }: { url: string }) {
-  const { locale } = useLanguage();
-  const safe = parseSafeHttpUrl(url);
-  if (!safe) return <span className="text-slate-400 text-xs break-all">{url}</span>;
-  return (
-    <a
-      href={safe}
-      target="_blank"
-      rel="noopener noreferrer"
-      onClick={(e) => e.stopPropagation()}
-      className="inline-flex items-center gap-1 text-cyan-400 hover:text-cyan-300 text-[11px] bg-cyan-500/10 px-2 py-0.5 rounded-md border border-cyan-500/20 max-w-56"
-      title={translateUIText('فتح الدليل في تبويب جديد', locale)}
-    >
-      <LinkIcon className="size-2.5 shrink-0" />
-      <span className="truncate" dir="ltr">{url}</span>
-    </a>
   );
 }
 
@@ -164,7 +153,6 @@ function renderGroupedDetails(row: Record<string, unknown>): React.ReactNode {
     <div className="space-y-1.5 max-w-3xl">
       <p className="text-[11px] font-bold text-slate-400"><T>تفاصيل الخصومات (الأقدم أولاً):</T></p>
       {chronological.map((d, i) => {
-        const evidence = typeof d.evidence === 'string' && d.evidence.trim() !== '' ? d.evidence : null;
         return (
           <div key={String(d.id ?? i)} className="rounded-lg border border-slate-800/80 bg-slate-900/50 px-3 py-2 text-xs space-y-1.5">
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
@@ -191,7 +179,9 @@ function renderGroupedDetails(row: Record<string, unknown>): React.ReactNode {
             {d.description ? (
               <p className="text-slate-300 text-xs leading-relaxed whitespace-pre-wrap break-words">{String(d.description)}</p>
             ) : null}
-            {evidence ? <EvidenceCellLink url={evidence} /> : null}
+            {/* §EVIDENCE-PRESENTATION — ALL items, stored order, compact
+                clickable shortcuts (links + authorized image URLs). */}
+            <EvidenceDisplay items={rowEvidenceItems(d)} />
           </div>
         );
       })}
@@ -215,9 +205,11 @@ function renderDeductionCell(column: ReportColumnSpec, row: Record<string, unkno
       return <span className="text-amber-400 tabular-nums">{formatNumber(amount, { locale: displayLocale() })} <T>ج.م</T></span>;
     }
     case 'evidence': {
-      const url = typeof row.evidence === 'string' ? row.evidence : '';
-      if (!url) return <span className="text-slate-500">—</span>;
-      return <EvidenceCellLink url={url} />;
+      // §EVIDENCE-PRESENTATION — ALL items through the shared resolver
+      // (the generic print/Excel path reads row.evidence's full text).
+      const items = rowEvidenceItems(row);
+      if (items.length === 0) return <span className="text-slate-500">—</span>;
+      return <EvidenceDisplay items={items} />;
     }
     case 'status': {
       const status = String(row.status ?? 'معتمد');

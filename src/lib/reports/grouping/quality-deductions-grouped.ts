@@ -15,7 +15,9 @@
 //  (employees by total impact desc, deductions oldest→newest).
 // ══════════════════════════════════════════════════════════════
 
+import type { EvidenceItem } from '@/types';
 import type { QualityDeductionReportRow } from '../runners/quality-deductions';
+import { resolveEvidenceLines, evidenceLineValue } from '@/lib/evidence/presentation';
 
 /** One nested deduction inside an employee group. */
 export interface QualityDeductionGroupEntry {
@@ -26,7 +28,12 @@ export interface QualityDeductionGroupEntry {
   description: string;
   deductionDays: number;
   monetaryAmount: number;
-  /** Evidence URL / text when stored. */
+  /**
+   * §EVIDENCE-PRESENTATION — ALL evidence items (stored order; legacy
+   * single-value adapted at read). Never evidence[0].
+   */
+  evidenceItems: EvidenceItem[];
+  /** Printable text of ALL items (single-item compat consumers). */
   evidence: string | null;
   /** Approval status (Arabic label). */
   status: string;
@@ -56,6 +63,11 @@ const round = (n: number) => Math.round(n * 100) / 100;
  * detail (label · reason · impact · evidence) because this cell is
  * what the Excel export carries:
  *   • DD/MM/YYYY — مشكلة جودة — التفاصيل: … — 1.5 days — الدليل: <url>
+ *
+ * §EVIDENCE-PRESENTATION — the COMPLETE evidence collection: a single
+ * evidence item stays inline on the deduction line; several items
+ * become numbered lines under it (original order, images carry their
+ * authorized URL, never evidence[0]).
  */
 export function buildReasonsCell(entries: ReadonlyArray<QualityDeductionGroupEntry>): string {
   const sorted = [...entries].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
@@ -67,8 +79,17 @@ export function buildReasonsCell(entries: ReadonlyArray<QualityDeductionGroupEnt
       if (e.monetaryAmount > 0) impacts.push(`${round(e.monetaryAmount)} EGP`);
       if (e.deductionDays > 0) impacts.push(`${round(e.deductionDays)} ${e.deductionDays === 1 ? 'day' : 'days'}`);
       if (impacts.length > 0) parts.push(impacts.join(' / '));
-      if (e.evidence) parts.push(`الدليل: ${e.evidence}`);
-      return `• ${e.date} — ${parts.join(' — ')}`;
+
+      const evidenceLines = resolveEvidenceLines(e.evidenceItems ?? []);
+      if (evidenceLines.length === 1) {
+        parts.push(`الدليل: ${evidenceLineValue(evidenceLines[0])}`);
+        return `• ${e.date} — ${parts.join(' — ')}`;
+      }
+      const head = `• ${e.date} — ${parts.join(' — ')}`;
+      if (evidenceLines.length > 1) {
+        return [head, ...evidenceLines.map((line, i) => `  ${i + 1}. ${evidenceLineValue(line)}`)].join('\n');
+      }
+      return head;
     })
     .join('\n');
 }
@@ -110,6 +131,7 @@ export function groupQualityDeductionsByEmployee(
       description: row.description,
       deductionDays: row.deductionDays,
       monetaryAmount: row.monetaryAmount,
+      evidenceItems: row.evidenceItems ?? [],
       evidence: row.evidence ?? null,
       status: row.status ?? 'معتمد',
       relatedCapaId: row.relatedCapaId,

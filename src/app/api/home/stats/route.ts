@@ -9,6 +9,7 @@ import { isOverdueFollowUp } from '@/lib/metrics';
 import { isEffectiveDeduction, deductionTypeLabel } from '@/lib/quality-deductions/domain';
 import { isActiveFollowUp, isTerminalFollowUp, isDueToday } from '@/lib/metrics/followUpMetrics';
 import { filterEmployeesInScope, authScopeViewer, filterRowsByEmployeeScope, resolveEmployeeScopeFromDb } from '@/lib/scope/server';
+import { loadOrgIndex, resolveEmployeeOrgLabels } from '@/lib/reports/employee-org';
 // §DEAL-DATES — canonical deal date dimensions + the ONE canonical
 // deal metrics builder (Home and Travel answer deal questions through
 // the same builder — the summary count and the detail dataset cannot drift).
@@ -331,7 +332,17 @@ export async function GET(request: NextRequest) {
     // engine's zero-read fast path.
     // ═══════════════════════════════════════════════════
     const scopeCtx = await resolveEmployeeScopeFromDb(authScopeViewer(auth), undefined, auth.permissions);
-    const employees = filterEmployeesInScope(batch.get('employees') || [], scopeCtx);
+    // ── Canonical organization labels (org-tree migration) ──
+    // Department grouping/membership resolves from orgNodeId through
+    // the ONE shared resolver — consistent with empMap (same resolver
+    // via getEmployeeMap) so every dashboard surface agrees. One
+    // extra CACHED orgNodes read; pure per-row resolution (no N+1).
+    const homeOrgIndex = await loadOrgIndex();
+    const employees = filterEmployeesInScope(batch.get('employees') || [], scopeCtx)
+      .map((e: Record<string, any>) => ({
+        ...e,
+        department: resolveEmployeeOrgLabels(homeOrgIndex, e as never).department,
+      }));
     const attendanceRecords = filterRowsByEmployeeScope(batch.get('attendance') || [], scopeCtx);
     const allRequests = filterRowsByEmployeeScope(batch.get('requests') || [], scopeCtx);
     const travelDeals = filterRowsByEmployeeScope(batch.get('travelDeals') || [], scopeCtx);

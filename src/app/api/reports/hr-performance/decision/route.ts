@@ -40,6 +40,7 @@ import {
 import { validateMonthKey } from '@/lib/month-utils';
 import { asScopeViewer, resolveEmployeeScopeFromDb, filterEmployeesInScope } from '@/lib/scope/server';
 import { getAll } from '@/lib/db';
+import { loadOrgIndex, resolveEmployeeOrgLabelsMap } from '@/lib/reports/employee-org';
 import { normalizeEmployeeStatus } from '@/lib/organization/employee-status';
 import {
   resolveReportAudience,
@@ -115,7 +116,7 @@ export async function GET(request: NextRequest) {
     );
 
     const allEmployees = await getAll<Record<string, unknown>>('employees');
-    let candidates: RouteEmployee[] = allEmployees
+    const mapped: RouteEmployee[] = allEmployees
       .filter((e): e is Record<string, unknown> & { id: string } => typeof e?.id === 'string')
       .map((e) => ({
         id: e.id,
@@ -124,6 +125,16 @@ export async function GET(request: NextRequest) {
         department: typeof e.department === 'string' ? e.department : null,
         status: e.status,
       }));
+    // Canonical org labels (org-tree migration): the department filter
+    // and the displayed department resolve from orgNodeId through the
+    // ONE shared resolver — filter values come from the same canonical
+    // source, so string equality stays consistent.
+    const orgIndex = await loadOrgIndex();
+    const orgLabels = resolveEmployeeOrgLabelsMap(orgIndex, mapped);
+    let candidates: RouteEmployee[] = mapped.map((e) => ({
+      ...e,
+      department: orgLabels.get(e.id)?.department ?? e.department,
+    }));
 
     candidates = filterEmployeesInScope(candidates, scopeCtx);
 

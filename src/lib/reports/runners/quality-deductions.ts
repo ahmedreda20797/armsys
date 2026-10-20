@@ -17,11 +17,13 @@
 // ══════════════════════════════════════════════════════════════
 
 import { getAll } from '@/lib/db';
-import type { QualityDeduction } from '@/types';
+import type { EvidenceItem, QualityDeduction } from '@/types';
 import {
   isEffectiveDeduction, isArchivedDeduction, deductionTypeLabel, DEDUCTION_STATUS_LABELS,
   type DeductionApprovalStatus,
 } from '@/lib/quality-deductions/domain';
+import { normalizeEvidenceItems } from '@/lib/evidence-items';
+import { formatEvidenceItemsAsText } from '@/lib/evidence/presentation';
 import { applyEmployeeScope } from '../scope';
 import type { ResolvedReportRequest } from '../scope';
 import { loadEmployeeOrgRefs, employeeMatchesSearch, type EmployeeOrgRef } from '../employee-org';
@@ -50,8 +52,19 @@ export interface QualityDeductionReportRow {
   deductionDays: number;
   /** OPTIONAL financial impact (EGP) — independent of days. */
   monetaryAmount: number;
-  /** Evidence URL / text when stored on the discount. */
+  /**
+   * ALL evidence items as numbered printable text (Excel/print column
+   * value — the generic table paths carry strings only). Null when the
+   * record has no evidence. Screen rendering uses evidenceItems instead.
+   */
   evidence: string | null;
+  /**
+   * §EVIDENCE-PRESENTATION — the COMPLETE canonical evidence
+   * collection (ALL items, stored order; legacy single-value records
+   * adapted at read). Never evidence[0]: every report surface renders
+   * from these items through the shared presentation resolver.
+   */
+  evidenceItems: EvidenceItem[];
   /** Approval status (Arabic label; legacy = معتمد). */
   status: string;
   /** §ARCHIVE — true when the deduction is archived (historical only). */
@@ -161,6 +174,10 @@ export function filterQualityDeductionRecords(
       if (!recCategory.includes(categoryFilter) && !recLabel.includes(categoryFilter)) continue;
     }
 
+    // §EVIDENCE-PRESENTATION — normalize ONCE: the complete collection
+    // for screen surfaces + the printable text for Excel/print cells.
+    const evidenceItems = normalizeEvidenceItems(rec, 'nullable-string');
+
     rows.push({
       id: rec.id,
       employeeId: rec.employeeId,
@@ -175,7 +192,8 @@ export function filterQualityDeductionRecords(
       description: typeof rec.description === 'string' ? rec.description : '',
       deductionDays: typeof rec.deductionDays === 'number' ? rec.deductionDays : 0,
       monetaryAmount: typeof rec.deductionAmount === 'number' ? rec.deductionAmount : 0,
-      evidence: typeof rec.evidence === 'string' && rec.evidence.trim() !== '' ? rec.evidence : null,
+      evidence: formatEvidenceItemsAsText(evidenceItems) || null,
+      evidenceItems,
       status: DEDUCTION_STATUS_LABELS[
         (rec.approvalStatus as DeductionApprovalStatus) ?? 'approved'
       ] ?? 'معتمد',

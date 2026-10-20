@@ -29,6 +29,7 @@ import {
 import { Textarea } from '@/components/ui/textarea';
 import { EvidenceCollectionInput, EvidenceSummaryButton } from '@/components/shared/evidence';
 import { isCompleteEvidenceItem, normalizeEvidenceItems } from '@/lib/evidence-items';
+import { formatEvidenceItemsForCopy } from '@/lib/evidence/presentation';
 import type { EvidenceItem } from '@/types';
 import { Archive,
   Award,
@@ -166,8 +167,15 @@ function formatDeductionForCopy(deduction: QualityWithEmployee, empName: string,
     text += `  ${translateUIText('المبلغ: ', locale)}${formatNumber(deduction.deductionAmount, { locale })} ${translateUIText('جنيه', locale)}\n`;
   }
   text += `\n  ${translateUIText('التفاصيل:', locale)}\n  ${deduction.description || translateUIText('لا يوجد وصف', locale)}\n`;
-  if (deduction.evidence) {
-    text += `\n  ${translateUIText('الدليل: ', locale)}${deduction.evidence}\n`;
+  // §EVIDENCE-PRESENTATION — the COMPLETE collection, every item in
+  // order (link URL / number / image authorized URL / legacy text).
+  // Never the legacy projected string alone (that is evidence[0]).
+  const evidenceBlock = formatEvidenceItemsForCopy(normalizeEvidenceItems(deduction, 'nullable-string'), {
+    locale,
+    baseUrl: typeof window !== 'undefined' ? window.location.origin : undefined,
+  });
+  if (evidenceBlock) {
+    text += `\n  ${evidenceBlock.replace(/\n/g, '\n  ')}\n`;
   }
   text += `\n━━━━━━━━━━━━━━━━━━━`;
   return text;
@@ -197,8 +205,13 @@ function formatAllDeductionsForCopy(empName: string, deductions: QualityWithEmpl
       text += `     ${translateUIText('المبلغ: ', locale)}${formatNumber(d.deductionAmount, { locale })} ${translateUIText('جنيه', locale)}\n`;
     }
     text += `     ${translateUIText('التفاصيل: ', locale)}${d.description || translateUIText('لا يوجد وصف', locale)}\n`;
-    if (d.evidence) {
-      text += `     ${translateUIText('الدليل: ', locale)}${d.evidence}\n`;
+    // §EVIDENCE-PRESENTATION — ALL items in order, not the first one.
+    const evidenceBlock = formatEvidenceItemsForCopy(normalizeEvidenceItems(d, 'nullable-string'), {
+      locale,
+      baseUrl: typeof window !== 'undefined' ? window.location.origin : undefined,
+    });
+    if (evidenceBlock) {
+      text += `     ${evidenceBlock.replace(/\n/g, '\n     ')}\n`;
     }
     text += `\n`;
   });

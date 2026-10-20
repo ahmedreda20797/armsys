@@ -4,6 +4,7 @@ import { getAllBatch } from '@/lib/db';
 import { dedupeEmployeesByIdentity, employeeIdentityKey } from '@/lib/risk/employee-identity';
 import { requireAuth, verifyPermission } from '@/lib/verify-permission';
 import { filterEmployeesInScope, authScopeViewer, filterRowsByEmployeeScope, resolveEmployeeScopeFromDb } from '@/lib/scope/server';
+import { loadOrgIndex, resolveEmployeeOrgLabelsMap } from '@/lib/reports/employee-org';
 import { isEffectiveDeduction } from '@/lib/quality-deductions/domain';
 // Canonical metric layer — the ONLY risk/overdue definitions in the system.
 import {
@@ -83,6 +84,16 @@ export async function GET(request: NextRequest) {
     // are scored.
     // ═══════════════════════════════════════════════════
     const scopeCtx = await resolveEmployeeScopeFromDb(authScopeViewer(auth), undefined, auth.permissions);
+    // ── Canonical organization labels (org-tree migration) ──
+    // Risk rows' department context resolves from orgNodeId through
+    // the ONE shared resolver; the stored free-text string survives
+    // only for employees without a node. One extra CACHED orgNodes
+    // read; pure per-row resolution (no N+1).
+    const riskOrgIndex = await loadOrgIndex();
+    const riskEmpLabels = resolveEmployeeOrgLabelsMap(
+      riskOrgIndex,
+      (batch.get('employees') || []) as Array<{ id: string }>,
+    );
     const scopedEmployees = filterEmployeesInScope(batch.get('employees') || [], scopeCtx);
     // §IDENTITY — ONE risk profile per human. Duplicate employee
     // records (same code or same name) merge here: factor maps below
@@ -336,7 +347,7 @@ export async function GET(request: NextRequest) {
       risks.push({
         employeeId: emp.id,
         employeeName: emp.name,
-        department: emp.department || '',
+        department: riskEmpLabels.get(emp.id)?.department ?? '',
         position: emp.position || '',
         riskScore: totalScore,
         riskLevel,

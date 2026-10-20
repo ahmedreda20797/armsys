@@ -196,13 +196,21 @@ export async function GET(
       rejected: requestsOfMonth.filter((r) => r.status === 'rejected').length,
     };
 
+    // ═══ ORGANIZATION CONTEXT — the tree is the only authority ═══
+    // Resolved BEFORE identity so the employee header and the org
+    // block can never disagree (§11): identity.department carries the
+    // SAME canonical label the organization block displays.
+    const orgNodes = await getAll<OrgNode>(ORG_NODES_TABLE);
+    const index = buildEmployeeOrgIndex(orgNodes);
+    const labels = resolveEmployeeOrgLabels(index, employee as unknown as Employee);
+
     // ═══ Identity (field-level redaction — Part J rule preserved) ═══
     const mobileHidden = resolveFieldAccess(viewer.permissions, 'employees', 'mobile') === 'hidden';
     const identity: Employee360Identity = {
       id: employee.id,
       name: employee.name,
       code: employee.code || null,
-      department: employee.department || null,
+      department: labels.department,
       position: employee.position || null,
       status: normalizeEmployeeStatus(employee.status),
       eligibleForPeriod: dataset?.employee.eligibleForPeriod ?? false,
@@ -218,10 +226,6 @@ export async function GET(
       orgNodeId: employee.orgNodeId || null,
     };
 
-    // ═══ ORGANIZATION CONTEXT — the tree is the only authority ═══
-    const orgNodes = await getAll<OrgNode>(ORG_NODES_TABLE);
-    const index = buildEmployeeOrgIndex(orgNodes);
-    const labels = resolveEmployeeOrgLabels(index, employee as unknown as Employee);
     const nodeId = employee.orgNodeId || null;
     const chain: Employee360Organization['chain'] = nodeId
       ? [

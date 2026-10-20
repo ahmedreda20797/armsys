@@ -12,6 +12,8 @@
 // ══════════════════════════════════════════════════════════════
 
 import type { PrintReportModel, PrintSection } from './print-report-store';
+import type { EvidenceItem } from '@/types';
+import { formatEvidenceItemsAsText } from '@/lib/evidence/presentation';
 import { formatNumber, formatPercentage, formatMonthKey, displayLocale } from '@/lib/i18n/format';
 import { presentStatus } from '@/lib/i18n/presentation';
 
@@ -681,6 +683,8 @@ interface EmployeeKpiReportLike {
       approvalStatus?: string;
       effect?: { applies?: boolean; counted?: boolean; signedPoints?: number };
       evidence?: { kind?: string; text?: string | null; url?: string | null };
+      /** §EVIDENCE-ITEMS — COMPLETE canonical collection (all items). */
+      evidenceItems?: EvidenceItem[];
       relatedCapaId?: string | null;
     }>;
   };
@@ -742,10 +746,17 @@ export function employeeKpiReportToPrintModel(
 
   const evidence = report.evidence;
   if (evidence?.observations && evidence.observations.length > 0) {
+    // §EVIDENCE-PRESENTATION — the evidence column previously dropped
+    // entirely in print; it now carries the COMPLETE collection as
+    // numbered text (all items, stored order — links/numbers/image
+    // authorized URLs). The shared print-table model carries
+    // pre-formatted strings, so URLs print as readable text rather
+    // than live anchors — the documented limitation of this renderer;
+    // no image bytes are embedded to work around it.
     sections.push({
       heading: 'أدلة الجودة (الملاحظات)',
       table: {
-        columns: ['التاريخ', 'التصنيف', 'الخطورة', 'الوصف', 'الحالة', 'الأثر'],
+        columns: ['التاريخ', 'التصنيف', 'الخطورة', 'الوصف', 'الحالة', 'الأثر', 'الدليل'],
         rows: evidence.observations.map((o) => [
           dash(o.observationDate),
           dash(o.categoryName),
@@ -755,6 +766,7 @@ export function employeeKpiReportToPrintModel(
           o.effect?.counted
             ? (o.effect.signedPoints ?? 0 >= 0 ? `+${num(o.effect.signedPoints)}` : num(o.effect.signedPoints))
             : o.effect?.applies ? ui('بانتظار الاعتماد', 'Pending approval') : ui('لا يؤثر', 'No effect'),
+          formatEvidenceItemsAsText(o.evidenceItems ?? []) || '—',
         ]),
       },
     });

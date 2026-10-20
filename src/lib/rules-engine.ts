@@ -9,6 +9,7 @@ import {
   TTL,
 } from '@/lib/db';
 import { findDuplicateByEntityKey } from '@/lib/notifications/dedup';
+import { loadOrgIndex, resolveEmployeeOrgLabels } from '@/lib/reports/employee-org';
 import type {
   AutomationRule,
   RuleConditionGroup,
@@ -194,7 +195,10 @@ export async function executeRuleActions(
             const emp = employees.find((e: any) => e.id === followUpData.employeeId);
             if (emp) {
               followUpData.employeeName = emp.name;
-              if (!followUpData.department) followUpData.department = emp.department || '';
+              // Creation-time org snapshot resolves the CURRENT org
+              // canonically (org tree first; stored string only for
+              // employees without a node).
+              if (!followUpData.department) followUpData.department = resolveEmployeeOrgLabels(await loadOrgIndex(), emp as { id: string }).department || '';
               if (!followUpData.position) followUpData.position = emp.position || '';
             }
           }
@@ -331,7 +335,12 @@ export async function executeRuleActions(
             const emp = employees.find((e: any) => e.id === config.employeeId);
             if (emp) {
               capaEmployeeName = emp.name;
-              if (!capaDepartment) capaDepartment = emp.department || '';
+              // Creation-time org snapshot resolves the CURRENT org
+              // canonically (org tree first; stored string only for
+              // employees without a node).
+              if (!capaDepartment) {
+                capaDepartment = resolveEmployeeOrgLabels(await loadOrgIndex(), emp as { id: string }).department || '';
+              }
             }
           }
 
