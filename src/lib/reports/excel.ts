@@ -10,13 +10,43 @@
 //  Existing bespoke exports (/api/reports/export, /api/reports/
 //  capa-export) are untouched — this engine serves reports built
 //  on the new architecture.
+//
+//  §DYNAMIC-LABELS — known system enum/status labels and legacy
+//  stored semantic labels are localized in the exported workbook;
+//  free text / user data passes through verbatim.
 // ══════════════════════════════════════════════════════════════
 
 import ExcelJS from 'exceljs';
-import type { ReportDefinition, ReportRunResponse } from './types';
+import type { ReportDefinition, ReportRunResponse, ReportColumnSpec } from './types';
+import { presentStatus } from '@/lib/i18n/presentation';
+import { resolveStoredLabelOrVerbatim } from '@/lib/i18n/dynamic-labels';
 
 /** Default column width when a spec omits one. */
 const DEFAULT_WIDTH = 16;
+
+/** Locale for the export (passed through the request context). */
+let currentExportLocale: 'ar' | 'en' = 'ar';
+
+/**
+ * Apply the column's localization strategy to a raw cell value.
+ * §DYNAMIC-LABELS — exact-match resolution; unknown values pass through.
+ */
+function localizeCellValue(
+  col: ReportColumnSpec,
+  value: unknown,
+): unknown {
+  if (!col.localize || value === null || value === undefined) return value;
+  const locale = currentExportLocale;
+  const raw = String(value);
+  switch (col.localize) {
+    case 'system':
+      return presentStatus(raw, locale);
+    case 'stored':
+      return resolveStoredLabelOrVerbatim(raw, locale);
+    default:
+      return value;
+  }
+}
 
 /**
  * Render a report response to an XLSX buffer. RTL sheet, Arabic
@@ -25,7 +55,9 @@ const DEFAULT_WIDTH = 16;
 export async function buildReportExcel(
   definition: ReportDefinition,
   response: ReportRunResponse<Record<string, unknown>>,
+  locale: 'ar' | 'en' = 'ar',
 ): Promise<Buffer> {
+  currentExportLocale = locale;
   const workbook = new ExcelJS.Workbook();
   workbook.creator = 'Qnalys';
   workbook.created = new Date();
@@ -83,8 +115,10 @@ export async function buildReportExcel(
     columns.forEach((col, colIdx) => {
       const cell = dataRow.getCell(colIdx + 1);
       const raw = row[col.key];
-      cell.value = (raw === null || raw === undefined ? '' : raw) as ExcelJS.CellValue;
-      const isMultiline = typeof raw === 'string' && raw.includes('\n');
+      // §DYNAMIC-LABELS — localize known system/stored values in the export.
+      const localized = localizeCellValue(col, raw);
+      cell.value = (localized === null || localized === undefined ? '' : localized) as ExcelJS.CellValue;
+      const isMultiline = typeof localized === 'string' && localized.includes('\n');
       cell.font = { name: 'Arial', size: 10, color: { argb: '333333' } };
       cell.alignment = {
         horizontal: typeof raw === 'number' ? 'center' : 'right',

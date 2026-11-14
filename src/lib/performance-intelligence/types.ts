@@ -368,11 +368,27 @@ export interface CapaFacts {
 }
 
 // ─────────────────────────────────────────────────────────────
-//  §11  Follow-ups  (canonical timing logic reused — no new "late")
+//  §11  EMPLOYEE ACTION FOLLOW-UPS  (§FOLLOWUP-DOMAINS — domain B)
+//
+//  §FOLLOWUP-DOMAINS — the `followUps` collection is the INTERNAL
+//  employee action follow-up domain ONLY: actions/follow-ups assigned
+//  TO an employee by Quality, Management or HR (followUpType
+//  quality/behavior/attendance/…, relatedDeductionId/relatedCapaId
+//  links). It NEVER contributes to customer/deal follow-up metrics —
+//  that domain is §CustomerDealFollowUpFacts below, computed
+//  exclusively from customer/deal records (travelDeals booking items).
+//  The two domains are separate metrics with separate evidence and
+//  are never merged, in this dataset or any consumer.
+//
+//  Canonical timing logic reused — no new "late".
 // ─────────────────────────────────────────────────────────────
 
 export interface FollowUpFacts {
-  /** followUps.employeeId is mandatory — CONFIRMED model. */
+  /**
+   * §FOLLOWUP-DOMAINS — EMPLOYEE ACTION follow-ups (internal actions
+   * assigned to the employee). followUps.employeeId is mandatory —
+   * CONFIRMED model.
+   */
   relationship: RelationshipConfidence;
   total: number;
   byStatus: Record<string, number>;
@@ -394,6 +410,45 @@ export interface FollowUpFacts {
   byPriority: Record<string, number>;
   /** Months WITH follow-ups inside the analysis window (no fabricated months). */
   monthly: MonthlyCount[];
+}
+
+// ─────────────────────────────────────────────────────────────
+//  §11b  CUSTOMER & DEAL FOLLOW-UP  (§FOLLOWUP-DOMAINS — domain A)
+//
+//  The employee's follow-up activity with CUSTOMERS/DEALS, computed
+//  EXCLUSIVELY from customer/deal records: the booking items of the
+//  period's deals (normalizeBookingItems — legacy fixed fields
+//  normalize at read time). A booking item is one customer follow-up
+//  unit: 'booked' = completed follow-up, 'pending' = open follow-up,
+//  'missing' = unavailable at the supplier (still an open item).
+//  Internal employee action follow-ups (§11) NEVER enter these
+//  numbers, and these numbers NEVER enter the internal-action
+//  metrics.
+// ─────────────────────────────────────────────────────────────
+
+export interface CustomerDealFollowUpFacts {
+  /** travelDeals.employeeId is mandatory — CONFIRMED model. */
+  relationship: RelationshipConfidence;
+  /** Deals in the period (TRAVEL dimension) whose items are measured. */
+  dealsInPeriod: number;
+  /** Of those, deals carrying at least one booking item. */
+  dealsWithItems: number;
+  /** Σ booking items over the period's deals. */
+  totalItems: number;
+  /** Items completed with the customer/supplier ('booked'). */
+  bookedItems: number;
+  /** Items still open ('pending'). */
+  pendingItems: number;
+  /** Items unavailable at the supplier ('missing'). */
+  missingItems: number;
+  /** bookedItems / totalItems × 100 (null when totalItems is 0). */
+  completionRate: number | null;
+  /** Deals in the period with at least one non-booked (open) item. */
+  dealsWithOpenItems: number;
+  /** Top open item types by count (deal-level drill-down aid). */
+  openItemTypes: Array<{ type: string; count: number }>;
+  /** Deal ids holding open items (evidence drill-down). */
+  dealsWithOpenItemIds: string[];
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -550,7 +605,10 @@ export interface EmployeePerformanceDataset {
   };
   complaints: ComplaintFacts;
   capa: CapaFacts;
+  /** §FOLLOWUP-DOMAINS domain B — internal employee action follow-ups. */
   followUps: FollowUpFacts;
+  /** §FOLLOWUP-DOMAINS domain A — customer & deal follow-up (booking items). */
+  customerDealFollowUps: CustomerDealFollowUpFacts;
   deals: TravelDealFacts;
   attendance: AttendanceContextFacts;
   dataQuality: PerformanceDataQuality;

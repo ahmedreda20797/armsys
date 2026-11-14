@@ -12,6 +12,7 @@
 
 import type { Locale } from '@/lib/i18n/dictionary';
 import { formatInteger, formatMonthKey, formatPercentage } from '@/lib/i18n/format';
+import { resolveStoredLabelOrVerbatim } from '@/lib/i18n/dynamic-labels';
 import type {
   EmployeePerformanceHubDataset,
   HubChangeItem,
@@ -84,7 +85,8 @@ export function dimensionValueText(locale: Locale, dim: HubDimension): string {
   switch (dim.metric) {
     case 'qualityPercent':
     case 'attendanceCompliance':
-    case 'followUpCompletion':
+    case 'employeeActionFollowUpCompletion':
+    case 'customerDealFollowUpCompletion':
       return formatPercentage(dim.value, { locale, maximumFractionDigits: 1 });
     case 'calculatedPoints':
       return locale === 'en' ? `${dim.value} pts` : `${dim.value} نقطة`;
@@ -110,7 +112,7 @@ export interface DimensionRowView {
   tone: 'good' | 'bad' | 'none';
 }
 
-const HIGHER_IS_BETTER: ReadonlySet<string> = new Set(['quality', 'followUp', 'attendance', 'businessOutput']);
+const HIGHER_IS_BETTER: ReadonlySet<string> = new Set(['quality', 'customerDealFollowUp', 'employeeActionFollowUp', 'attendance', 'businessOutput']);
 
 export function buildDimensionRows(dataset: EmployeePerformanceHubDataset, locale: Locale): DimensionRowView[] {
   return dataset.dimensions.map((dim) => {
@@ -211,7 +213,8 @@ export interface PatternRowView {
 
 const PATTERN_DOMAIN_LABELS: Partial<Record<HubDomain, readonly [string, string]>> = {
   quality: HUB_DOMAINS.quality,
-  followUp: HUB_DOMAINS.followUp,
+  customerDealFollowUp: HUB_DOMAINS.customerDealFollowUp,
+  employeeActionFollowUp: HUB_DOMAINS.employeeActionFollowUp,
   deals: HUB_DOMAINS.deals,
   hr: HUB_DOMAINS.hr,
   attendance: HUB_DOMAINS.attendance,
@@ -222,7 +225,10 @@ export function buildPatternRows(patterns: HubPattern[], locale: Locale): Patter
     id: `${p.kind}:${p.domain}:${p.label ?? 'dim'}:${i}`,
     kindLabel: pick(locale, HUB_PATTERNS[p.kind] ?? [p.kind, p.kind]),
     kindKey: p.kind,
-    label: p.label,
+    // §DYNAMIC-LABELS — the stored issue label (a frozen category
+    // name from the controlled vocabulary) resolves through the
+    // canonical chain; genuinely free text renders verbatim.
+    label: p.label !== null ? resolveStoredLabelOrVerbatim(p.label, locale) : null,
     occurrencesText: p.occurrences !== null && p.occurrences !== undefined ? formatInteger(p.occurrences, locale) : null,
     domainLabel: PATTERN_DOMAIN_LABELS[p.domain] ? pick(locale, PATTERN_DOMAIN_LABELS[p.domain]!) : '—',
     sources: p.sources,
@@ -298,7 +304,7 @@ export interface BenchmarkRowView {
 export function buildBenchmarkRows(benchmark: TeamBenchmarkBlock | null, locale: Locale): BenchmarkRowView[] {
   if (!benchmark || benchmark.status !== 'AVAILABLE') return [];
   return benchmark.metrics.map((m) => {
-    const isPercent = m.key === 'quality' || m.key === 'attendance' || m.key === 'followUpCompletion';
+    const isPercent = m.key === 'quality' || m.key === 'attendance' || m.key === 'employeeActionFollowUpCompletion';
     const fmt = (v: number | null) =>
       v === null ? '—' : isPercent ? formatPercentage(v, { locale, maximumFractionDigits: 1 }) : formatInteger(v, locale);
     const difference = m.difference;

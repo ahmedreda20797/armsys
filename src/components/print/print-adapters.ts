@@ -16,6 +16,7 @@ import type { EvidenceItem } from '@/types';
 import { formatEvidenceItemsAsText } from '@/lib/evidence/presentation';
 import { formatNumber, formatPercentage, formatMonthKey, displayLocale } from '@/lib/i18n/format';
 import { presentStatus } from '@/lib/i18n/presentation';
+import { resolveStoredLabelOrVerbatim } from '@/lib/i18n/dynamic-labels';
 
 const dash = (v: unknown): string =>
   v === null || v === undefined || v === '' ? '—' : String(v);
@@ -25,6 +26,14 @@ const num = (v: unknown): string =>
 
 const pct = (v: unknown): string =>
   v === null || v === undefined ? '—' : formatPercentage(Number(v));
+
+/**
+ * §DYNAMIC-LABELS — a stored SEMANTIC label (category name, status,
+ * type frozen in a legacy record) resolves to the locale label before
+ * printing; anything unknown passes through verbatim (business data).
+ */
+const storedLabel = (v: unknown): string =>
+  typeof v === 'string' ? resolveStoredLabelOrVerbatim(v, displayLocale()) : dash(v);
 
 const monthLabel = (monthKey?: string | null): string => formatMonthKey(monthKey);
 
@@ -414,7 +423,7 @@ export function performanceDatasetToPrintModel(
         paragraphs: concParagraphs.length > 0 ? concParagraphs : undefined,
         table: {
           columns: ['فئة المشكلة', 'العدد', 'النسبة'],
-          rows: intel.quality.concentration.map((c) => [c.categoryName, c.count, c.shareDisplay]),
+          rows: intel.quality.concentration.map((c) => [storedLabel(c.categoryName), c.count, c.shareDisplay]),
         },
       });
     }
@@ -464,7 +473,7 @@ export function performanceDatasetToPrintModel(
     const distroRows: Array<Array<string | number>> = [
       ...Object.entries(observations.bySeverity ?? {}).map(([k, v]) => [ui('الخطورة', 'Severity'), uiMap(SEVERITY_LABELS, k, 'أخرى'), v] as Array<string | number>),
       ...Object.entries(observations.byResolutionStatus ?? {}).map(([k, v]) => [ui('حالة المعالجة', 'Resolution status'), uiMap(SEVERITY_LABELS, k, 'أخرى'), v] as Array<string | number>),
-      ...(observations.byCategory ?? []).map((c) => [ui('التصنيف', 'Category'), c.categoryId === '_unclassified' ? ui('غير مصنّف', 'Uncategorized') : c.categoryName, c.count] as Array<string | number>),
+      ...(observations.byCategory ?? []).map((c) => [ui('التصنيف', 'Category'), c.categoryId === '_unclassified' ? ui('غير مصنّف', 'Uncategorized') : storedLabel(c.categoryName), c.count] as Array<string | number>),
     ];
     sections.push({
       heading: 'إحصائيات ملاحظات الجودة',
@@ -484,7 +493,7 @@ export function performanceDatasetToPrintModel(
         columns: ['التاريخ', 'التصنيف', 'النقاط', 'الحالة', 'التفاصيل'],
         rows: observations.records.map((o) => [
           dash(o.observationDate),
-          dash(o.categoryName),
+          storedLabel(o.categoryName),
           o.isBonus ? `+${num(o.points)}` : (o.points ? `−${num(o.points)}` : '—'),
           uiMap(OBS_STATUS_LABELS, o.approvalStatus, dash(o.approvalStatus)),
           dash(o.notes),
@@ -759,7 +768,7 @@ export function employeeKpiReportToPrintModel(
         columns: ['التاريخ', 'التصنيف', 'الخطورة', 'الوصف', 'الحالة', 'الأثر', 'الدليل'],
         rows: evidence.observations.map((o) => [
           dash(o.observationDate),
-          dash(o.categoryName),
+          storedLabel(o.categoryName),
           dash(o.severity),
           dash(o.notes),
           dash(o.approvalStatus ?? o.status),

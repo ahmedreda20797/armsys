@@ -10,8 +10,10 @@
 //    • attendance→ stored attendanceResults compliance
 //    • deals     → DEAL_CLOSED dimension closures (canonical
 //                  deal-dates semantics)
-//    • follow-ups→ canonical followUpMetrics completion over the
-//                  period's follow-ups
+//    • follow-ups→ §FOLLOWUP-DOMAINS domain B — canonical
+//                  followUpMetrics completion over the period's
+//                  INTERNAL EMPLOYEE ACTION follow-ups (never
+//                  customer/deal data)
 //
 //  Membership: the employee's TEAM from the ORGANIZATION TREE. The
 //  caller narrows members through the viewer's authorized employee
@@ -36,8 +38,9 @@ export interface TeamMemberBenchmarkValues {
   attendanceCompliance: number | null;
   /** DEAL_CLOSED closures with the member in the period. */
   closedDeals: number | null;
-  /** Period follow-up completion rate (null when the member has none). */
-  followUpCompletion: number | null;
+  /** Period follow-up completion rate (null when the member has none).
+   *  §FOLLOWUP-DOMAINS — the EMPLOYEE ACTION domain (internal follow-ups). */
+  employeeActionFollowUpCompletion: number | null;
 }
 
 export interface BuildTeamBenchmarkInput {
@@ -123,11 +126,13 @@ export function buildTeamBenchmark(input: BuildTeamBenchmarkInput): TeamBenchmar
       closedDeals: input.dealsByMember.filter(
         (d) => d.employeeId === memberId && getDealMonthKey(d, 'DEAL_CLOSED') === monthKey,
       ).length,
-      followUpCompletion: null,
+      employeeActionFollowUpCompletion: null,
     };
   });
 
-  // Follow-up completion per member (canonical predicates).
+  // Follow-up completion per member (canonical predicates) —
+  // §FOLLOWUP-DOMAINS domain B: the INTERNAL employee action follow-ups
+  // only; customer/deal records never enter this benchmark.
   const followUpsByMember = new Map<string, FollowUp[]>();
   for (const f of input.followUpsByMember) {
     const list = followUpsByMember.get(f.employeeId) ?? [];
@@ -139,7 +144,7 @@ export function buildTeamBenchmark(input: BuildTeamBenchmarkInput): TeamBenchmar
     if (list.length === 0) continue;
     // Dataset parity: "completed" = resolved + closed (cancelled excluded).
     const completed = list.filter((f) => f.status === 'resolved' || f.status === 'closed').length;
-    member.followUpCompletion = Math.round((completed / list.length) * 10000) / 100;
+    member.employeeActionFollowUpCompletion = Math.round((completed / list.length) * 10000) / 100;
   }
 
   const me = memberValues.find((m) => m.employeeId === employeeId);
@@ -150,7 +155,7 @@ export function buildTeamBenchmark(input: BuildTeamBenchmarkInput): TeamBenchmar
     metricOf('quality', me?.qualityScore ?? null, values('qualityScore'), true),
     metricOf('attendance', me?.attendanceCompliance ?? null, values('attendanceCompliance'), true),
     metricOf('deals', me?.closedDeals ?? null, values('closedDeals'), true),
-    metricOf('followUpCompletion', me?.followUpCompletion ?? null, values('followUpCompletion'), true),
+    metricOf('employeeActionFollowUpCompletion', me?.employeeActionFollowUpCompletion ?? null, values('employeeActionFollowUpCompletion'), true),
   ];
 
   return {

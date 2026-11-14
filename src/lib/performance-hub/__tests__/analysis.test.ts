@@ -101,6 +101,12 @@ function emptyDataset(employeeId: string, monthKey: string): EmployeePerformance
       total: 0, byStatus: {}, active: 0, terminal: 0, overdue: 0, dueToday: 0,
       avgOverdueDays: null, completed: 0, completionRate: null, byType: {}, byPriority: {}, monthly: [],
     },
+    customerDealFollowUps: {
+      relationship: 'CONFIRMED',
+      dealsInPeriod: 0, dealsWithItems: 0, totalItems: 0,
+      bookedItems: 0, pendingItems: 0, missingItems: 0,
+      completionRate: null, dealsWithOpenItems: 0, openItemTypes: [], dealsWithOpenItemIds: [],
+    },
     deals: {
       relationship: 'CONFIRMED',
       travelTotal: 0,
@@ -167,12 +173,20 @@ describe('missing data is never zero (Hub spec §10)', () => {
     assert.equal(attendance.details.attendance?.compliance, null);
   });
 
-  it('1c · follow-ups with no records are INSUFFICIENT_DATA (completionRate null, not 0)', () => {
+  it('1c · employee action follow-ups with no records are INSUFFICIENT_DATA (completionRate null, not 0)', () => {
     const current = emptyDataset('e1', '2026-08');
     const analysis = buildHubAnalysis({ current, previous: null, risk: { current: null, previous: null }, hr: null });
-    const followUp = analysis.dimensions.find((d) => d.key === 'followUp')!;
+    const followUp = analysis.dimensions.find((d) => d.key === 'employeeActionFollowUp')!;
     assert.equal(followUp.status, 'INSUFFICIENT_DATA');
     assert.equal(followUp.value, null);
+  });
+
+  it('1c2 · customer & deal follow-up with no booking items is INSUFFICIENT_DATA', () => {
+    const current = emptyDataset('e1', '2026-08');
+    const analysis = buildHubAnalysis({ current, previous: null, risk: { current: null, previous: null }, hr: null });
+    const dealFu = analysis.dimensions.find((d) => d.key === 'customerDealFollowUp')!;
+    assert.equal(dealFu.status, 'INSUFFICIENT_DATA');
+    assert.equal(dealFu.value, null);
   });
 
   it('1d · a deals-inactive employee is INSUFFICIENT_DATA on business output', () => {
@@ -255,16 +269,62 @@ describe('dimension status rules (§9/§10)', () => {
     assert.equal(analysis.dimensions.find((d) => d.key === 'quality')!.status, 'NEEDS_ATTENTION');
   });
 
-  it('3 · follow-ups: 3+ overdue NEEDS_ATTENTION; 100% with zero overdue STRONG', () => {
+  it('3 · employee action follow-ups: 3+ overdue NEEDS_ATTENTION; 100% with zero overdue STRONG', () => {
     const cur = emptyDataset('e1', '2026-08');
     cur.followUps = { ...cur.followUps, total: 10, active: 4, overdue: 4, completed: 6, completionRate: 60 };
     const a = buildHubAnalysis({ current: cur, previous: null, risk: { current: null, previous: null }, hr: null });
-    assert.equal(a.dimensions.find((d) => d.key === 'followUp')!.status, 'NEEDS_ATTENTION');
+    assert.equal(a.dimensions.find((d) => d.key === 'employeeActionFollowUp')!.status, 'NEEDS_ATTENTION');
 
     const good = emptyDataset('e2', '2026-08');
     good.followUps = { ...good.followUps, total: 5, active: 0, overdue: 0, completed: 5, completionRate: 100 };
     const b = buildHubAnalysis({ current: good, previous: null, risk: { current: null, previous: null }, hr: null });
-    assert.equal(b.dimensions.find((d) => d.key === 'followUp')!.status, 'STRONG');
+    assert.equal(b.dimensions.find((d) => d.key === 'employeeActionFollowUp')!.status, 'STRONG');
+  });
+
+  it('3b · §FOLLOWUP-DOMAINS — internal open actions NEVER distort the customer/deal follow-up metric', () => {
+    // Quality assigned 10 internal action follow-ups; 5 completed, 5 open
+    // (2 overdue). The customer/deal domain has 4 booking items, 3 booked,
+    // 1 pending. The customer/deal completion MUST stay 75% — the 5 open
+    // internal actions must NOT drag it to 50% or anywhere else.
+    const cur = emptyDataset('e1', '2026-08');
+    cur.followUps = { ...cur.followUps, total: 10, active: 5, overdue: 2, completed: 5, completionRate: 50 };
+    cur.customerDealFollowUps = {
+      ...cur.customerDealFollowUps,
+      dealsInPeriod: 2, dealsWithItems: 2, totalItems: 4,
+      bookedItems: 3, pendingItems: 1, missingItems: 0,
+      completionRate: 75, dealsWithOpenItems: 1, openItemTypes: [{ type: 'hotel', count: 1 }], dealsWithOpenItemIds: ['d1'],
+    };
+    const a = buildHubAnalysis({ current: cur, previous: null, risk: { current: null, previous: null }, hr: null });
+    const actionDim = a.dimensions.find((d) => d.key === 'employeeActionFollowUp')!;
+    const dealDim = a.dimensions.find((d) => d.key === 'customerDealFollowUp')!;
+    assert.equal(actionDim.value, 50, 'internal completion is 5/10');
+    assert.equal(dealDim.value, 75, 'customer/deal completion stays 3/4 — independent of internal actions');
+    assert.equal(actionDim.details.followUp?.total, 10);
+    assert.equal(dealDim.details.customerDealFollowUp?.totalItems, 4);
+    // Both domains remain separately visible.
+    assert.equal(a.dimensions.filter((d) => d.key === 'employeeActionFollowUp' || d.key === 'customerDealFollowUp').length, 2);
+  });
+
+  it('3c · customer & deal follow-up: 5+ open items NEEDS_ATTENTION; all booked STRONG', () => {
+    const cur = emptyDataset('e1', '2026-08');
+    cur.customerDealFollowUps = {
+      ...cur.customerDealFollowUps,
+      dealsInPeriod: 3, dealsWithItems: 3, totalItems: 10,
+      bookedItems: 4, pendingItems: 5, missingItems: 1,
+      completionRate: 40, dealsWithOpenItems: 3, openItemTypes: [], dealsWithOpenItemIds: ['d1', 'd2', 'd3'],
+    };
+    const a = buildHubAnalysis({ current: cur, previous: null, risk: { current: null, previous: null }, hr: null });
+    assert.equal(a.dimensions.find((d) => d.key === 'customerDealFollowUp')!.status, 'NEEDS_ATTENTION');
+
+    const good = emptyDataset('e2', '2026-08');
+    good.customerDealFollowUps = {
+      ...good.customerDealFollowUps,
+      dealsInPeriod: 2, dealsWithItems: 2, totalItems: 6,
+      bookedItems: 6, pendingItems: 0, missingItems: 0,
+      completionRate: 100, dealsWithOpenItems: 0, openItemTypes: [], dealsWithOpenItemIds: [],
+    };
+    const b = buildHubAnalysis({ current: good, previous: null, risk: { current: null, previous: null }, hr: null });
+    assert.equal(b.dimensions.find((d) => d.key === 'customerDealFollowUp')!.status, 'STRONG');
   });
 
   it('4 · attendance compliance bands (canonical engine output): 96 STRONG / 90 STABLE / 80 NEEDS_ATTENTION', () => {
@@ -507,7 +567,7 @@ describe('strengths / areas / recommendations (§19-§21)', () => {
     prev.followUps = { ...prev.followUps, total: 10, active: 2, overdue: 0, completed: 8, completionRate: 80 };
     prev.quality.observations = { ...prev.quality.observations, total: 1, approved: 1, pending: 0, rejected: 0 };
     const analysis = buildHubAnalysis({ current: cur, previous: prev, risk: { current: null, previous: null }, hr: null });
-    const overlap = analysis.crossSignals.find((s) => s.key === 'overlap.followUpDelaysQuality');
+    const overlap = analysis.crossSignals.find((s) => s.key === 'overlap.actionFollowUpDelaysQuality');
     assert.ok(overlap, 'overdue follow-ups ↑ alongside observations ↑ is reported as an overlap');
     for (const signal of analysis.crossSignals) {
       assert.match(signal.key, /^overlap\./, 'every cross-signal is an association rule');

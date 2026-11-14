@@ -220,6 +220,7 @@ export default function KpiReportsPage() {
       'kpi-monthly',
       { monthKey: month, employeeScope: 'all', filters: insightsParams.includeArchived ? { includeArchived: 'true' } : {} },
       `kpi_report_${month}.xlsx`,
+      locale === 'en' ? 'en' : 'ar',
     );
   };
 

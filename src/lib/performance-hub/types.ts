@@ -33,10 +33,18 @@ import type { EmployeeHrMonthSummary } from '@/lib/employee-performance';
 //  Vocabularies
 // ─────────────────────────────────────────────────────────────
 
-/** The performance dimensions the Hub presents (data availability gated). */
+/** The performance dimensions the Hub presents (data availability gated).
+ *  §FOLLOWUP-DOMAINS — the former single `followUp` dimension is split
+ *  into TWO independent domains that are never merged:
+ *    • customerDealFollowUp  — follow-up activity with CUSTOMERS/DEALS
+ *      (booking items of the period's deals — customer/deal records ONLY).
+ *    • employeeActionFollowUp — INTERNAL actions assigned to the
+ *      employee by Quality/Management/HR (the followUps collection ONLY).
+ */
 export type HubDimensionKey =
   | 'quality'
-  | 'followUp'
+  | 'customerDealFollowUp'
+  | 'employeeActionFollowUp'
   | 'risk'
   | 'attendance'
   | 'businessOutput'
@@ -44,10 +52,11 @@ export type HubDimensionKey =
   | 'complaints'
   | 'capa';
 
-/** Source domains for timeline events / evidence pointers. */
+/** Source domains for timeline events / evidence pointers (same §FOLLOWUP-DOMAINS split). */
 export type HubDomain =
   | 'quality'
-  | 'followUp'
+  | 'customerDealFollowUp'
+  | 'employeeActionFollowUp'
   | 'risk'
   | 'attendance'
   | 'deals'
@@ -148,8 +157,10 @@ export interface HubRecommendation {
 export type HubDimensionMetric =
   | 'qualityPercent'
   | 'calculatedPoints'
-  | 'followUpCompletion'
-  | 'overdueFollowUps'
+  | 'employeeActionFollowUpCompletion'
+  | 'customerDealFollowUpCompletion'
+  | 'overdueEmployeeActionFollowUps'
+  | 'openCustomerDealFollowUpItems'
   | 'riskScore'
   | 'attendanceCompliance'
   | 'closedDeals'
@@ -174,11 +185,30 @@ export interface HubDimensionDetails {
     repeatedIssues: number;
   };
   followUp?: {
+    /**
+     * §FOLLOWUP-DOMAINS — EMPLOYEE ACTION follow-up facts (the
+     * internal followUps collection ONLY). Never mixed with the
+     * customer/deal domain below.
+     */
     total: number;
     completed: number;
     overdue: number;
     active: number;
     completionRate: number | null;
+  };
+  customerDealFollowUp?: {
+    /**
+     * §FOLLOWUP-DOMAINS — CUSTOMER & DEAL follow-up facts (booking
+     * items of the period's deals — customer/deal records ONLY).
+     */
+    dealsInPeriod: number;
+    dealsWithItems: number;
+    totalItems: number;
+    bookedItems: number;
+    pendingItems: number;
+    missingItems: number;
+    completionRate: number | null;
+    dealsWithOpenItems: number;
   };
   risk?: {
     level: RiskLevel;
@@ -340,7 +370,9 @@ export interface HubHrBlock {
 
 /** One benchmark metric (aggregate team statistics only — §14). */
 export interface TeamBenchmarkMetric {
-  key: 'quality' | 'attendance' | 'deals' | 'followUpCompletion';
+  /** §FOLLOWUP-DOMAINS — the follow-up benchmark is the EMPLOYEE
+   *  ACTION domain (the team's internal follow-up completion). */
+  key: 'quality' | 'attendance' | 'deals' | 'employeeActionFollowUpCompletion';
   employeeValue: number | null;
   teamAverage: number | null;
   difference: number | null;

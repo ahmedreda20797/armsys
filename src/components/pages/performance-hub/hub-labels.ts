@@ -21,6 +21,7 @@
 // ══════════════════════════════════════════════════════════════
 
 import type { Locale } from '@/lib/i18n/dictionary';
+import { resolveStoredLabelOrVerbatim } from '@/lib/i18n/dynamic-labels';
 
 export function pick(locale: Locale, pair: readonly [string, string]): string {
   return locale === 'en' ? pair[1] : pair[0];
@@ -37,7 +38,10 @@ function labeled(map: Record<string, readonly [string, string]>, key: string | n
 
 export const HUB_DIMENSIONS: Record<string, readonly [string, string]> = {
   quality: ['الجودة', 'Quality'],
-  followUp: ['انتظام المتابعات', 'Follow-up Discipline'],
+  // §FOLLOWUP-DOMAINS — two independent dimensions, never merged, and
+  // never the ambiguous "Follow-up" alone.
+  customerDealFollowUp: ['متابعة العملاء والصفقات', 'Customer & Deal Follow-up'],
+  employeeActionFollowUp: ['متابعة إجراءات الموظف', 'Employee Action Follow-up'],
   risk: ['المخاطر التشغيلية', 'Operational Risk'],
   attendance: ['الحضور والانصراف', 'Attendance'],
   businessOutput: ['الناتج العملي (الصفقات)', 'Business Output'],
@@ -58,8 +62,10 @@ export const HUB_DIMENSION_STATUS: Record<string, readonly [string, string]> = {
 export const HUB_DIMENSION_METRICS: Record<string, readonly [string, string]> = {
   qualityPercent: ['نسبة الجودة', 'Quality Percentage'],
   calculatedPoints: ['النقاط المحتسبة', 'Calculated Points'],
-  followUpCompletion: ['نسبة إكمال المتابعات', 'Follow-up Completion'],
-  overdueFollowUps: ['متابعات متأخرة', 'Overdue Follow-ups'],
+  customerDealFollowUpCompletion: ['نسبة إتمام متابعة العملاء والصفقات', 'Customer & Deal Follow-up Completion'],
+  employeeActionFollowUpCompletion: ['نسبة إكمال متابعات إجراءات الموظف', 'Employee Action Follow-up Completion'],
+  overdueEmployeeActionFollowUps: ['متابعات إجراءات متأخرة', 'Overdue Employee Action Follow-ups'],
+  openCustomerDealFollowUpItems: ['بنود متابعة عملاء مفتوحة', 'Open Customer & Deal Follow-up Items'],
   riskScore: ['درجة المخاطر', 'Risk Score'],
   attendanceCompliance: ['نسبة الالتزام بالحضور', 'Attendance Compliance'],
   closedDeals: ['تقفيلات الفترة', 'Closures This Period'],
@@ -106,7 +112,8 @@ export const HUB_EVIDENCE: Record<string, readonly [string, string]> = {
   // strengths
   'strength.qualityImproved': ['تحسن نسبة الجودة عن الفترة السابقة', 'Quality percentage improved vs the previous period'],
   'strength.noDeductions': ['لا توجد خصومات جودة ولا خصومات موارد بشرية خلال الفترة', 'No quality deductions and no HR deductions this period'],
-  'strength.followUpsOnTrack': ['المتابعات منجزة دون تأخيرات', 'Follow-ups completed with no delays'],
+  'strength.actionFollowUpsOnTrack': ['متابعات إجراءات الموظف منجزة دون تأخيرات', 'Employee action follow-ups completed with no delays'],
+  'strength.customerDealFollowUpsComplete': ['بنود متابعة العملاء والصفقات مكتملة للفترة', 'Customer & deal follow-up items fully booked this period'],
   'strength.attendanceSolid': ['الالتزام بالحضور مرتفع', 'Attendance compliance is high'],
   'strength.dealsIncreased': ['زاد عدد التقفيلات عن الفترة السابقة', 'Closures increased vs the previous period'],
   'strength.capaClear': ['لا توجد حالات كابا مفتوحة أو متأخرة', 'No open or overdue CAPA cases'],
@@ -115,14 +122,16 @@ export const HUB_EVIDENCE: Record<string, readonly [string, string]> = {
   'concern.riskCritical': ['درجة المخاطر حرجة', 'Risk level is critical'],
   'concern.riskHigh': ['درجة المخاطر مرتفعة', 'Risk level is high'],
   'concern.repeatedIssues': ['مشكلات جودة متكررة', 'Repeated quality issues'],
-  'concern.overdueFollowUps': ['متابعات متأخرة', 'Overdue follow-ups'],
+  'concern.overdueActionFollowUps': ['متابعات إجراءات الموظف متأخرة', 'Overdue employee action follow-ups'],
+  'concern.openCustomerDealFollowUps': ['بنود متابعة عملاء وصفقات مفتوحة', 'Open customer & deal follow-up items'],
   'concern.qualityDeclining': ['نسبة الجودة في تراجع', 'Quality percentage is declining'],
   'concern.attendance': ['الالتزام بالحضور يحتاج مراجعة', 'Attendance compliance needs review'],
   'concern.hrDeductions': ['توجد خصومات موارد بشرية', 'HR deductions exist this period'],
   'concern.dealsDeclining': ['عدد التقفيلات في تراجع', 'Closures are declining'],
   // development areas
   'area.repeatedQualityIssues': ['الالتزام بإجراءات الجودة (مشكلات متكررة)', 'Quality procedure adherence (repeated issues)'],
-  'area.overdueFollowUps': ['انتظام إنجاز المتابعات', 'Follow-up completion discipline'],
+  'area.overdueActionFollowUps': ['انتظام إنجاز متابعات إجراءات الموظف', 'Employee action follow-up completion discipline'],
+  'area.openCustomerDealFollowUps': ['استكمال متابعة العملاء والصفقات', 'Customer & deal follow-up completion'],
   'area.qualityDeductions': ['دقة العمليات (خصومات جودة)', 'Operational accuracy (quality deductions)'],
   'area.attendanceConsistency': ['انتظام الحضور', 'Attendance consistency'],
   'area.complaintHandling': ['معالجة شكاوى العملاء', 'Customer complaint handling'],
@@ -130,7 +139,8 @@ export const HUB_EVIDENCE: Record<string, readonly [string, string]> = {
   'area.hrDiscipline': ['الالتزام والسلوك (خصومات موارد بشرية)', 'Commitment and behavior (HR deductions)'],
   'area.qualityAdherence': ['مستوى الجودة العام', 'Overall quality level'],
   // recommendation rationales
-  'evidence.overdueFollowUps': ['متابعات متأخرة خلال الفترة', 'Overdue follow-ups this period'],
+  'evidence.overdueActionFollowUps': ['متابعات إجراءات الموظف المتأخرة خلال الفترة', 'Overdue employee action follow-ups this period'],
+  'evidence.openCustomerDealFollowUps': ['بنود متابعة عملاء وصفقات مفتوحة خلال الفترة', 'Open customer & deal follow-up items this period'],
   'evidence.attendance': ['مؤشرات الحضور للفترة', 'Attendance indicators for the period'],
   'evidence.overdueCapa': ['حالات كابا متأخرة', 'Overdue CAPA cases'],
   'evidence.openComplaints': ['شكاوى مفتوحة مرتبطة بالموظف', 'Open complaints linked to the employee'],
@@ -139,7 +149,8 @@ export const HUB_EVIDENCE: Record<string, readonly [string, string]> = {
 
 export const HUB_RECOMMENDATIONS: Record<string, readonly [string, string]> = {
   'rec.coaching': ['يُوصى بتوجيه عملي على الإجراءات المتأثرة (المشكلات المتكررة)', 'Coaching recommended on the affected procedures (repeated issues)'],
-  'rec.followUpReview': ['يُوصى بمراجعة حجم متابعات الموظف والالتزام بمواعيدها', 'Review the employee’s follow-up workload and SLA adherence'],
+  'rec.actionFollowUpReview': ['يُوصى بمراجعة حجم متابعات إجراءات الموظف والالتزام بمواعيدها', 'Review the employee’s internal action follow-up workload and SLA adherence'],
+  'rec.customerDealFollowUpReview': ['يُوصى بمراجعة بنود متابعة العملاء والصفقات المفتوحة واستكمال حجوزاتها', 'Review open customer & deal follow-up items and complete their bookings'],
   'rec.attendanceReview': ['يُوصى بمراجعة نمط الحضور مع الموارد البشرية', 'Review the attendance pattern with HR'],
   'rec.capaReview': ['يُوصى بمراجعة حالات كابا المتأخرة وتسريع استكمالها', 'Review overdue CAPA cases and accelerate completion'],
   'rec.complaintReview': ['يُوصى بمراجعة الشكاوى المفتوحة المرتبطة بالموظف', 'Review open complaints linked to the employee'],
@@ -153,8 +164,10 @@ export const HUB_RECOMMENDATIONS: Record<string, readonly [string, string]> = {
 export const HUB_CHANGE_METRICS: Record<string, readonly [string, string]> = {
   qualityPercent: ['نسبة الجودة', 'Quality percentage'],
   calculatedPoints: ['النقاط المحتسبة', 'Calculated points'],
-  followUpCompletion: ['نسبة إكمال المتابعات', 'Follow-up completion'],
-  followUpsOverdue: ['المتابعات المتأخرة', 'Overdue follow-ups'],
+  employeeActionFollowUpCompletion: ['نسبة إكمال متابعات إجراءات الموظف', 'Employee action follow-up completion'],
+  employeeActionFollowUpsOverdue: ['متابعات الإجراءات المتأخرة', 'Overdue employee action follow-ups'],
+  customerDealFollowUpCompletion: ['نسبة إتمام متابعة العملاء والصفقات', 'Customer & deal follow-up completion'],
+  customerDealFollowUpOpenItems: ['بنود متابعة العملاء والصفقات المفتوحة', 'Open customer & deal follow-up items'],
   attendanceCompliance: ['نسبة الالتزام بالحضور', 'Attendance compliance'],
   dealsClosed: ['تقفيلات الفترة (تاريخ تقفيل الديل)', 'Closures this period (deal closure date)'],
   observationsCount: ['ملاحظات الجودة', 'Quality observations'],
@@ -165,10 +178,10 @@ export const HUB_CHANGE_METRICS: Record<string, readonly [string, string]> = {
 
 /** §16 — association wording ONLY; never causal. */
 export const HUB_CROSS_SIGNALS: Record<string, readonly [string, string]> = {
-  'overlap.followUpDelaysQuality': ['تزامن: ارتفاع المتابعات المتأخرة مع ارتفاع ملاحظات الجودة خلال الفترة نفسها', 'Observed overlap: increased follow-up delays coincided with increased quality observations during the same period'],
+  'overlap.actionFollowUpDelaysQuality': ['تزامن: ارتفاع متابعات الإجراءات المتأخرة مع ارتفاع ملاحظات الجودة خلال الفترة نفسها', 'Observed overlap: increased overdue employee action follow-ups coincided with increased quality observations during the same period'],
   'overlap.deductionsComplaints': ['تزامن: ارتفاع خصومات الجودة مع ارتفاع ملاحظات الجودة خلال الفترة نفسها', 'Observed overlap: increased quality deductions coincided with increased quality observations during the same period'],
-  'overlap.attendanceFollowUps': ['تزامن: انخفاض الالتزام بالحضور مع ارتفاع المتابعات المتأخرة خلال الفترة نفسها', 'Observed overlap: lower attendance compliance coincided with increased overdue follow-ups during the same period'],
-  'overlap.dealsFollowUps': ['تزامن: انخفاض التقفيلات مع انخفاض نسبة إكمال المتابعات خلال الفترة نفسها', 'Observed overlap: fewer closures coincided with lower follow-up completion during the same period'],
+  'overlap.attendanceActionFollowUps': ['تزامن: انخفاض الالتزام بالحضور مع ارتفاع متابعات الإجراءات المتأخرة خلال الفترة نفسها', 'Observed overlap: lower attendance compliance coincided with increased overdue employee action follow-ups during the same period'],
+  'overlap.dealsCustomerFollowUps': ['تزامن: انخفاض التقفيلات مع انخفاض نسبة إتمام متابعة العملاء والصفقات خلال الفترة نفسها', 'Observed overlap: fewer closures coincided with lower customer & deal follow-up completion during the same period'],
   'overlap.qualityDeclineObservations': ['تزامن: انخفاض نسبة الجودة مع ارتفاع عدد الملاحظات خلال الفترة نفسها', 'Observed overlap: lower quality percentage coincided with more observations during the same period'],
 };
 
@@ -188,7 +201,9 @@ export const HUB_PATTERNS: Record<string, readonly [string, string]> = {
 export const HUB_EVENT_TYPES: Record<string, readonly [string, string]> = {
   observation: ['ملاحظة جودة', 'Quality Observation'],
   qualityDeduction: ['خصم جودة', 'Quality Deduction'],
-  followUp: ['متابعة', 'Follow-up'],
+  // §FOLLOWUP-DOMAINS — the timeline names the internal-action domain
+  // explicitly; never the ambiguous "Follow-up" alone.
+  employeeActionFollowUp: ['متابعة إجراءات الموظف', 'Employee Action Follow-up'],
   complaint: ['شكوى', 'Complaint'],
   capa: ['كابا', 'CAPA'],
   dealClosed: ['تقفيل صفقة', 'Deal Closure'],
@@ -231,7 +246,8 @@ export const TIMELINE_STATUS_LABELS: Record<string, readonly [string, string]> =
 
 export const HUB_DOMAINS: Record<string, readonly [string, string]> = {
   quality: ['الجودة', 'Quality'],
-  followUp: ['المتابعات', 'Follow-ups'],
+  customerDealFollowUp: ['متابعة العملاء والصفقات', 'Customer & Deal Follow-up'],
+  employeeActionFollowUp: ['متابعة إجراءات الموظف', 'Employee Action Follow-up'],
   risk: ['المخاطر', 'Risk'],
   attendance: ['الحضور', 'Attendance'],
   deals: ['الصفقات', 'Deals'],
@@ -246,9 +262,9 @@ export const HUB_RISK_FACTORS: Record<string, readonly [string, string]> = {
   absence: ['أيام الغياب', 'Absent days'],
   quality: ['خصومات جودة', 'Quality deductions'],
   hr: ['خصومات موارد بشرية', 'HR deductions'],
-  openFollowUp: ['متابعات مفتوحة', 'Open follow-ups'],
-  highPriorityFollowUp: ['متابعات بأولوية عالية', 'High-priority follow-ups'],
-  criticalFollowUp: ['متابعات حرجة', 'Critical follow-ups'],
+  openFollowUp: ['متابعات إجراءات مفتوحة', 'Open employee action follow-ups'],
+  highPriorityFollowUp: ['متابعات إجراءات بأولوية عالية', 'High-priority employee action follow-ups'],
+  criticalFollowUp: ['متابعات إجراءات حرجة', 'Critical employee action follow-ups'],
   complaint: ['شكاوى مفتوحة', 'Open complaints'],
   repeatedIssue: ['مشكلات متكررة', 'Repeated issues'],
   openCapa: ['حالات كابا مفتوحة', 'Open CAPA cases'],
@@ -288,7 +304,7 @@ export const HUB_BENCHMARK_METRICS: Record<string, readonly [string, string]> = 
   quality: ['نسبة الجودة', 'Quality percentage'],
   attendance: ['نسبة الالتزام بالحضور', 'Attendance compliance'],
   deals: ['تقفيلات الفترة', 'Closures this period'],
-  followUpCompletion: ['نسبة إكمال المتابعات', 'Follow-up completion'],
+  employeeActionFollowUpCompletion: ['نسبة إكمال متابعات إجراءات الموظف', 'Employee action follow-up completion'],
 };
 
 export const HUB_EMPLOYMENT_STATUS: Record<string, readonly [string, string]> = {
@@ -311,8 +327,8 @@ export function evidenceSentence(
   if (!base) return null;
   const label = item.labels?.[0];
   if (!label) return pick(locale, base);
-  // The stored business label names the affected procedure/issue.
-  return locale === 'en'
-    ? `${pick(locale, base)} — ${label}`
-    : `${pick(locale, base)} — ${label}`;
+  // §DYNAMIC-LABELS — the stored business label names the affected
+  // procedure/issue; a known semantic label localizes, free text
+  // renders verbatim.
+  return `${pick(locale, base)} — ${resolveStoredLabelOrVerbatim(label, locale)}`;
 }

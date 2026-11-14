@@ -189,6 +189,11 @@ export interface ReportColumnSpec {
   source?: MetricSource;
   /** Column width hint for export/print layouts. */
   width?: number;
+  /** Optional localization strategy for the cell value in exports.
+   *  'system'  → system enum/status labels (presentStatus).
+   *  'stored'  → legacy stored semantic labels (resolveStoredLabelOrVerbatim).
+   *  undefined → no localization, raw value as-is. */
+  localize?: 'system' | 'stored';
 }
 
 /** One summary/aggregate metric a report can expose. */

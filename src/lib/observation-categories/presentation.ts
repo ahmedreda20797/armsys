@@ -40,6 +40,30 @@ export function categoryDisplayName(
   return locale === 'en' && cat.nameEn ? cat.nameEn : cat.name;
 }
 
+/**
+ * §DYNAMIC-LABELS — resolve a FROZEN stored category label
+ * (historical observations freeze the Arabic categoryName) through
+ * the CURRENT master-data vocabulary: match the stored name against
+ * the category list (Arabic name, or English name when resolving for
+ * English), then present the canonical bilingual label. Returns null
+ * when no master-data record matches — the caller falls back to the
+ * legacy alias resolver / verbatim rendering.
+ *
+ * Pure + client-safe. Match is EXACT (trimmed) — never a substring.
+ */
+export function categoryLabelFromStoredName(
+  storedName: string,
+  locale: Locale,
+  categories: ReadonlyArray<Pick<ObservationCategory, 'name' | 'nameEn'>>,
+): string | null {
+  const needle = storedName.trim();
+  if (needle === '') return null;
+  const hit = categories.find(
+    (c) => c.name?.trim() === needle || (locale === 'en' && c.nameEn?.trim() === needle),
+  );
+  return hit ? categoryDisplayName(hit, locale) : null;
+}
+
 /** Active categories only — for NEW-record selectors (forms/templates). */
 export function activeCategories<T extends Pick<ObservationCategory, 'isActive'>>(
   list: T[],

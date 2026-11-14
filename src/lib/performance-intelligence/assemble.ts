@@ -24,7 +24,7 @@ import {
   detectWindowRecurrence,
   DEFAULT_MIN_OCCURRENCES,
 } from './quality-analysis';
-import { aggregateCapaCases, aggregateComplaints, aggregateFollowUps, aggregateTravelDeals } from './operations-analysis';
+import { aggregateCapaCases, aggregateComplaints, aggregateCustomerDealFollowUps, aggregateFollowUps, aggregateTravelDeals } from './operations-analysis';
 import type {
   EmployeeIdentityFacts,
   EmployeePerformanceDataset,
@@ -276,6 +276,12 @@ export function assembleEmployeePerformanceDataset(
     monthly: followUpsMonthly,
     now,
   });
+  // §FOLLOWUP-DOMAINS domain A — customer & deal follow-up over the
+  // SAME period deal population (booking items), independent of the
+  // internal-action facts above and never merged with them.
+  const customerDealFollowUps = aggregateCustomerDealFollowUps({
+    deals: attributedDeals.inPeriod,
+  });
   const dealMonthById = new Map(input.deals.map((d) => [d.id, monthOfDealTravel(d)] as const));
   const closedDealMonthById = new Map(input.deals.map((d) => [d.id, monthOfDealClosed(d)] as const));
   const createdDealMonthById = new Map(input.deals.map((d) => [d.id, monthOfDealCreated(d)] as const));
@@ -325,6 +331,7 @@ export function assembleEmployeePerformanceDataset(
     complaints,
     capa,
     followUps,
+    customerDealFollowUps,
     deals,
     attendance,
     dataQuality: buildDataQuality({ windowMonths, unattributed }),

@@ -115,23 +115,24 @@ export async function POST(request: NextRequest) {
       role: permCheck.user.role,
     });
 
-    // 6. Excel export — gated by the page's 'export' action.
-    if (body.format === 'excel') {
-      if (!definition.exportFormats.includes('excel')) {
-        return validationError('تصدير Excel غير متاح لهذا التقرير');
+// 6. Excel export — gated by the page's 'export' action.
+      if (body.format === 'excel') {
+        if (!definition.exportFormats.includes('excel')) {
+          return validationError('تصدير Excel غير متاح لهذا التقرير');
+        }
+        const exportCheck = await verifyPermission(request, definition.permission.pageId, 'export');
+        if (!exportCheck.allowed) {
+          return apiError(403, ErrorCode.FORBIDDEN, exportCheck.error ?? 'صلاحية التصدير غير كافية');
+        }
+        const locale = (body as Record<string, unknown>).lang === 'en' ? 'en' : 'ar';
+        const buffer = await buildReportExcel(definition, response as never, locale);
+        return new NextResponse(new Uint8Array(buffer), {
+          headers: {
+            'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            'Content-Disposition': `attachment; filename=${definition.reportId}_${Date.now()}.xlsx`,
+          },
+        });
       }
-      const exportCheck = await verifyPermission(request, definition.permission.pageId, 'export');
-      if (!exportCheck.allowed) {
-        return apiError(403, ErrorCode.FORBIDDEN, exportCheck.error ?? 'صلاحية التصدير غير كافية');
-      }
-      const buffer = await buildReportExcel(definition, response as never);
-      return new NextResponse(new Uint8Array(buffer), {
-        headers: {
-          'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-          'Content-Disposition': `attachment; filename=${definition.reportId}_${Date.now()}.xlsx`,
-        },
-      });
-    }
 
     return NextResponse.json(response);
   } catch (error) {

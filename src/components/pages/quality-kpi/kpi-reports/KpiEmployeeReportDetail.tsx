@@ -28,6 +28,7 @@ import { T } from '@/lib/i18n/T';
 import { useLanguage } from '@/lib/i18n/language-context';
 import { translateUIText } from '@/lib/i18n/ui-text';
 import { presentStatus } from '@/lib/i18n/presentation';
+import { resolveStoredLabelOrVerbatim } from '@/lib/i18n/dynamic-labels';
 import { EvidenceDisplay } from '@/components/shared/evidence';
 import { formatMonthKey, formatDate, formatNumber, formatInteger } from '@/lib/i18n/format';
 import { pick, TERMS } from './insights-labels';
@@ -200,7 +201,7 @@ function EvidenceCard({ report }: { report: EmployeeKpiReport }) {
               {evidence.observations.map((obs) => (
                 <TableRow key={obs.id} className="border-slate-700/40">
                   <TableCell className="text-slate-300 whitespace-nowrap">{obs.observationDate}</TableCell>
-                  <TableCell className="text-slate-200">{obs.categoryName}</TableCell>
+                  <TableCell className="text-slate-200">{resolveStoredLabelOrVerbatim(obs.categoryName, locale)}</TableCell>
                   <TableCell>
                     <Badge variant="outline" className={`text-[11px] ${SEVERITY_STYLES[obs.severity] ?? ''}`}>
                       {presentStatus(obs.severity, locale)}

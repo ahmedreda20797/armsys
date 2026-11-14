@@ -181,8 +181,9 @@ export async function downloadKpiReportExcel(
   reportId: string,
   body: Record<string, unknown>,
   fileName: string,
+  locale: 'ar' | 'en' = 'ar',
 ): Promise<void> {
-  const payload = { ...body };
+  const payload = { ...body, lang: locale };
   if (payload.filters && typeof payload.filters === 'object') {
     // Drop empty filter envelopes instead of sending noise.
     if (Object.keys(payload.filters as Record<string, unknown>).length === 0) {

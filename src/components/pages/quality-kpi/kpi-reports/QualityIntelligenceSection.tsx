@@ -28,7 +28,8 @@ import { translateUIText } from '@/lib/i18n/ui-text';
 import { formatNumber, formatMonthKey } from '@/lib/i18n/format';
 import { useAppStore } from '@/lib/store';
 import { useObservationCategories } from '@/hooks/use-kpi-queries';
-import { categoryDisplayName } from '@/lib/observation-categories/presentation';
+import { categoryDisplayName, categoryLabelFromStoredName } from '@/lib/observation-categories/presentation';
+import { resolveStoredLabelOrVerbatim } from '@/lib/i18n/dynamic-labels';
 import type { ObservationCategory } from '@/types/quality-kpi';
 import { SEVERITY_LABELS, SEVERITY_ORDER, pick } from './insights-labels';
 
@@ -38,16 +39,25 @@ function useCategoryLabelResolver() {
   const { data: categories } = useObservationCategories();
   return useMemo(() => {
     const byKey = new Map<string, ObservationCategory>();
+    const list: ObservationCategory[] = [];
     for (const cat of (categories ?? []) as ObservationCategory[]) {
       if (cat?.key) byKey.set(cat.key, cat);
+      if (cat) list.push(cat);
     }
     return (key: string | null, fallback: string): string => {
       if (!key || key === '_unclassified') {
         return locale === 'en' ? 'Unclassified' : 'غير مصنّف';
       }
+      // §DYNAMIC-LABELS — resolution chain for the frozen stored label:
+      // master data by key → master data by stored name → known legacy
+      // alias → verbatim (business data). A known Arabic category label
+      // never renders raw in English.
       const cat = byKey.get(key);
-      if (!cat) return fallback; // stored snapshot verbatim (business data)
-      return categoryDisplayName(cat, locale);
+      if (cat) return categoryDisplayName(cat, locale);
+      return (
+        categoryLabelFromStoredName(fallback, locale, list)
+        ?? resolveStoredLabelOrVerbatim(fallback, locale)
+      );
     };
   }, [categories, locale]);
 }

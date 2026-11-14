@@ -329,6 +329,12 @@ function DimensionFootnote({ dim, locale }: { dim: EmployeePerformanceHubDataset
     const f = dim.details.followUp;
     notes.push(`${locale === 'en' ? 'Overdue' : 'متأخرة'}: ${fmt(f.overdue) ?? '—'} · ${locale === 'en' ? 'Completed' : 'منجزة'}: ${fmt(f.completed) ?? '—'}`);
   }
+  if (dim.details.customerDealFollowUp) {
+    const c = dim.details.customerDealFollowUp;
+    notes.push(
+      `${locale === 'en' ? 'Items' : 'بنود'}: ${fmt(c.totalItems) ?? '—'} · ${locale === 'en' ? 'Booked' : 'محجوزة'}: ${fmt(c.bookedItems) ?? '—'} · ${locale === 'en' ? 'Open' : 'مفتوحة'}: ${fmt(c.pendingItems + c.missingItems) ?? '—'}`,
+    );
+  }
   if (dim.details.attendance) {
     const a = dim.details.attendance;
     if (a.status === 'NOT_AVAILABLE') {
@@ -747,7 +753,7 @@ export function EvidenceSourcesSection({ dataset, locale, onOpenSource }: {
   const groups: Array<{ page: string; label: string; count: number; firstId: string | null }> = [
     { page: 'observations', label: pick(locale, HUB_DIMENSIONS.quality), count: graph.observations.recordIds.length, firstId: graph.observations.recordIds[0] ?? null },
     { page: 'quality', label: pick(locale, HUB_TERMS.qualityDeductions), count: graph.deductions.recordIds.length, firstId: graph.deductions.recordIds[0] ?? null },
-    { page: 'followUps', label: pick(locale, HUB_DIMENSIONS.followUp), count: graph.followUps.recordIds.length, firstId: graph.followUps.recordIds[0] ?? null },
+    { page: 'followUps', label: pick(locale, HUB_DIMENSIONS.employeeActionFollowUp), count: graph.followUps.recordIds.length, firstId: graph.followUps.recordIds[0] ?? null },
     { page: 'attendance', label: pick(locale, HUB_DIMENSIONS.attendance), count: graph.attendance ? 1 : 0, firstId: null },
     { page: 'travel', label: pick(locale, HUB_DIMENSIONS.businessOutput), count: graph.deals.recordIds.length, firstId: graph.deals.recordIds[0] ?? null },
     { page: 'hrDeductions', label: pick(locale, HUB_TERMS.hrDeductions), count: dataset.hr?.current?.deductionCount ?? 0, firstId: null },

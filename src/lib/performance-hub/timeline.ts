@@ -95,16 +95,19 @@ export function buildHubTimeline(records: {
     });
   }
 
-  // ── Follow-ups ──
+  // ── Follow-ups — §FOLLOWUP-DOMAINS domain B: these are INTERNAL
+  //    EMPLOYEE ACTION follow-ups (assigned by Quality/Management/HR);
+  //    the event domain names the domain explicitly, never the
+  //    ambiguous "follow-up" alone. ──
   for (const f of records.followUps) {
     const day = dayKeyOfValue(f.date);
     if (!day) continue;
     pushEvent(out, {
-      id: `followUp:${f.id}`,
+      id: `employeeActionFollowUp:${f.id}`,
       sortKey: day,
       displayDate: f.date,
-      domain: 'followUp',
-      eventType: 'followUp',
+      domain: 'employeeActionFollowUp',
+      eventType: 'employeeActionFollowUp',
       title: f.subject || f.followUpType || '',
       severity: f.priorityLevel ?? null,
       status: f.status ?? null,

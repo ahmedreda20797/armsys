@@ -34,11 +34,13 @@ import {
 } from '@/lib/metrics/followUpMetrics';
 import { roundTo2 } from '@/lib/kpi-framework/validation';
 import { buildDealMetrics } from '@/lib/deal-dates';
+import { normalizeBookingItems, BOOKING_SERVICE_TYPES } from '@/lib/booking-items';
 import { presentSystemOrVerbatim } from '@/lib/i18n/presentation';
 import { displayDateOrderKey } from './month-attribution';
 import type {
   CapaFacts,
   ComplaintFacts,
+  CustomerDealFollowUpFacts,
   FollowUpFacts,
   MonthlyCount,
   RepeatedIssueGroup,
@@ -287,6 +289,72 @@ export function aggregateFollowUps(args: {
     byType,
     byPriority,
     monthly: [...(args.monthly ?? [])],
+  };
+}
+
+// ─────────────────────────────────────────────────────────────
+//  §11b  CUSTOMER & DEAL FOLLOW-UP (§FOLLOWUP-DOMAINS — domain A)
+//
+//  Pure aggregation over the period's customer/deal records ONLY.
+//  Each deal's booking items (normalizeBookingItems — legacy deals
+//  normalize deterministically at read time) are the customer
+//  follow-up units: booked = completed, pending = open, missing =
+//  unavailable at the supplier. Internal employee action follow-ups
+//  (the followUps collection) are NEVER read here.
+// ─────────────────────────────────────────────────────────────
+
+export function aggregateCustomerDealFollowUps(args: {
+  /** The period's deals (TRAVEL dimension — the same population the
+   *  operational deal facts report). */
+  deals: ReadonlyArray<TravelDeal>;
+}): CustomerDealFollowUpFacts {
+  const deals = args.deals;
+
+  let dealsWithItems = 0;
+  let totalItems = 0;
+  let bookedItems = 0;
+  let pendingItems = 0;
+  let missingItems = 0;
+  let dealsWithOpenItems = 0;
+  const openItemTypes = new Map<string, number>();
+  const dealsWithOpenItemIds: string[] = [];
+
+  for (const deal of deals) {
+    const items = normalizeBookingItems(deal);
+    if (items.length === 0) continue;
+    dealsWithItems += 1;
+    let dealOpen = 0;
+    for (const item of items) {
+      totalItems += 1;
+      if (item.status === 'booked') bookedItems += 1;
+      else {
+        // 'pending' and 'missing' are both OPEN customer follow-ups.
+        if (item.status === 'pending') pendingItems += 1;
+        else missingItems += 1;
+        dealOpen += 1;
+        openItemTypes.set(item.type, (openItemTypes.get(item.type) ?? 0) + 1);
+      }
+    }
+    if (dealOpen > 0) {
+      dealsWithOpenItems += 1;
+      dealsWithOpenItemIds.push(deal.id);
+    }
+  }
+
+  return {
+    relationship: 'CONFIRMED',
+    dealsInPeriod: deals.length,
+    dealsWithItems,
+    totalItems,
+    bookedItems,
+    pendingItems,
+    missingItems,
+    completionRate: totalItems > 0 ? roundTo2((bookedItems / totalItems) * 100) : null,
+    dealsWithOpenItems,
+    openItemTypes: BOOKING_SERVICE_TYPES
+      .map((type) => ({ type, count: openItemTypes.get(type) ?? 0 }))
+      .filter((entry) => entry.count > 0),
+    dealsWithOpenItemIds: [...dealsWithOpenItemIds].sort((a, b) => a.localeCompare(b)),
   };
 }
 

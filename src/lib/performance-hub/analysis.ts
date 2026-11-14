@@ -58,6 +58,14 @@ export const FOLLOWUP_STRONG_COMPLETION = 80;
 export const FOLLOWUP_OVERDUE_ATTENTION = 3;
 /** Overdue follow-ups at/above this count are a development area. */
 export const FOLLOWUP_OVERDUE_AREA = 2;
+/**
+ * §FOLLOWUP-DOMAINS — customer & deal follow-up: open booking items
+ * at/above this count need attention / are a development area.
+ */
+export const DEAL_FOLLOWUP_OPEN_ATTENTION = 5;
+export const DEAL_FOLLOWUP_OPEN_AREA = 3;
+/** Customer/deal follow-up completion at/above this is strong. */
+export const DEAL_FOLLOWUP_STRONG_COMPLETION = 85;
 /** Quality deductions at/above this count need attention / are an area. */
 export const QUALITY_DEDUCTIONS_ATTENTION = 3;
 export const QUALITY_DEDUCTIONS_AREA = 2;
@@ -79,7 +87,8 @@ export const MAX_ISOLATED_LABELS = 3;
 
 const DOMAIN_PAGE: Record<HubDomain, string> = {
   quality: 'observations',
-  followUp: 'followUps',
+  employeeActionFollowUp: 'followUps',
+  customerDealFollowUp: 'travel',
   risk: 'riskCenter',
   attendance: 'attendance',
   deals: 'travel',
@@ -168,7 +177,13 @@ function qualityDimension(current: EmployeePerformanceDataset, previous: Employe
   };
 }
 
-function followUpDimension(current: EmployeePerformanceDataset, previous: EmployeePerformanceDataset | null): HubDimension {
+/**
+ * §FOLLOWUP-DOMAINS — domain B: EMPLOYEE ACTION follow-up dimension.
+ * Computed EXCLUSIVELY from the internal followUps collection
+ * (actions assigned to the employee by Quality/Management/HR).
+ * Customer/deal records never enter this metric.
+ */
+function employeeActionFollowUpDimension(current: EmployeePerformanceDataset, previous: EmployeePerformanceDataset | null): HubDimension {
   const f = current.followUps;
   const prev = previous?.followUps ?? null;
   const value = f.completionRate;
@@ -184,9 +199,9 @@ function followUpDimension(current: EmployeePerformanceDataset, previous: Employ
   else status = 'STABLE';
 
   return {
-    key: 'followUp',
+    key: 'employeeActionFollowUp',
     status,
-    metric: 'followUpCompletion',
+    metric: 'employeeActionFollowUpCompletion',
     value,
     previousValue,
     delta,
@@ -197,6 +212,50 @@ function followUpDimension(current: EmployeePerformanceDataset, previous: Employ
         overdue: f.overdue,
         active: f.active,
         completionRate: f.completionRate,
+      },
+    },
+  };
+}
+
+/**
+ * §FOLLOWUP-DOMAINS — domain A: CUSTOMER & DEAL follow-up dimension.
+ * Computed EXCLUSIVELY from customer/deal records (booking items of
+ * the period's deals). Internal action follow-ups never enter this
+ * metric — the two domains are never merged.
+ */
+function customerDealFollowUpDimension(current: EmployeePerformanceDataset, previous: EmployeePerformanceDataset | null): HubDimension {
+  const f = current.customerDealFollowUps;
+  const prev = previous?.customerDealFollowUps ?? null;
+  const value = f.completionRate;
+  const previousValue = prev?.completionRate ?? null;
+  const delta = deltaOf(value, previousValue);
+  const openItems = f.pendingItems + f.missingItems;
+
+  let status: HubDimensionStatus;
+  if (f.totalItems === 0) status = 'INSUFFICIENT_DATA';
+  else if (openItems >= DEAL_FOLLOWUP_OPEN_ATTENTION) status = 'NEEDS_ATTENTION';
+  else if (delta !== null && delta <= -FOLLOWUP_COMPLETION_DELTA) status = 'DECLINING';
+  else if (delta !== null && delta >= FOLLOWUP_COMPLETION_DELTA) status = 'IMPROVING';
+  else if (value !== null && value >= DEAL_FOLLOWUP_STRONG_COMPLETION && openItems === 0) status = 'STRONG';
+  else status = 'STABLE';
+
+  return {
+    key: 'customerDealFollowUp',
+    status,
+    metric: 'customerDealFollowUpCompletion',
+    value,
+    previousValue,
+    delta,
+    details: {
+      customerDealFollowUp: {
+        dealsInPeriod: f.dealsInPeriod,
+        dealsWithItems: f.dealsWithItems,
+        totalItems: f.totalItems,
+        bookedItems: f.bookedItems,
+        pendingItems: f.pendingItems,
+        missingItems: f.missingItems,
+        completionRate: f.completionRate,
+        dealsWithOpenItems: f.dealsWithOpenItems,
       },
     },
   };
@@ -381,8 +440,10 @@ function capaDimension(current: EmployeePerformanceDataset, previous: EmployeePe
 const CHANGE_ORDER: Array<{ key: string; domain: HubDomain; unit: HubChangeItem['unit']; higherIsBetter: boolean }> = [
   { key: 'qualityPercent', domain: 'quality', unit: 'points', higherIsBetter: true },
   { key: 'calculatedPoints', domain: 'kpi', unit: 'points', higherIsBetter: true },
-  { key: 'followUpCompletion', domain: 'followUp', unit: 'percent', higherIsBetter: true },
-  { key: 'followUpsOverdue', domain: 'followUp', unit: 'count', higherIsBetter: false },
+  { key: 'employeeActionFollowUpCompletion', domain: 'employeeActionFollowUp', unit: 'percent', higherIsBetter: true },
+  { key: 'employeeActionFollowUpsOverdue', domain: 'employeeActionFollowUp', unit: 'count', higherIsBetter: false },
+  { key: 'customerDealFollowUpCompletion', domain: 'customerDealFollowUp', unit: 'percent', higherIsBetter: true },
+  { key: 'customerDealFollowUpOpenItems', domain: 'customerDealFollowUp', unit: 'count', higherIsBetter: false },
   { key: 'attendanceCompliance', domain: 'attendance', unit: 'percent', higherIsBetter: true },
   { key: 'dealsClosed', domain: 'deals', unit: 'count', higherIsBetter: true },
   { key: 'observationsCount', domain: 'quality', unit: 'count', higherIsBetter: false },
@@ -431,42 +492,54 @@ function buildChanges(input: HubAnalysisInput): HubChangeItem[] {
   push(CHANGE_ORDER[2], {
     current: current.followUps.completionRate,
     previous: previous?.followUps.completionRate ?? null,
-    source: sourceOf('followUp', current.evidence.followUps.recordIds),
+    source: sourceOf('employeeActionFollowUp', current.evidence.followUps.recordIds),
   });
   push(CHANGE_ORDER[3], {
     current: current.followUps.overdue,
     previous: previous?.followUps.overdue ?? null,
-    source: sourceOf('followUp', current.evidence.followUps.recordIds),
+    source: sourceOf('employeeActionFollowUp', current.evidence.followUps.recordIds),
   });
+  const dealFu = current.customerDealFollowUps;
+  const prevDealFu = previous?.customerDealFollowUps ?? null;
   push(CHANGE_ORDER[4], {
+    current: dealFu.completionRate,
+    previous: prevDealFu?.completionRate ?? null,
+    source: sourceOf('customerDealFollowUp', dealFu.dealsWithOpenItemIds.length > 0 ? dealFu.dealsWithOpenItemIds : current.evidence.deals.recordIds),
+  });
+  push(CHANGE_ORDER[5], {
+    current: dealFu.pendingItems + dealFu.missingItems,
+    previous: prevDealFu ? prevDealFu.pendingItems + prevDealFu.missingItems : null,
+    source: sourceOf('customerDealFollowUp', dealFu.dealsWithOpenItemIds.length > 0 ? dealFu.dealsWithOpenItemIds : current.evidence.deals.recordIds),
+  });
+  push(CHANGE_ORDER[6], {
     current: current.attendance.result?.compliance ?? null,
     previous: previous?.attendance.result?.compliance ?? null,
     source: sourceOf('attendance', current.evidence.attendance?.recordIds ?? []),
   });
-  push(CHANGE_ORDER[5], {
+  push(CHANGE_ORDER[7], {
     current: current.deals.closedWithEmployeeInPeriod,
     previous: previous?.deals.closedWithEmployeeInPeriod ?? null,
     source: sourceOf('deals', current.evidence.deals.recordIds),
   });
-  push(CHANGE_ORDER[6], {
+  push(CHANGE_ORDER[8], {
     current: current.quality.observations.total,
     previous: previous?.quality.observations.total ?? null,
     source: sourceOf('quality', current.evidence.observations.recordIds),
   });
-  push(CHANGE_ORDER[7], {
+  push(CHANGE_ORDER[9], {
     current: current.quality.deductions.count,
     previous: previous?.quality.deductions.count ?? null,
     source: sourceOf('quality', current.evidence.deductions.recordIds),
   });
   if (risk.current) {
-    push(CHANGE_ORDER[8], {
+    push(CHANGE_ORDER[10], {
       current: risk.current.score,
       previous: risk.previous?.score ?? null,
       source: sourceOf('risk', [current.employee.employeeId]),
     });
   }
   if (hr) {
-    push(CHANGE_ORDER[9], {
+    push(CHANGE_ORDER[11], {
       current: hr.current?.deductionCount ?? null,
       previous: hr.previous?.deductionCount ?? null,
       source: sourceOf('hr', []),
@@ -492,10 +565,10 @@ function buildCrossSignals(input: HubAnalysisInput, changes: HubChangeItem[]): H
 
   const rules: Array<{ key: string; when: () => boolean; signals: [string, string]; sourceKeys: string[] }> = [
     {
-      key: 'overlap.followUpDelaysQuality',
-      when: () => up('followUpsOverdue') && up('observationsCount'),
-      signals: ['followUpsOverdue', 'observationsCount'],
-      sourceKeys: ['followUpsOverdue', 'observationsCount'],
+      key: 'overlap.actionFollowUpDelaysQuality',
+      when: () => up('employeeActionFollowUpsOverdue') && up('observationsCount'),
+      signals: ['employeeActionFollowUpsOverdue', 'observationsCount'],
+      sourceKeys: ['employeeActionFollowUpsOverdue', 'observationsCount'],
     },
     {
       key: 'overlap.deductionsComplaints',
@@ -504,16 +577,18 @@ function buildCrossSignals(input: HubAnalysisInput, changes: HubChangeItem[]): H
       sourceKeys: ['qualityDeductions', 'observationsCount'],
     },
     {
-      key: 'overlap.attendanceFollowUps',
-      when: () => down('attendanceCompliance') && up('followUpsOverdue'),
-      signals: ['attendanceCompliance', 'followUpsOverdue'],
-      sourceKeys: ['attendanceCompliance', 'followUpsOverdue'],
+      key: 'overlap.attendanceActionFollowUps',
+      when: () => down('attendanceCompliance') && up('employeeActionFollowUpsOverdue'),
+      signals: ['attendanceCompliance', 'employeeActionFollowUpsOverdue'],
+      sourceKeys: ['attendanceCompliance', 'employeeActionFollowUpsOverdue'],
     },
     {
-      key: 'overlap.dealsFollowUps',
-      when: () => down('dealsClosed') && down('followUpCompletion'),
-      signals: ['dealsClosed', 'followUpCompletion'],
-      sourceKeys: ['dealsClosed', 'followUpCompletion'],
+      // §FOLLOWUP-DOMAINS — customer/deal domain: fewer closures observed
+      // together with lower customer/deal follow-up completion.
+      key: 'overlap.dealsCustomerFollowUps',
+      when: () => down('dealsClosed') && down('customerDealFollowUpCompletion'),
+      signals: ['dealsClosed', 'customerDealFollowUpCompletion'],
+      sourceKeys: ['dealsClosed', 'customerDealFollowUpCompletion'],
     },
     {
       key: 'overlap.qualityDeclineObservations',
@@ -607,12 +682,18 @@ function buildPatterns(input: HubAnalysisInput, dimensions: HubDimension[]): Hub
   const windowRecurrenceKeys = new Set(current.quality.repeatedIssues.windowByCategory.map((g) => g.issueKey));
   for (const dim of dimensions) {
     if (dim.status === 'DECLINING') {
+      const domain: HubDomain =
+        dim.key === 'businessOutput' ? 'deals'
+          : dim.key === 'employeeActionFollowUp' ? 'employeeActionFollowUp'
+            : dim.key === 'customerDealFollowUp' ? 'customerDealFollowUp'
+              : dim.key === 'hr' ? 'hr'
+                : (dim.key as HubDomain);
       out.push({
         kind: 'DETERIORATING',
-        domain: dim.key === 'businessOutput' ? 'deals' : dim.key === 'followUp' ? 'followUp' : dim.key === 'hr' ? 'hr' : (dim.key as HubDomain),
+        domain,
         label: null,
         occurrences: null,
-        sources: [sourceOf(dim.key === 'businessOutput' ? 'deals' : (dim.key as HubDomain), [])],
+        sources: [sourceOf(domain, [])],
       });
     }
   }
@@ -643,7 +724,8 @@ function buildStrengths(input: HubAnalysisInput, dims: Map<HubDimensionKey, HubD
   const { current, previous } = input;
   const out: HubEvidenceItem[] = [];
   const quality = dims.get('quality');
-  const followUp = dims.get('followUp');
+  const actionFollowUp = dims.get('employeeActionFollowUp');
+  const dealFollowUp = dims.get('customerDealFollowUp');
   const attendance = dims.get('attendance');
   const output = dims.get('businessOutput');
   const capa = dims.get('capa');
@@ -667,11 +749,19 @@ function buildStrengths(input: HubAnalysisInput, dims: Map<HubDimensionKey, HubD
       sources: [sourceOf('quality', current.evidence.deductions.recordIds)],
     });
   }
-  if (followUp && followUp.details.followUp && followUp.details.followUp.completed >= 3 && followUp.details.followUp.overdue === 0) {
+  if (actionFollowUp && actionFollowUp.details.followUp && actionFollowUp.details.followUp.completed >= 3 && actionFollowUp.details.followUp.overdue === 0) {
     out.push({
-      key: 'strength.followUpsOnTrack',
-      values: { completed: followUp.details.followUp.completed, completionRate: followUp.details.followUp.completionRate },
-      sources: [sourceOf('followUp', current.evidence.followUps.recordIds)],
+      key: 'strength.actionFollowUpsOnTrack',
+      values: { completed: actionFollowUp.details.followUp.completed, completionRate: actionFollowUp.details.followUp.completionRate },
+      sources: [sourceOf('employeeActionFollowUp', current.evidence.followUps.recordIds)],
+    });
+  }
+  const dfu = current.customerDealFollowUps;
+  if (dealFollowUp && dealFollowUp.details.customerDealFollowUp && dfu.totalItems >= 3 && dfu.pendingItems + dfu.missingItems === 0) {
+    out.push({
+      key: 'strength.customerDealFollowUpsComplete',
+      values: { bookedItems: dfu.bookedItems, totalItems: dfu.totalItems, completionRate: dfu.completionRate },
+      sources: [sourceOf('customerDealFollowUp', current.evidence.deals.recordIds)],
     });
   }
   if (attendance?.value !== null && attendance?.value !== undefined && attendance.value >= ATTENDANCE_SOLID_COMPLIANCE) {
@@ -713,7 +803,8 @@ function buildDevelopmentAreas(input: HubAnalysisInput, dims: Map<HubDimensionKe
   const hr = dims.get('hr');
   const out: HubEvidenceItem[] = [];
   const quality = dims.get('quality');
-  const followUp = dims.get('followUp');
+  const actionFollowUp = dims.get('employeeActionFollowUp');
+  const dealFollowUp = dims.get('customerDealFollowUp');
   const attendance = dims.get('attendance');
   const capa = dims.get('capa');
   const complaints = dims.get('complaints');
@@ -726,11 +817,24 @@ function buildDevelopmentAreas(input: HubAnalysisInput, dims: Map<HubDimensionKe
       sources: [sourceOf('quality', group.observationIds)],
     });
   }
-  if (followUp && followUp.details.followUp && followUp.details.followUp.overdue >= FOLLOWUP_OVERDUE_AREA) {
+  if (actionFollowUp && actionFollowUp.details.followUp && actionFollowUp.details.followUp.overdue >= FOLLOWUP_OVERDUE_AREA) {
     out.push({
-      key: 'area.overdueFollowUps',
-      values: { overdue: followUp.details.followUp.overdue, active: followUp.details.followUp.active },
-      sources: [sourceOf('followUp', current.evidence.followUps.recordIds)],
+      key: 'area.overdueActionFollowUps',
+      values: { overdue: actionFollowUp.details.followUp.overdue, active: actionFollowUp.details.followUp.active },
+      sources: [sourceOf('employeeActionFollowUp', current.evidence.followUps.recordIds)],
+    });
+  }
+  const dfuOpen = current.customerDealFollowUps.pendingItems + current.customerDealFollowUps.missingItems;
+  if (dealFollowUp && dealFollowUp.details.customerDealFollowUp && dfuOpen >= DEAL_FOLLOWUP_OPEN_AREA) {
+    out.push({
+      key: 'area.openCustomerDealFollowUps',
+      values: {
+        openItems: dfuOpen,
+        pendingItems: current.customerDealFollowUps.pendingItems,
+        missingItems: current.customerDealFollowUps.missingItems,
+        dealsWithOpenItems: current.customerDealFollowUps.dealsWithOpenItems,
+      },
+      sources: [sourceOf('customerDealFollowUp', current.customerDealFollowUps.dealsWithOpenItemIds.length > 0 ? current.customerDealFollowUps.dealsWithOpenItemIds : current.evidence.deals.recordIds)],
     });
   }
   if (current.quality.deductions.count >= QUALITY_DEDUCTIONS_AREA) {
@@ -786,7 +890,8 @@ function buildRecommendations(
   const { current, risk } = input;
   const out: HubRecommendation[] = [];
   const has = (key: string) => areas.some((a) => a.key === key);
-  const followUp = dims.get('followUp');
+  const actionFollowUp = dims.get('employeeActionFollowUp');
+  const dealFollowUp = dims.get('customerDealFollowUp');
   const attendance = dims.get('attendance');
   const capa = dims.get('capa');
   const complaints = dims.get('complaints');
@@ -796,14 +901,28 @@ function buildRecommendations(
   if (repeatedAreas.length > 0) {
     out.push({ key: 'rec.coaching', rationale: repeatedAreas.slice(0, 2) });
   }
-  // Follow-up workload / SLA review.
-  if ((followUp?.details.followUp?.overdue ?? 0) >= FOLLOWUP_OVERDUE_ATTENTION) {
+  // Internal action follow-up workload / SLA review.
+  if ((actionFollowUp?.details.followUp?.overdue ?? 0) >= FOLLOWUP_OVERDUE_ATTENTION) {
     out.push({
-      key: 'rec.followUpReview',
+      key: 'rec.actionFollowUpReview',
       rationale: [{
-        key: 'evidence.overdueFollowUps',
-        values: { overdue: followUp?.details.followUp?.overdue ?? 0 },
-        sources: [sourceOf('followUp', current.evidence.followUps.recordIds)],
+        key: 'evidence.overdueActionFollowUps',
+        values: { overdue: actionFollowUp?.details.followUp?.overdue ?? 0 },
+        sources: [sourceOf('employeeActionFollowUp', current.evidence.followUps.recordIds)],
+      }],
+    });
+  }
+  // Customer/deal follow-up review — open booking items.
+  if (((dealFollowUp?.details.customerDealFollowUp?.pendingItems ?? 0) + (dealFollowUp?.details.customerDealFollowUp?.missingItems ?? 0)) >= DEAL_FOLLOWUP_OPEN_ATTENTION) {
+    out.push({
+      key: 'rec.customerDealFollowUpReview',
+      rationale: [{
+        key: 'evidence.openCustomerDealFollowUps',
+        values: {
+          openItems: (dealFollowUp?.details.customerDealFollowUp?.pendingItems ?? 0) + (dealFollowUp?.details.customerDealFollowUp?.missingItems ?? 0),
+          dealsWithOpenItems: dealFollowUp?.details.customerDealFollowUp?.dealsWithOpenItems ?? 0,
+        },
+        sources: [sourceOf('customerDealFollowUp', current.customerDealFollowUps.dealsWithOpenItemIds.length > 0 ? current.customerDealFollowUps.dealsWithOpenItemIds : current.evidence.deals.recordIds)],
       }],
     });
   }
@@ -930,12 +1049,23 @@ function buildConcerns(input: HubAnalysisInput, dims: Map<HubDimensionKey, HubDi
       sources: [sourceOf('quality', group.observationIds)],
     });
   }
-  const followUp = dims.get('followUp');
-  if ((followUp?.details.followUp?.overdue ?? 0) >= FOLLOWUP_OVERDUE_ATTENTION) {
+  const actionFollowUp = dims.get('employeeActionFollowUp');
+  if ((actionFollowUp?.details.followUp?.overdue ?? 0) >= FOLLOWUP_OVERDUE_ATTENTION) {
     out.push({
-      key: 'concern.overdueFollowUps',
-      values: { overdue: followUp?.details.followUp?.overdue ?? 0 },
-      sources: [sourceOf('followUp', current.evidence.followUps.recordIds)],
+      key: 'concern.overdueActionFollowUps',
+      values: { overdue: actionFollowUp?.details.followUp?.overdue ?? 0 },
+      sources: [sourceOf('employeeActionFollowUp', current.evidence.followUps.recordIds)],
+    });
+  }
+  const dealFuOpen = current.customerDealFollowUps.pendingItems + current.customerDealFollowUps.missingItems;
+  if (dealFuOpen >= DEAL_FOLLOWUP_OPEN_ATTENTION) {
+    out.push({
+      key: 'concern.openCustomerDealFollowUps',
+      values: {
+        openItems: dealFuOpen,
+        dealsWithOpenItems: current.customerDealFollowUps.dealsWithOpenItems,
+      },
+      sources: [sourceOf('customerDealFollowUp', current.customerDealFollowUps.dealsWithOpenItemIds.length > 0 ? current.customerDealFollowUps.dealsWithOpenItemIds : current.evidence.deals.recordIds)],
     });
   }
   const quality = dims.get('quality');
@@ -979,14 +1109,18 @@ function buildConcerns(input: HubAnalysisInput, dims: Map<HubDimensionKey, HubDi
 export function buildHubAnalysis(input: HubAnalysisInput): HubAnalysis {
   const dims: HubDimension[] = [];
   const quality = qualityDimension(input.current, input.previous);
-  const followUp = followUpDimension(input.current, input.previous);
+  // §FOLLOWUP-DOMAINS — two INDEPENDENT follow-up dimensions:
+  // customer/deal follow-up (booking items) and internal employee
+  // action follow-up (followUps collection). Never merged.
+  const dealFollowUp = customerDealFollowUpDimension(input.current, input.previous);
+  const actionFollowUp = employeeActionFollowUpDimension(input.current, input.previous);
   const risk = riskDimension(input.risk);
   const attendance = attendanceDimension(input.current, input.previous);
   const output = businessOutputDimension(input.current, input.previous);
   const hr = hrDimension(input.hr);
   const complaints = complaintsDimension(input.current, input.previous);
   const capa = capaDimension(input.current, input.previous);
-  dims.push(quality, followUp);
+  dims.push(quality, dealFollowUp, actionFollowUp);
   if (risk) dims.push(risk);
   dims.push(attendance, output);
   if (hr) dims.push(hr);

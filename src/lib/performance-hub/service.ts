@@ -342,7 +342,7 @@ function buildDataQuality(args: {
   for (const entry of current.dataQuality.unattributedRecords) {
     const domain =
       entry.collection === 'qualityObservations' || entry.collection === 'qualityDeductions' ? 'quality'
-        : entry.collection === 'followUps' ? 'followUp'
+        : entry.collection === 'followUps' ? 'employeeActionFollowUp'
           : entry.collection === 'travelDeals' ? 'deals'
             : entry.collection === 'complaints' ? 'complaints'
               : entry.collection === 'capaCases' ? 'capa'

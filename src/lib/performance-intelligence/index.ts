@@ -36,6 +36,7 @@ export type {
   ComplaintFacts,
   CapaFacts,
   FollowUpFacts,
+  CustomerDealFollowUpFacts,
   TravelDealFacts,
   AttendanceContextFacts,
   // dataset-level metadata
@@ -57,6 +58,7 @@ export {
   aggregateComplaints,
   aggregateCapaCases,
   aggregateFollowUps,
+  aggregateCustomerDealFollowUps,
   aggregateTravelDeals,
 } from './operations-analysis';
 
