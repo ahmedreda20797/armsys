@@ -1,0 +1,3 @@
+{
+  "/api/master-data/[domain]/[id]/route": "app/api/master-data/[domain]/[id]/route.js"
+}

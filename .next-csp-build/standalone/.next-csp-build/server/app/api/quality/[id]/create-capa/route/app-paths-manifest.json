@@ -1,0 +1,3 @@
+{
+  "/api/quality/[id]/create-capa/route": "app/api/quality/[id]/create-capa/route.js"
+}

@@ -1,0 +1,3 @@
+module.exports=[56707,e=>{"use strict";let t=["quality","observations"];e.s(["audienceMayReceiveTechnicalReports",0,function(e){return"TECHNICAL"===e},"resolveReportAudience",0,function(e){let{role:n,permissions:o}=e;if("admin"===n||t.some(e=>{let t;return"none"!==((t=o?.[e])?"object"==typeof t&&null!==t&&"level"in t?t.level:t:"none")}))return"TECHNICAL";let r=function(e,t){let n=e?.[t];if(n&&"object"==typeof n&&"scope"in n)return n.scope}(o,"employees");return"department"===r||"team"===r||"subtree"===r?"TEAM_LEADER":"HR"}])}];
+
+//# sourceMappingURL=src_lib_report-audience_profiles_ts_0cl.1_v._.js.map

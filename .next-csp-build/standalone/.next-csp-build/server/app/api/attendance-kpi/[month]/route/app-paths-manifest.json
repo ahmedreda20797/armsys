@@ -1,0 +1,3 @@
+{
+  "/api/attendance-kpi/[month]/route": "app/api/attendance-kpi/[month]/route.js"
+}

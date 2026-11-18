@@ -1,0 +1,3 @@
+{
+  "/api/observation-templates/[id]/route": "app/api/observation-templates/[id]/route.js"
+}

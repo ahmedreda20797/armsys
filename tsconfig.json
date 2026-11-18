@@ -48,7 +48,9 @@
     ".next-build/types/**/*.ts",
     ".next-build/dev/types/**/*.ts",
     ".next-nav-verify/types/**/*.ts",
-    ".next-nav-verify/dev/types/**/*.ts"
+    ".next-nav-verify/dev/types/**/*.ts",
+    ".next-csp-build/types/**/*.ts",
+    ".next-csp-build/dev/types/**/*.ts"
   ],
   "exclude": [
     "node_modules"

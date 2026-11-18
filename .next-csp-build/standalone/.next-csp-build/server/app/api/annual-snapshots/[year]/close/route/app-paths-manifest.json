@@ -1,0 +1,3 @@
+{
+  "/api/annual-snapshots/[year]/close/route": "app/api/annual-snapshots/[year]/close/route.js"
+}

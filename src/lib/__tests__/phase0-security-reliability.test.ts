@@ -304,6 +304,43 @@ describe('Phase 0 B — middleware CSP (S-3)', () => {
     }
   });
 
+  // §CSP-ORDER (production CSP recovery) — the CSP/nonce must be
+  // snapshotted into the request headers BEFORE NextResponse.next()
+  // is constructed. Next.js forwards the init's request headers to
+  // the SSR renderer as `x-middleware-request-*` (its renderer nonces
+  // its scripts from that request CSP), and the middleware contract
+  // is observable through exactly those headers on the response.
+  // Regression for the production failure: the CSP was set on the
+  // Headers object AFTER the constructor call, so the renderer never
+  // received it and every script was emitted WITHOUT a nonce.
+  it('middleware forwards the CSP + nonce to the SSR renderer on the REQUEST headers', () => {
+    try {
+      setNodeEnv('production');
+      const res = middleware(fakeNextRequest('/'));
+      const responseCsp = res.headers.get('Content-Security-Policy') ?? '';
+      assert.ok(responseCsp.includes("'strict-dynamic'"), 'fixture sanity: production CSP');
+
+      const forwardedCsp = res.headers.get('x-middleware-request-content-security-policy');
+      assert.ok(forwardedCsp, 'the CSP must travel on the request headers (renderer nonce source)');
+      assert.equal(
+        forwardedCsp,
+        responseCsp,
+        'the forwarded request CSP must be byte-identical to the enforced response CSP',
+      );
+
+      const responseNonce = scriptSrcOf(responseCsp).match(/'nonce-([^']+)'/)![1];
+      const requestNonce = scriptSrcOf(forwardedCsp!).match(/'nonce-([^']+)'/)![1];
+      assert.equal(requestNonce, responseNonce, 'the renderer nonce and the enforced nonce must be identical');
+
+      // The nonce must be independently available to server components
+      // (the root layout reads it for the next-themes boot script).
+      const forwardedNonceHeader = res.headers.get('x-middleware-request-x-nonce');
+      assert.equal(forwardedNonceHeader, responseNonce);
+    } finally {
+      setNodeEnv(ORIGINAL_NODE_ENV ?? 'test');
+    }
+  });
+
   it('production CSP preserves the other security directives', () => {
     try {
       setNodeEnv('production');

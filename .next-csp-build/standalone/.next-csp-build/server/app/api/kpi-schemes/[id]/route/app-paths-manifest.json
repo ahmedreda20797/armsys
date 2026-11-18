@@ -1,0 +1,3 @@
+{
+  "/api/kpi-schemes/[id]/route": "app/api/kpi-schemes/[id]/route.js"
+}

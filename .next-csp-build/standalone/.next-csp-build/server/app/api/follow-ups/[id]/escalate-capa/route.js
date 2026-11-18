@@ -1,0 +1,12 @@
+var R=require("../../../../../chunks/[turbopack]_runtime.js")("server/app/api/follow-ups/[id]/escalate-capa/route.js")
+R.c("server/chunks/_0wjvwr-._.js")
+R.c("server/chunks/[root-of-the-server]__01dsr_4._.js")
+R.c("server/chunks/src_lib_11wc0_8._.js")
+R.c("server/chunks/src_03zg4r8._.js")
+R.c("server/chunks/_0c3lqma._.js")
+R.c("server/chunks/_0b57xqx._.js")
+R.c("server/chunks/src_lib_0gry4wh._.js")
+R.c("server/chunks/[root-of-the-server]__0vxxedz._.js")
+R.c("server/chunks/0zjb_server_app_api_follow-ups_[id]_escalate-capa_route_actions_02epe3d.js")
+R.m(37845)
+module.exports=R.m(37845).exports

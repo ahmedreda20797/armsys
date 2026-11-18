@@ -1,0 +1,3 @@
+{
+  "/api/deduction-rules/[id]/route": "app/api/deduction-rules/[id]/route.js"
+}

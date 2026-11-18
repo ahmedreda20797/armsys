@@ -1,0 +1,12 @@
+var R=require("../../../../../chunks/[turbopack]_runtime.js")("server/app/api/hr-deductions/[id]/create-capa/route.js")
+R.c("server/chunks/_0wktt7u._.js")
+R.c("server/chunks/[root-of-the-server]__01dsr_4._.js")
+R.c("server/chunks/src_lib_11wc0_8._.js")
+R.c("server/chunks/src_03zg4r8._.js")
+R.c("server/chunks/_0c3lqma._.js")
+R.c("server/chunks/_0b57xqx._.js")
+R.c("server/chunks/src_lib_0gry4wh._.js")
+R.c("server/chunks/[root-of-the-server]__0vxxedz._.js")
+R.c("server/chunks/0zjb_server_app_api_hr-deductions_[id]_create-capa_route_actions_00skhzm.js")
+R.m(95533)
+module.exports=R.m(95533).exports

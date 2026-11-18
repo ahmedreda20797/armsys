@@ -1,0 +1,3 @@
+{
+  "/api/knowledge-base/[id]/route": "app/api/knowledge-base/[id]/route.js"
+}

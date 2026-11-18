@@ -1,0 +1,3 @@
+{
+  "/api/kpi-reports/monthly/route": "app/api/kpi-reports/monthly/route.js"
+}

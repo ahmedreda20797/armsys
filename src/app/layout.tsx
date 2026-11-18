@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono, Cairo } from "next/font/google";
+import { headers } from "next/headers";
 import "./globals.css";
 import { Toaster } from "sonner";
 import { ThemeProvider } from "next-themes";
@@ -32,11 +33,33 @@ export const metadata: Metadata = {
   },
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  // ══════════════════════════════════════════════════════════════
+  //  §CSP-NONCE (production CSP recovery) — the per-request nonce
+  //  minted by the middleware (§CSP-ORDER in src/middleware.ts).
+  //
+  //  Reading `headers()` here does two things, both REQUIRED for a
+  //  nonce-based CSP with 'strict-dynamic':
+  //    1. It opts every page into DYNAMIC rendering. Statically
+  //       prerendered HTML is produced at build time and can never
+  //       carry a per-request nonce — the served page kept
+  //       `x-nextjs-prerender: 1` + an immutable `s-maxage=31536000`
+  //       cache entry, so the browser received zero-nonce HTML under
+  //       a nonce-enforcing policy (the production failure's second
+  //       root-cause component).
+  //    2. It exposes the nonce to the ONE application-level inline
+  //       script in the document — next-themes' theme-boot <script> —
+  //       which otherwise has no nonce attribute and is blocked under
+  //       'strict-dynamic'. Next.js nonces its own framework scripts
+  //       (bootstrap + flight data) directly from the request CSP;
+  //       only this provider needs the value passed explicitly.
+  // ══════════════════════════════════════════════════════════════
+  const nonce = (await headers()).get("x-nonce") ?? undefined;
+
   return (
     // §20.2 — next-themes owns the `dark`/`light` class on <html>.
     // defaultTheme="dark" preserves the app's visual identity; the
@@ -55,7 +78,7 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} ${cairo.variable} antialiased bg-background text-slate-50`}
         style={{ fontFamily: 'var(--font-cairo), var(--font-geist-sans), "Segoe UI", Tahoma, sans-serif' }}
       >
-        <ThemeProvider attribute="class" defaultTheme="dark" enableSystem={false} disableTransitionOnChange>
+        <ThemeProvider attribute="class" defaultTheme="dark" enableSystem={false} disableTransitionOnChange nonce={nonce}>
           <RtlDirectionProvider>
             <QueryProvider>
               {children}
