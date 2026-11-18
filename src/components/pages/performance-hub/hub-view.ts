@@ -86,7 +86,7 @@ export function dimensionValueText(locale: Locale, dim: HubDimension): string {
     case 'qualityPercent':
     case 'attendanceCompliance':
     case 'employeeActionFollowUpCompletion':
-    case 'customerDealFollowUpCompletion':
+    case 'bookingCompletion':
       return formatPercentage(dim.value, { locale, maximumFractionDigits: 1 });
     case 'calculatedPoints':
       return locale === 'en' ? `${dim.value} pts` : `${dim.value} نقطة`;
@@ -112,7 +112,7 @@ export interface DimensionRowView {
   tone: 'good' | 'bad' | 'none';
 }
 
-const HIGHER_IS_BETTER: ReadonlySet<string> = new Set(['quality', 'customerDealFollowUp', 'employeeActionFollowUp', 'attendance', 'businessOutput']);
+const HIGHER_IS_BETTER: ReadonlySet<string> = new Set(['quality', 'bookingExecution', 'employeeActionFollowUp', 'attendance', 'businessOutput']);
 
 export function buildDimensionRows(dataset: EmployeePerformanceHubDataset, locale: Locale): DimensionRowView[] {
   return dataset.dimensions.map((dim) => {
@@ -213,7 +213,7 @@ export interface PatternRowView {
 
 const PATTERN_DOMAIN_LABELS: Partial<Record<HubDomain, readonly [string, string]>> = {
   quality: HUB_DOMAINS.quality,
-  customerDealFollowUp: HUB_DOMAINS.customerDealFollowUp,
+  bookingExecution: HUB_DOMAINS.bookingExecution,
   employeeActionFollowUp: HUB_DOMAINS.employeeActionFollowUp,
   deals: HUB_DOMAINS.deals,
   hr: HUB_DOMAINS.hr,

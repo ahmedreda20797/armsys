@@ -110,6 +110,22 @@ stubbedDb.findWhere = async (t: string, filters: Record<string, unknown>) => {
   return table(t).filter((r) => Object.entries(filters).every(([k, v] : [string, unknown]) => r[k] === v));
 };
 
+// §INDEXED-QUERY (Phase 2) — the guarded indexed fetch must ALSO be
+// stubbed: the real function copied by the `{ ...realDb }` spread
+// above closes over the REAL module-internal getAll/rtdbRef (bypassing
+// this stub), so without an override any consumer would attempt real
+// Firebase access. In-memory semantics = the fallback scan's strict
+// child-equality filter, which is the documented result contract.
+stubbedDb.getAllByChildEqualTo = async (
+  t: string,
+  field: string,
+  value: string,
+  _options?: unknown,
+) => {
+  calls.push({ fn: 'getAllByChildEqualTo', args: [t, field, value] });
+  return table(t).filter((r) => r?.[field] === value).map((r) => ({ ...r }));
+};
+
 stubbedDb.createRecord = async (t: string, data: Record<string, any>) => {
   calls.push({ fn: 'createRecord', args: [t] });
   const rec = {

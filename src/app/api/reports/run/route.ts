@@ -124,7 +124,10 @@ export async function POST(request: NextRequest) {
         if (!exportCheck.allowed) {
           return apiError(403, ErrorCode.FORBIDDEN, exportCheck.error ?? 'صلاحية التصدير غير كافية');
         }
-        const locale = (body as Record<string, unknown>).lang === 'en' ? 'en' : 'ar';
+        // §INPUT-TYPES — `lang` is an optional request field on the run
+        // payload; a structural assertion (not a broad cast) keeps the
+        // access type-safe.
+        const locale = (body as { lang?: unknown }).lang === 'en' ? 'en' : 'ar';
         const buffer = await buildReportExcel(definition, response as never, locale);
         return new NextResponse(new Uint8Array(buffer), {
           headers: {

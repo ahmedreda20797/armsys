@@ -59,13 +59,13 @@ export const FOLLOWUP_OVERDUE_ATTENTION = 3;
 /** Overdue follow-ups at/above this count are a development area. */
 export const FOLLOWUP_OVERDUE_AREA = 2;
 /**
- * §FOLLOWUP-DOMAINS — customer & deal follow-up: open booking items
+ * §METRIC-VALIDATION — booking execution: open (unbooked) items
  * at/above this count need attention / are a development area.
  */
-export const DEAL_FOLLOWUP_OPEN_ATTENTION = 5;
-export const DEAL_FOLLOWUP_OPEN_AREA = 3;
-/** Customer/deal follow-up completion at/above this is strong. */
-export const DEAL_FOLLOWUP_STRONG_COMPLETION = 85;
+export const BOOKING_OPEN_ATTENTION = 5;
+export const BOOKING_OPEN_AREA = 3;
+/** Booking completion at/above this is strong. */
+export const BOOKING_STRONG_COMPLETION = 85;
 /** Quality deductions at/above this count need attention / are an area. */
 export const QUALITY_DEDUCTIONS_ATTENTION = 3;
 export const QUALITY_DEDUCTIONS_AREA = 2;
@@ -89,6 +89,7 @@ const DOMAIN_PAGE: Record<HubDomain, string> = {
   quality: 'observations',
   employeeActionFollowUp: 'followUps',
   customerDealFollowUp: 'travel',
+  bookingExecution: 'travel',
   risk: 'riskCenter',
   attendance: 'attendance',
   deals: 'travel',
@@ -218,14 +219,42 @@ function employeeActionFollowUpDimension(current: EmployeePerformanceDataset, pr
 }
 
 /**
- * §FOLLOWUP-DOMAINS — domain A: CUSTOMER & DEAL follow-up dimension.
- * Computed EXCLUSIVELY from customer/deal records (booking items of
- * the period's deals). Internal action follow-ups never enter this
- * metric — the two domains are never merged.
+ * §METRIC-VALIDATION — CUSTOMER & DEAL follow-up dimension.
+ * NOT_MEASURABLE by structure: Qnalys stores NO authoritative source
+ * for customer follow-up activity (no follow-up tasks, deadlines,
+ * contact timestamps or history on deals/customers). The dimension is
+ * surfaced with the explicit verdict — a percentage is never
+ * fabricated from booking-item statuses, and internal action
+ * follow-ups never substitute here either.
  */
-function customerDealFollowUpDimension(current: EmployeePerformanceDataset, previous: EmployeePerformanceDataset | null): HubDimension {
-  const f = current.customerDealFollowUps;
-  const prev = previous?.customerDealFollowUps ?? null;
+function customerDealFollowUpDimension(current: EmployeePerformanceDataset): HubDimension {
+  const verdict = current.customerFollowUpMeasurability;
+  return {
+    key: 'customerDealFollowUp',
+    status: 'NOT_MEASURABLE',
+    metric: null,
+    value: null,
+    previousValue: null,
+    delta: null,
+    details: {
+      customerDealFollowUp: {
+        status: verdict.status,
+        reason: verdict.reason,
+      },
+    },
+  };
+}
+
+/**
+ * §METRIC-VALIDATION — BOOKING EXECUTION dimension: the
+ * supplier-booking state of the period's deal items (booked / pending
+ * / missing). A SEPARATE business-output metric — completing a hotel
+ * or flight booking is NOT customer follow-up. Internal action
+ * follow-ups never enter this metric either.
+ */
+function bookingExecutionDimension(current: EmployeePerformanceDataset, previous: EmployeePerformanceDataset | null): HubDimension {
+  const f = current.bookingExecution;
+  const prev = previous?.bookingExecution ?? null;
   const value = f.completionRate;
   const previousValue = prev?.completionRate ?? null;
   const delta = deltaOf(value, previousValue);
@@ -233,21 +262,21 @@ function customerDealFollowUpDimension(current: EmployeePerformanceDataset, prev
 
   let status: HubDimensionStatus;
   if (f.totalItems === 0) status = 'INSUFFICIENT_DATA';
-  else if (openItems >= DEAL_FOLLOWUP_OPEN_ATTENTION) status = 'NEEDS_ATTENTION';
+  else if (openItems >= BOOKING_OPEN_ATTENTION) status = 'NEEDS_ATTENTION';
   else if (delta !== null && delta <= -FOLLOWUP_COMPLETION_DELTA) status = 'DECLINING';
   else if (delta !== null && delta >= FOLLOWUP_COMPLETION_DELTA) status = 'IMPROVING';
-  else if (value !== null && value >= DEAL_FOLLOWUP_STRONG_COMPLETION && openItems === 0) status = 'STRONG';
+  else if (value !== null && value >= BOOKING_STRONG_COMPLETION && openItems === 0) status = 'STRONG';
   else status = 'STABLE';
 
   return {
-    key: 'customerDealFollowUp',
+    key: 'bookingExecution',
     status,
-    metric: 'customerDealFollowUpCompletion',
+    metric: 'bookingCompletion',
     value,
     previousValue,
     delta,
     details: {
-      customerDealFollowUp: {
+      bookingExecution: {
         dealsInPeriod: f.dealsInPeriod,
         dealsWithItems: f.dealsWithItems,
         totalItems: f.totalItems,
@@ -442,8 +471,8 @@ const CHANGE_ORDER: Array<{ key: string; domain: HubDomain; unit: HubChangeItem[
   { key: 'calculatedPoints', domain: 'kpi', unit: 'points', higherIsBetter: true },
   { key: 'employeeActionFollowUpCompletion', domain: 'employeeActionFollowUp', unit: 'percent', higherIsBetter: true },
   { key: 'employeeActionFollowUpsOverdue', domain: 'employeeActionFollowUp', unit: 'count', higherIsBetter: false },
-  { key: 'customerDealFollowUpCompletion', domain: 'customerDealFollowUp', unit: 'percent', higherIsBetter: true },
-  { key: 'customerDealFollowUpOpenItems', domain: 'customerDealFollowUp', unit: 'count', higherIsBetter: false },
+  { key: 'bookingCompletion', domain: 'bookingExecution', unit: 'percent', higherIsBetter: true },
+  { key: 'openBookingItems', domain: 'bookingExecution', unit: 'count', higherIsBetter: false },
   { key: 'attendanceCompliance', domain: 'attendance', unit: 'percent', higherIsBetter: true },
   { key: 'dealsClosed', domain: 'deals', unit: 'count', higherIsBetter: true },
   { key: 'observationsCount', domain: 'quality', unit: 'count', higherIsBetter: false },
@@ -462,8 +491,11 @@ function buildChanges(input: HubAnalysisInput): HubChangeItem[] {
   ) => {
     const delta = deltaOf(values.current, values.previous);
     // A change needs data on at least ONE side — a metric missing on
-    // both sides is not a change, it is absent data.
+    // both sides is not a change, it is absent data. For COUNT metrics,
+    // zero-or-missing on both sides is likewise absence (no events
+    // either period), never a "0 → 0" change to explain (§17).
     if (values.current === null && values.previous === null) return;
+    if (def.unit === 'count' && (values.current ?? 0) === 0 && (values.previous ?? 0) === 0) return;
     out.push({
       key: def.key,
       domain: def.domain,
@@ -499,17 +531,17 @@ function buildChanges(input: HubAnalysisInput): HubChangeItem[] {
     previous: previous?.followUps.overdue ?? null,
     source: sourceOf('employeeActionFollowUp', current.evidence.followUps.recordIds),
   });
-  const dealFu = current.customerDealFollowUps;
-  const prevDealFu = previous?.customerDealFollowUps ?? null;
+  const booking = current.bookingExecution;
+  const prevBooking = previous?.bookingExecution ?? null;
   push(CHANGE_ORDER[4], {
-    current: dealFu.completionRate,
-    previous: prevDealFu?.completionRate ?? null,
-    source: sourceOf('customerDealFollowUp', dealFu.dealsWithOpenItemIds.length > 0 ? dealFu.dealsWithOpenItemIds : current.evidence.deals.recordIds),
+    current: booking.completionRate,
+    previous: prevBooking?.completionRate ?? null,
+    source: sourceOf('bookingExecution', booking.dealsWithOpenItemIds.length > 0 ? booking.dealsWithOpenItemIds : current.evidence.deals.recordIds),
   });
   push(CHANGE_ORDER[5], {
-    current: dealFu.pendingItems + dealFu.missingItems,
-    previous: prevDealFu ? prevDealFu.pendingItems + prevDealFu.missingItems : null,
-    source: sourceOf('customerDealFollowUp', dealFu.dealsWithOpenItemIds.length > 0 ? dealFu.dealsWithOpenItemIds : current.evidence.deals.recordIds),
+    current: booking.pendingItems + booking.missingItems,
+    previous: prevBooking ? prevBooking.pendingItems + prevBooking.missingItems : null,
+    source: sourceOf('bookingExecution', booking.dealsWithOpenItemIds.length > 0 ? booking.dealsWithOpenItemIds : current.evidence.deals.recordIds),
   });
   push(CHANGE_ORDER[6], {
     current: current.attendance.result?.compliance ?? null,
@@ -583,12 +615,12 @@ function buildCrossSignals(input: HubAnalysisInput, changes: HubChangeItem[]): H
       sourceKeys: ['attendanceCompliance', 'employeeActionFollowUpsOverdue'],
     },
     {
-      // §FOLLOWUP-DOMAINS — customer/deal domain: fewer closures observed
-      // together with lower customer/deal follow-up completion.
-      key: 'overlap.dealsCustomerFollowUps',
-      when: () => down('dealsClosed') && down('customerDealFollowUpCompletion'),
-      signals: ['dealsClosed', 'customerDealFollowUpCompletion'],
-      sourceKeys: ['dealsClosed', 'customerDealFollowUpCompletion'],
+      // §METRIC-VALIDATION — booking-execution domain: fewer closures
+      // observed together with lower booking completion.
+      key: 'overlap.dealsBookingExecution',
+      when: () => down('dealsClosed') && down('bookingCompletion'),
+      signals: ['dealsClosed', 'bookingCompletion'],
+      sourceKeys: ['dealsClosed', 'bookingCompletion'],
     },
     {
       key: 'overlap.qualityDeclineObservations',
@@ -685,7 +717,7 @@ function buildPatterns(input: HubAnalysisInput, dimensions: HubDimension[]): Hub
       const domain: HubDomain =
         dim.key === 'businessOutput' ? 'deals'
           : dim.key === 'employeeActionFollowUp' ? 'employeeActionFollowUp'
-            : dim.key === 'customerDealFollowUp' ? 'customerDealFollowUp'
+            : dim.key === 'bookingExecution' ? 'bookingExecution'
               : dim.key === 'hr' ? 'hr'
                 : (dim.key as HubDomain);
       out.push({
@@ -725,7 +757,7 @@ function buildStrengths(input: HubAnalysisInput, dims: Map<HubDimensionKey, HubD
   const out: HubEvidenceItem[] = [];
   const quality = dims.get('quality');
   const actionFollowUp = dims.get('employeeActionFollowUp');
-  const dealFollowUp = dims.get('customerDealFollowUp');
+  const bookingExecution = dims.get('bookingExecution');
   const attendance = dims.get('attendance');
   const output = dims.get('businessOutput');
   const capa = dims.get('capa');
@@ -756,12 +788,12 @@ function buildStrengths(input: HubAnalysisInput, dims: Map<HubDimensionKey, HubD
       sources: [sourceOf('employeeActionFollowUp', current.evidence.followUps.recordIds)],
     });
   }
-  const dfu = current.customerDealFollowUps;
-  if (dealFollowUp && dealFollowUp.details.customerDealFollowUp && dfu.totalItems >= 3 && dfu.pendingItems + dfu.missingItems === 0) {
+  const bookingFacts = current.bookingExecution;
+  if (bookingExecution && bookingExecution.details.bookingExecution && bookingFacts.totalItems >= 3 && bookingFacts.pendingItems + bookingFacts.missingItems === 0) {
     out.push({
-      key: 'strength.customerDealFollowUpsComplete',
-      values: { bookedItems: dfu.bookedItems, totalItems: dfu.totalItems, completionRate: dfu.completionRate },
-      sources: [sourceOf('customerDealFollowUp', current.evidence.deals.recordIds)],
+      key: 'strength.bookingExecutionComplete',
+      values: { bookedItems: bookingFacts.bookedItems, totalItems: bookingFacts.totalItems, completionRate: bookingFacts.completionRate },
+      sources: [sourceOf('bookingExecution', current.evidence.deals.recordIds)],
     });
   }
   if (attendance?.value !== null && attendance?.value !== undefined && attendance.value >= ATTENDANCE_SOLID_COMPLIANCE) {
@@ -804,7 +836,7 @@ function buildDevelopmentAreas(input: HubAnalysisInput, dims: Map<HubDimensionKe
   const out: HubEvidenceItem[] = [];
   const quality = dims.get('quality');
   const actionFollowUp = dims.get('employeeActionFollowUp');
-  const dealFollowUp = dims.get('customerDealFollowUp');
+  const bookingExecution = dims.get('bookingExecution');
   const attendance = dims.get('attendance');
   const capa = dims.get('capa');
   const complaints = dims.get('complaints');
@@ -824,17 +856,17 @@ function buildDevelopmentAreas(input: HubAnalysisInput, dims: Map<HubDimensionKe
       sources: [sourceOf('employeeActionFollowUp', current.evidence.followUps.recordIds)],
     });
   }
-  const dfuOpen = current.customerDealFollowUps.pendingItems + current.customerDealFollowUps.missingItems;
-  if (dealFollowUp && dealFollowUp.details.customerDealFollowUp && dfuOpen >= DEAL_FOLLOWUP_OPEN_AREA) {
+  const bookingOpen = current.bookingExecution.pendingItems + current.bookingExecution.missingItems;
+  if (bookingExecution && bookingExecution.details.bookingExecution && bookingOpen >= BOOKING_OPEN_AREA) {
     out.push({
-      key: 'area.openCustomerDealFollowUps',
+      key: 'area.openBookingItems',
       values: {
-        openItems: dfuOpen,
-        pendingItems: current.customerDealFollowUps.pendingItems,
-        missingItems: current.customerDealFollowUps.missingItems,
-        dealsWithOpenItems: current.customerDealFollowUps.dealsWithOpenItems,
+        openItems: bookingOpen,
+        pendingItems: current.bookingExecution.pendingItems,
+        missingItems: current.bookingExecution.missingItems,
+        dealsWithOpenItems: current.bookingExecution.dealsWithOpenItems,
       },
-      sources: [sourceOf('customerDealFollowUp', current.customerDealFollowUps.dealsWithOpenItemIds.length > 0 ? current.customerDealFollowUps.dealsWithOpenItemIds : current.evidence.deals.recordIds)],
+      sources: [sourceOf('bookingExecution', current.bookingExecution.dealsWithOpenItemIds.length > 0 ? current.bookingExecution.dealsWithOpenItemIds : current.evidence.deals.recordIds)],
     });
   }
   if (current.quality.deductions.count >= QUALITY_DEDUCTIONS_AREA) {
@@ -891,7 +923,7 @@ function buildRecommendations(
   const out: HubRecommendation[] = [];
   const has = (key: string) => areas.some((a) => a.key === key);
   const actionFollowUp = dims.get('employeeActionFollowUp');
-  const dealFollowUp = dims.get('customerDealFollowUp');
+  const bookingExecution = dims.get('bookingExecution');
   const attendance = dims.get('attendance');
   const capa = dims.get('capa');
   const complaints = dims.get('complaints');
@@ -912,17 +944,17 @@ function buildRecommendations(
       }],
     });
   }
-  // Customer/deal follow-up review — open booking items.
-  if (((dealFollowUp?.details.customerDealFollowUp?.pendingItems ?? 0) + (dealFollowUp?.details.customerDealFollowUp?.missingItems ?? 0)) >= DEAL_FOLLOWUP_OPEN_ATTENTION) {
+  // Booking-execution review — open (unbooked) items.
+  if (((bookingExecution?.details.bookingExecution?.pendingItems ?? 0) + (bookingExecution?.details.bookingExecution?.missingItems ?? 0)) >= BOOKING_OPEN_ATTENTION) {
     out.push({
-      key: 'rec.customerDealFollowUpReview',
+      key: 'rec.bookingExecutionReview',
       rationale: [{
-        key: 'evidence.openCustomerDealFollowUps',
+        key: 'evidence.openBookingItems',
         values: {
-          openItems: (dealFollowUp?.details.customerDealFollowUp?.pendingItems ?? 0) + (dealFollowUp?.details.customerDealFollowUp?.missingItems ?? 0),
-          dealsWithOpenItems: dealFollowUp?.details.customerDealFollowUp?.dealsWithOpenItems ?? 0,
+          openItems: (bookingExecution?.details.bookingExecution?.pendingItems ?? 0) + (bookingExecution?.details.bookingExecution?.missingItems ?? 0),
+          dealsWithOpenItems: bookingExecution?.details.bookingExecution?.dealsWithOpenItems ?? 0,
         },
-        sources: [sourceOf('customerDealFollowUp', current.customerDealFollowUps.dealsWithOpenItemIds.length > 0 ? current.customerDealFollowUps.dealsWithOpenItemIds : current.evidence.deals.recordIds)],
+        sources: [sourceOf('bookingExecution', current.bookingExecution.dealsWithOpenItemIds.length > 0 ? current.bookingExecution.dealsWithOpenItemIds : current.evidence.deals.recordIds)],
       }],
     });
   }
@@ -990,7 +1022,17 @@ function buildOverview(
   concerns: HubEvidenceItem[],
   riskLevel: string | null,
 ): HubOverview {
-  const measurable = dims.filter((d) => d.status !== 'INSUFFICIENT_DATA');
+  // §METRIC-VALIDATION — NOT_MEASURABLE dimensions (no source in the
+  // data model) are excluded exactly like INSUFFICIENT_DATA ones, and
+  // no-event zeros (complaints/capa domains with no records at all)
+  // are absence of events, not a performance measurement — an
+  // employee with no data anywhere is INSUFFICIENT_DATA, never
+  // "stable".
+  const measurable = dims.filter((d) => {
+    if (d.status === 'INSUFFICIENT_DATA' || d.status === 'NOT_MEASURABLE') return false;
+    if (d.key === 'complaints' || d.key === 'capa') return (d.details.complaints?.total ?? 0) + (d.details.capa?.total ?? 0) > 0;
+    return true;
+  });
   const declining = dims.filter((d) => d.status === 'DECLINING');
   const attention = dims.filter((d) => d.status === 'NEEDS_ATTENTION');
   const improving = dims.filter((d) => d.status === 'IMPROVING');
@@ -1057,15 +1099,15 @@ function buildConcerns(input: HubAnalysisInput, dims: Map<HubDimensionKey, HubDi
       sources: [sourceOf('employeeActionFollowUp', current.evidence.followUps.recordIds)],
     });
   }
-  const dealFuOpen = current.customerDealFollowUps.pendingItems + current.customerDealFollowUps.missingItems;
-  if (dealFuOpen >= DEAL_FOLLOWUP_OPEN_ATTENTION) {
+  const bookingOpenConcern = current.bookingExecution.pendingItems + current.bookingExecution.missingItems;
+  if (bookingOpenConcern >= BOOKING_OPEN_ATTENTION) {
     out.push({
-      key: 'concern.openCustomerDealFollowUps',
+      key: 'concern.openBookingItems',
       values: {
-        openItems: dealFuOpen,
-        dealsWithOpenItems: current.customerDealFollowUps.dealsWithOpenItems,
+        openItems: bookingOpenConcern,
+        dealsWithOpenItems: current.bookingExecution.dealsWithOpenItems,
       },
-      sources: [sourceOf('customerDealFollowUp', current.customerDealFollowUps.dealsWithOpenItemIds.length > 0 ? current.customerDealFollowUps.dealsWithOpenItemIds : current.evidence.deals.recordIds)],
+      sources: [sourceOf('bookingExecution', current.bookingExecution.dealsWithOpenItemIds.length > 0 ? current.bookingExecution.dealsWithOpenItemIds : current.evidence.deals.recordIds)],
     });
   }
   const quality = dims.get('quality');
@@ -1109,10 +1151,13 @@ function buildConcerns(input: HubAnalysisInput, dims: Map<HubDimensionKey, HubDi
 export function buildHubAnalysis(input: HubAnalysisInput): HubAnalysis {
   const dims: HubDimension[] = [];
   const quality = qualityDimension(input.current, input.previous);
-  // §FOLLOWUP-DOMAINS — two INDEPENDENT follow-up dimensions:
-  // customer/deal follow-up (booking items) and internal employee
-  // action follow-up (followUps collection). Never merged.
-  const dealFollowUp = customerDealFollowUpDimension(input.current, input.previous);
+  // §METRIC-VALIDATION — the follow-up concepts stay in THREE
+  // independent dimensions: customer/deal follow-up (NOT_MEASURABLE —
+  // no source exists, never proxied), booking execution (supplier
+  // booking state of deal items), and internal employee action
+  // follow-up (followUps collection). Never merged.
+  const dealFollowUp = customerDealFollowUpDimension(input.current);
+  const bookingExecution = bookingExecutionDimension(input.current, input.previous);
   const actionFollowUp = employeeActionFollowUpDimension(input.current, input.previous);
   const risk = riskDimension(input.risk);
   const attendance = attendanceDimension(input.current, input.previous);
@@ -1120,7 +1165,7 @@ export function buildHubAnalysis(input: HubAnalysisInput): HubAnalysis {
   const hr = hrDimension(input.hr);
   const complaints = complaintsDimension(input.current, input.previous);
   const capa = capaDimension(input.current, input.previous);
-  dims.push(quality, dealFollowUp, actionFollowUp);
+  dims.push(quality, dealFollowUp, bookingExecution, actionFollowUp);
   if (risk) dims.push(risk);
   dims.push(attendance, output);
   if (hr) dims.push(hr);

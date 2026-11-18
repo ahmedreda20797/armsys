@@ -14,13 +14,14 @@
 // ══════════════════════════════════════════════════════════════
 
 import type { Locale } from '@/lib/i18n/dictionary';
-import { formatInteger } from '@/lib/i18n/format';
-import type { EmployeePerformanceHubDataset } from '@/lib/performance-hub';
+import { formatInteger, formatPercentage } from '@/lib/i18n/format';
+import type { EmployeePerformanceHubDataset, PerformanceGroupReport } from '@/lib/performance-hub';
 import type { PrintReportModel, PrintSection } from '@/components/print/print-report-store';
 import {
   HUB_OVERVIEW_STATUS,
   HUB_TERMS,
   pick,
+  PerformanceGroupLabels,
 } from './hub-labels';
 import {
   buildBenchmarkRows,
@@ -220,6 +221,197 @@ export function performanceHubToPrintModel(
     generatedAt: dataset.generatedAt,
     stats: statsOf([
       [locale === 'en' ? 'Status' : 'الحالة', pick(locale, HUB_OVERVIEW_STATUS[overview.status] ?? [overview.status, overview.status])],
+    ]),
+    sections,
+    footerNote: locale === 'en'
+      ? 'Official report — source: system database for the selected period. Values are shown as produced by the deterministic engines, with no estimation.'
+      : 'تقرير رسمي — مصدر البيانات: قاعدة بيانات النظام للفترة المحددة. تُعرض القيم كما أنتجها المحركات الحتمية دون أي تقدير.',
+  };
+}
+
+export function performanceGroupToPrintModel(
+  report: PerformanceGroupReport,
+  locale: Locale,
+): PrintReportModel {
+  const title = locale === 'en' ? 'Employee Performance Group Report' : 'تقرير أداء المجموعة';
+  const sections: PrintSection[] = [];
+
+  // ── Population summary ──
+  sections.push({
+    heading: locale === 'en' ? 'Population Summary' : 'ملخص المجموعة',
+    stats: statsOf([
+      [locale === 'en' ? 'Mode' : 'الوضع', report.comparison ? (locale === 'en' ? 'Comparison' : 'مقارنة') : (locale === 'en' ? 'Consolidated' : 'مجمع')],
+      [locale === 'en' ? 'Period' : 'الفترة', periodLabel(report.period.monthKey, locale)],
+      [locale === 'en' ? 'Members' : 'الأعضاء', String(report.population.members.length)],
+      [locale === 'en' ? 'With Data' : 'ببيانات', String(report.coverage.membersWithData)],
+      [locale === 'en' ? 'Data Completeness' : 'اكتمال البيانات', report.coverage.dataCompletenessPercent !== null ? `${report.coverage.dataCompletenessPercent}%` : '—'],
+    ]),
+    paragraphs: report.dataQualityNotes.length > 0
+      ? [locale === 'en' ? 'Notes:' : 'ملاحظات:', ...report.dataQualityNotes]
+      : undefined,
+  });
+
+  // ── Overview distribution ──
+  const overviewRows: Array<Array<string | number>> = ([
+    'IMPROVING',
+    'STABLE',
+    'NEEDS_COACHING',
+    'PERFORMANCE_IMPROVEMENT_REVIEW',
+    'MANAGEMENT_REVIEW',
+    'INSUFFICIENT_DATA',
+  ] as const)
+    .map((k) => {
+      const count = report.overviewDistribution[k] ?? 0;
+      if (count === 0) return null;
+      return [pick(locale, PerformanceGroupLabels[k] ?? [k, k]), String(count)] as Array<string | number>;
+    })
+    .filter((r): r is Array<string | number> => r !== null);
+  if (overviewRows.length > 0) {
+    sections.push({
+      heading: locale === 'en' ? 'Overview Distribution' : 'توزيع الحالة العامة',
+      table: {
+        columns: locale === 'en' ? ['Status', 'Count'] : ['الحالة', 'العدد'],
+        rows: overviewRows,
+      },
+    });
+  }
+
+  // ── Dimension rollups ──
+  sections.push({
+    heading: locale === 'en' ? 'Dimension Rollups' : 'ملخص الأبعاد',
+    table: {
+      columns: locale === 'en'
+        ? ['Dimension', 'With Value', 'Avg', 'Strong/Stable', 'Needs Attention', 'Declining', 'Not Measurable']
+        : ['البعد', 'ببيانات', 'المتوسط', 'قوي/مستقر', 'يحتاج انتباه', 'متراجع', 'غير قابل للقياس'],
+      rows: report.dimensionRollups.map((d) => [
+        pick(locale, PerformanceGroupLabels[d.key] ?? [d.key, d.key] as const),
+        String(d.membersWithValue),
+        d.averageValue !== null ? d.averageValue.toFixed(1) : '—',
+        String(d.statusCounts.STRONG + d.statusCounts.STABLE),
+        String(d.statusCounts.NEEDS_ATTENTION),
+        String(d.statusCounts.DECLINING),
+        String(d.notMeasurableCount),
+      ]),
+    },
+  });
+
+  // ── Shared strengths / weaknesses ──
+  if (report.sharedStrengths.length > 0) {
+    sections.push({
+      heading: locale === 'en' ? 'Shared Strengths' : 'نقاط القوة المشتركة',
+      paragraphs: report.sharedStrengths.slice(0, 10).map(
+        (s) => `${pick(locale, PerformanceGroupLabels[s.key] ?? [s.key, s.key] as const)} (${s.memberCount} ${locale === 'en' ? 'employees' : 'موظف'})`,
+      ),
+    });
+  }
+  if (report.commonWeaknesses.length > 0) {
+    sections.push({
+      heading: locale === 'en' ? 'Common Weaknesses' : 'نقاط الضعف المشتركة',
+      paragraphs: report.commonWeaknesses.slice(0, 10).map(
+        (w) => `${pick(locale, PerformanceGroupLabels[w.key] ?? [w.key, w.key] as const)} (${w.memberCount} ${locale === 'en' ? 'employees' : 'موظف'})`,
+      ),
+    });
+  }
+
+  // ── Repeated problems ──
+  if (report.repeatedProblems.length > 0) {
+    sections.push({
+      heading: locale === 'en' ? 'Repeated Problems (Group)' : 'المشكلات المتكررة (مجموعة)',
+      table: {
+        columns: locale === 'en' ? ['Issue', 'Members', 'Total Occurrences'] : ['المشكلة', 'الأعضاء', 'إجمالي التكرارات'],
+        rows: report.repeatedProblems.slice(0, 15).map((p) => [
+          p.label,
+          String(p.memberCount),
+          String(p.occurrenceCount),
+        ]),
+      },
+    });
+  }
+
+  // ── Risk distribution ──
+  if (Object.keys(report.riskDistribution).length > 0) {
+    sections.push({
+      heading: locale === 'en' ? 'Risk Distribution' : 'توزيع المخاطر',
+      table: {
+        columns: locale === 'en' ? ['Level', 'Count'] : ['المستوى', 'العدد'],
+        rows: (['critical', 'high', 'medium', 'low'] as const).map((level) => {
+          const count = report.riskDistribution[level] ?? 0;
+          if (count === 0) return null;
+          return [pick(locale, PerformanceGroupLabels[level] ?? [level, level] as const), String(count)];
+        }).filter((r): r is [string, string] => r !== null),
+      },
+    });
+  }
+
+  // ── Comparison units ──
+  if (report.comparison && report.comparison.units.length > 0) {
+    sections.push({
+      heading: locale === 'en' ? 'Unit Comparison' : 'مقارنة الوحدات',
+      table: {
+        columns: locale === 'en'
+          ? ['Type', 'Unit', 'Members', 'With Data', 'Quality', 'Booking Exec.', 'Action F/U', 'Attendance', 'Closures', 'Attention']
+          : ['النوع', 'الوحدة', 'الأعضاء', 'ببيانات', 'الجودة', 'تنفيذ الحجز', 'متابعة الإجراءات', 'الحضور', 'التقفيلات', 'انتباه'],
+        rows: report.comparison.units.map((u) => [
+          pick(locale, PerformanceGroupLabels[u.unitType] ?? [u.unitType, u.unitType] as const),
+          u.label,
+          String(u.memberCount),
+          String(u.membersWithValue),
+          u.avgQuality !== null ? formatPercentage(u.avgQuality, { locale, maximumFractionDigits: 1 }) : '—',
+          u.avgBookingCompletion !== null ? formatPercentage(u.avgBookingCompletion, { locale, maximumFractionDigits: 1 }) : '—',
+          u.avgActionFollowUpCompletion !== null ? formatPercentage(u.avgActionFollowUpCompletion, { locale, maximumFractionDigits: 1 }) : '—',
+          u.avgAttendance !== null ? formatPercentage(u.avgAttendance, { locale, maximumFractionDigits: 1 }) : '—',
+          String(u.closedDealsTotal),
+          String(u.attentionCount),
+        ]),
+      },
+    });
+  }
+
+  // ── Manager analysis ──
+  if (report.managerAnalysis && report.managerAnalysis.length > 0) {
+    sections.push({
+      heading: locale === 'en' ? 'Manager Analysis' : 'تحليل المدراء',
+      table: {
+        columns: locale === 'en'
+          ? ['Manager', 'Members', 'Distribution', 'Need Intervention', 'Declining Dims']
+          : ['المدير', 'الأعضاء', 'التوزيع', 'يحتاجون تدخلاً', 'أبعاد متراجعة'],
+        rows: report.managerAnalysis.map((m) => [
+          m.manager,
+          String(m.memberCount),
+          Object.entries(m.overviewDistribution).map(([status, count]) =>
+            `${pick(locale, PerformanceGroupLabels[status] ?? [status, status] as const)}: ${count}`
+          ).join(' | '),
+          m.needsIntervention.join(', ') || '—',
+          Object.entries(m.decliningDimensionCounts).map(([dim, count]) =>
+            `${pick(locale, PerformanceGroupLabels[dim] ?? [dim, dim] as const)}: ${count}`
+          ).join(' | ') || '—',
+        ]),
+      },
+    });
+  }
+
+  // ── Data quality notes ──
+  if (report.dataQualityNotes.length > 0) {
+    sections.push({
+      heading: locale === 'en' ? 'Data Quality Notes' : 'ملاحظات جودة البيانات',
+      paragraphs: report.dataQualityNotes.map((n) => n),
+    });
+  }
+
+  return {
+    title,
+    identity: {
+      name: locale === 'en' ? 'Group Report' : 'تقرير المجموعة',
+      code: '',
+      team: '',
+      department: '',
+      position: '',
+      manager: '',
+    },
+    period: periodLabel(report.period.monthKey, locale),
+    generatedAt: report.generatedAt,
+    stats: statsOf([
+      [locale === 'en' ? 'Mode' : 'الوضع', report.comparison ? (locale === 'en' ? 'Comparison' : 'مقارنة') : (locale === 'en' ? 'Consolidated' : 'مجمع')],
     ]),
     sections,
     footerNote: locale === 'en'

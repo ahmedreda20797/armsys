@@ -174,7 +174,7 @@ function baseDataset(over: {
       monthly: [],
       ...over.followUps,
     },
-    customerDealFollowUps: {
+    bookingExecution: {
       relationship: 'NOT_AVAILABLE',
       dealsInPeriod: 0,
       dealsWithItems: 0,
@@ -186,6 +186,11 @@ function baseDataset(over: {
       dealsWithOpenItems: 0,
       openItemTypes: [],
       dealsWithOpenItemIds: [],
+    },
+    customerFollowUpMeasurability: {
+      status: 'NOT_MEASURABLE',
+      reason: 'NO_CUSTOMER_FOLLOW_UP_SOURCE',
+      missingSource: 'Customer/deal follow-up requires a dedicated source.',
     },
     deals: {
       relationship: 'NOT_AVAILABLE',

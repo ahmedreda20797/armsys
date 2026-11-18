@@ -38,9 +38,10 @@ import { normalizeBookingItems, BOOKING_SERVICE_TYPES } from '@/lib/booking-item
 import { presentSystemOrVerbatim } from '@/lib/i18n/presentation';
 import { displayDateOrderKey } from './month-attribution';
 import type {
+  BookingExecutionFacts,
   CapaFacts,
   ComplaintFacts,
-  CustomerDealFollowUpFacts,
+  CustomerFollowUpMeasurability,
   FollowUpFacts,
   MonthlyCount,
   RepeatedIssueGroup,
@@ -293,21 +294,28 @@ export function aggregateFollowUps(args: {
 }
 
 // ─────────────────────────────────────────────────────────────
-//  §11b  CUSTOMER & DEAL FOLLOW-UP (§FOLLOWUP-DOMAINS — domain A)
+//  §11b  BOOKING EXECUTION (§METRIC-VALIDATION — domain A, validated)
 //
-//  Pure aggregation over the period's customer/deal records ONLY.
-//  Each deal's booking items (normalizeBookingItems — legacy deals
-//  normalize deterministically at read time) are the customer
-//  follow-up units: booked = completed, pending = open, missing =
-//  unavailable at the supplier. Internal employee action follow-ups
-//  (the followUps collection) are NEVER read here.
+//  Pure aggregation over the period's deal booking items ONLY
+//  (normalizeBookingItems — legacy deals normalize deterministically
+//  at read time). This measures BOOKING EXECUTION — the
+//  supplier-booking state of each service row (booked / pending /
+//  missing) — and NOTHING else:
+//    • A booked item means the SERVICE IS BOOKED, not that the
+//      employee followed up with the customer.
+//    • Actual customer follow-up activity (contact events, deadlines,
+//      completion timestamps) has NO source in the data model — the
+//      dataset's customerFollowUpMeasurability verdict says so, and
+//      this aggregate never proxies for it.
+//    • Internal employee action follow-ups (the followUps collection)
+//      are NEVER read here.
 // ─────────────────────────────────────────────────────────────
 
-export function aggregateCustomerDealFollowUps(args: {
+export function aggregateBookingExecution(args: {
   /** The period's deals (TRAVEL dimension — the same population the
    *  operational deal facts report). */
   deals: ReadonlyArray<TravelDeal>;
-}): CustomerDealFollowUpFacts {
+}): BookingExecutionFacts {
   const deals = args.deals;
 
   let dealsWithItems = 0;
@@ -328,7 +336,7 @@ export function aggregateCustomerDealFollowUps(args: {
       totalItems += 1;
       if (item.status === 'booked') bookedItems += 1;
       else {
-        // 'pending' and 'missing' are both OPEN customer follow-ups.
+        // 'pending' and 'missing' are both OPEN (unbooked) items.
         if (item.status === 'pending') pendingItems += 1;
         else missingItems += 1;
         dealOpen += 1;
@@ -355,6 +363,24 @@ export function aggregateCustomerDealFollowUps(args: {
       .map((type) => ({ type, count: openItemTypes.get(type) ?? 0 }))
       .filter((entry) => entry.count > 0),
     dealsWithOpenItemIds: [...dealsWithOpenItemIds].sort((a, b) => a.localeCompare(b)),
+  };
+}
+
+/**
+ * §METRIC-VALIDATION — the structural measurability verdict for
+ * CUSTOMER & DEAL follow-up. Pure and constant BY DESIGN: it states a
+ * fact of the data model (no follow-up tasks, deadlines, contact
+ * timestamps or history exist on deals/customers), so callers cannot
+ * accidentally "compute" a customer follow-up rate from any
+ * collection. When a dedicated follow-up source is ever introduced,
+ * this verdict — and only this verdict — changes.
+ */
+export function assessCustomerFollowUpMeasurability(): CustomerFollowUpMeasurability {
+  return {
+    status: 'NOT_MEASURABLE',
+    reason: 'NO_CUSTOMER_FOLLOW_UP_SOURCE',
+    missingSource:
+      'Customer/deal follow-up requires a dedicated source (follow-up tasks with deadlines, contact timestamps and completion history on deals/customers). Qnalys stores none; booking-item statuses measure booking execution only.',
   };
 }
 

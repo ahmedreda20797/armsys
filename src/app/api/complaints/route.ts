@@ -104,7 +104,22 @@ export async function POST(request: NextRequest) {
       sourceRecordId,
     } = body;
 
-    if (!customerName || !complaintType || !description) {
+    // §INPUT-TYPES — request.json() is `unknown` under Next 16: the
+    // string-typed payload fields are narrowed EXPLICITLY here (a
+    // non-string value is rejected, never coerced), so downstream
+    // typed sinks (automation events, records) receive real strings.
+    if (
+      (employeeId !== undefined && employeeId !== null && typeof employeeId !== 'string')
+      || (dealId !== undefined && dealId !== null && typeof dealId !== 'string')
+      || (customerContact !== undefined && customerContact !== null && typeof customerContact !== 'string')
+    ) {
+      return NextResponse.json({ error: 'بيانات الطلب غير صحيحة' }, { status: 400 });
+    }
+    const customerNameText = typeof customerName === 'string' ? customerName : '';
+    const complaintTypeText = typeof complaintType === 'string' ? complaintType : '';
+    const descriptionText = typeof description === 'string' ? description : '';
+
+    if (!customerNameText || !complaintTypeText || !descriptionText) {
       return NextResponse.json(
         { error: 'Customer name, complaint type, and description are required' },
         { status: 400 }
@@ -182,7 +197,10 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    let complaint: Record<string, unknown>;
+    // §INPUT-TYPES — the created record carries a known id (assigned
+    // verbatim by createRecordWithId); typing it keeps the typed
+    // automation-event sink honest without any `any` suppression.
+    let complaint: Record<string, unknown> & { id: string };
     try {
       complaint = await createRecordWithId('complaints', recordId, {
         customerName,
@@ -217,10 +235,10 @@ export async function POST(request: NextRequest) {
     void dispatchAutomationEvent('record_created', 'complaints', {
       employeeId: employeeId || null,
       status: normalizedStatus,
-      severity: severity || 'medium',
-      category: complaintType,
+      severity: typeof severity === 'string' && severity.length > 0 ? severity : 'medium',
+      category: complaintTypeText,
       sourceRecordId: complaint.id,
-      extra: { customerName: customerName || null },
+      extra: { customerName: customerNameText || null },
     });
 
     return NextResponse.json(complaint, { status: 201 });

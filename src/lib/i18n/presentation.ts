@@ -225,6 +225,85 @@ export const RULE_LABELS: Readonly<Record<string, LabelPair>> = {
 };
 
 // ─────────────────────────────────────────────────────────────
+//  3b) §DYNAMIC-LABELS — known LEGACY Arabic stored values
+//      (exact strings frozen in records) → bilingual labels.
+//      Lives HERE (the shared presentation vocabulary) so EVERY
+//      resolver path — presentSystemOrVerbatim, presentStatus
+//      consumers, print adapters, Excel exports, dynamic-labels —
+//      falls back to the same legacy map with zero duplication.
+//      dynamic-labels.ts re-exports this map as its public surface.
+// ─────────────────────────────────────────────────────────────
+
+export const LEGACY_VALUE_LABELS: Readonly<Record<string, LabelPair>> = {
+  // ── Legacy observation category names (§MASTER-DATA-MIGRATION) ──
+  'تأخر متابعة': ['تأخر متابعة', 'Follow-up Delay'],
+  'تأخر المتابعة': ['تأخر المتابعة', 'Follow-up Delay'],
+  'تأخير المتابعة': ['تأخير المتابعة', 'Follow-up Delay'],
+  'أداء ممتاز': ['أداء ممتاز', 'Excellent Performance'],
+  'معلومات غير صحيحة': ['معلومات غير صحيحة', 'Incorrect Information'],
+  'فقدان عميل': ['فقدان عميل', 'Customer Loss'],
+  'مساعدة الفريق': ['مساعدة الفريق', 'Team Support'],
+  'تعافي سريع': ['تعافي سريع', 'Quick Recovery'],
+  'مخالفة أمان': ['مخالفة أمان', 'Safety Violation'],
+  'مشكلة حضور': ['مشكلة حضور', 'Attendance Issue'],
+  'شكوى جودة عميل': ['شكوى جودة عميل', 'Customer Quality Complaint'],
+  'تحسين عملية': ['تحسين عملية', 'Process Improvement'],
+  'تأخير تجهيز الباكدج': ['تأخير تجهيز الباكدج', 'Package Preparation Delay'],
+  'تأخير الرد على العميل': ['تأخير الرد على العميل', 'Delayed Customer Response'],
+  'إهمال الديلات': ['إهمال الديلات', 'Deal Neglect'],
+  'عدم التركيز': ['عدم التركيز', 'Lack of Focus'],
+  'عدم تنفيذ التاسكات والتنبيهات': ['عدم تنفيذ التاسكات والتنبيهات', 'Tasks and Alerts Not Completed'],
+  'عدم مساعدة الفريق': ['عدم مساعدة الفريق', 'Failure to Support the Team'],
+  'أخطاء في التعامل مع الموردين': ['أخطاء في التعامل مع الموردين', 'Supplier Handling Errors'],
+  'تجاهل العميل': ['تجاهل العميل', 'Ignoring the Customer'],
+
+  // ── Legacy follow-up TYPE labels (the historical static list) ──
+  'مشكلة جودة': ['مشكلة جودة', 'Quality Issue'],
+  'مشكلة سلوك': ['مشكلة سلوك', 'Behavior Issue'],
+  'مشكلة أداء': ['مشكلة أداء', 'Performance Issue'],
+  'تدريب': ['تدريب', 'Training'],
+  'توجيه': ['توجيه', 'Coaching'],
+  'شكوى عميل': ['شكوى عميل', 'Customer Complaint'],
+  'ملاحظة إيجابية': ['ملاحظة إيجابية', 'Positive Note'],
+  'فرصة تحسين': ['فرصة تحسين', 'Improvement Opportunity'],
+  'أخرى': ['أخرى', 'Other'],
+
+  // ── Legacy STATUS labels (Arabic frozen in records) ──
+  'مفتوحة': ['مفتوحة', 'Open'],
+  'مفتوح': ['مفتوح', 'Open'],
+  'مكتملة': ['مكتملة', 'Completed'],
+  'مكتمل': ['مكتمل', 'Completed'],
+  'متأخرة': ['متأخرة', 'Overdue'],
+  'متأخر': ['متأخر', 'Overdue'],
+  'مغلقة': ['مغلقة', 'Closed'],
+  'مغلق': ['مغلق', 'Closed'],
+  'تم الحل': ['تم الحل', 'Resolved'],
+  'منجزة': ['منجزة', 'Completed'],
+  'ملغي': ['ملغي', 'Cancelled'],
+  'ملغاة': ['ملغاة', 'Cancelled'],
+  'قيد المراجعة': ['قيد المراجعة', 'Under Review'],
+  'قيد المتابعة': ['قيد المتابعة', 'Under Follow-up'],
+  'قيد التحقيق': ['قيد التحقيق', 'Under Investigation'],
+  'بانتظار الحل': ['بانتظار الحل', 'Pending Resolution'],
+  'قيد الانتظار': ['قيد الانتظار', 'Pending'],
+  'معتمدة': ['معتمدة', 'Approved'],
+  'معلقة': ['معلقة', 'Pending'],
+  'مرفوضة': ['مرفوضة', 'Rejected'],
+
+  // ── Legacy priority/severity labels ──
+  'منخفض': ['منخفض', 'Low'],
+  'منخفضة': ['منخفضة', 'Low'],
+  'متوسط': ['متوسط', 'Medium'],
+  'متوسطة': ['متوسطة', 'Medium'],
+  'عالي': ['عالي', 'High'],
+  'عالية': ['عالية', 'High'],
+  'حرج': ['حرج', 'Critical'],
+  'حرجة': ['حرجة', 'Critical'],
+  'عاجل': ['عاجل', 'Urgent'],
+  'عاجلة': ['عاجلة', 'Urgent'],
+};
+
+// ─────────────────────────────────────────────────────────────
 //  4) SAFE GENERIC FALLBACKS — what an UNKNOWN key becomes.
 //     Never the raw key; never a mechanical de-camelized string.
 // ─────────────────────────────────────────────────────────────
@@ -247,9 +326,16 @@ function pick(pair: LabelPair | undefined, locale: PresentationLocale): string |
 
 /**
  * Resolve ONE system-owned key across the full canonical vocabulary
- * (entities → statuses → rules). Returns null when the key is not a
- * known system key — the caller's signal to treat the value as
- * business data and render it as-is.
+ * (entities → statuses → rules → legacy aliases). Returns null when
+ * the key is not a known semantic label — the caller's signal to
+ * treat the value as business data and render it as-is.
+ *
+ * §DYNAMIC-LABELS (completion phase): the LEGACY Arabic alias map is
+ * the FINAL step of the ONE shared chain — a legacy frozen value
+ * («مكتملة», «تأخر متابعة») resolves through EVERY presentation path
+ * (print adapters, Excel exports, page views), not only through the
+ * dynamic-labels entry point. Exact trimmed match only; unknown
+ * values never match.
  */
 export function resolveSystemLabel(key: string, locale: PresentationLocale): string | null {
   if (typeof key !== 'string') return null;
@@ -258,7 +344,8 @@ export function resolveSystemLabel(key: string, locale: PresentationLocale): str
   return (
     pick(DOMAIN_ENTITY_LABELS[trimmed], locale) ??
     pick(STATUS_LABELS[trimmed], locale) ??
-    pick(RULE_LABELS[trimmed], locale)
+    pick(RULE_LABELS[trimmed], locale) ??
+    pick(LEGACY_VALUE_LABELS[trimmed], locale)
   );
 }
 

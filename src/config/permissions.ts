@@ -188,6 +188,11 @@ export const APP_PAGES: PageConfig[] = [
   //    (risk / HR deductions / benchmark membership) are withheld
   //    SERVER-SIDE through the employee360 SECTION gate.
   { id: 'employeePerformanceHub', title: 'مركز أداء الموظف', description: 'صورة الأداء الكاملة للموظف — الأبعاد، التغيرات، الأدلة، والتوصيات', titleEn: 'Employee Performance Hub', descriptionEn: 'The employee’s complete performance view — dimensions, changes, evidence, and recommendations', icon: 'Target', permissionKey: 'employee360', availableActions: [], groupId: 'employee_mgmt' },
+  // §GROUP-REPORTING — the Hub's multi-person workspace (custom mixed
+  // selections: employees / teams / departments / companies / managers;
+  // individual / consolidated / comparison modes). Mounts under the
+  // SAME 'employee360' permission key — existing grants apply.
+  { id: 'employeePerformanceHubGroup', title: 'تقارير أداء المجموعة', description: 'اختيار مختلط من الموظفين والفرق والأقسام — تقارير فردية ومجمعة ومقارنات', titleEn: 'Group Performance Reports', descriptionEn: 'Custom mixed selection of employees/teams/departments — individual, consolidated, and comparison reports', icon: 'Users', permissionKey: 'employee360', availableActions: [], groupId: 'employee_mgmt' },
   { id: 'attendance', title: 'الحضور والانصراف', description: 'سجل الحضور والانصراف والتأخيرات اليومية', titleEn: 'Attendance & Check-out', descriptionEn: 'Attendance, check-out, and daily delay records', icon: 'Clock', permissionKey: 'attendance', availableActions: ['create', 'update', 'delete', 'export'], groupId: 'employee_mgmt' },
   { id: 'biometric', title: 'البصمة', description: 'رفع ومراجعة بيانات بصمة الحضور', titleEn: 'Biometric', descriptionEn: 'Upload and review biometric attendance data', icon: 'Fingerprint', permissionKey: 'biometric', availableActions: ['create', 'update', 'delete', 'upload'], groupId: 'employee_mgmt' },
   { id: 'requests', title: 'الطلبات', description: 'طلبات الموظفين — اعتماد ورفض ومتابعة الحالة', titleEn: 'Requests', descriptionEn: 'Employee requests — approve, reject, and track status', icon: 'FileText', permissionKey: 'requests', availableActions: ['create', 'update', 'delete', 'approve'], groupId: 'employee_mgmt' },

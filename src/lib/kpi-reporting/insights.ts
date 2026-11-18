@@ -381,8 +381,10 @@ function groupObservationsByEmployee(
   return map;
 }
 
-/** Employees whose current org node lies inside ANY of the nodes' subtrees. */
-function employeeIdsInOrgSubtrees(
+/** Employees whose current org node lies inside ANY of the nodes' subtrees.
+ *  §FLEX-PERIODS — exported for the flexible-period insights builder
+ *  (the ONE subtree-resolution rule, no duplicate). */
+export function employeeIdsInOrgSubtrees(
   index: OrgIndex,
   orgNodeIds: ReadonlyArray<string>,
   employees: ReadonlyArray<{ id: string; orgNodeId: string | null }>,

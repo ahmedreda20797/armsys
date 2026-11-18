@@ -312,8 +312,13 @@ export interface MonthApprovalStats {
   pending: number;
   approved: number;
   rejected: number;
-  /** Average hours from submission to a terminal decision, when known. */
-  avgApprovalHours: number;
+  /**
+   * Average hours from submission to approval over approved
+   * observations with a computable duration. `null` means NO
+   * computable duration was available (missing/invalid timestamps or
+   * no approved observations) — it is never a silent zero.
+   */
+  avgApprovalHours: number | null;
 }
 
 export type MonthSnapshotStatus = 'open' | 'closed';

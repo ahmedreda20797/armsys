@@ -34,16 +34,23 @@ import type { EmployeeHrMonthSummary } from '@/lib/employee-performance';
 // ─────────────────────────────────────────────────────────────
 
 /** The performance dimensions the Hub presents (data availability gated).
- *  §FOLLOWUP-DOMAINS — the former single `followUp` dimension is split
- *  into TWO independent domains that are never merged:
- *    • customerDealFollowUp  — follow-up activity with CUSTOMERS/DEALS
- *      (booking items of the period's deals — customer/deal records ONLY).
+ *  §FOLLOWUP-DOMAINS + §METRIC-VALIDATION — follow-up concepts stay
+ *  in THREE never-merged dimensions:
+ *    • customerDealFollowUp  — follow-up activity with CUSTOMERS/DEALS.
+ *      NOT_MEASURABLE today: the data model stores no follow-up
+ *      tasks/deadlines/contact history for customers or deals, so the
+ *      dimension is surfaced with an explicit verdict — never proxied
+ *      from booking items.
+ *    • bookingExecution — the supplier-booking state of the period's
+ *      deal items (booked/pending/missing). A separate business-output
+ *      metric; a booked hotel/flight is NOT a customer follow-up.
  *    • employeeActionFollowUp — INTERNAL actions assigned to the
  *      employee by Quality/Management/HR (the followUps collection ONLY).
  */
 export type HubDimensionKey =
   | 'quality'
   | 'customerDealFollowUp'
+  | 'bookingExecution'
   | 'employeeActionFollowUp'
   | 'risk'
   | 'attendance'
@@ -56,6 +63,7 @@ export type HubDimensionKey =
 export type HubDomain =
   | 'quality'
   | 'customerDealFollowUp'
+  | 'bookingExecution'
   | 'employeeActionFollowUp'
   | 'risk'
   | 'attendance'
@@ -67,7 +75,9 @@ export type HubDomain =
 
 /**
  §10 — dimension status. Missing data stays INSUFFICIENT_DATA —
- never 0%, never "bad".
+ never 0%, never "bad". §METRIC-VALIDATION adds NOT_MEASURABLE for
+ metrics with no authoritative source in the data model (distinct
+ from "no records this period").
  */
 export type HubDimensionStatus =
   | 'STRONG'
@@ -75,7 +85,8 @@ export type HubDimensionStatus =
   | 'IMPROVING'
   | 'NEEDS_ATTENTION'
   | 'DECLINING'
-  | 'INSUFFICIENT_DATA';
+  | 'INSUFFICIENT_DATA'
+  | 'NOT_MEASURABLE';
 
 /**
  §8 — current status. Describes the situation through dimensions;
@@ -158,9 +169,9 @@ export type HubDimensionMetric =
   | 'qualityPercent'
   | 'calculatedPoints'
   | 'employeeActionFollowUpCompletion'
-  | 'customerDealFollowUpCompletion'
+  | 'bookingCompletion'
   | 'overdueEmployeeActionFollowUps'
-  | 'openCustomerDealFollowUpItems'
+  | 'openBookingItems'
   | 'riskScore'
   | 'attendanceCompliance'
   | 'closedDeals'
@@ -198,8 +209,18 @@ export interface HubDimensionDetails {
   };
   customerDealFollowUp?: {
     /**
-     * §FOLLOWUP-DOMAINS — CUSTOMER & DEAL follow-up facts (booking
-     * items of the period's deals — customer/deal records ONLY).
+     * §METRIC-VALIDATION — the structural verdict for customer & deal
+     * follow-up. NOT_MEASURABLE while no dedicated source exists;
+     * `reason` is a stable rule id the client renders bilingually.
+     */
+    status: 'NOT_MEASURABLE';
+    reason: string;
+  };
+  bookingExecution?: {
+    /**
+     * §METRIC-VALIDATION — BOOKING EXECUTION facts (supplier-booking
+     * state of the period's deal items). Business-output metric —
+     * never a customer follow-up rate.
      */
     dealsInPeriod: number;
     dealsWithItems: number;

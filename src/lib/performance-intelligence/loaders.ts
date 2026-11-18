@@ -16,7 +16,7 @@
 //  no create/update/delete path exists in this module.
 // ══════════════════════════════════════════════════════════════
 
-import { getAll, getById, TTL } from '@/lib/db';
+import { getAll, getAllByChildEqualTo, getById, TTL } from '@/lib/db';
 import { ATTENDANCE_RESULTS_TABLE } from '@/lib/attendance';
 import type { StoredAttendanceResult } from '@/lib/attendance';
 import type { CAPACase, CustomerComplaint, FollowUp, QualityDeduction, TravelDeal } from '@/types';
@@ -79,7 +79,13 @@ export interface PerformanceIntelligenceLoaders extends KpiReportingLoaders {
   loadStoredAttendanceResult(employeeId: string, monthKey: string): Promise<StoredAttendanceResult | null>;
 }
 
-function toIdentityRecord(raw: Record<string, unknown>, id: string): EmployeeIdentityRecord {
+/**
+ * The identity-facts projection over ONE raw employees row (pure).
+ * Exported so request-scoped loader wrappers can batch the employees
+ * table ONCE per multi-employee request and reuse the canonical
+ * projection verbatim (§GROUP-REPORTING).
+ */
+export function toIdentityRecord(raw: Record<string, unknown>, id: string): EmployeeIdentityRecord {
   return {
     id,
     name: String(raw.name ?? ''),
@@ -119,15 +125,25 @@ export const defaultPerformanceIntelligenceLoaders: PerformanceIntelligenceLoade
 
   loadObservationsForWindow: async (employeeId, months) => {
     const monthSet = new Set(months);
-    const all = await getAll<QualityObservation>(PERFORMANCE_INTELLIGENCE_SOURCES.observations, TTL.MEDIUM);
-    // ROOT-CAUSE FIX (Smart Quality Report "غير متاح"): records with a
-    // missing/legacy-shaped `month` are attributed through the SAME
-    // canonical policy as the assembler (attributeMonth: stored month →
-    // display date → ISO) — never a second policy, never dropped while
-    // a valid date exists. Records that still cannot be attributed fall
-    // through to the assembler's unattributed accounting.
-    return all.filter((o) => {
-      if (!o || o.employeeId !== employeeId) return false;
+    // §INDEXED-QUERY (Phase 2) — ONLY this employee's observations are
+    // fetched (guarded indexed query on the stored employeeId), never
+    // the whole multi-employee, all-history table. The month matching
+    // below is intentionally UNCHANGED: it filters in memory through
+    // the canonical attributeMonth policy — NOT by the stored month
+    // field — because legacy rows with a missing/legacy-shaped month
+    // are attributed through their observationDate. Querying by the
+    // month index here would LOSE those rows; querying by employeeId
+    // cannot (an observation without employeeId matched neither the
+    // legacy filter nor the indexed query). The transparent fallback
+    // re-materializes the legacy full read + the exact same filter.
+    const own = await getAllByChildEqualTo<QualityObservation>(
+      PERFORMANCE_INTELLIGENCE_SOURCES.observations,
+      'employeeId',
+      employeeId,
+      { ttl: TTL.MEDIUM },
+    );
+    return own.filter((o) => {
+      if (!o) return false;
       const month = attributeMonth(o.month, o.observationDate);
       return month !== null && monthSet.has(month);
     });
@@ -141,9 +157,11 @@ export const defaultPerformanceIntelligenceLoaders: PerformanceIntelligenceLoade
   },
 
   loadComplaints: async (employeeId) => {
-    const all = await getAll<CustomerComplaint>(PERFORMANCE_INTELLIGENCE_SOURCES.complaints);
+    // §INDEXED-QUERY (Phase 2) — only this employee's complaints are
+    // fetched; fallback = the legacy full read + strict filter below.
     // Only the DIRECT stored link attributes a complaint — never invented.
-    return all.filter((c) => c && c.employeeId === employeeId);
+    return getAllByChildEqualTo<CustomerComplaint>(PERFORMANCE_INTELLIGENCE_SOURCES.complaints, 'employeeId', employeeId)
+      .then((rows) => rows.filter((c) => c && c.employeeId === employeeId));
   },
 
   loadCapaCases: async (employeeId) => {
@@ -159,21 +177,33 @@ export const defaultPerformanceIntelligenceLoaders: PerformanceIntelligenceLoade
   },
 
   loadFollowUps: async (employeeId) => {
-    const all = await getAll<FollowUp>(PERFORMANCE_INTELLIGENCE_SOURCES.followUps);
-    return all.filter((f) => f && f.employeeId === employeeId);
+    // §INDEXED-QUERY (Phase 2) — only this employee's follow-ups are
+    // fetched; fallback = the legacy full read + strict filter below.
+    return getAllByChildEqualTo<FollowUp>(PERFORMANCE_INTELLIGENCE_SOURCES.followUps, 'employeeId', employeeId)
+      .then((rows) => rows.filter((f) => f && f.employeeId === employeeId));
   },
 
   loadTravelDeals: async (employeeId) => {
-    const all = await getAll<TravelDeal>(PERFORMANCE_INTELLIGENCE_SOURCES.deals);
-    return all.filter((d) => d && d.employeeId === employeeId);
+    // §INDEXED-QUERY (Phase 2) — only this employee's deals are
+    // fetched; fallback = the legacy full read + strict filter below.
+    return getAllByChildEqualTo<TravelDeal>(PERFORMANCE_INTELLIGENCE_SOURCES.deals, 'employeeId', employeeId)
+      .then((rows) => rows.filter((d) => d && d.employeeId === employeeId));
   },
 
   loadStoredAttendanceResult: async (employeeId, monthKey) => {
-    const all = await getAll<StoredAttendanceResult>(PERFORMANCE_INTELLIGENCE_SOURCES.attendance, TTL.STATIC);
-    // Last-wins per (employee, month) — parity with the established
-    // attendanceResults regeneration semantics.
+    // §INDEXED-QUERY (Phase 2) — the employee's own results (guarded
+    // indexed fetch), month-filtered in memory with the SAME last-wins
+    // rule. Ordering parity: an equalTo query returns its matches in
+    // key order — the same relative order a full-table scan produced —
+    // so "last row wins" selects the same record.
+    const own = await getAllByChildEqualTo<StoredAttendanceResult>(
+      PERFORMANCE_INTELLIGENCE_SOURCES.attendance,
+      'employeeId',
+      employeeId,
+      { ttl: TTL.STATIC },
+    );
     let found: StoredAttendanceResult | null = null;
-    for (const record of all) {
+    for (const record of own) {
       if (record && record.employeeId === employeeId && record.month === monthKey) found = record;
     }
     return found;

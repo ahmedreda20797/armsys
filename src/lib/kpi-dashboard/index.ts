@@ -83,7 +83,12 @@ export interface DashboardApprovalStats {
   pending: number;
   approved: number;
   rejected: number;
-  avgApprovalHours: number;
+  /**
+   * §PHASE0-K1 — `null` when no computable approval duration is
+   * available (snapshot aggregates cannot attribute durations per
+   * employee). Never a misleading zero.
+   */
+  avgApprovalHours: number | null;
 }
 
 /** One point in the per-month score series (for trend charts). */
@@ -199,7 +204,8 @@ const NEUTRAL_APPROVAL_STATS: DashboardApprovalStats = {
   pending: 0,
   approved: 0,
   rejected: 0,
-  avgApprovalHours: 0,
+  // §PHASE0-K1 — "no data" is null, never a silent zero.
+  avgApprovalHours: null,
 };
 
 /** Keep only the employee-score entries whose employee is authorized. */
@@ -246,9 +252,9 @@ function restrictKpiResults(
  * `categoryTotals` or `approvalStats`.
  *
  * `avgApprovalHours` is a month-wide timestamp average that cannot be
- * attributed per employee; the scoped response reports the neutral 0
- * (the same value `aggregateApprovalStats` uses) rather than an
- * unscoped figure.
+ * attributed per employee; the scoped response reports `null` (the
+ * same value `aggregateApprovalStats` uses — §PHASE0-K1) rather than
+ * an unscoped or misleading figure.
  */
 function rebuildAggregatesFromEntries(
   employeeScores: Record<string, EmployeeScoreEntry>,
@@ -297,7 +303,9 @@ function rebuildAggregatesFromEntries(
       pending,
       approved,
       rejected,
-      avgApprovalHours: 0,
+      // §PHASE0-K1 — durations cannot be attributed per employee from
+      // frozen entries; null (not 0) expresses "not computable here".
+      avgApprovalHours: null,
     },
   };
 }
@@ -582,7 +590,9 @@ function aggregateApprovalStats(
     approved += s.approved ?? 0;
     rejected += s.rejected ?? 0;
   }
-  return { total, pending, approved, rejected, avgApprovalHours: 0 };
+  // §PHASE0-K1 — a cross-month aggregate cannot recompute durations
+  // (frozen snapshots carry no per-observation history); null, not 0.
+  return { total, pending, approved, rejected, avgApprovalHours: null };
 }
 
 /** Average score of a single snapshot from its employee entries. */

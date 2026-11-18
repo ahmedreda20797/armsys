@@ -1,0 +1,40 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+    "erp": {
+      "notifications": {
+        ".read": false,
+        ".write": false
+      }
+    },
+    "arm_erp": {
+      ".read": false,
+      ".write": false,
+      "users": {
+        ".indexOn": ["email"]
+      },
+      "sessions": {
+        ".indexOn": ["userId"]
+      },
+      "attendanceResults": {
+        ".indexOn": ["employeeId", "month"]
+      },
+      "qualityObservations": {
+        ".indexOn": ["employeeId", "month"]
+      },
+      "followUps": {
+        ".indexOn": ["employeeId"]
+      },
+      "travelDeals": {
+        ".indexOn": ["employeeId"]
+      },
+      "complaints": {
+        ".indexOn": ["employeeId"]
+      },
+      "hrDeductions": {
+        ".indexOn": ["employeeId"]
+      }
+    }
+  }
+}

@@ -10,9 +10,10 @@
 //  the user switches — monthly/MTD/historical period tabs are gone.
 // ══════════════════════════════════════════════════════════════
 
-import { FileBarChart, Users2, Network, Building2, RotateCcw } from 'lucide-react';
+import { FileBarChart, Users2, Network, Building2, RotateCcw, CalendarRange } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Label } from '@/components/ui/label';
+import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
@@ -25,6 +26,8 @@ import { useLanguage } from '@/lib/i18n/language-context';
 import { formatNumber } from '@/lib/i18n/format';
 import { pick, REPORT_TYPE_HINTS, REPORT_TYPE_LABELS, SCOPE_MODE_LABELS, TERMS } from './insights-labels';
 import { KpiEntityMultiSelect, type KpiMultiSelectOption } from './KpiEntityMultiSelect';
+import { FlexiblePeriodPicker } from './FlexiblePeriodPicker';
+import type { FlexibleComparisonSpec, FlexiblePeriodSpec } from '@/lib/kpi-reporting';
 
 export type KpiReportType = 'employees' | 'teams' | 'comparison' | 'hr';
 export type KpiScopeMode = 'company' | 'employees' | 'teams' | 'departments';
@@ -73,6 +76,11 @@ export function KpiReportsControlBar({
   loading,
   /** Scope selection applies to the insights-powered views only. */
   showScope = true,
+  /** §FLEX-PERIODS — flexible period selection (optional; month flow when absent). */
+  flexiblePeriod,
+  flexibleBasis,
+  onEnterFlexible,
+  onExitFlexible,
 }: {
   reportType: KpiReportType;
   onReportTypeChange: (type: KpiReportType) => void;
@@ -96,8 +104,22 @@ export function KpiReportsControlBar({
   onClear: () => void;
   loading: boolean;
   showScope?: boolean;
+  /** §FLEX-PERIODS — flexible period selection (optional; month flow when absent). */
+  flexiblePeriod?: {
+    spec: FlexiblePeriodSpec;
+    onSpecChange: (spec: FlexiblePeriodSpec) => void;
+    comparison: FlexibleComparisonSpec;
+    onComparisonChange: (spec: FlexibleComparisonSpec) => void;
+  };
+  /** The flexible span's basis (shown on the flexible row while loading too). */
+  flexibleBasis?: 'FINALIZED' | 'MTD' | 'LIVE' | 'MIXED' | null;
+  /** Enter flexible mode (explicit — the picker never appears silently). */
+  onEnterFlexible?: () => void;
+  /** Exit flexible mode back to the full monthly workspace. */
+  onExitFlexible?: () => void;
 }) {
   const { locale } = useLanguage();
+  const currentMonthKey = monthOptions[0]?.value ?? month;
 
   return (
     <div className="no-print space-y-3 rounded-xl border border-slate-700/40 bg-slate-800/30 p-3 backdrop-blur-sm">
@@ -127,25 +149,56 @@ export function KpiReportsControlBar({
         </div>
 
         <div className="space-y-1.5">
-          <Label className="text-[11px] text-slate-500"><T>الفترة</T></Label>
-          <div className="flex items-center gap-2">
-            <Select value={month} onValueChange={onMonthChange}>
-              <SelectTrigger className="h-9 flex-1 text-xs">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {monthOptions.map((option) => (
-                  <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            {valueBasis && <ValueBasisBadge basis={valueBasis} />}
-          </div>
-          <p className="text-[10px] text-slate-500">
-            {finalized
-              ? <T>شهر مغلق — النتائج مجمّدة من إغلاق الشهر</T>
-              : <T>شهر مفتوح — القيم حية وقد تتغير حتى الإغلاق</T>}
-          </p>
+          {flexiblePeriod ? (
+            // §FLEX-PERIODS — compact status chip; the FULL picker lives
+            // in its own row below (never crammed into this cell).
+            <>
+              <Label className="text-[11px] text-slate-500"><T>الفترة</T></Label>
+              <div className="flex items-center gap-2 h-9">
+                <span className="inline-flex items-center gap-1.5 rounded-lg border border-brand-500/40 bg-brand-500/15 px-2.5 h-9 text-xs font-medium text-brand-200">
+                  <CalendarRange className="size-3.5" />
+                  <T>فترة مرنة</T>
+                </span>
+                {flexibleBasis && <ValueBasisBadge basis={flexibleBasis} />}
+              </div>
+              <p className="text-[10px] text-slate-500"><T>يُحدَّد النوع والمقارنة في لوحة الفترة المرنة أدناه</T></p>
+            </>
+          ) : (
+            <>
+              <Label className="text-[11px] text-slate-500"><T>الفترة</T></Label>
+              <div className="flex items-center gap-2">
+                <Select value={month} onValueChange={onMonthChange}>
+                  <SelectTrigger className="h-9 flex-1 text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {monthOptions.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {valueBasis && <ValueBasisBadge basis={valueBasis} />}
+              </div>
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-[10px] text-slate-500">
+                  {finalized
+                    ? <T>شهر مغلق — النتائج مجمّدة من إغلاق الشهر</T>
+                    : <T>شهر مفتوح — القيم حية وقد تتغير حتى الإغلاق</T>}
+                </p>
+                {onEnterFlexible && (
+                  <button
+                    type="button"
+                    onClick={onEnterFlexible}
+                    className="inline-flex items-center gap-1 rounded-md border border-brand-500/30 bg-brand-500/10 px-2 py-1 text-[10px] font-medium text-brand-200 hover:bg-brand-500/20"
+                    title={locale === 'en' ? 'Switch to flexible periods (day/week/quarter/custom) with an independent comparison' : 'التحويل إلى فترات مرنة (يوم/أسبوع/ربع/مدى) مع مقارنة مستقلة'}
+                  >
+                    <CalendarRange className="size-3" />
+                    <T>فترة مرنة</T>
+                  </button>
+                )}
+              </div>
+            </>
+          )}
         </div>
 
         <div className={showScope ? 'space-y-1.5' : 'hidden space-y-1.5'}>
@@ -167,6 +220,38 @@ export function KpiReportsControlBar({
           </Select>
         </div>
       </div>
+
+      {/* ── §FLEX-PERIODS — full-width flexible period + comparison row ── */}
+      {flexiblePeriod && (
+        <div className="rounded-xl border border-brand-500/25 bg-slate-950/40 p-3 space-y-2.5">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <CalendarRange className="size-4 text-brand-400" />
+              <span className="text-xs font-semibold text-slate-200"><T>الفترة المرنة والمقارنة المستقلة</T></span>
+              {flexibleBasis && <ValueBasisBadge basis={flexibleBasis} />}
+            </div>
+            {onExitFlexible && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-8 text-[11px] text-slate-500 hover:text-slate-200"
+                onClick={onExitFlexible}
+              >
+                <RotateCcw className="size-3.5" />
+                <T>عودة للعرض الشهري الكامل</T>
+              </Button>
+            )}
+          </div>
+          <FlexiblePeriodPicker
+            spec={flexiblePeriod.spec}
+            onSpecChange={flexiblePeriod.onSpecChange}
+            comparison={flexiblePeriod.comparison}
+            onComparisonChange={flexiblePeriod.onComparisonChange}
+            monthOptions={monthOptions}
+            currentMonthKey={currentMonthKey}
+          />
+        </div>
+      )}
 
       {/* Row 2 — selection (per scope) */}
       {showScope && scopeMode === 'employees' && (

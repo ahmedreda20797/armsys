@@ -32,6 +32,7 @@ import type { OpenSource } from './PerformanceHubPage';
 import {
   HUB_CHANGE_METRICS,
   HUB_CROSS_SIGNALS,
+  HUB_DATA_QUALITY_NOTES,
   HUB_DIMENSIONS,
   HUB_OVERVIEW_STATUS,
   HUB_TERMS,
@@ -91,6 +92,7 @@ const STATUS_BADGE_CLASS: Record<string, string> = {
   NEEDS_ATTENTION: 'bg-amber-500/15 text-amber-300 border-amber-500/30',
   DECLINING: 'bg-red-500/15 text-red-300 border-red-500/30',
   INSUFFICIENT_DATA: 'bg-slate-600/20 text-slate-400 border-slate-600/40',
+  NOT_MEASURABLE: 'bg-violet-500/15 text-violet-300 border-violet-500/30',
 };
 
 const TONE_TEXT: Record<string, string> = {
@@ -330,7 +332,11 @@ function DimensionFootnote({ dim, locale }: { dim: EmployeePerformanceHubDataset
     notes.push(`${locale === 'en' ? 'Overdue' : 'متأخرة'}: ${fmt(f.overdue) ?? '—'} · ${locale === 'en' ? 'Completed' : 'منجزة'}: ${fmt(f.completed) ?? '—'}`);
   }
   if (dim.details.customerDealFollowUp) {
-    const c = dim.details.customerDealFollowUp;
+    // §METRIC-VALIDATION — the explicit not-measurable verdict (short form).
+    notes.push(pick(locale, HUB_DATA_QUALITY_NOTES['note.NO_CUSTOMER_FOLLOW_UP_SOURCE'] ?? ['', '']));
+  }
+  if (dim.details.bookingExecution) {
+    const c = dim.details.bookingExecution;
     notes.push(
       `${locale === 'en' ? 'Items' : 'بنود'}: ${fmt(c.totalItems) ?? '—'} · ${locale === 'en' ? 'Booked' : 'محجوزة'}: ${fmt(c.bookedItems) ?? '—'} · ${locale === 'en' ? 'Open' : 'مفتوحة'}: ${fmt(c.pendingItems + c.missingItems) ?? '—'}`,
     );

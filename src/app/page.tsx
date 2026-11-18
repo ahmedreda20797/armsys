@@ -76,6 +76,7 @@ const SmartQualityReportPage   = dynamic(() => import('@/components/pages/qualit
 // ── Employee Performance Hub (مركز أداء الموظف): read-only analysis
 //    workspace over the canonical engines — no new calculations.
 const PerformanceHubPage       = dynamic(() => import('@/components/pages/performance-hub/PerformanceHubPage'), { loading: () => <PageSkeleton />, ssr: false });
+const PerformanceHubGroupPage  = dynamic(() => import('@/components/pages/performance-hub/PerformanceHubGroupPage'), { loading: () => <PageSkeleton />, ssr: false });
 
 // ─── Background preload ───────────────────────────────────────────────────────
 function PreloadPages() {
@@ -195,6 +196,7 @@ function renderPage(currentPage: string): React.ReactNode {
     case 'kpiReports':            return <KpiReportsPage            key="kpiReports" />;
     case 'smartQualityReport':    return <SmartQualityReportPage    key="smartQualityReport" />;
     case 'employeePerformanceHub': return <PerformanceHubPage       key="employeePerformanceHub" />;
+    case 'employeePerformanceHubGroup': return <PerformanceHubGroupPage key="employeePerformanceHubGroup" />;
     case 'monthClose':            return <MonthClosePage            key="monthClose" />;
     case 'kpiSettings':           return <KpiSettingsPage           key="kpiSettings" />;
     case 'qualityAuditLog':       return <QualityAuditLogPage       key="qualityAuditLog" />;

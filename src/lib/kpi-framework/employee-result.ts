@@ -25,7 +25,7 @@
 //  mocking — in-memory loaders in tests, db-backed defaults).
 // ══════════════════════════════════════════════════════════════
 
-import { getAll, getById, TTL } from '@/lib/db';
+import { getAll, getAllByChildEqualTo, getById, TTL } from '@/lib/db';
 import { getMonthSnapshot } from '@/lib/month-lock';
 import { getKpiSettings } from '@/lib/kpi-settings';
 import { computeEmployeeScore } from '@/lib/metrics/kpiMetrics';
@@ -177,7 +177,14 @@ export function withFinalizedAt(
 //  Default loaders (db-backed)
 // ─────────────────────────────────────────────────────────────
 
-function toFrameworkEmployee(raw: Record<string, unknown>, id: string): KpiFrameworkEmployee {
+/**
+ * The engine's slim employee projection (pure). Exported for
+ * request-scoped loader wrappers that read the employees table ONCE
+ * per multi-employee request instead of issuing a point read per
+ * employee — the projection itself stays canonical and is reused
+ * verbatim (§GROUP-REPORTING).
+ */
+export function toFrameworkEmployee(raw: Record<string, unknown>, id: string): KpiFrameworkEmployee {
   return {
     id,
     name: String(raw.name ?? ''),
@@ -227,8 +234,16 @@ async function lookupQualityScore(
   // Open month → consume the canonical engine directly (the same
   // scoring entry point the month snapshot pipeline uses).
   const settings = await getKpiSettings();
-  const allObs = await getAll<QualityObservation>('qualityObservations', TTL.MEDIUM);
-  const empObs = allObs.filter((o) => o.month === period && o.employeeId === employeeId);
+  // §INDEXED-QUERY (Phase 2) — the live quality lookup is a
+  // SINGLE-EMPLOYEE read (computeEmployeeKpiResultWithLoaders →
+  // loadLiveQualityScore): fetch ONLY this employee's observations
+  // through the guarded indexed query instead of the whole
+  // all-employee, all-history table. The month filter below stays in
+  // memory (RTDB orders by ONE child only) and the transparent
+  // fallback re-materializes the legacy full read + the exact same
+  // two-condition filter.
+  const ownObs = await getAllByChildEqualTo<QualityObservation>('qualityObservations', 'employeeId', employeeId, { ttl: TTL.MEDIUM });
+  const empObs = ownObs.filter((o) => o.month === period && o.employeeId === employeeId);
   if (empObs.length === 0) {
     return { entry: null, finalized: false, closedAt: null };
   }

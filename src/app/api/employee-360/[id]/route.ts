@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getAll, getById } from '@/lib/db';
+import { getAll, getAllByChildEqualTo, getById } from '@/lib/db';
 import { authorize, authorizeRequest } from '@/lib/verify-permission';
 import { resolveEmployee360SectionGate } from '@/lib/permissions/employee360-access';
 import { resolveSectionAccess, resolveFieldAccess, resolvePageScope } from '@/config/permissions';
@@ -145,9 +145,15 @@ export async function GET(
     // does not exist yet degrades to empty — the profile never fails
     // because one optional table is missing. ONE cached read per
     // collection, filtered in memory (no N+1).
+    // §INDEXED-QUERY (Phase 2) — the profile is a single-employee
+    // view: the follow-up / complaint / deal / HR-deduction reads
+    // below fetch ONLY this employee's rows through the guarded
+    // indexed queries (timeout → transparent full-scan fallback, so
+    // the result set is identical either way). The strict in-memory
+    // filters are kept unchanged downstream.
     const settled = await Promise.allSettled([
       getAll('qualityDeductions').then((rs) => rs.filter(isEffectiveDeduction)),
-      getAll('hrDeductions'),
+      getAllByChildEqualTo('hrDeductions', 'employeeId', employeeId),
       getAll('requests'),
       getAll('users'),
       defaultPerformanceIntelligenceLoaders.loadFollowUps(employeeId),

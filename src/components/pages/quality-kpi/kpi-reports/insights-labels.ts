@@ -23,10 +23,11 @@ import type { DataQualityEntry, InsightSignal } from '@/lib/kpi-reporting';
 
 export type { DataQualityEntry, InsightSignal };
 
-/** Client-safe structural slice of the insight signal payload. */
+/** Client-safe structural slice of the insight signal payload
+ *  (includes `id` — every signal carries its deterministic rule id). */
 export type InsightSignalLike = Pick<
   InsightSignal,
-  'kind' | 'level' | 'teamLabel' | 'categoryId' | 'categoryName' | 'employeeIds' | 'count' | 'deltaPoints' | 'occurrenceCount'
+  'id' | 'kind' | 'level' | 'teamLabel' | 'categoryId' | 'categoryName' | 'employeeIds' | 'count' | 'deltaPoints' | 'occurrenceCount'
 >;
 
 /** Client-safe structural slice of the data-quality entry payload. */

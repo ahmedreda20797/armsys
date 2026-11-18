@@ -375,10 +375,10 @@ export interface CapaFacts {
 //  TO an employee by Quality, Management or HR (followUpType
 //  quality/behavior/attendance/…, relatedDeductionId/relatedCapaId
 //  links). It NEVER contributes to customer/deal follow-up metrics —
-//  that domain is §CustomerDealFollowUpFacts below, computed
-//  exclusively from customer/deal records (travelDeals booking items).
-//  The two domains are separate metrics with separate evidence and
-//  are never merged, in this dataset or any consumer.
+//  actual customer follow-up is §CustomerFollowUpMeasurability below
+//  (NOT_MEASURABLE — no source), and §BookingExecutionFacts measures
+//  supplier booking state only. The domains are separate metrics with
+//  separate evidence and are never merged, in this dataset or any consumer.
 //
 //  Canonical timing logic reused — no new "late".
 // ─────────────────────────────────────────────────────────────
@@ -413,20 +413,24 @@ export interface FollowUpFacts {
 }
 
 // ─────────────────────────────────────────────────────────────
-//  §11b  CUSTOMER & DEAL FOLLOW-UP  (§FOLLOWUP-DOMAINS — domain A)
+//  §11b  BOOKING EXECUTION  (§FOLLOWUP-DOMAINS — domain A, validated)
 //
-//  The employee's follow-up activity with CUSTOMERS/DEALS, computed
-//  EXCLUSIVELY from customer/deal records: the booking items of the
-//  period's deals (normalizeBookingItems — legacy fixed fields
-//  normalize at read time). A booking item is one customer follow-up
-//  unit: 'booked' = completed follow-up, 'pending' = open follow-up,
-//  'missing' = unavailable at the supplier (still an open item).
+//  §METRIC-VALIDATION (completion phase): booking items are BOOKING
+//  EXECUTION units — the supplier-booking state of each service row
+//  ('booked' = booked, 'pending' = pending, 'missing' = unavailable
+//  at the supplier). They are NOT customer follow-up records: the
+//  data model stores NO follow-up dates, NO deadlines, NO contact
+//  timestamps and NO follow-up history for customers/deals, so
+//  actual customer follow-up activity is NOT MEASURABLE from any
+//  existing source (see CustomerFollowUpMeasurability below). A
+//  completed hotel/flight booking must never be read as "the
+//  employee followed up with the customer".
 //  Internal employee action follow-ups (§11) NEVER enter these
 //  numbers, and these numbers NEVER enter the internal-action
 //  metrics.
 // ─────────────────────────────────────────────────────────────
 
-export interface CustomerDealFollowUpFacts {
+export interface BookingExecutionFacts {
   /** travelDeals.employeeId is mandatory — CONFIRMED model. */
   relationship: RelationshipConfidence;
   /** Deals in the period (TRAVEL dimension) whose items are measured. */
@@ -435,13 +439,14 @@ export interface CustomerDealFollowUpFacts {
   dealsWithItems: number;
   /** Σ booking items over the period's deals. */
   totalItems: number;
-  /** Items completed with the customer/supplier ('booked'). */
+  /** Items in the booked state ('booked'). */
   bookedItems: number;
-  /** Items still open ('pending'). */
+  /** Items still pending ('pending'). */
   pendingItems: number;
   /** Items unavailable at the supplier ('missing'). */
   missingItems: number;
-  /** bookedItems / totalItems × 100 (null when totalItems is 0). */
+  /** bookedItems / totalItems × 100 (null when totalItems is 0) —
+   *  BOOKING completion, never a customer follow-up rate. */
   completionRate: number | null;
   /** Deals in the period with at least one non-booked (open) item. */
   dealsWithOpenItems: number;
@@ -449,6 +454,24 @@ export interface CustomerDealFollowUpFacts {
   openItemTypes: Array<{ type: string; count: number }>;
   /** Deal ids holding open items (evidence drill-down). */
   dealsWithOpenItemIds: string[];
+}
+
+/**
+ * §METRIC-VALIDATION — the explicit measurability verdict for
+ * CUSTOMER & DEAL FOLLOW-UP as a business concept ("did the employee
+ * contact the customer, on time, and complete the required
+ * follow-up?"). Qnalys currently stores NO authoritative source for
+ * that activity: no follow-up tasks, no follow-up dates/deadlines,
+ * no completion timestamps, no contact history on deals or customers.
+ * The verdict is a STRUCTURAL fact of the data model — surfaced,
+ * never papered over with a booking-item proxy.
+ */
+export interface CustomerFollowUpMeasurability {
+  status: 'NOT_MEASURABLE';
+  /** The missing authoritative source (stable rule id). */
+  reason: 'NO_CUSTOMER_FOLLOW_UP_SOURCE';
+  /** What the model would need to make the metric measurable. */
+  missingSource: string;
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -607,8 +630,17 @@ export interface EmployeePerformanceDataset {
   capa: CapaFacts;
   /** §FOLLOWUP-DOMAINS domain B — internal employee action follow-ups. */
   followUps: FollowUpFacts;
-  /** §FOLLOWUP-DOMAINS domain A — customer & deal follow-up (booking items). */
-  customerDealFollowUps: CustomerDealFollowUpFacts;
+  /** §METRIC-VALIDATION — booking execution over the period's deal
+   *  items (supplier-booking state). NOT customer follow-up. */
+  bookingExecution: BookingExecutionFacts;
+  /**
+   * §METRIC-VALIDATION — actual CUSTOMER & DEAL follow-up activity is
+   * structurally NOT MEASURABLE: no authoritative source (follow-up
+   * tasks, deadlines, contact timestamps, history) exists for
+   * customers/deals in the data model. Surfaced explicitly — never
+   * proxied from booking items.
+   */
+  customerFollowUpMeasurability: CustomerFollowUpMeasurability;
   deals: TravelDealFacts;
   attendance: AttendanceContextFacts;
   dataQuality: PerformanceDataQuality;

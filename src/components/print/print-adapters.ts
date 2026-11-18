@@ -69,6 +69,12 @@ const SEVERITY_LABELS: Record<string, [string, string]> = {
   HIGH: ['مرتفعة', 'High'], MEDIUM: ['متوسطة', 'Medium'], LOW: ['منخفضة', 'Low'],
 };
 
+const UNIT_TYPE_LABELS: Record<string, [string, string]> = {
+  team: ['فريق', 'Team'],
+  department: ['قسم', 'Department'],
+  company: ['شركة', 'Company'],
+};
+
 // ─────────────────────────────────────────────────────────────
 //  1) ملخص الجودة — KpiManagementSummary
 // ─────────────────────────────────────────────────────────────
@@ -1421,6 +1427,230 @@ export function kpiInsightsToPrintModel(
       { label: ui('مشكلات متكررة', 'Repeated issues'), value: num(o.repeatedIssues ?? 0) },
       { label: ui('بحاجة إلى متابعة', 'Needs attention'), value: num(o.needsAttention ?? 0) },
       ...severityStats,
+    ],
+    sections,
+    footerNote: reportSourceFooter(),
+  };
+}
+
+// ─────────────────────────────────────────────────────────────
+//  4) §FLEX-PERIODS — flexible-period insights report
+// ─────────────────────────────────────────────────────────────
+
+import type { FlexibleKpiInsightsReport, FlexibleSpanMeta } from '@/lib/kpi-reporting';
+
+function formatMonthCellFlexible(monthKey: string, report: FlexibleKpiInsightsReport): string {
+  const all = [...report.period.monthBases, ...(report.comparison?.monthBases ?? [])];
+  const basis = all.find((b) => b.monthKey === monthKey);
+  if (!basis) return monthKey;
+  const label = displayLocale() === 'en' ? monthKey : monthKey.replace('-', '/');
+  return `${label}${basis.liveCalculated ? (displayLocale() === 'en' ? ' (live)' : ' (حية)') : ''}`;
+}
+
+function spanMetaText(meta: FlexibleSpanMeta, locale: 'ar' | 'en'): string {
+  const from = meta.startDayKey.split('-').reverse().join('/');
+  const to = meta.endDayKey.split('-').reverse().join('/');
+  return `${from} → ${to} (${meta.dayCount} ${locale === 'en' ? 'days' : 'يومًا'})`;
+}
+
+const FLEX_BASIS_LABELS: Record<string, readonly [string, string]> = {
+  FINALIZED: ['مجمّدة (أشهر مغلقة)', 'FINALIZED (closed months)'],
+  MTD: ['حية حتى الآن (تشمل الشهر الحالي)', 'MTD (through now)'],
+  LIVE: ['حية (حساب مباشر على نافذة الفترة)', 'LIVE (window calculation)'],
+  MIXED: ['مختلطة (أشهر مجمّدة + حية)', 'MIXED (frozen + live months)'],
+};
+
+export function flexibleKpiInsightsToPrintModel(
+  report: FlexibleKpiInsightsReport,
+  subject?: string,
+): PrintReportModel {
+  const locale = displayLocale();
+  const isEn = locale === 'en';
+  const u = (ar: string, en: string) => (isEn ? en : ar);
+
+  const sections: PrintSection[] = [];
+
+  // ── Period header ──
+  sections.push({
+    heading: u('الفترة المرنة + المقارنة المستقلة', 'Flexible Period + Independent Comparison'),
+    table: {
+      columns: [u('النوع', 'Type'), u('المدى', 'Range'), u('الأيام', 'Days'), u('الأساس', 'Basis')],
+      rows: [
+        [
+          u('فترة التقرير', 'Report period'),
+          `${report.period.startDayKey} → ${report.period.endDayKey}`,
+          String(report.period.dayCount),
+          FLEX_BASIS_LABELS[report.period.valueBasis]?.[locale === 'en' ? 1 : 0] ?? report.period.valueBasis,
+        ],
+        [
+          u('فترة المقارنة', 'Comparison period'),
+          report.comparison ? `${report.comparison.startDayKey} → ${report.comparison.endDayKey}` : '—',
+          report.comparison ? String(report.comparison.dayCount) : '—',
+          report.comparison ? FLEX_BASIS_LABELS[report.comparison.valueBasis]?.[locale === 'en' ? 1 : 0] ?? report.comparison.valueBasis : '—',
+        ],
+      ],
+    },
+  });
+
+  // ── Overview ──
+  const o = report.overview;
+  const delta = o.qualityDeltaPoints;
+  sections.push({
+    heading: u('ملخص مؤشر الجودة', 'Quality KPI Summary'),
+    stats: [
+      { label: u('متوسط الجودة', 'Avg quality'), value: o.averageQuality === null ? '—' : pct(o.averageQuality) },
+      { label: u('متوسط المقارنة', 'Comparison avg'), value: o.previousAverageQuality === null ? '—' : pct(o.previousAverageQuality) },
+      { label: u('التغير (نقاط)', 'Change (points)'), value: delta === null ? '—' : `${delta > 0 ? '+' : ''}${delta}` },
+      { label: u('ملاحظات معتمدة', 'Approved observations'), value: num(o.observationsApproved ?? 0) },
+      { label: u('عالية/حرجة', 'High/critical'), value: num(o.highCritical ?? 0) },
+      { label: u('موظفون بقيمة', 'Employees with value'), value: `${num(o.employeesWithValue ?? 0)} / ${num(o.employeesEvaluated ?? 0)}` },
+    ],
+  });
+
+  // ── Employee KPI table ──
+  if (report.employees.length > 0) {
+    sections.push({
+      heading: u('أداء الموظفين خلال الفترة', 'Employee KPI across period'),
+      table: {
+        columns: [
+          u('الموظف', 'Employee'),
+          u('الفريق', 'Team'),
+          u('القسم', 'Department'),
+          u('الشركة', 'Company'),
+          u('أشهر بقيمة', 'Months w/ value'),
+          u('متوسط الفترة', 'Period avg'),
+          u('متوسط المقارنة', 'Comparison avg'),
+          u('التغير', 'Change'),
+          u('ملاحظات معتمدة', 'Approved obs.'),
+        ],
+        rows: report.employees.map((e) => [
+          e.employeeName,
+          e.team ?? '—',
+          e.department ?? '—',
+          e.company ?? '—',
+          String(e.monthsWithValue),
+          e.averageQuality !== null ? pct(e.averageQuality) : '—',
+          e.previousAverageQuality !== null ? pct(e.previousAverageQuality) : '—',
+          e.deltaPoints === null ? '—' : `${e.deltaPoints > 0 ? '+' : ''}${e.deltaPoints}`,
+          num(e.observationsApproved ?? 0),
+        ]),
+      },
+    });
+  }
+
+  // ── Unit rollups ──
+  if (report.units.length > 0) {
+    sections.push({
+      heading: u('مقارنة الوحدات (عضوية فعلية)', 'Unit Comparison (real membership)'),
+      table: {
+        columns: [
+          u('النوع', 'Type'),
+          u('الوحدة', 'Unit'),
+          u('الأعضاء', 'Members'),
+          u('ببيانات', 'With data'),
+          u('متوسط الفترة', 'Period avg'),
+          u('متوسط المقارنة', 'Comparison avg'),
+          u('التغير', 'Change'),
+          u('ملاحظات معتمدة', 'Approved obs.'),
+          u('مشكلات متكررة', 'Repeated issues'),
+        ],
+        rows: report.units.map((unit) => [
+          (UNIT_TYPE_LABELS[unit.unitType] ? (isEn ? UNIT_TYPE_LABELS[unit.unitType][1] : UNIT_TYPE_LABELS[unit.unitType][0]) : unit.unitType),
+          unit.label,
+          `${unit.employeeCount} (${unit.membersWithValue})`,
+          unit.averageQuality !== null ? pct(unit.averageQuality) : '—',
+          unit.previousAverageQuality !== null ? pct(unit.previousAverageQuality) : '—',
+          unit.deltaPoints === null ? '—' : `${unit.deltaPoints > 0 ? '+' : ''}${unit.deltaPoints}`,
+          num(unit.observationsApproved ?? 0),
+          num(unit.repeatedIssues ?? 0),
+        ]),
+      },
+    });
+  }
+
+  // ── Distributions ──
+  sections.push({
+    heading: u('توزيع الفئات / الخطورة / الخصومات', 'Category / Severity / Deductions'),
+    table: {
+      columns: [u('المجال', 'Area'), u('البيان', 'Item'), u('العدد', 'Count'), u('المقارنة', 'Comparison')],
+      rows: [
+        ...report.observations.byCategory.map((c) => [
+          u('فئة', 'Category'),
+          storedLabel(c.label),
+          `${num(c.count)}${c.pct !== null ? ` (${c.pct}%)` : ''}`,
+          c.previousCount !== null ? String(c.previousCount) : '—',
+        ]),
+        ...report.observations.bySeverity.map((s) => [
+          u('خطورة', 'Severity'),
+          u(s.severity === 'critical' ? 'حرجة' : s.severity === 'high' ? 'مرتفعة' : s.severity === 'medium' ? 'متوسطة' : 'منخفضة', s.severity === 'critical' ? 'Critical' : s.severity === 'high' ? 'High' : s.severity === 'medium' ? 'Medium' : 'Low'),
+          `${num(s.count)}${s.pct !== null ? ` (${s.pct}%)` : ''}`,
+          s.previousCount !== null ? String(s.previousCount) : '—',
+        ]),
+        ...report.deductions.byType.map((t) => [
+          u('خصم', 'Deduction'),
+          storedLabel(t.type),
+          String(t.count),
+          '—',
+        ]),
+      ],
+    },
+  });
+
+  // ── Repeated issues ──
+  if (report.observations.repeatedIssues.length > 0 || report.observations.windowRecurrence.length > 0) {
+    sections.push({
+      heading: u('المشكلات المتكررة', 'Repeated Issues'),
+      table: {
+        columns: [u('المشكلة', 'Issue'), u('النوع', 'Kind'), u('التكرارات', 'Occurrences'), u('موظفون', 'Employees'), u('أشهر', 'Months')],
+        rows: [
+          ...report.observations.repeatedIssues.map((g) => [
+            storedLabel(g.label),
+            u('داخل الفترة', 'In-period'),
+            String(g.occurrenceCount),
+            String(g.employeeCount),
+            '—',
+          ]),
+          ...report.observations.windowRecurrence.map((g) => [
+            storedLabel(g.label),
+            u('عبر الأشهر', 'Across months'),
+            String(g.occurrenceCount),
+            String(g.monthsPresent),
+            '—',
+          ]),
+        ],
+      },
+    });
+  }
+
+  // ── Data quality ──
+  if (report.dataQuality.length > 0) {
+    const human: Record<string, readonly [string, string]> = {
+      observationsDateUnknown: ['ملاحظات بلا تاريخ صالح استُثنيت من النافذة', 'Observations without a valid date were excluded from the window'],
+      mixedValueBasis: ['الفترة تجمع أشهرًا مجمّدة وأشهرًا حية — الأساس معلن لكل شهر', 'The span mixes frozen and live months — each month basis is disclosed'],
+      liveCalculatedMonthsPresent: ['توجد أشهر بقيم حية (حساب مباشر)', 'Some months carry live (calculated) values'],
+      deductionsRestricted: ['خصومات الجودة محجوبة لصلاحياتك', 'Quality deductions are restricted for your permissions'],
+    };
+    sections.push({
+      heading: u('ملاحظات جودة البيانات', 'Data Quality Notes'),
+      paragraphs: report.dataQuality.map((note) => {
+        const key = note.split(':')[0] ?? '';
+        const pair = human[key];
+        return pair ? (locale === 'en' ? pair[1] : pair[0]) : note;
+      }),
+    });
+  }
+
+  return {
+    title: u('تقرير الأداء المرن', 'Flexible Period Performance Report'),
+    subject: undefined,
+    period: `${report.period.startDayKey} → ${report.period.endDayKey} (${report.comparison ? `${report.comparison.startDayKey} → ${report.comparison.endDayKey}` : 'no comparison'})`,
+    generatedAt: report.generatedAt,
+    stats: [
+      { label: u('فترة التقرير', 'Period'), value: `${report.period.startDayKey} → ${report.period.endDayKey} (${report.period.dayCount} ${u('أيام', 'days')})` },
+      { label: u('فترة المقارنة', 'Comparison'), value: report.comparison ? `${report.comparison.startDayKey} → ${report.comparison.endDayKey} (${report.comparison.dayCount} ${u('أيام', 'days')})` : '—' },
+      { label: u('متوسط الجودة', 'Avg quality'), value: report.overview.averageQuality === null ? '—' : pct(report.overview.averageQuality) },
+      { label: u('متوسط المقارنة', 'Comparison avg'), value: report.overview.previousAverageQuality === null ? '—' : pct(report.overview.previousAverageQuality) },
+      { label: u('التغير (نقاط)', 'Change (points)'), value: report.overview.qualityDeltaPoints === null ? '—' : `${report.overview.qualityDeltaPoints > 0 ? '+' : ''}${report.overview.qualityDeltaPoints}` },
     ],
     sections,
     footerNote: reportSourceFooter(),

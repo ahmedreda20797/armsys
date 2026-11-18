@@ -569,7 +569,7 @@ export default function KpiDashboardPage() {
               <CheckCircle2 className="size-4 text-blue-400" />
               <h3 className="text-sm font-semibold text-slate-200"><T>إحصائيات الاعتماد</T></h3>
             </div>
-            <ApprovalStatsWidget stats={dashboard.approvalStats ?? { total: 0, pending: 0, approved: 0, rejected: 0, avgApprovalHours: 0 }} />
+            <ApprovalStatsWidget stats={dashboard.approvalStats ?? { total: 0, pending: 0, approved: 0, rejected: 0, avgApprovalHours: null }} />
           </CardContent>
         </Card>
       </div>

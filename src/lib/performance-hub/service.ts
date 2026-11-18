@@ -39,12 +39,14 @@ import {
   monthOfQualityDeduction,
   PERFORMANCE_INTELLIGENCE_SOURCES,
 } from '@/lib/performance-intelligence';
-import type { EmployeePerformanceDataset } from '@/lib/performance-intelligence';
+import type { EmployeePerformanceDataset, PerformanceIntelligenceLoaders } from '@/lib/performance-intelligence';
 import { ATTENDANCE_RESULTS_TABLE } from '@/lib/attendance';
 import type { StoredAttendanceResult } from '@/lib/attendance';
 import { getDealMonthKey } from '@/lib/deal-dates';
-import { aggregateHrMonth, HR_DEDUCTIONS_TABLE } from '@/lib/employee-performance';
+import { aggregateHrMonth } from '@/lib/employee-performance';
 import type { EmployeeHrDeductionRecord } from '@/lib/employee-performance';
+import { loadHrDeductionLookup } from '@/lib/hr-deductions/lookup';
+import type { HrDeductionLookup } from '@/lib/hr-deductions/lookup';
 import type { FollowUp, TravelDeal } from '@/types';
 import { computePeriodRisk, riskSignalsOf } from './risk-block';
 import { buildHubTimeline } from './timeline';
@@ -63,6 +65,20 @@ export interface GetPerformanceHubServiceInput extends GetEmployeePerformanceHub
   riskEnabled: boolean;
   /** HR-deductions section granted (route-resolved). */
   hrAuthorized: boolean;
+  /**
+   * §HR-LOOKUP — request-scoped hrDeductions index shared across a
+   * multi-employee report. When omitted the service loads its own
+   * (ONE cached read) — identical results, identical semantics; the
+   * shared lookup only avoids re-reading + re-scanning the whole
+   * table once per member. Never persisted across requests.
+   */
+  hrLookup?: HrDeductionLookup;
+  /**
+   * Request-scoped loader override (group reports share ONE set so
+   * identity/org reads are loaded once for all members). Defaults to
+   * the canonical DB-backed loaders — behavior unchanged.
+   */
+  loaders?: PerformanceIntelligenceLoaders;
 }
 
 /**
@@ -79,12 +95,12 @@ export async function getEmployeePerformanceHubDataset(
   const now = input.now ?? new Date();
   const monthKey = input.monthKey;
   const prevKey = previousMonthKey(monthKey);
-  const loaders = defaultPerformanceIntelligenceLoaders;
+  const loaders = input.loaders ?? defaultPerformanceIntelligenceLoaders;
 
   // ── Canonical fact datasets: current + previous period ──
   const [current, previous] = await Promise.all([
-    getEmployeePerformanceDataset({ employeeId: input.employeeId, monthKey, now }),
-    getEmployeePerformanceDataset({ employeeId: input.employeeId, monthKey: prevKey, now }).catch(() => null),
+    getEmployeePerformanceDataset({ employeeId: input.employeeId, monthKey, now, loaders }),
+    getEmployeePerformanceDataset({ employeeId: input.employeeId, monthKey: prevKey, now, loaders }).catch(() => null),
   ]);
   if (!current) return null;
 
@@ -110,15 +126,18 @@ export async function getEmployeePerformanceHubDataset(
   const capaAll = [...capaSplit.primary, ...capaSplit.indirect];
 
   // ── HR block (read ONLY when the viewer is authorized) ──
+  // §HR-LOOKUP — ONE grouped read (shared lookup when the caller
+  // provides it) instead of a full-table scan per employee. Same raw
+  // rows, same employee/month equality, same table order — the
+  // aggregation and status semantics below are untouched.
   let hr: HubHrBlock | null = null;
   let hrRecordsCurrent: Array<EmployeeHrDeductionRecord & { id?: string; type?: string; deductionDate?: string | null; status?: string | null }> = [];
   let hrCountCurrent = 0;
   let hrCountPrevious = 0;
   if (input.hrAuthorized) {
-    const allHr = await getAll<EmployeeHrDeductionRecord & { id: string; type?: string; deductionDate?: string | null; status?: string | null }>(HR_DEDUCTIONS_TABLE);
-    const own = allHr.filter((r) => r && r.employeeId === input.employeeId);
-    const currentRows = own.filter((r) => r.month === monthKey);
-    const previousRows = own.filter((r) => r.month === prevKey);
+    const hrLookup = input.hrLookup ?? (await loadHrDeductionLookup());
+    const currentRows = hrLookup.forEmployeeMonth(input.employeeId, monthKey);
+    const previousRows = hrLookup.forEmployeeMonth(input.employeeId, prevKey);
     hr = {
       current: currentRows.length ? aggregateHrMonth(monthKey, currentRows) : null,
       previous: previousRows.length ? aggregateHrMonth(prevKey, previousRows) : null,
@@ -299,6 +318,14 @@ function buildDataQuality(args: {
     domain: 'kpi',
     state: kpiIncomplete ? 'PARTIAL' : 'COMPLETE',
     note: kpiIncomplete ? 'note.kpiIncomplete' : null,
+  });
+
+  // §METRIC-VALIDATION — the structural verdict for customer & deal
+  // follow-up (no authoritative source in the data model).
+  items.push({
+    domain: 'customerDealFollowUp',
+    state: 'UNAVAILABLE',
+    note: 'note.customerFollowUpNotMeasurable',
   });
 
   items.push(

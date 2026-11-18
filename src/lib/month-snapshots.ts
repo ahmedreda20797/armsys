@@ -26,6 +26,7 @@
 
 import {
   getAll,
+  getAllByChildEqualTo,
   getEmployeeMap,
   createRecordWithId,
   updateRecord,
@@ -292,8 +293,16 @@ export async function computeFreshMonthSnapshot(
   monthKey: string,
 ): Promise<Omit<MonthSnapshot, 'id'>> {
   const settings = await getKpiSettings();
-  const allObs = await getAll<QualityObservation>('qualityObservations', TTL.MEDIUM);
-  const monthObs = allObs.filter((o) => o.month === monthKey) as unknown as ObservationLike[];
+  // §INDEXED-QUERY (Phase 2) — the snapshot pipeline reads ONLY the
+  // month's observations through the guarded indexed `month ==
+  // monthKey` fetch. Snapshot completeness is preserved: the indexed
+  // predicate matches exactly the rows the legacy strict stored-month
+  // filter selected, and the transparent fallback re-materializes
+  // that legacy computation (full read + filter) on any indexed
+  // failure — a snapshot is computed from the same observation set
+  // either way.
+  const monthObs = (await getAllByChildEqualTo<QualityObservation>('qualityObservations', 'month', monthKey, { ttl: TTL.MEDIUM }))
+    .filter((o) => o.month === monthKey) as unknown as ObservationLike[];
 
   const empMap = await loadEmployeeMapForEngine();
   // Supervisor map is not stored on the Employee record today; the engine

@@ -23,14 +23,6 @@ import {
 import { mergeIncomingNotifications } from '@/lib/notifications/client-merge';
 
 // ══════════════════════════════════════════════════════════════
-//  §DOWNLOAD-OPT — bounded realtime window.
-//  Matches the poll's `limit=50` unread fetch: the listener only
-//  needs to see what the panel could show, so the initial sync is
-//  capped at the 50 newest records instead of the whole collection.
-// ══════════════════════════════════════════════════════════════
-const NOTIFICATION_LISTENER_WINDOW = 50;
-
-// ══════════════════════════════════════════════════════════════
 //  Types
 // ══════════════════════════════════════════════════════════════
 interface NotificationContextValue {
@@ -163,7 +155,6 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
   const [error, setError] = useState(false);
   const [latestNotification, setLatestNotification] = useState<AppNotification | null>(null);
   const seenIdsRef = useRef<Set<string>>(new Set());
-  const listenerRef = useRef<(() => void) | null>(null);
   const desktopPermissionRef = useRef(false);
   const lastFetchCountRef = useRef<number>(0);
   // Ref to avoid re-running effects when user object reference changes
@@ -267,108 +258,31 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
     }
   }, [!!user, refresh]); // !!user is stable boolean
 
-  // ── Real-time Firebase listener + polling fallback ──
-  // Uses !!user to avoid re-creating listener/polling on every user object change
+  // ── Authenticated polling — the ONLY notification delivery path ──
+  // §PHASE0-RTDB-RULES: the previous direct Firebase RTDB listener on
+  // erp/notifications was REMOVED. RTDB rules cascade parent→child and
+  // a root ".read": false cannot be re-granted at a child path, so the
+  // only rules-compatible options were a world-readable notifications
+  // path (every browser client could read EVERY employee's
+  // notifications, directed or broadcast — unacceptable) or deny-all.
+  // Deny-all was chosen; delivery is the EXISTING authenticated
+  // /api/notifications poll, which filters recipients server-side
+  // (lib/notifications/recipient-visibility). Nothing is lost
+  // functionally: the poll already performed the same alerting as the
+  // listener (sound + toast + desktop, below), reconciles anything
+  // missed while disconnected via the foreground refresh, and the
+  // listener had its own silent-degradation path. Re-introducing
+  // real-time push requires per-recipient RTDB paths or Firebase
+  // Auth custom tokens — a separate approved phase.
+  // Uses !!user to avoid re-creating polling on every user object change
   useEffect(() => {
     if (!userRef.current) return;
 
     let cancelled = false;
 
-    const setupListener = async () => {
-      try {
-        // Dynamically import Firebase client SDK (browser-only)
-        const { ref: dbRef, onChildAdded, off, query, orderByChild, limitToLast } = await import('firebase/database');
-        const { initializeFirebaseClient, getFirebaseDb } = await import('@/lib/firebase-client');
-
-        // Get Firebase config from localStorage (same place FirebaseSettingsPage saves it)
-        const savedConfig = localStorage.getItem('firebase_config');
-        if (!savedConfig) return;
-        const config = JSON.parse(savedConfig);
-        if (!config || !config.databaseURL) return;
-
-        // Initialize client
-        initializeFirebaseClient(config);
-        const db = getFirebaseDb();
-        if (!db) return;
-
-        // Subscribe to the SAME path the broadcast API writes to
-        // (erp/notifications — see /api/firebase/notifications). The
-        // previous subscription path (arm_erp/notifications) never
-        // matched any writes, which made polling the only working
-        // delivery mechanism.
-        const notifRef = dbRef(db, 'erp/notifications');
-
-        // §DOWNLOAD-OPT — BOUNDED initial sync. Without a query,
-        // onChildAdded re-downloads the ENTIRE erp/notifications
-        // collection on every connect/reconnect. All broadcast writes
-        // (the only writers of this path) carry an ISO `createdAt`
-        // string, so the window is bounded to the NOTIFICATION_WINDOW
-        // newest records — the same window the 45s unread poll reads
-        // (limit=50). Older history is never alerted (the callback
-        // drops anything older than 60s) and remains available via
-        // the poll/API; anything missed beyond the window while
-        // disconnected is reconciled by the poll/foreground refresh.
-        const notifQuery = query(
-          notifRef,
-          orderByChild('createdAt'),
-          limitToLast(NOTIFICATION_LISTENER_WINDOW)
-        );
-
-        // Query: ordered by createdAt, limitToLast(N) for new ones
-        // We use onChildAdded which fires for existing children first, then new ones
-        const unsubscribe = onChildAdded(
-          notifQuery,
-          (snapshot) => {
-            if (cancelled) return;
-            const data = snapshot.val();
-            if (!data || !data.id) return;
-
-            const notif = data as AppNotification;
-
-            // Dedup: skip if we've already seen this notification
-            if (seenIdsRef.current.has(notif.id)) return;
-
-            // Only process notifications from the last 60 seconds (avoid old ones)
-            const notifAge = Date.now() - new Date(notif.createdAt).getTime();
-            if (notifAge > 60000) {
-              seenIdsRef.current.add(notif.id);
-              return;
-            }
-
-            seenIdsRef.current.add(notif.id);
-
-            // Add to local state
-            setNotifications((prev) => {
-              if (prev.some((n) => n.id === notif.id)) return prev;
-              const updated = [notif, ...prev].slice(0, 100);
-              return updated;
-            });
-
-            setLatestNotification(notif);
-            setTimeout(() => setLatestNotification(null), 3000);
-
-            // Show toast, play sound, desktop notification for ALL priorities
-            triggerNewAlertEffects(notif, desktopPermissionRef.current);
-          },
-          (error) => {
-            // Listener error — silently ignore (might be permissions)
-            console.warn('[NotificationProvider] Firebase listener error:', error?.message);
-          }
-        );
-
-        listenerRef.current = unsubscribe;
-      } catch {
-        // Firebase client not available — real-time won't work, polling fallback exists
-        console.warn('[NotificationProvider] Could not setup real-time listener');
-      }
-    };
-
-    setupListener();
-
-    // Polling fallback (Firebase listener is primary) — 45s cadence
-    // preserved for reliability, but it no longer fires while the
-    // tab is hidden, and returning to the foreground refreshes once
-    // when the last fetch is stale (polling-policy).
+    // 45s cadence, but it no longer fires while the tab is hidden,
+    // and returning to the foreground refreshes once when the last
+    // fetch is stale (polling-policy).
     const tick = () => {
       if (
         !cancelled &&
@@ -401,14 +315,10 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
 
     return () => {
       cancelled = true;
-      if (listenerRef.current) {
-        listenerRef.current();
-        listenerRef.current = null;
-      }
       clearInterval(pollInterval);
       document.removeEventListener('visibilitychange', onVisibilityChange);
     };
-  }, [!!user, refresh]); // !!user prevents listener recreation churn
+  }, [!!user, refresh]); // !!user prevents polling recreation churn
 
   // ── Mark read (server + local) ──
   const markReadLocal = useCallback((id: string) => {

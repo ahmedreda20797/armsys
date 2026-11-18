@@ -38,9 +38,11 @@ function labeled(map: Record<string, readonly [string, string]>, key: string | n
 
 export const HUB_DIMENSIONS: Record<string, readonly [string, string]> = {
   quality: ['الجودة', 'Quality'],
-  // §FOLLOWUP-DOMAINS — two independent dimensions, never merged, and
-  // never the ambiguous "Follow-up" alone.
+  // §METRIC-VALIDATION — customer & deal follow-up is surfaced with an
+  // explicit NOT_MEASURABLE verdict (no data source exists); booking
+  // execution is its own business-output dimension. Never merged.
   customerDealFollowUp: ['متابعة العملاء والصفقات', 'Customer & Deal Follow-up'],
+  bookingExecution: ['تنفيذ الحجوزات', 'Booking Execution'],
   employeeActionFollowUp: ['متابعة إجراءات الموظف', 'Employee Action Follow-up'],
   risk: ['المخاطر التشغيلية', 'Operational Risk'],
   attendance: ['الحضور والانصراف', 'Attendance'],
@@ -57,15 +59,16 @@ export const HUB_DIMENSION_STATUS: Record<string, readonly [string, string]> = {
   NEEDS_ATTENTION: ['يحتاج انتباهًا', 'Needs Attention'],
   DECLINING: ['متراجع', 'Declining'],
   INSUFFICIENT_DATA: ['بيانات غير كافية', 'Insufficient Data'],
+  NOT_MEASURABLE: ['غير قابل للقياس', 'Not Measurable'],
 };
 
 export const HUB_DIMENSION_METRICS: Record<string, readonly [string, string]> = {
   qualityPercent: ['نسبة الجودة', 'Quality Percentage'],
   calculatedPoints: ['النقاط المحتسبة', 'Calculated Points'],
-  customerDealFollowUpCompletion: ['نسبة إتمام متابعة العملاء والصفقات', 'Customer & Deal Follow-up Completion'],
+  bookingCompletion: ['نسبة إتمام الحجوزات', 'Booking Completion Rate'],
   employeeActionFollowUpCompletion: ['نسبة إكمال متابعات إجراءات الموظف', 'Employee Action Follow-up Completion'],
   overdueEmployeeActionFollowUps: ['متابعات إجراءات متأخرة', 'Overdue Employee Action Follow-ups'],
-  openCustomerDealFollowUpItems: ['بنود متابعة عملاء مفتوحة', 'Open Customer & Deal Follow-up Items'],
+  openBookingItems: ['بنود حجز مفتوحة', 'Open Booking Items'],
   riskScore: ['درجة المخاطر', 'Risk Score'],
   attendanceCompliance: ['نسبة الالتزام بالحضور', 'Attendance Compliance'],
   closedDeals: ['تقفيلات الفترة', 'Closures This Period'],
@@ -113,7 +116,7 @@ export const HUB_EVIDENCE: Record<string, readonly [string, string]> = {
   'strength.qualityImproved': ['تحسن نسبة الجودة عن الفترة السابقة', 'Quality percentage improved vs the previous period'],
   'strength.noDeductions': ['لا توجد خصومات جودة ولا خصومات موارد بشرية خلال الفترة', 'No quality deductions and no HR deductions this period'],
   'strength.actionFollowUpsOnTrack': ['متابعات إجراءات الموظف منجزة دون تأخيرات', 'Employee action follow-ups completed with no delays'],
-  'strength.customerDealFollowUpsComplete': ['بنود متابعة العملاء والصفقات مكتملة للفترة', 'Customer & deal follow-up items fully booked this period'],
+  'strength.bookingExecutionComplete': ['بنود الحجوزات مكتملة للفترة', 'Booking items fully booked this period'],
   'strength.attendanceSolid': ['الالتزام بالحضور مرتفع', 'Attendance compliance is high'],
   'strength.dealsIncreased': ['زاد عدد التقفيلات عن الفترة السابقة', 'Closures increased vs the previous period'],
   'strength.capaClear': ['لا توجد حالات كابا مفتوحة أو متأخرة', 'No open or overdue CAPA cases'],
@@ -123,7 +126,7 @@ export const HUB_EVIDENCE: Record<string, readonly [string, string]> = {
   'concern.riskHigh': ['درجة المخاطر مرتفعة', 'Risk level is high'],
   'concern.repeatedIssues': ['مشكلات جودة متكررة', 'Repeated quality issues'],
   'concern.overdueActionFollowUps': ['متابعات إجراءات الموظف متأخرة', 'Overdue employee action follow-ups'],
-  'concern.openCustomerDealFollowUps': ['بنود متابعة عملاء وصفقات مفتوحة', 'Open customer & deal follow-up items'],
+  'concern.openBookingItems': ['بنود حجز مفتوحة لدى الموردين', 'Open booking items at suppliers'],
   'concern.qualityDeclining': ['نسبة الجودة في تراجع', 'Quality percentage is declining'],
   'concern.attendance': ['الالتزام بالحضور يحتاج مراجعة', 'Attendance compliance needs review'],
   'concern.hrDeductions': ['توجد خصومات موارد بشرية', 'HR deductions exist this period'],
@@ -131,7 +134,7 @@ export const HUB_EVIDENCE: Record<string, readonly [string, string]> = {
   // development areas
   'area.repeatedQualityIssues': ['الالتزام بإجراءات الجودة (مشكلات متكررة)', 'Quality procedure adherence (repeated issues)'],
   'area.overdueActionFollowUps': ['انتظام إنجاز متابعات إجراءات الموظف', 'Employee action follow-up completion discipline'],
-  'area.openCustomerDealFollowUps': ['استكمال متابعة العملاء والصفقات', 'Customer & deal follow-up completion'],
+  'area.openBookingItems': ['استكمال حجوزات الخدمات المفتوحة', 'Completing open service bookings'],
   'area.qualityDeductions': ['دقة العمليات (خصومات جودة)', 'Operational accuracy (quality deductions)'],
   'area.attendanceConsistency': ['انتظام الحضور', 'Attendance consistency'],
   'area.complaintHandling': ['معالجة شكاوى العملاء', 'Customer complaint handling'],
@@ -140,7 +143,7 @@ export const HUB_EVIDENCE: Record<string, readonly [string, string]> = {
   'area.qualityAdherence': ['مستوى الجودة العام', 'Overall quality level'],
   // recommendation rationales
   'evidence.overdueActionFollowUps': ['متابعات إجراءات الموظف المتأخرة خلال الفترة', 'Overdue employee action follow-ups this period'],
-  'evidence.openCustomerDealFollowUps': ['بنود متابعة عملاء وصفقات مفتوحة خلال الفترة', 'Open customer & deal follow-up items this period'],
+  'evidence.openBookingItems': ['بنود حجز مفتوحة خلال الفترة', 'Open booking items this period'],
   'evidence.attendance': ['مؤشرات الحضور للفترة', 'Attendance indicators for the period'],
   'evidence.overdueCapa': ['حالات كابا متأخرة', 'Overdue CAPA cases'],
   'evidence.openComplaints': ['شكاوى مفتوحة مرتبطة بالموظف', 'Open complaints linked to the employee'],
@@ -150,7 +153,7 @@ export const HUB_EVIDENCE: Record<string, readonly [string, string]> = {
 export const HUB_RECOMMENDATIONS: Record<string, readonly [string, string]> = {
   'rec.coaching': ['يُوصى بتوجيه عملي على الإجراءات المتأثرة (المشكلات المتكررة)', 'Coaching recommended on the affected procedures (repeated issues)'],
   'rec.actionFollowUpReview': ['يُوصى بمراجعة حجم متابعات إجراءات الموظف والالتزام بمواعيدها', 'Review the employee’s internal action follow-up workload and SLA adherence'],
-  'rec.customerDealFollowUpReview': ['يُوصى بمراجعة بنود متابعة العملاء والصفقات المفتوحة واستكمال حجوزاتها', 'Review open customer & deal follow-up items and complete their bookings'],
+  'rec.bookingExecutionReview': ['يُوصى بمراجعة بنود الحجوزات المفتوحة لدى الموردين واستكمالها', 'Review open booking items at suppliers and complete them'],
   'rec.attendanceReview': ['يُوصى بمراجعة نمط الحضور مع الموارد البشرية', 'Review the attendance pattern with HR'],
   'rec.capaReview': ['يُوصى بمراجعة حالات كابا المتأخرة وتسريع استكمالها', 'Review overdue CAPA cases and accelerate completion'],
   'rec.complaintReview': ['يُوصى بمراجعة الشكاوى المفتوحة المرتبطة بالموظف', 'Review open complaints linked to the employee'],
@@ -166,8 +169,8 @@ export const HUB_CHANGE_METRICS: Record<string, readonly [string, string]> = {
   calculatedPoints: ['النقاط المحتسبة', 'Calculated points'],
   employeeActionFollowUpCompletion: ['نسبة إكمال متابعات إجراءات الموظف', 'Employee action follow-up completion'],
   employeeActionFollowUpsOverdue: ['متابعات الإجراءات المتأخرة', 'Overdue employee action follow-ups'],
-  customerDealFollowUpCompletion: ['نسبة إتمام متابعة العملاء والصفقات', 'Customer & deal follow-up completion'],
-  customerDealFollowUpOpenItems: ['بنود متابعة العملاء والصفقات المفتوحة', 'Open customer & deal follow-up items'],
+  bookingCompletion: ['نسبة إتمام الحجوزات', 'Booking completion rate'],
+  openBookingItems: ['بنود الحجز المفتوحة', 'Open booking items'],
   attendanceCompliance: ['نسبة الالتزام بالحضور', 'Attendance compliance'],
   dealsClosed: ['تقفيلات الفترة (تاريخ تقفيل الديل)', 'Closures this period (deal closure date)'],
   observationsCount: ['ملاحظات الجودة', 'Quality observations'],
@@ -181,7 +184,7 @@ export const HUB_CROSS_SIGNALS: Record<string, readonly [string, string]> = {
   'overlap.actionFollowUpDelaysQuality': ['تزامن: ارتفاع متابعات الإجراءات المتأخرة مع ارتفاع ملاحظات الجودة خلال الفترة نفسها', 'Observed overlap: increased overdue employee action follow-ups coincided with increased quality observations during the same period'],
   'overlap.deductionsComplaints': ['تزامن: ارتفاع خصومات الجودة مع ارتفاع ملاحظات الجودة خلال الفترة نفسها', 'Observed overlap: increased quality deductions coincided with increased quality observations during the same period'],
   'overlap.attendanceActionFollowUps': ['تزامن: انخفاض الالتزام بالحضور مع ارتفاع متابعات الإجراءات المتأخرة خلال الفترة نفسها', 'Observed overlap: lower attendance compliance coincided with increased overdue employee action follow-ups during the same period'],
-  'overlap.dealsCustomerFollowUps': ['تزامن: انخفاض التقفيلات مع انخفاض نسبة إتمام متابعة العملاء والصفقات خلال الفترة نفسها', 'Observed overlap: fewer closures coincided with lower customer & deal follow-up completion during the same period'],
+  'overlap.dealsBookingExecution': ['تزامن: انخفاض التقفيلات مع انخفاض نسبة إتمام الحجوزات خلال الفترة نفسها', 'Observed overlap: fewer closures coincided with lower booking completion during the same period'],
   'overlap.qualityDeclineObservations': ['تزامن: انخفاض نسبة الجودة مع ارتفاع عدد الملاحظات خلال الفترة نفسها', 'Observed overlap: lower quality percentage coincided with more observations during the same period'],
 };
 
@@ -247,6 +250,7 @@ export const TIMELINE_STATUS_LABELS: Record<string, readonly [string, string]> =
 export const HUB_DOMAINS: Record<string, readonly [string, string]> = {
   quality: ['الجودة', 'Quality'],
   customerDealFollowUp: ['متابعة العملاء والصفقات', 'Customer & Deal Follow-up'],
+  bookingExecution: ['تنفيذ الحجوزات', 'Booking Execution'],
   employeeActionFollowUp: ['متابعة إجراءات الموظف', 'Employee Action Follow-up'],
   risk: ['المخاطر', 'Risk'],
   attendance: ['الحضور', 'Attendance'],
@@ -290,6 +294,15 @@ export const HUB_DATA_QUALITY_NOTES: Record<string, readonly [string, string]> =
   'note.insufficientMembers': ['عدد أعضاء الفريق المتاحين غير كافٍ للمقارنة', 'Not enough authorized team members for the benchmark'],
   'note.previousPeriodUnavailable': ['تعذر بناء بيانات الفترة السابقة — مقارنة التغير غير متاحة', 'The previous period dataset could not be built — change comparison unavailable'],
   'note.unattributedRecords': ['سجلات بلا تاريخ صالح استُثنيت من تحليل الفترة', 'Records without a valid date were excluded from the period analysis'],
+  // §METRIC-VALIDATION — the structural verdict for customer & deal follow-up.
+  'note.customerFollowUpNotMeasurable': [
+    'متابعة العملاء والصفقات غير قابلة للقياس حاليًا: لا يوجد مصدر بيانات لمواعيد أو أحداث أو سجل متابعة العملاء. حالات حجز الخدمات (محجوز/معلق/غير موجود) تقيس تنفيذ الحجز فقط ولا تُستخدم بديلًا.',
+    'Customer & deal follow-up is not measurable today: no data source exists for follow-up dates, contact events or history. Booking-item statuses (booked/pending/missing) measure booking execution only and are never used as a substitute.',
+  ],
+  'note.NO_CUSTOMER_FOLLOW_UP_SOURCE': [
+    'لا يوجد مصدر بيانات لمتابعة العملاء (مهام متابعة بمواعيد ووقائع تواصل وسجل إكمال)',
+    'No data source exists for customer follow-up (follow-up tasks with deadlines, contact events and completion history)',
+  ],
 };
 
 export const HUB_DQ_STATES: Record<string, readonly [string, string]> = {
@@ -312,6 +325,72 @@ export const HUB_EMPLOYMENT_STATUS: Record<string, readonly [string, string]> = 
   inactive: ['غير نشط', 'Inactive'],
   archived: ['مؤرشف', 'Archived'],
   unknown: ['غير معروف', 'Unknown'],
+};
+
+// ─────────────────────────────────────────────────────────────
+//  Group Report (§GROUP-REPORTING) — labels
+// ─────────────────────────────────────────────────────────────
+
+export const PerformanceGroupLabels: Record<string, readonly [string, string]> = {
+  // Dimensions
+  quality: ['الجودة', 'Quality'],
+  bookingExecution: ['تنفيذ الحجوزات', 'Booking Execution'],
+  employeeActionFollowUp: ['متابعة إجراءات الموظف', 'Employee Action Follow-up'],
+  attendance: ['الحضور والانصراف', 'Attendance'],
+  businessOutput: ['الناتج العملي (الصفقات)', 'Business Output'],
+  risk: ['المخاطر التشغيلية', 'Operational Risk'],
+  complaints: ['شكاوى العملاء', 'Complaints'],
+  capa: ['إجراءات كابا', 'CAPA'],
+  hr: ['انتظام الموارد البشرية', 'HR Discipline'],
+
+  // Overview statuses
+  IMPROVING: ['يتحسن', 'Improving'],
+  STABLE: ['مستقر', 'Stable'],
+  NEEDS_COACHING: ['يحتاج توجيه', 'Needs Coaching'],
+  PERFORMANCE_IMPROVEMENT_REVIEW: ['مراجعة تحسين الأداء', 'Performance Improvement Review'],
+  MANAGEMENT_REVIEW: ['مراجعة إدارية', 'Management Review'],
+  INSUFFICIENT_DATA: ['بيانات غير كافية', 'Insufficient Data'],
+
+  // Org unit types
+  team: ['فريق', 'Team'],
+  department: ['قسم', 'Department'],
+  company: ['شركة', 'Company'],
+  manager: ['مدير', 'Manager'],
+
+  // Risk levels
+  critical: ['حرجة', 'Critical'],
+  high: ['مرتفعة', 'High'],
+  medium: ['متوسطة', 'Medium'],
+  low: ['منخفضة', 'Low'],
+
+  // Strength / concern / area rule ids (subset — keys match single-employee hub)
+  'strength.qualityImproved': ['تحسن نسبة الجودة', 'Quality Improved'],
+  'strength.bookingExecutionComplete': ['بنود الحجوزات مكتملة', 'Booking Items Complete'],
+  'strength.actionFollowUpsOnTrack': ['متابعات الإجراءات منجزة', 'Action Follow-ups On Track'],
+  'strength.attendanceSolid': ['الالتزام بالحضور مرتفع', 'Attendance Solid'],
+  'strength.dealsIncreased': ['التقفيلات زادت', 'Closures Increased'],
+  'strength.capaClear': ['لا توجد حالات كابا مفتوحة', 'CAPA Clear'],
+  'strength.noRepeatedIssues': ['لا توجد مشكلات متكررة', 'No Repeated Issues'],
+
+  'concern.riskCritical': ['درجة المخاطر حرجة', 'Risk Critical'],
+  'concern.riskHigh': ['درجة المخاطر مرتفعة', 'Risk High'],
+  'concern.repeatedIssues': ['مشكلات جودة متكررة', 'Repeated Issues'],
+  'concern.overdueActionFollowUps': ['متابعات إجراءات متأخرة', 'Overdue Action Follow-ups'],
+  'concern.openBookingItems': ['بنود حجز مفتوحة', 'Open Booking Items'],
+  'concern.qualityDeclining': ['نسبة الجودة في تراجع', 'Quality Declining'],
+  'concern.attendance': ['الالتزام بالحضور', 'Attendance'],
+  'concern.hrDeductions': ['خصومات موارد بشرية', 'HR Deductions'],
+  'concern.dealsDeclining': ['التقفيلات في تراجع', 'Closures Declining'],
+
+  'area.repeatedQualityIssues': ['الالتزام بإجراءات الجودة', 'Quality Procedure Adherence'],
+  'area.overdueActionFollowUps': ['انتظام إنجاز متابعات الإجراءات', 'Action Follow-up Discipline'],
+  'area.openBookingItems': ['استكمال حجوزات الخدمات المفتوحة', 'Open Service Bookings'],
+  'area.qualityDeductions': ['دقة العمليات (خصومات جودة)', 'Operational Accuracy'],
+  'area.attendanceConsistency': ['انتظام الحضور', 'Attendance Consistency'],
+  'area.complaintHandling': ['معالجة شكاوى العملاء', 'Complaint Handling'],
+  'area.capaFollowThrough': ['استكمال إجراءات كابا', 'CAPA Follow-through'],
+  'area.hrDiscipline': ['الالتزام والسلوك', 'Commitment & Behavior'],
+  'area.qualityAdherence': ['مستوى الجودة العام', 'Overall Quality Level'],
 };
 
 // ─────────────────────────────────────────────────────────────

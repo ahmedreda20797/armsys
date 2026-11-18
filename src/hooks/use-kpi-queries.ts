@@ -771,3 +771,81 @@ export function useKpiInsights(month: string | null, params: KpiInsightsParams =
     staleTime: 15_000,
   });
 }
+
+// ═════════════════════════════════════════════════════════════
+//  §FLEX-PERIODS — flexible-period insights workspace
+// ═════════════════════════════════════════════════════════════
+
+export interface FlexibleInsightsParams {
+  /** Serialized FlexiblePeriodSpec (query-key identity component). */
+  periodKey: string;
+  periodSpecJson: string;
+  comparisonKey: string;
+  comparisonSpecJson: string;
+  employeeIds?: ReadonlyArray<string>;
+  orgNodeIds?: ReadonlyArray<string>;
+  includeArchived?: boolean;
+  enabled?: boolean;
+}
+
+export function useFlexibleKpiInsights(params: FlexibleInsightsParams) {
+  const qs = buildQueryString({
+    period: params.periodSpecJson,
+    comparison: params.comparisonSpecJson,
+    employees: params.employeeIds?.length ? [...params.employeeIds].sort().join(',') : undefined,
+    orgNodes: params.orgNodeIds?.length ? [...params.orgNodeIds].sort().join(',') : undefined,
+    includeArchived: params.includeArchived ? 'true' : undefined,
+  });
+  return useQuery({
+    queryKey: [
+      ...reportsKey('insights-flexible'),
+      params.periodKey,
+      params.comparisonKey,
+      params.employeeIds?.length ? [...params.employeeIds].sort().join(',') : '',
+      params.orgNodeIds?.length ? [...params.orgNodeIds].sort().join(',') : '',
+      params.includeArchived ? 'archived' : 'active',
+    ],
+    queryFn: () => apiFetch(`/api/kpi-reports/insights-flexible${qs}`),
+    enabled: params.enabled ?? true,
+    staleTime: 15_000,
+    retry: 1,
+  });
+}
+
+// ═════════════════════════════════════════════════════════════
+//  Employee Performance Hub — GROUP REPORT (§GROUP-REPORTING)
+// ═════════════════════════════════════════════════════════════
+
+/** §CUSTOM-SELECTION — arbitrary mix of employees + org subtrees. */
+export interface PerformanceGroupSelection {
+  employeeIds: ReadonlyArray<string>;
+  orgNodeIds: ReadonlyArray<string>;
+}
+
+/** POST /api/performance-hub/group params */
+export interface PerformanceGroupReportParams {
+  month: string | null;
+  selection: PerformanceGroupSelection;
+  compare?: boolean;
+  limit?: number;
+  enabled?: boolean;
+}
+
+export function usePerformanceGroupReport(params: PerformanceGroupReportParams) {
+  const { month, selection, compare, limit } = params;
+  const employeeIdsKey = selection.employeeIds?.length ? [...selection.employeeIds].sort().join(',') : '';
+  const orgNodesKey = selection.orgNodeIds?.length ? [...selection.orgNodeIds].sort().join(',') : '';
+  const qs = buildQueryString({
+    month: month ?? undefined,
+    employees: employeeIdsKey || undefined,
+    orgNodes: orgNodesKey || undefined,
+    compare: compare ? 'true' : 'false',
+    limit: limit?.toString() ?? undefined,
+  });
+  return useQuery({
+    queryKey: [...reportsKey('performance-hub-group'), month ?? 'none', employeeIdsKey, orgNodesKey, compare ? 'cmp' : 'no-cmp'],
+    queryFn: () => apiFetch(`/api/performance-hub/group${qs}`, { method: 'POST', body: JSON.stringify({ month, employeeIds: selection.employeeIds, orgNodeIds: selection.orgNodeIds, compare, limit }) }),
+    enabled: !!month && (selection.employeeIds?.length ?? 0) + (selection.orgNodeIds?.length ?? 0) > 0 && (params.enabled ?? true),
+    staleTime: 15_000,
+  });
+}

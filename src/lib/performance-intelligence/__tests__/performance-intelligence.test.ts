@@ -34,7 +34,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { getEmployeePerformanceDataset, aggregateTravelDeals } from '@/lib/performance-intelligence';
+import { getEmployeePerformanceDataset, aggregateTravelDeals, aggregateBookingExecution, assessCustomerFollowUpMeasurability } from '@/lib/performance-intelligence';
 import type { PerformanceIntelligenceLoaders } from '@/lib/performance-intelligence';
 import { buildEmployeeKpiReport, toFrameworkEmployee } from '@/lib/kpi-reporting';
 import { buildEmployeeKpiResult, withFinalizedAt } from '@/lib/kpi-framework';
@@ -900,6 +900,69 @@ describe('follow-up analysis (spec §11)', () => {
       dataset!.dataQuality.unattributedRecords,
       [{ collection: 'followUps', count: 1 }],
     );
+  });
+});
+
+// ═════════════════════════════════════════════════════════════
+//  §METRIC-VALIDATION (completion phase) — booking execution is a
+//  SEPARATE fact family; actual customer follow-up has NO source and
+//  is surfaced as NOT_MEASURABLE, never proxied from booking items.
+// ═════════════════════════════════════════════════════════════
+describe('§METRIC-VALIDATION — booking execution vs customer follow-up', () => {
+  it('8b · aggregateBookingExecution counts item states verbatim (booked/pending/missing)', async () => {
+    const dataset = await getEmployeePerformanceDataset({
+      employeeId: 'emp_ahmed', monthKey: '2026-08', now: NOW_AUG, loaders: makeLoaders(),
+    });
+    const booking = dataset!.bookingExecution;
+    assert.equal(booking.relationship, 'CONFIRMED');
+    // The August TRAVEL-period fixture population (same as deal analysis §12).
+    assert.equal(booking.dealsInPeriod, 3);
+    assert.ok(booking.totalItems >= booking.bookedItems);
+    assert.equal(
+      booking.totalItems,
+      booking.bookedItems + booking.pendingItems + booking.missingItems,
+      'item states partition the population',
+    );
+    if (booking.totalItems > 0) {
+      assert.equal(booking.completionRate, Math.round((booking.bookedItems / booking.totalItems) * 10000) / 100);
+    } else {
+      assert.equal(booking.completionRate, null);
+    }
+  });
+
+  it('8c · the customer follow-up verdict is structurally NOT_MEASURABLE on EVERY dataset', async () => {
+    const dataset = await getEmployeePerformanceDataset({
+      employeeId: 'emp_ahmed', monthKey: '2026-08', now: NOW_AUG, loaders: makeLoaders(),
+    });
+    const verdict = dataset!.customerFollowUpMeasurability;
+    assert.equal(verdict.status, 'NOT_MEASURABLE');
+    assert.equal(verdict.reason, 'NO_CUSTOMER_FOLLOW_UP_SOURCE');
+    assert.ok(verdict.missingSource.length > 0, 'the missing source is explained');
+    // Booking completion (whatever its value) is never exposed as a
+    // customer follow-up rate — the two live in separate fields.
+    assert.ok('bookingExecution' in dataset! && 'customerFollowUpMeasurability' in dataset!);
+  });
+
+  it('8d · a fully-booked period does not produce any customer follow-up metric', () => {
+    // Even with 100% booked items, the verdict stays NOT_MEASURABLE —
+    // a booked hotel is booking execution, not customer follow-up.
+    const deals: TravelDeal[] = [{
+      id: 'd_full', employeeId: 'emp_ahmed', destination: 'باريس',
+      departureDate: '10/08/2026', returnDate: null, dealerName: null, customerNames: null,
+      hasInternationalFlight: true, hasDomesticFlight: false, hasHotel: true, hasVisa: false,
+      hasTours: false, hasTransportation: false,
+      internationalFlightStatus: 'booked', domesticFlightStatus: 'missing', hotelStatus: 'booked',
+      visaStatus: 'missing', toursStatus: 'missing', transportationStatus: 'missing',
+      notes: null, status: 'in_progress', createdAt: '2026-08-01T00:00:00.000Z',
+    }];
+    // Direct pure-aggregate check (no service round trip needed).
+    const facts = aggregateBookingExecution({ deals });
+    assert.equal(facts.totalItems, 2);
+    assert.equal(facts.bookedItems, 2);
+    assert.equal(facts.completionRate, 100);
+    const verdict = assessCustomerFollowUpMeasurability();
+    assert.equal(verdict.status, 'NOT_MEASURABLE');
+    assert.equal(verdict.reason, 'NO_CUSTOMER_FOLLOW_UP_SOURCE');
   });
 });
 

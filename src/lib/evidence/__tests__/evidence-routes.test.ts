@@ -14,12 +14,12 @@
 //      evidence for an authorized viewer.
 // ══════════════════════════════════════════════════════════════
 
-import './m01-test-support';
+import '../../__tests__/m01-test-support';
 
 import { describe, it, before } from 'node:test';
 import assert from 'node:assert/strict';
 import path from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { fileURLToPath } from 'node:url';
 
 import {
   registerFixtures,
@@ -28,12 +28,14 @@ import {
   bearerHeaders,
   tamperToken,
   type TestTokens,
-} from './m01-test-support';
+} from '../../__tests__/m01-test-support';
 
 // ── Stub the Storage module BEFORE any route module loads (same
-//    require-cache technique as the db harness). ──
+//    require-cache technique as the db harness). fileURLToPath is the
+//    canonical file-path conversion — the manual pathname surgery
+//    produced `file:\C:\…` on Windows and never resolved. ──
 const storageModulePath = path.resolve(
-  path.dirname(pathToFileURL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1')),
+  path.dirname(fileURLToPath(import.meta.url)),
   '../../evidence-storage.ts',
 );
 
@@ -41,6 +43,21 @@ const stagedPaths: string[] = [];
 let promotedToFinal: string[] = [];
 const deletedPaths: string[] = [];
 let storedObjects = new Map<string, Buffer>();
+
+// The promote fake lives as a NAMED local function so the commit fake
+// can reuse it without reaching through the untyped stub record.
+const promoteEvidenceImages = async (_table: string, recordId: string, items: Array<Record<string, any>>) => {
+  const out = items.map((item) => {
+    if (item.type !== 'image' || !item.image) return item;
+    if (!item.image.storagePath.startsWith('evidence/pending/')) return item;
+    const finalPath = `evidence/qualityObservations/${recordId}/${item.id}.webp`;
+    storedObjects.set(finalPath, storedObjects.get(item.image.storagePath) ?? Buffer.alloc(0));
+    storedObjects.delete(item.image.storagePath);
+    promotedToFinal.push(finalPath);
+    return { ...item, image: { ...item.image, storagePath: finalPath } };
+  });
+  return out;
+};
 
 const storageStub: Record<string, unknown> = {
   EVIDENCE_IMAGE_MAX_INPUT_BYTES: 8 * 1024 * 1024,
@@ -57,18 +74,7 @@ const storageStub: Record<string, unknown> = {
     storedObjects.set(storagePath, optimized.buffer);
     return { storagePath, fileName, mimeType: 'image/webp', size: optimized.buffer.byteLength, width: 640, height: 480 };
   },
-  promoteEvidenceImages: async (_table: string, recordId: string, items: Array<Record<string, any>>) => {
-    const out = items.map((item) => {
-      if (item.type !== 'image' || !item.image) return item;
-      if (!item.image.storagePath.startsWith('evidence/pending/')) return item;
-      const finalPath = `evidence/qualityObservations/${recordId}/${item.id}.webp`;
-      storedObjects.set(finalPath, storedObjects.get(item.image.storagePath) ?? Buffer.alloc(0));
-      storedObjects.delete(item.image.storagePath);
-      promotedToFinal.push(finalPath);
-      return { ...item, image: { ...item.image, storagePath: finalPath } };
-    });
-    return out;
-  },
+  promoteEvidenceImages: promoteEvidenceImages,
   commitEvidenceItems: async (
     _table: string,
     recordId: string,
@@ -76,7 +82,7 @@ const storageStub: Record<string, unknown> = {
     existingItems: Array<Record<string, any>> | null | undefined,
     persist: (items: Array<Record<string, any>>) => Promise<unknown>,
   ) => {
-    const promoted = await storageStub.promoteEvidenceImages('qualityObservations', recordId, incoming);
+    const promoted = await promoteEvidenceImages('qualityObservations', recordId, incoming);
     await persist(promoted);
     const kept = new Set(
       (promoted as Array<Record<string, any>>)
@@ -104,7 +110,6 @@ const storageStub: Record<string, unknown> = {
   sweepStalePendingEvidence: async () => undefined,
 };
 
-// eslint-disable-next-line @typescript-eslint/no-require-imports
 require.cache[require.resolve(storageModulePath)] = {
   id: storageModulePath,
   filename: storageModulePath,

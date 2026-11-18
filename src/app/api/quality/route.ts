@@ -105,6 +105,20 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const { employeeId, date, type, description, deductionDays, deductionAmount, evidence, evidenceItems, month, relatedCapaId } = body;
 
+    // §INPUT-TYPES — request.json() is `unknown` under Next 16: the
+    // string-typed payload fields are narrowed EXPLICITLY here (a
+    // non-string value is rejected, never coerced), so the typed
+    // sinks below (audit, automation events, notifications) receive
+    // real strings.
+    if (
+      typeof employeeId !== 'string' || typeof date !== 'string'
+      || typeof type !== 'string' || typeof month !== 'string'
+    ) {
+      return NextResponse.json({ error: 'Employee ID, date, type, and month are required' }, { status: 400 });
+    }
+    const descriptionText = typeof description === 'string' ? description : '';
+    const relatedCapaIdText = typeof relatedCapaId === 'string' && relatedCapaId.length > 0 ? relatedCapaId : null;
+
     if (!employeeId || !date || !type || !month) {
       return NextResponse.json({ error: 'Employee ID, date, type, and month are required' }, { status: 400 });
     }
@@ -192,7 +206,11 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    let qualityDeduction: Record<string, unknown>;
+    // §INPUT-TYPES — the created record carries known identity fields
+    // (id / approvalStatus are assigned below verbatim); typing them
+    // keeps the typed sinks (audit, automation, notifications) honest
+    // without any `any` suppression.
+    let qualityDeduction: Record<string, unknown> & { id: string; approvalStatus: string };
     try {
       qualityDeduction = await createRecordWithId(QUALITY_DEDUCTIONS_TABLE, recordId, {
         employeeId,
@@ -233,7 +251,7 @@ export async function POST(request: NextRequest) {
       monthKey: month,
       before: null,
       after: {
-        employeeId, date, type, description: description || '',
+        employeeId, date, type, description: descriptionText,
         deductionDays: deductionDays || 0, deductionAmount: deductionAmount || 0,
         approvalStatus: qualityDeduction.approvalStatus,
       },

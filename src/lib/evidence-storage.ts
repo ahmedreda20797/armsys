@@ -233,7 +233,11 @@ export async function commitEvidenceItems(
  */
 export async function sweepStalePendingEvidence(): Promise<void> {
   const cutoff = Date.now() - PENDING_MAX_AGE_MS;
-  const [files] = await bucket().getFiles({ prefix: `${EVIDENCE_PENDING_PREFIX}/`, pageSize: 100 });
+  // §INPUT-TYPES — GetFilesOptions bounds the listing through
+  // `maxResults` (the installed @google-cloud/storage API surface —
+  // `pageSize` does not exist on it), so the awaited Promise overload
+  // matches and the response destructures normally.
+  const [files] = await bucket().getFiles({ prefix: `${EVIDENCE_PENDING_PREFIX}/`, maxResults: 100 });
   const stale = files.filter((f) => (f.metadata.updated ? new Date(f.metadata.updated).getTime() < cutoff : false));
   await Promise.allSettled(stale.map((f) => f.delete()));
 }

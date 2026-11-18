@@ -40,6 +40,7 @@ import {
   findWhere,
   findWhereContains,
   getAll,
+  getAllByChildEqualTo,
   getById,
   invalidateCache,
   TTL,
@@ -500,7 +501,14 @@ export async function generateMonthlyAttendanceResults(
   const [deductionRules, rawInputs, existingResults] = await Promise.all([
     getAll('deductionRules'),
     loadMonthlyRawInputs(monthKey),
-    findWhere<StoredAttendanceResult>(ATTENDANCE_RESULTS_TABLE, { month: monthKey }),
+    // §INDEXED-QUERY (Phase 2) — the month's existing results come from
+    // an indexed `month == monthKey` fetch (guarded: timeout → the
+    // findWhere full-scan below is the transparent fallback, producing
+    // the exact legacy set). Completeness of the write plan depends on
+    // this read: the indexed query matches exactly the rows the
+    // legacy `r.month === monthKey` filter selected, and the fallback
+    // IS that filter.
+    getAllByChildEqualTo<StoredAttendanceResult>(ATTENDANCE_RESULTS_TABLE, 'month', monthKey),
   ]);
 
   const policy = resolveAttendancePolicy(deductionRules);
@@ -588,10 +596,16 @@ export async function generateMonthlyAttendanceResults(
 /**
  * Read the stored results for a month. READ-ONLY: never computes or
  * regenerates — a month that was never generated simply returns [].
+ *
+ * §INDEXED-QUERY (Phase 2): served by an indexed `month == monthKey`
+ * fetch — one small query instead of a whole-table download (the
+ * table grows by one row per employee per month). The guarded
+ * fallback re-materializes the legacy computation verbatim
+ * (full-table read + `r.month === monthKey`), so a missing index,
+ * a timeout or any RTDB failure returns EXACTLY the legacy rows.
  */
 export async function getAttendanceResultsForMonth(monthKey: string): Promise<StoredAttendanceResult[]> {
-  const all = await getAll<StoredAttendanceResult>(ATTENDANCE_RESULTS_TABLE, TTL.STATIC);
-  return all.filter((r) => r.month === monthKey);
+  return getAllByChildEqualTo<StoredAttendanceResult>(ATTENDANCE_RESULTS_TABLE, 'month', monthKey, { ttl: TTL.STATIC });
 }
 
 /**

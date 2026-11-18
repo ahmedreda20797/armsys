@@ -240,7 +240,7 @@ function makeDataset(overrides?: {
       monthly: [{ month: '2026-08', count: 8 }],
       ...overrides?.followUps,
     },
-    customerDealFollowUps: {
+    bookingExecution: {
       relationship: 'CONFIRMED',
       dealsInPeriod: 22,
       dealsWithItems: 18,
@@ -252,6 +252,11 @@ function makeDataset(overrides?: {
       dealsWithOpenItems: 8,
       openItemTypes: [{ type: 'hotel', count: 4 }, { type: 'visa', count: 4 }],
       dealsWithOpenItemIds: [],
+    },
+    customerFollowUpMeasurability: {
+      status: 'NOT_MEASURABLE',
+      reason: 'NO_CUSTOMER_FOLLOW_UP_SOURCE',
+      missingSource: 'Customer/deal follow-up requires a dedicated source.',
     },
     deals: {
       relationship: 'CONFIRMED',

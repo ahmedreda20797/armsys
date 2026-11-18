@@ -235,16 +235,153 @@ export async function revokeRefreshToken(token: string): Promise<boolean> {
 
 /**
  * Revoke ALL refresh tokens for a user (e.g., on password change).
+ *
+ * §SESSION-REVOKE-GUARD (Phase 2): the lookup of the user's sessions
+ * is an indexed `orderByChild('userId')` query — the query shape
+ * observed to hang indefinitely on this network when the index is
+ * absent (same signature as the login lookup; see lib/db
+ * §INDEXED-QUERY / findUserByEmail). An UNGUARDED hang here would
+ * wedge the password-change flow forever, and — worse — a timeout
+ * must NEVER be interpreted as a successful revocation while valid
+ * refresh tokens remain active. The guard below therefore:
+ *
+ *   1. Hard-caps the indexed attempt (SESSION_QUERY_TIMEOUT_MS);
+ *   2. Falls back to the proven full-node scan of `arm_erp/sessions`
+ *      on ANY indexed failure (missing index, timeout, network
+ *      error) — the same in-memory `userId` equality the indexed
+ *      query computes, so both paths select exactly the same records;
+ *   3. Opens a circuit breaker after repeated TIMEOUTS (the hang
+ *      signature) so subsequent revocations skip the hung query —
+ *      a fast error does not open it, and the first indexed success
+ *      resets the streak;
+ *   4. Drains the orphaned query after a timeout (the Admin SDK
+ *      cannot cancel a pending query): its late resolution is
+ *      ignored and its late rejection swallowed — the fallback's
+ *      scan is the only result that ever drives the revocation;
+ *   5. Deduplicates concurrent revocations for the SAME user through
+ *      an in-flight registry — two simultaneous password changes
+ *      share one lookup+revoke instead of issuing duplicate queries
+ *      and duplicate null-updates;
+ *   6. Fails EXPLICITLY: only when the revocation set was fully
+ *      determined AND the null-update completed does this resolve.
+ *      A failure of BOTH the indexed query and the fallback scan
+ *      REJECTS — the caller (password change) must surface the
+ *      failure, never report tokens revoked while sessions survive.
  */
-export async function revokeAllUserRefreshTokens(userId: string): Promise<void> {
-  const snapshot = await getAdminDb().ref('arm_erp/sessions').orderByChild('userId').equalTo(userId).get();
-  if (snapshot.exists()) {
-    const updates: Record<string, null> = {};
-    snapshot.forEach((child: any) => {
-      updates[child.key] = null;
-    });
-    if (Object.keys(updates).length > 0) {
-      await getAdminDb().ref('arm_erp/sessions').update(updates);
-    }
+const SESSION_QUERY_TIMEOUT_MS = 10_000;
+const SESSION_BREAKER_THRESHOLD = 2;
+const SESSION_BREAKER_COOLDOWN_MS = 5 * 60_000;
+
+let sessionQueryTimeoutStreak = 0;
+let sessionBreakerOpenUntil = 0;
+const inflightRevocations = new Map<string, Promise<void>>();
+
+/** Test hook — resets the session-lookup breaker and in-flight registry. */
+export function resetSessionRevokeStateForTests(): void {
+  sessionQueryTimeoutStreak = 0;
+  sessionBreakerOpenUntil = 0;
+  inflightRevocations.clear();
+}
+
+/** Drain an orphaned RTDB query (see §SESSION-REVOKE-GUARD #4). */
+function drainOrphanedQuery<T>(promise: Promise<T>): void {
+  promise.then(
+    () => undefined, // late resolution — the fallback already served the caller
+    () => undefined, // late rejection — never an unhandled rejection
+  );
+}
+
+/**
+ * Resolve the ids of ALL session records for `userId` — indexed
+ * query first (hard-capped), full-node scan fallback (the path the
+ * revocation relied on before Phase 2). Both failure modes of the
+ * indexed attempt leave the revocation correctness to the scan.
+ */
+async function loadUserSessionIds(userId: string, queryTimeoutMs: number): Promise<string[]> {
+  const sessionsRef = getAdminDb().ref('arm_erp/sessions');
+
+  // Breaker open → the indexed query proved it hangs recently; go
+  // straight to the scan without re-paying the timeout budget.
+  if (Date.now() < sessionBreakerOpenUntil) {
+    return scanUserSessionIds(sessionsRef, userId);
   }
+
+  try {
+    const indexedPromise = sessionsRef.orderByChild('userId').equalTo(userId).get();
+    const snapshot = await Promise.race([
+      indexedPromise,
+      new Promise<never>((_, reject) => {
+        const timer = setTimeout(() => {
+          drainOrphanedQuery(indexedPromise);
+          const err = new Error(`[auth] sessions indexed query exceeded ${queryTimeoutMs}ms (hung connection)`);
+          (err as any).kind = 'timeout';
+          reject(err);
+        }, queryTimeoutMs);
+        // Free the timer when the indexed query wins the race.
+        indexedPromise.then(() => clearTimeout(timer), () => clearTimeout(timer));
+      }),
+    ]);
+    sessionQueryTimeoutStreak = 0;
+    const ids: string[] = [];
+    snapshot.forEach((child: any) => {
+      ids.push(child.key);
+    });
+    return ids;
+  } catch (err: any) {
+    const isTimeout = err?.kind === 'timeout';
+    if (isTimeout) {
+      sessionQueryTimeoutStreak += 1;
+      if (sessionQueryTimeoutStreak >= SESSION_BREAKER_THRESHOLD) {
+        sessionBreakerOpenUntil = Date.now() + SESSION_BREAKER_COOLDOWN_MS;
+      }
+    }
+    console.warn(
+      `[auth] revokeAllUserRefreshTokens: indexed sessions lookup failed ` +
+      `(${isTimeout ? 'timeout' : 'error'}: ${String(err?.message ?? err).slice(0, 140)}) — ` +
+      'falling back to the full sessions scan. Revocation is unaffected.' +
+      (isTimeout && sessionBreakerOpenUntil > Date.now()
+        ? ' Indexed path temporarily disabled (breaker open).'
+        : '')
+    );
+    return scanUserSessionIds(sessionsRef, userId);
+  }
+}
+
+/** The legacy revocation-set computation: full-node scan + strict in-memory userId equality. */
+async function scanUserSessionIds(sessionsRef: any, userId: string): Promise<string[]> {
+  const snapshot = await sessionsRef.get();
+  const ids: string[] = [];
+  snapshot.forEach((child: any) => {
+    const val = child.val();
+    if (val && val.userId === userId) ids.push(child.key);
+  });
+  return ids;
+}export async function revokeAllUserRefreshTokens(userId: string): Promise<void> {
+  // §SESSION-REVOKE-GUARD #5 — concurrent revocations for the same
+  // user share one operation; the registry entry is removed on both
+  // outcomes so a FAILED revocation is retried fresh by the next
+  // caller instead of being joined.
+  const pending = inflightRevocations.get(userId);
+  if (pending) return pending;
+
+  const operation = (async () => {
+    // The revocation set is fully determined only when this resolves —
+    // an indexed timeout falls back to the scan INSIDE this call, and
+    // a scan failure REJECTS (never an empty set masquerading as
+    // "nothing to revoke").
+    const sessionIds = await loadUserSessionIds(userId, SESSION_QUERY_TIMEOUT_MS);
+    if (sessionIds.length === 0) return;
+
+    const updates: Record<string, null> = {};
+    for (const id of sessionIds) {
+      updates[id] = null;
+    }
+    await getAdminDb().ref('arm_erp/sessions').update(updates);
+  })();
+
+  const tracked = operation.finally(() => {
+    inflightRevocations.delete(userId);
+  });
+  inflightRevocations.set(userId, tracked);
+  return tracked;
 }

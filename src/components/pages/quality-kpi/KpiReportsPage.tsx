@@ -31,7 +31,7 @@ import { PageIdentity } from '@/components/shared/PageIdentity';
 import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
-import { useMonthSnapshots, useKpiInsights } from '@/hooks/use-kpi-queries';
+import { useMonthSnapshots, useKpiInsights, useFlexibleKpiInsights } from '@/hooks/use-kpi-queries';
 import { useEmployees } from '@/hooks/use-queries';
 import { usePageState } from '@/hooks/use-page-state';
 import { usePermissions } from '@/hooks/usePermissions';
@@ -40,14 +40,14 @@ import {
   audienceMayReceiveTechnicalReports,
   resolveReportAudience,
 } from '@/lib/report-audience/profiles';
-import type { KpiInsightsReport } from '@/lib/kpi-reporting';
+import type { KpiInsightsReport, FlexiblePeriodSpec, FlexibleComparisonSpec, FlexibleKpiInsightsReport } from '@/lib/kpi-reporting';
 import { buildMonthOptions, currentMonthKey, downloadKpiReportExcel } from './kpi-reports-shared';
 import HrPerformanceReportTab from './HrPerformanceReportTab';
 import { openPrintReport } from '@/components/print/print-report-store';
-import { kpiInsightsToPrintModel } from '@/components/print/print-adapters';
+import { kpiInsightsToPrintModel, flexibleKpiInsightsToPrintModel } from '@/components/print/print-adapters';
 import { T } from '@/lib/i18n/T';
 import { useLanguage } from '@/lib/i18n/language-context';
-import { formatMonthKey } from '@/lib/i18n/format';
+import { formatMonthKey, formatInteger } from '@/lib/i18n/format';
 import {
   KpiReportsControlBar,
   type KpiReportType,
@@ -66,6 +66,7 @@ import {
 } from './kpi-reports/InsightsSections';
 import { KpiEmployeeReportDialog } from './kpi-reports/KpiEmployeeReportDialog';
 import { normalizeView, DEFAULT_FILTERS, type WorkspaceView } from './kpi-reports/view-state';
+import { FlexiblePeriodHeader, FlexibleOverviewSection, FlexibleEmployeesSection, FlexibleUnitsSection, FlexibleDistributionsSection, FlexibleIssuesSection, FlexibleDataQualityNotes } from './kpi-reports/FlexibleReportView';
 import { useAppStore } from '@/lib/store';
 
 export default function KpiReportsPage() {
@@ -129,7 +130,17 @@ export default function KpiReportsPage() {
 
   const setViewPart = (patch: Partial<WorkspaceView>) => setView((s) => ({ ...s, ...patch }));
 
-  // ── Canonical insights payload (one assembly for the workspace) ──
+  // ── §FLEX-PERIODS — flexible period state (absent = the month flow) ──
+  // §CONSISTENCY — flexible mode is EXPLICIT: the user enters it via
+  // the "فترة مرنة" toggle and leaves it via "عودة للعرض الشهري
+  // الكامل". The spec is never silently dropped (a month + auto
+  // comparison inside flexible mode renders the flexible workspace —
+  // same canonical machinery, same numbers), so the picker can never
+  // vanish under the user's cursor.
+  const flexibleSpec: FlexiblePeriodSpec | undefined = view.flexibleSpec;
+  const flexibleComparison: FlexibleComparisonSpec = view.flexibleComparison ?? { kind: 'previous_period' };
+  const flexibleActive = flexibleSpec !== undefined;
+
   const insightsParams = {
     employeeIds: view.scopeMode === 'employees' ? view.employeeIds : [],
     orgNodeIds:
@@ -138,9 +149,21 @@ export default function KpiReportsPage() {
   };
   const insightsQuery = useKpiInsights(month, {
     ...insightsParams,
-    enabled: reportType !== 'hr',
+    enabled: reportType !== 'hr' && !flexibleActive,
   });
   const report = (insightsQuery.data ?? null) as KpiInsightsReport | null;
+
+  const flexibleQuery = useFlexibleKpiInsights({
+    periodKey: flexibleSpec ? JSON.stringify(flexibleSpec) : '',
+    periodSpecJson: flexibleSpec ? JSON.stringify(flexibleSpec) : '{}',
+    comparisonKey: JSON.stringify(flexibleComparison),
+    comparisonSpecJson: JSON.stringify(flexibleComparison),
+    employeeIds: insightsParams.employeeIds,
+    orgNodeIds: insightsParams.orgNodeIds,
+    includeArchived: insightsParams.includeArchived,
+    enabled: reportType !== 'hr' && flexibleActive,
+  });
+  const flexibleReport = (flexibleQuery.data ?? null) as FlexibleKpiInsightsReport | null;
 
   const employeesQuery = useEmployees();
   const employeeOptions = useMemo(
@@ -200,19 +223,30 @@ export default function KpiReportsPage() {
   };
 
   const handlePrint = () => {
-    if (!report) return;
+    const isFlexible = flexibleActive && flexibleReport;
     const scopeLabels =
       view.scopeMode === 'employees'
         ? view.employeeIds.map(employeeNameOf).join(' · ')
         : singleUnitLabel ?? undefined;
-    openPrintReport(
-      kpiInsightsToPrintModel(
-        report,
-        scopeLabels
-          ? `${locale === 'en' ? 'Scope' : 'النطاق'}: ${scopeLabels}`
-          : undefined,
-      ),
-    );
+    if (flexibleActive && flexibleReport) {
+      openPrintReport(
+        flexibleKpiInsightsToPrintModel(
+          flexibleReport!,
+          scopeLabels
+            ? `${locale === 'en' ? 'Scope' : 'النطاق'}: ${scopeLabels}`
+            : undefined,
+        ),
+      );
+    } else if (report) {
+      openPrintReport(
+        kpiInsightsToPrintModel(
+          report,
+          scopeLabels
+            ? `${locale === 'en' ? 'Scope' : 'النطاق'}: ${scopeLabels}`
+            : undefined,
+        ),
+      );
+    }
   };
 
   const handleExcelExport = () => {
@@ -234,16 +268,38 @@ export default function KpiReportsPage() {
           <>
             <T>مساحة ذكاء الأداء التشغيلي — تشرح أنماط الجودة وراء المؤشرات وتحدد مواضع التحسين ومسار المراجعة الإدارية.</T>
             <span className="block text-[11px] text-slate-500 mt-0.5">
-              <T>الفترة: </T>{formatMonthKey(month, locale)}
-              {monthOptions.find((o) => o.value === month)?.closed
-                ? <T>{' — شهر مغلق (نتائج مجمّدة)'}</T>
-                : <T>{' — شهر مفتوح'}</T>}
+              {flexibleActive && flexibleReport ? (
+                <>
+                  <T>الفترة المرنة: </T>
+                  {flexibleReport.period.startDayKey.split('-').reverse().join('/')}
+                  {' → '}
+                  {flexibleReport.period.endDayKey.split('-').reverse().join('/')}
+                  {flexibleReport.comparison && (
+                    <>
+                      {' · '}
+                      <T>المقارنة: </T>
+                      {flexibleReport.comparison.startDayKey.split('-').reverse().join('/')}
+                      {' → '}
+                      {flexibleReport.comparison.endDayKey.split('-').reverse().join('/')}
+                    </>
+                  )}
+                  {' · '}
+                  {formatInteger(flexibleReport.period.dayCount, locale)} <T>يومًا</T>
+                </>
+              ) : (
+                <>
+                  <T>الفترة: </T>{formatMonthKey(month, locale)}
+                  {monthOptions.find((o) => o.value === month)?.closed
+                    ? <T>{' — شهر مغلق (نتائج مجمّدة)'}</T>
+                    : <T>{' — شهر مفتوح'}</T>}
+                </>
+              )}
             </span>
           </>
         }
         actions={
           <div className="no-print flex items-center gap-1.5">
-            {report && (
+            {(report || flexibleReport) && (
               <Button variant="outline" size="sm" className="gap-1.5" onClick={handlePrint}>
                 <Printer className="size-4" />
                 <T>طباعة</T>
@@ -265,8 +321,8 @@ export default function KpiReportsPage() {
         availableReportTypes={availableReportTypes}
         monthOptions={monthOptions}
         month={month}
-        onMonthChange={(m) => setViewPart({ month: m })}
-        valueBasis={report?.valueBasis ?? null}
+        onMonthChange={(m) => setViewPart({ month: m, flexibleSpec: undefined })}
+        valueBasis={flexibleActive ? null : report?.valueBasis ?? null}
         finalized={report?.finalized ?? monthOptions.find((o) => o.value === month)?.closed ?? false}
         scopeMode={view.scopeMode}
         onScopeModeChange={(mode) => setViewPart({ scopeMode: mode })}
@@ -280,7 +336,25 @@ export default function KpiReportsPage() {
         filters={view.filters}
         onFiltersChange={(filters) => setViewPart({ filters })}
         onClear={handleClear}
-        loading={insightsQuery.isFetching}
+        loading={insightsQuery.isFetching || flexibleQuery.isFetching}
+        flexibleBasis={flexibleActive ? (flexibleReport?.period.valueBasis ?? null) : null}
+        onEnterFlexible={() => setViewPart({ flexibleSpec: { kind: 'month', monthKey: month }, flexibleComparison: { kind: 'previous_period' } })}
+        onExitFlexible={() => setViewPart({ flexibleSpec: undefined, flexibleComparison: { kind: 'previous_period' } })}
+        flexiblePeriod={{
+          spec: flexibleSpec ?? { kind: 'month', monthKey: month },
+          onSpecChange: (spec) => {
+            // §CONSISTENCY — the spec is NEVER silently dropped (even a
+            // bare month keeps flexible mode; the user exits explicitly).
+            setViewPart({ flexibleSpec: spec, flexibleComparison: flexibleComparison });
+          },
+          comparison: flexibleComparison,
+          onComparisonChange: (comparison) => {
+            setViewPart({
+              flexibleSpec: flexibleSpec ?? { kind: 'month', monthKey: month },
+              flexibleComparison: comparison,
+            });
+          },
+        }}
       />
 
       {reportType === 'hr' && canViewHrReport ? (
@@ -305,6 +379,33 @@ export default function KpiReportsPage() {
             </span>
           </CardContent>
         </Card>
+      ) : flexibleActive && flexibleQuery.isError ? (
+        <Card className="bg-red-950/20 border-red-800/40">
+          <CardContent className="p-5 text-sm text-red-300">
+            <T>تعذر تحميل تقرير الفترة المحددة.</T>
+            <span className="block text-xs text-red-300/80 mt-1">
+              {(flexibleQuery.error as Error | null)?.message ?? ''}
+            </span>
+          </CardContent>
+        </Card>
+      ) : flexibleActive && flexibleReport ? (
+        <div className="space-y-5">
+          <FlexiblePeriodHeader report={flexibleReport} />
+          <FlexibleOverviewSection report={flexibleReport} />
+          <FlexibleEmployeesSection report={flexibleReport} />
+          <FlexibleUnitsSection report={flexibleReport} />
+          <FlexibleDistributionsSection report={flexibleReport} />
+          <FlexibleIssuesSection report={flexibleReport} />
+          <FlexibleDataQualityNotes report={flexibleReport} />
+        </div>
+      ) : flexibleActive ? (
+        /* §FLEX-PERIODS — the flexible query is in flight (or refetching
+           after a spec change): explicit loading state, never a render
+           against a null payload. */
+        <div className="space-y-4" aria-busy="true">
+          <Skeleton className="h-24 w-full rounded-2xl bg-slate-800/40" />
+          <Skeleton className="h-64 w-full rounded-2xl bg-slate-800/40" />
+        </div>
       ) : report ? (
         <div className="space-y-5">
           <PerformanceOverview report={report} />
@@ -333,10 +434,10 @@ export default function KpiReportsPage() {
                 view.scopeMode === 'employees'
                   ? view.employeeIds
                   : view.orgNodeIds
-                    .map((nodeId) =>
-                      [...report.vocab.teams, ...report.vocab.departments].find((v) => v.nodeId === nodeId)?.label,
-                    )
-                    .filter((label): label is string => !!label)
+                      .map((nodeId) =>
+                        [...report.vocab.teams, ...report.vocab.departments].find((v) => v.nodeId === nodeId)?.label,
+                      )
+                      .filter((label): label is string => !!label)
               }
             />
           )}

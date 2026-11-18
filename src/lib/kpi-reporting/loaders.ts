@@ -11,7 +11,7 @@
 //  request — no N+1 employee loops.
 // ══════════════════════════════════════════════════════════════
 
-import { getAll, getById, TTL } from '@/lib/db';
+import { getAll, getAllByChildEqualTo, getById, TTL } from '@/lib/db';
 import { getMonthSnapshot } from '@/lib/month-lock';
 import { getMonthDetail } from '@/lib/month-snapshots';
 import { resolveSchemeForEmployee } from '@/lib/kpi-framework/resolution';
@@ -193,8 +193,14 @@ export const defaultKpiReportingLoaders: KpiReportingLoaders = {
   },
 
   loadObservations: async (monthKey) => {
-    const all = await getAll<QualityObservation>('qualityObservations', TTL.MEDIUM);
-    return all.filter((o) => o && o.month === monthKey);
+    // §INDEXED-QUERY (Phase 2) — the month's observations through a
+    // guarded indexed `month == monthKey` fetch (one small query
+    // instead of the whole all-history table). The fallback
+    // re-materializes the legacy computation verbatim: the full read
+    // + this exact strict stored-month filter (records without a
+    // stored month matched neither path).
+    return getAllByChildEqualTo<QualityObservation>('qualityObservations', 'month', monthKey, { ttl: TTL.MEDIUM })
+      .then((rows) => rows.filter((o) => o && o.month === monthKey));
   },
 
   loadTeamNames: async () => {

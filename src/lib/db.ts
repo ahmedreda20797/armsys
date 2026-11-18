@@ -43,6 +43,59 @@ const TTL = {
   POLL: 30_000,
 } as const;
 
+// ═══════════════════════════════════════════════════════════════
+//  §SINGLE-FLIGHT — in-flight request deduplication (NOT a cache)
+//
+//  Concurrent identical READS of the same table/row share ONE pending
+//  RTDB operation instead of each paying their own round-trip (a
+//  thundering-herd of N identical `getAll` calls on a cold cache used
+//  to issue N parallel full-table downloads).
+//
+//  Scope and limits (deliberate, documented):
+//    • Same SERVER INSTANCE only — it deduplicates concurrent callers
+//      inside one Node process. It is NOT distributed deduplication:
+//      separate Vercel instances still read independently.
+//    • In-flight ONLY: the entry is removed the moment the operation
+//      settles (resolve OR reject), so rejected operations free their
+//      slot immediately and the next caller retries fresh. Completed
+//      promises never linger here — persistence is the TTL cache's
+//      job (§TTL policy below, unchanged).
+//    • Keys include EVERY parameter that affects the result: table +
+//      the effective TTL for getAll/getAllBatch (the TTL selects the
+//      cache lifetime the winner will store), table + id for getById.
+//      No user identity/scope parameter exists at this layer — every
+//      caller of `getAll(table)` receives the same table rows, so
+//      there is no cross-user surface to leak through.
+//    • Result sharing matches the EXISTING cache contract: the cached
+//      path already hands every caller the same array reference. The
+//      flight winner's result flows into that same cache; dedup adds
+//      no new mutable-sharing surface beyond it.
+// ═══════════════════════════════════════════════════════════════
+
+const inflightReads = new Map<string, Promise<unknown>>();
+
+/**
+ * Run `run()` under single-flight semantics for `key`: concurrent
+ * callers join the pending operation; the registry entry is removed
+ * as soon as it settles (success or failure).
+ */
+function singleFlight<T>(key: string, run: () => Promise<T>): Promise<T> {
+  const pending = inflightReads.get(key);
+  if (pending) return pending as Promise<T>;
+  // .finally (not .then/.catch) — cleanup runs on BOTH outcomes and
+  // the derived promise preserves the original resolve/reject value.
+  const flight = run().finally(() => {
+    inflightReads.delete(key);
+  });
+  inflightReads.set(key, flight);
+  return flight;
+}
+
+/** Pending single-flight read count (diagnostics/monitoring). */
+export function getInFlightReadCount(): number {
+  return inflightReads.size;
+}
+
 function getCached(table: string): any[] | null {
   const entry = cache.get(table);
   if (!entry) return null;
@@ -61,6 +114,14 @@ function setCache(table: string, data: any[], ttl: number = TTL.DEFAULT): void {
 export function invalidateCache(table?: string): void {
   if (table) {
     cache.delete(table);
+    // §INDEXED-QUERY — indexed-result entries for this table are keyed
+    // `idx:<table>:<field>:<value>`; clear them too so a write is
+    // visible to indexed readers on the very next read (the same
+    // immediate-visibility guarantee the table cache has always had).
+    const prefix = `idx:${table}:`;
+    for (const key of Array.from(cache.keys())) {
+      if (key.startsWith(prefix)) cache.delete(key);
+    }
   } else {
     cache.clear();
   }
@@ -74,61 +135,76 @@ export function getCacheStats(): { size: number; tables: string[] } {
   };
 }
 
+/** Shared snapshot → rows projection (getAll and getAllBatch stay identical). */
+function parseSnapshotRows(data: Record<string, any>): any[] {
+  return Object.entries(data).map(
+    ([id, val]) => ({ id, ...(val as Record<string, any>) })
+  );
+}
+
 export async function getAll<T = Record<string, any>>(table: string, ttl?: number): Promise<T[]> {
   const cached = getCached(table);
   if (cached) return cached as T[];
 
-  const snapshot = await rtdbRef(`arm_erp/${table}`).get();
-  if (!snapshot.exists()) return [];
-  const data = snapshot.val();
-  const result: T[] = Object.entries(data).map(
-    ([id, val]) => ({ id, ...(val as Record<string, any>) } as unknown as T)
-  );
-  setCache(table, result, ttl);
-  return result;
+  // §SINGLE-FLIGHT — concurrent cold reads of the same table (+ same
+  // TTL intent) share one RTDB download; the winner populates the TTL
+  // cache exactly as before.
+  return singleFlight(`all:${table}:${ttl ?? 'default'}`, async () => {
+    const snapshot = await rtdbRef(`arm_erp/${table}`).get();
+    if (!snapshot.exists()) return [];
+    const result = parseSnapshotRows(snapshot.val()) as T[];
+    setCache(table, result, ttl);
+    return result;
+  }) as Promise<T[]>;
 }
 
 /** Get multiple tables in a single parallel batch — avoids N separate sequential reads.
  *  `ttl` (optional) overrides the per-table cache lifetime for every table in the
- *  batch; defaults to TTL.DEFAULT exactly as before (backward compatible). */
+ *  batch; defaults to TTL.DEFAULT exactly as before (backward compatible).
+ *  Per-table reads flow through the §SINGLE-FLIGHT registry, so a batch
+ *  table and a concurrent `getAll` of the SAME table (same TTL) share
+ *  one download instead of duplicating it. */
 export async function getAllBatch(tables: string[], ttl?: number): Promise<Map<string, any[]>> {
   const result = new Map<string, any[]>();
-  const uncachedTables: string[] = [];
+  const flights: Array<{ table: string; promise: Promise<any[]> }> = [];
 
   for (const table of tables) {
     const cached = getCached(table);
     if (cached) {
       result.set(table, cached);
     } else {
-      uncachedTables.push(table);
+      flights.push({
+        table,
+        promise: singleFlight(`all:${table}:${ttl ?? 'default'}`, async () => {
+          const snapshot = await rtdbRef(`arm_erp/${table}`).get();
+          if (!snapshot.exists()) return [];
+          const parsed = parseSnapshotRows(snapshot.val());
+          setCache(table, parsed, ttl);
+          return parsed;
+        }),
+      });
     }
   }
 
-  if (uncachedTables.length > 0) {
-    const results = await Promise.all(
-      uncachedTables.map(async (table) => {
-        const snapshot = await rtdbRef(`arm_erp/${table}`).get();
-        if (!snapshot.exists()) return { table, data: [] };
-        const data = snapshot.val();
-        const parsed: any[] = Object.entries(data).map(
-          ([id, val]) => ({ id, ...(val as Record<string, any>) })
-        );
-        setCache(table, parsed, ttl);
-        return { table, data: parsed };
-      })
-    );
-    for (const { table, data } of results) {
-      result.set(table, data);
-    }
+  // Same failure semantics as the previous Promise.all: the FIRST
+  // table read that rejects rejects the whole batch.
+  const settled = await Promise.all(flights.map((f) => f.promise));
+  for (let i = 0; i < flights.length; i++) {
+    result.set(flights[i]!.table, settled[i]!);
   }
 
   return result;
 }
 
 export async function getById<T = Record<string, any>>(table: string, id: string): Promise<T | null> {
-  const snapshot = await rtdbRef(`arm_erp/${table}/${id}`).get();
-  if (!snapshot.exists()) return null;
-  return { id, ...(snapshot.val() as Record<string, any>) } as unknown as T;
+  // §SINGLE-FLIGHT — concurrent identical point reads share one
+  // round-trip. No TTL cache here (unchanged): each flight lives only
+  // while the read is pending, so freshness is untouched.
+  return singleFlight(`byId:${table}:${id}`, async () => {
+    const snapshot = await rtdbRef(`arm_erp/${table}/${id}`).get();
+    if (!snapshot.exists()) return null;
+    return { id, ...(snapshot.val() as Record<string, any>) } as unknown as T;
+  }) as Promise<T | null>;
 }
 
 /**
@@ -313,6 +389,263 @@ export async function findUserByEmail<T = Record<string, any>>(
     };
     return results.length > 0 ? results[0] : null;
   }
+}
+
+// ─── §INDEXED-QUERY — guarded per-value child queries (Phase 2) ─────
+// The same doctrine as the login lookup above, generalized: an
+// indexed `orderByChild(field).equalTo(value)` fetch is attempted
+// FIRST (bounded by a hard timeout), and ANY failure — missing index,
+// timeout, or network error — falls back to the proven full-table
+// read + in-memory filter, which produces the EXACT legacy result.
+// The fallback is therefore the correctness baseline: an indexed
+// result is adopted only when RTDB itself computed the same
+// predicate (child value equality), so the two paths are
+// row-for-row interchangeable by construction.
+//
+// WHY THE PREDICATES ARE EQUIVALENT: RTDB `equalTo(value)` matches a
+// record iff its child value equals the query value under RTDB
+// comparison; records WITHOUT the child never match an orderByChild
+// query at all. The legacy in-memory filter is a strict `===` on the
+// same field — for the string id/month fields queried here the two
+// predicates select exactly the same rows (missing/undefined/null
+// child values match neither).
+//
+// ORDERING PARITY: a full-node read returns children in key order;
+// an `equalTo` query returns its matches in child-value order with
+// ties (identical value) in key order — for a single queried value
+// every returned row is a tie, so the row sequence is the same key
+// order the legacy scan saw. "Last row wins" consumers keep their
+// semantics.
+//
+// CACHING: results are cached under `idx:<table>:<field>:<value>`
+// with the caller's TTL tier and invalidated together with the table
+// (invalidateCache) — a write is visible to indexed readers on the
+// very next read, the same guarantee the table cache has. The cache
+// stores exactly the rows the legacy scan would return (same layer,
+// same shared-visibility contract as the whole-table cache — the
+// authorization filtering still happens downstream at the caller).
+//
+// CIRCUIT BREAKER (per `${table}.${field}` target): TIMEOUTS — the
+// observed hang signature — count toward the streak; a fast error
+// ("index not defined", network reset) does not. After
+// INDEXED_QUERY_BREAKER_THRESHOLD consecutive timeouts the indexed
+// attempt is skipped for INDEXED_QUERY_BREAKER_COOLDOWN_MS and the
+// scan serves directly; the first indexed success resets the streak,
+// so a repaired index/network is picked up automatically.
+//
+// DELAYED ORIGINALS: `Promise.race` cannot cancel the losing RTDB
+// query (the Admin SDK exposes no cancellation), so the orphan keeps
+// running server-side after the fallback started. The orphan is
+// explicitly drained — its late resolution is ignored (the fallback
+// already served the caller) and its late rejection is swallowed so
+// it can never surface as an unhandled rejection. Concurrent
+// identical queries share ONE attempt through the §SINGLE-FLIGHT
+// registry, so a hung query + fallback cannot duplicate itself per
+// caller.
+const INDEXED_QUERY_TIMEOUT_MS = USER_QUERY_TIMEOUT_MS;
+const INDEXED_QUERY_BREAKER_THRESHOLD = INDEX_BREAKER_THRESHOLD;
+const INDEXED_QUERY_BREAKER_COOLDOWN_MS = INDEX_BREAKER_COOLDOWN_MS;
+
+export type IndexedQueryFailureKind = UserLookupFailureKind;
+
+export interface IndexedQueryDiagnostic {
+  /** `${table}.${field}` — the breaker/diagnostics target. */
+  target: string;
+  path: 'indexed' | 'scan' | 'scan-breaker-open';
+  failure: IndexedQueryFailureKind;
+  durationMs: number;
+}
+
+export interface GetAllByChildOptions {
+  /** TTL tier for the result cache (same tiers as getAll); default TTL.DEFAULT. */
+  ttl?: number;
+  /** Hard cap for the indexed attempt (default INDEXED_QUERY_TIMEOUT_MS). */
+  queryTimeoutMs?: number;
+}
+
+interface IndexedBreakerState {
+  timeoutStreak: number;
+  openUntil: number;
+}
+
+const indexedBreakers = new Map<string, IndexedBreakerState>();
+const lastIndexQueryDiagnostics = new Map<string, IndexedQueryDiagnostic>();
+const indexedFallbackWarnedTargets = new Set<string>();
+
+/** The most recent diagnostic for a `${table}.${field}` target (ops/debugging). */
+export function getLastIndexedQueryDiagnostic(target: string): IndexedQueryDiagnostic | null {
+  return lastIndexQueryDiagnostics.get(target) ?? null;
+}
+
+/**
+ * Test hook — resets the per-target breakers, timeout streaks,
+ * diagnostics and the warn-once flags between test cases (state is
+ * module-level by design; production code must never call this).
+ */
+export function resetIndexedQueryStateForTests(): void {
+  indexedBreakers.clear();
+  lastIndexQueryDiagnostics.clear();
+  indexedFallbackWarnedTargets.clear();
+}
+
+function breakerFor(target: string): IndexedBreakerState {
+  let state = indexedBreakers.get(target);
+  if (!state) {
+    state = { timeoutStreak: 0, openUntil: 0 };
+    indexedBreakers.set(target, state);
+  }
+  return state;
+}
+
+/** Snapshot rows from an indexed query — same id-injection as getAll. */
+function parseQueryRows(data: Record<string, any>): any[] {
+  return Object.entries(data).map(([id, val]) => ({ id, ...(val as Record<string, any>) }));
+}
+
+/**
+ * The legacy computation for a child-equality filter: the proven
+ * full-table read (TTL-cached, §SINGLE-FLIGHT dedup) + the strict
+ * in-memory equality filter the callers ran before Phase 2.
+ */
+async function legacyChildScan<T>(
+  table: string,
+  field: string,
+  value: string,
+  ttl?: number,
+): Promise<T[]> {
+  const all = await getAll<T>(table, ttl);
+  return all.filter((r) => (r as Record<string, any>)?.[field] === value) as T[];
+}
+
+/**
+ * Race an indexed RTDB query against a hard timeout. The losing
+ * original is drained explicitly: RTDB queries cannot be cancelled
+ * through the Admin SDK, so a query that loses the race keeps
+ * running server-side — its late resolution is irrelevant (the
+ * fallback already served the caller) and its late rejection is
+ * swallowed so it can never become an unhandled rejection.
+ */
+function raceIndexedQuery<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      const err = new Error(`[db] indexed RTDB query exceeded ${timeoutMs}ms (hung connection)`);
+      (err as any).kind = 'timeout';
+      reject(err);
+    }, timeoutMs);
+  });
+  // Drain the orphan: ignore late results, swallow late failures,
+  // and free the timer as soon as the original settles.
+  promise.then(
+    () => clearTimeout(timer),
+    () => clearTimeout(timer),
+  );
+  return Promise.race([promise, timeoutPromise]);
+}
+
+/**
+ * Guarded indexed fetch: all rows of `table` whose child `field`
+ * equals `value` — the exact rows the legacy full-table scan's
+ * `r[field] === value` filter selects, served (when the index is
+ * available) by one small RTDB query instead of a whole-table
+ * download. Any indexed failure transparently falls back to that
+ * scan, so the result is never partial: an indexed success is a
+ * complete predicate match, a fallback success IS the legacy
+ * computation, and a fallback failure rejects (never a silently
+ * empty dataset).
+ */
+export async function getAllByChildEqualTo<T = Record<string, any>>(
+  table: string,
+  field: string,
+  value: string,
+  options?: GetAllByChildOptions,
+): Promise<T[]> {
+  const ttl = options?.ttl;
+  const queryTimeoutMs = options?.queryTimeoutMs ?? INDEXED_QUERY_TIMEOUT_MS;
+  const cacheKey = `idx:${table}:${field}:${value}`;
+  const target = `${table}.${field}`;
+
+  const cached = getCached(cacheKey);
+  if (cached) return cached as T[];
+
+  // §SINGLE-FLIGHT — concurrent identical indexed queries share one
+  // attempt (query + fallback), so a hung index cannot fan out into
+  // one hanging query + one fallback scan per caller.
+  return singleFlight(`idxq:${table}:${field}:${value}`, async () => {
+    const t0 = performance.now();
+    const breaker = breakerFor(target);
+    const finish = (
+      path: IndexedQueryDiagnostic['path'],
+      failure: IndexedQueryFailureKind,
+      rows: T[],
+    ): T[] => {
+      lastIndexQueryDiagnostics.set(target, {
+        target,
+        path,
+        failure,
+        durationMs: Math.round(performance.now() - t0),
+      });
+      return rows;
+    };
+
+    // Breaker open → the indexed query already hung repeatedly for
+    // this target; serve from the scan without re-paying the timeout.
+    if (Date.now() < breaker.openUntil) {
+      const rows = await legacyChildScan<T>(table, field, value, ttl);
+      setCache(cacheKey, rows, ttl);
+      return finish('scan-breaker-open', 'none', rows);
+    }
+
+    try {
+      const snapshot = await raceIndexedQuery(
+        rtdbRef(`arm_erp/${table}`).orderByChild(field).equalTo(value).get(),
+        queryTimeoutMs,
+      );
+      const rows = snapshot.exists() ? (parseQueryRows(snapshot.val()) as T[]) : [];
+      breaker.timeoutStreak = 0;
+      setCache(cacheKey, rows, ttl);
+      return finish('indexed', 'none', rows);
+    } catch (err: any) {
+      const kind: IndexedQueryFailureKind = err?.kind === 'timeout' ? 'timeout' : 'error';
+      if (kind === 'timeout') {
+        breaker.timeoutStreak += 1;
+        if (breaker.timeoutStreak >= INDEXED_QUERY_BREAKER_THRESHOLD) {
+          breaker.openUntil = Date.now() + INDEXED_QUERY_BREAKER_COOLDOWN_MS;
+        }
+      }
+
+      if (!indexedFallbackWarnedTargets.has(target) || kind === 'timeout') {
+        indexedFallbackWarnedTargets.add(target);
+        const reason = String(err?.message ?? err).slice(0, 140);
+        console.warn(
+          `[db] getAllByChildEqualTo(${target} == ${value}): indexed query failed ` +
+          `(${kind}: ${reason}) — falling back to the full-table scan. ` +
+          'Results are unaffected; only the read cost changes.' +
+          (kind === 'timeout' && breaker.openUntil > Date.now()
+            ? ` Indexed path for ${target} temporarily disabled (breaker open).`
+            : '')
+        );
+      }
+
+      // Fallback = the legacy computation. Its failure REJECTS — a
+      // broken database must surface, never masquerade as empty data.
+      // The diagnostic is recorded BEFORE the rethrow so a total
+      // outage is still observable.
+      try {
+        const rows = await legacyChildScan<T>(table, field, value, ttl);
+        setCache(cacheKey, rows, ttl);
+        return finish('scan', kind, rows);
+      } catch (fallbackErr) {
+        lastIndexQueryDiagnostics.set(target, {
+          target,
+          path: 'scan',
+          failure: kind,
+          durationMs: Math.round(performance.now() - t0),
+        });
+        throw fallbackErr;
+      }
+    }
+  }) as Promise<T[]>;
 }
 
 export async function createRecord<T = Record<string, any>>(table: string, data: Record<string, any>): Promise<T> {

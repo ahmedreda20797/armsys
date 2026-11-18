@@ -117,6 +117,62 @@ export function isRejectedObs(obs: ObservationLike): boolean {
 }
 
 /**
+ * Optional structural fields the approval-duration average reads
+ * (§PHASE0-K1). Both are optional so the minimal discovery-record
+ * shape still satisfies the parameter type — records without them
+ * simply contribute no duration.
+ */
+export interface ApprovalStatsDurationSource {
+  /** Append-only approval history — the authoritative timestamps. */
+  approvalHistory?: ApprovalEventType[];
+  /** Creation stamp; fallback submission moment for legacy records. */
+  createdAt?: string;
+}
+
+/**
+ * Compute ONE observation's approval duration in hours: the span from
+ * the submission moment to the approval moment.
+ *
+ * §PHASE0-K1 — replaces the previous hardcoded 0. Definition:
+ *   • approval moment  = the LAST `approve` event's timestamp
+ *   • submission moment = the LAST `submit` event's timestamp, falling
+ *     back to the record's `createdAt` when the history carries no
+ *     submit (legacy records created before submit events were
+ *     appended). Both are server-issued ISO stamps.
+ *
+ * Excluded (returns null — never guessed):
+ *   • missing history and no usable createdAt,
+ *   • unparseable/missing timestamps on the deciding events,
+ *   • NEGATIVE durations (approve before submit — anomalous history,
+ *     e.g. a reopen that was never re-approved).
+ * A zero duration (same-instant approval) is legitimate and kept.
+ */
+export function approvalDurationHoursOf(
+  history: ReadonlyArray<ApprovalEventType> | undefined,
+  createdAt?: string,
+): number | null {
+  let approvedAtMs: number | null = null;
+  let submittedAtMs: number | null = null;
+  if (Array.isArray(history)) {
+    for (const event of history) {
+      if (!event || typeof event.timestamp !== 'string') continue;
+      const ts = Date.parse(event.timestamp);
+      if (!Number.isFinite(ts)) continue; // invalid timestamps ignored
+      if (event.action === 'approve') approvedAtMs = ts;
+      else if (event.action === 'submit') submittedAtMs = ts;
+    }
+  }
+  if (submittedAtMs === null && typeof createdAt === 'string') {
+    const ts = Date.parse(createdAt);
+    if (Number.isFinite(ts)) submittedAtMs = ts;
+  }
+  if (approvedAtMs === null || submittedAtMs === null) return null;
+  const hours = (approvedAtMs - submittedAtMs) / 3_600_000;
+  if (!Number.isFinite(hours) || hours < 0) return null;
+  return hours;
+}
+
+/**
  * Approval statistics for a set of observations — SHARED aggregation
  *
  * Extracted verbatim from `computeMonthSnapshot` so the Month Close
@@ -128,24 +184,37 @@ export function isRejectedObs(obs: ObservationLike): boolean {
  * Rule (unchanged): only approval-relevant observations
  * (`applyPointDeduction`) are counted, grouped by `approvalStatus`.
  *
- * Parameter type is the MINIMAL structural shape the aggregation
- * reads (`Pick<ObservationLike, …>`) so any observation superset —
- * engine `ObservationLike` OR lean discovery records — can be passed
- * without casting. Existing engine callers are unaffected.
+ * §PHASE0-K1: `avgApprovalHours` is now the MEAN approval duration
+ * (see {@link approvalDurationHoursOf}) over the APPROVED
+ * approval-relevant observations that carry a computable duration,
+ * rounded to 1 decimal. `null` when no eligible duration exists —
+ * never a misleading zero. Observations without history/createdAt
+ * (lean discovery records) still count in the status totals and
+ * simply contribute no duration.
+ *
+ * Parameter type stays the MINIMAL structural shape the aggregation
+ * reads (`Pick<ObservationLike, …>` plus the optional duration
+ * source) so any observation superset — engine `ObservationLike` OR
+ * lean discovery records — can be passed without casting. Existing
+ * engine callers are unaffected.
  */
 export function computeApprovalStats(
-  observations: Array<Pick<ObservationLike, 'applyPointDeduction' | 'approvalStatus'>>,
+  observations: Array<Pick<ObservationLike, 'applyPointDeduction' | 'approvalStatus'> & ApprovalStatsDurationSource>,
 ): MonthApprovalStats {
   let totalApprovalRelevant = 0;
   let pending = 0;
   let approved = 0;
   let rejected = 0;
+  const durations: number[] = [];
   for (const obs of observations) {
     if (!obs.applyPointDeduction) continue;
     totalApprovalRelevant++;
     if (obs.approvalStatus === 'pending') pending++;
-    else if (obs.approvalStatus === 'approved') approved++;
-    else if (obs.approvalStatus === 'rejected') rejected++;
+    else if (obs.approvalStatus === 'approved') {
+      approved++;
+      const hours = approvalDurationHoursOf(obs.approvalHistory, obs.createdAt);
+      if (hours !== null) durations.push(hours);
+    } else if (obs.approvalStatus === 'rejected') rejected++;
   }
 
   return {
@@ -153,7 +222,10 @@ export function computeApprovalStats(
     pending,
     approved,
     rejected,
-    avgApprovalHours: 0, // Computed from timestamps when data available.
+    avgApprovalHours:
+      durations.length > 0
+        ? Math.round((durations.reduce((a, b) => a + b, 0) / durations.length) * 10) / 10
+        : null,
   };
 }
 
@@ -384,8 +456,21 @@ export function computeMonthSnapshot(
     }
   }
 
-  // Leaderboard: top/bottom 10.
-  const topEmployees: RankedEmployee[] = scoredEntries.slice(0, 10).map(({ entry }) => ({
+  // Leaderboard: top/bottom lists — DISJOINT BY CONSTRUCTION (§PHASE0-K2).
+  //
+  // The bottom list only contains employees OUTSIDE the top list:
+  //   topCount    = min(10, n)
+  //   bottomCount = min(10, n − topCount)
+  // With ≤10 scored employees the whole scored workforce IS the top
+  // list and the bottom list is empty — the same employee is never
+  // presented as both a top and a bottom performer. Ordering stays
+  // deterministic (score desc, then employeeId asc — the ranking
+  // order above), and no employee is excluded from the report itself:
+  // every scored employee remains in `employeeScores` and the
+  // department aggregates regardless of these highlight lists.
+  const topCount = Math.min(10, scoredEntries.length);
+  const bottomCount = Math.min(10, scoredEntries.length - topCount);
+  const topEmployees: RankedEmployee[] = scoredEntries.slice(0, topCount).map(({ entry }) => ({
     employeeId: entry.employeeSnapshot.employeeId,
     employeeName: entry.employeeSnapshot.employeeName,
     department: entry.dept,
@@ -393,7 +478,7 @@ export function computeMonthSnapshot(
     rank: entry.rank,
   }));
   const bottomEmployees: RankedEmployee[] = scoredEntries
-    .slice(-10)
+    .slice(scoredEntries.length - bottomCount)
     .reverse()
     .map(({ entry }) => ({
       employeeId: entry.employeeSnapshot.employeeId,
@@ -515,6 +600,21 @@ function buildMonthKeys(year: number, month: number, count: number): string[] {
  *   all supplied snapshots. If deviation > 3 → improving/declining.
  *   Otherwise → stable.
  *
+ *   §PHASE0-K3 — INTENTIONAL CONTRACT (validated by tests, not a
+ *   bug): the rolling baseline INCLUDES the latest snapshot itself.
+ *   Consequences that follow from this written contract:
+ *     • the deviation is dampened by (n−1)/n versus an exclusive
+ *       (previous-periods-only) baseline — e.g. a rising series with
+ *       constant month-over-month delta d yields deviation d(n−1)/n;
+ *     • with a single snapshot the direction is 'stable' (insufficient
+ *       history — handled explicitly below);
+ *     • direction flips require a slightly larger true deviation than
+ *       the ±3 threshold suggests.
+ *   This is the settings-labeled `rollingAverage` semantics the KPI
+ *   dashboard has always exposed; changing it to an exclusive
+ *   baseline would alter live trend verdicts for existing users and
+ *   is a business decision, not a reliability fix.
+ *
  * - `movingScore`: Direction is determined by month-over-month delta
  *   (latest score minus previous score). If delta > 3 → improving;
  *   delta < -3 → declining; otherwise stable.
@@ -575,7 +675,9 @@ function resolveTrendDirection(
     }
     case 'rollingAverage':
     default: {
-      // Compare latest score against rolling average.
+      // Compare the latest score against the SELF-INCLUSIVE rolling
+      // average of ALL supplied snapshots (§PHASE0-K3 — intentional,
+      // see computeTrend docs; behavior preserved, contract explicit).
       if (scores.length < 2) return 'stable';
       const avg = scores.reduce((a, b) => a + b, 0) / scores.length;
       const deviation = scores[0] - avg;

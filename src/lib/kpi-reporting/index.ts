@@ -86,6 +86,7 @@ export { buildKpiManagementSummary, buildSummaryPayload, KPI_SUMMARY_LABEL } fro
 export {
   buildKpiInsightsReport,
   defaultKpiInsightsLoaders,
+  employeeIdsInOrgSubtrees,
   INSIGHTS_ATTENTION_DELTA_POINTS,
   INSIGHTS_TEAM_SIGNAL_DELTA_POINTS,
   INSIGHTS_PATTERN_EMPLOYEE_COUNT,
@@ -111,3 +112,35 @@ export type {
   InsightDataStatus,
   InsightSeverity,
 } from './insights';
+
+// §FLEX-PERIODS — flexible reporting periods + independent comparison
+export { buildFlexibleKpiInsights, defaultFlexibleKpiLoaders } from './flexible-insights';
+export type {
+  BuildFlexibleKpiInsightsInput,
+  FlexibleKpiLoaders,
+  FlexibleKpiInsightsReport,
+  FlexibleSpanMeta,
+  FlexibleSpanBasis,
+  FlexibleMonthBasis,
+  FlexibleEmployeeKpi,
+  FlexibleUnitRollup,
+} from './flexible-insights';
+export {
+  resolveFlexiblePeriod,
+  resolvePeriodWithComparison,
+  previousPeriodSpecOf,
+  periodsOverlap,
+  weekStartOf,
+  previousWeekStartOf,
+  deriveComparisonSpec,
+  FLEXIBLE_PERIOD_MAX_DAYS,
+  FlexiblePeriodValidationError,
+  isFlexiblePeriodValidationError,
+} from './flexible-period';
+export type {
+  FlexiblePeriodKind,
+  FlexiblePeriodSpec,
+  FlexibleComparisonSpec,
+  ResolvedFlexiblePeriod,
+  FlexiblePeriodErrorCode,
+} from './flexible-period';

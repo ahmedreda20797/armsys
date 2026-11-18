@@ -121,19 +121,22 @@ export function StatusBadge({ status, className }: { status: string | null; clas
   );
 }
 
-const BASIS_LABELS: Record<KpiValueBasis, [string, string]> = {
+const BASIS_LABELS: Record<KpiValueBasis | 'MIXED', [string, string]> = {
   MTD: ['MTD — حتى تاريخه', 'MTD — month to date'],
   LIVE: ['حية (غير نهائية)', 'Live (non-final)'],
   FINALIZED: ['مجمّدة نهائية', 'Finalized'],
+  // §FLEX-PERIODS — a span mixing frozen + live months.
+  MIXED: ['مختلطة — مجمّدة وحية', 'Mixed — frozen + live'],
 };
 
-const BASIS_STYLES: Record<KpiValueBasis, string> = {
+const BASIS_STYLES: Record<KpiValueBasis | 'MIXED', string> = {
   MTD: 'bg-cyan-500/15 text-cyan-300 border-cyan-500/30',
   LIVE: 'bg-orange-500/15 text-orange-300 border-orange-500/30',
+  MIXED: 'bg-amber-500/15 text-amber-300 border-amber-500/30',
   FINALIZED: 'bg-sky-500/15 text-sky-300 border-sky-500/30',
 };
 
-export function ValueBasisBadge({ basis }: { basis: KpiValueBasis }) {
+export function ValueBasisBadge({ basis }: { basis: KpiValueBasis | 'MIXED' }) {
   const { locale } = useLanguage();
   const label = BASIS_LABELS[basis];
   return (
@@ -183,7 +186,10 @@ export async function downloadKpiReportExcel(
   fileName: string,
   locale: 'ar' | 'en' = 'ar',
 ): Promise<void> {
-  const payload = { ...body, lang: locale };
+  // §INPUT-TYPES — the payload is an open-ended record (the run
+  // endpoint accepts per-report filter envelopes); typed explicitly
+  // so the spread keeps its index signature.
+  const payload: Record<string, unknown> = { ...body, lang: locale };
   if (payload.filters && typeof payload.filters === 'object') {
     // Drop empty filter envelopes instead of sending noise.
     if (Object.keys(payload.filters as Record<string, unknown>).length === 0) {

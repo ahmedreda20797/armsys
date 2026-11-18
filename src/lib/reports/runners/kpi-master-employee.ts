@@ -20,7 +20,7 @@
 //  left empty when evidence exists, never an opaque OBS- id.
 // ══════════════════════════════════════════════════════════════
 
-import { getAll, TTL } from '@/lib/db';
+import { getAllByChildEqualTo, TTL } from '@/lib/db';
 import { buildMonthlyKpiReport } from '@/lib/kpi-reporting';
 import type { KpiReportRow } from '@/lib/kpi-reporting';
 import type { QualityObservation } from '@/types/quality-kpi';
@@ -101,6 +101,11 @@ export async function runKpiMasterEmployeeReport(
   const includeArchived = resolved.filters.includeArchived === true || resolved.filters.includeArchived === 'true';
 
   // ── One read per canonical source (batched, no N+1) ──
+  // §INDEXED-QUERY (Phase 2) — the observation source is month-scoped
+  // (the scoring filter below keys on `month === monthKey`), so the
+  // guarded indexed month fetch replaces the whole-table read. The
+  // fallback re-materializes the legacy full read; the in-memory
+  // scoring filter is byte-identical.
   const [report, observations] = await Promise.all([
     buildMonthlyKpiReport({
       monthKey,
@@ -112,7 +117,7 @@ export async function runKpiMasterEmployeeReport(
         includeArchived,
       },
     }),
-    getAll<QualityObservation>('qualityObservations', TTL.DEFAULT),
+    getAllByChildEqualTo<QualityObservation>('qualityObservations', 'month', monthKey, { ttl: TTL.DEFAULT }),
   ]);
 
   // §SEPARATION — the ONLY deduction source: APPROVED, point-eligible

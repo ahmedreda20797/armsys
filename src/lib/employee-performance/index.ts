@@ -43,7 +43,7 @@
 //      one read per domain, filtered in memory).
 // ══════════════════════════════════════════════════════════════
 
-import { getAll, getById, TTL } from '@/lib/db';
+import { getAll, getAllByChildEqualTo, getById, TTL } from '@/lib/db';
 import { ATTENDANCE_RESULTS_TABLE } from '@/lib/attendance';
 import type { StoredAttendanceResult } from '@/lib/attendance';
 import { MONTH_SNAPSHOTS_TABLE } from '@/lib/month-lock';
@@ -474,15 +474,21 @@ export interface EmployeePerformanceDataLoaders {
  */
 export const defaultEmployeePerformanceLoaders: EmployeePerformanceDataLoaders = {
   loadEmployee: (employeeId) => getById<{ id: string }>('employees', employeeId),
-  loadAttendanceResults: async (employeeId) => {
-    const all = await getAll<StoredAttendanceResult>(ATTENDANCE_RESULTS_TABLE, TTL.STATIC);
-    return all.filter((record) => record.employeeId === employeeId);
-  },
+  // §INDEXED-QUERY (Phase 2) — one guarded indexed fetch of ONLY this
+  // employee's stored results instead of a whole-table download
+  // (attendanceResults grows by one row per employee per month). The
+  // fallback re-materializes the legacy computation verbatim (full
+  // read + strict filter), so a missing index / timeout / RTDB error
+  // returns exactly the legacy rows (records without a matching
+  // employeeId never matched either path).
+  loadAttendanceResults: (employeeId) =>
+    getAllByChildEqualTo<StoredAttendanceResult>(ATTENDANCE_RESULTS_TABLE, 'employeeId', employeeId, { ttl: TTL.STATIC }),
   loadQualitySnapshots: () => getAll<MonthSnapshot>(MONTH_SNAPSHOTS_TABLE, TTL.MEDIUM),
-  loadHrDeductions: async (employeeId) => {
-    const all = await getAll<EmployeeHrDeductionRecord>(HR_DEDUCTIONS_TABLE);
-    return all.filter((record) => record.employeeId === employeeId);
-  },
+  // §INDEXED-QUERY (Phase 2) — same guarded pattern for this
+  // employee's HR rows (fallback = the legacy full read + strict
+  // filter; authorization filtering stays downstream).
+  loadHrDeductions: (employeeId) =>
+    getAllByChildEqualTo<EmployeeHrDeductionRecord>(HR_DEDUCTIONS_TABLE, 'employeeId', employeeId),
 };
 
 /**

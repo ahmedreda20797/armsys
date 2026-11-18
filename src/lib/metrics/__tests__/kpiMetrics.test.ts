@@ -553,7 +553,11 @@ describe('computeMonthSnapshot — snapshot generation', () => {
     assert.equal(emp2Entry.rank, 1); // Higher score
     assert.equal(emp1Entry.rank, 2);
     assert.equal(snapshot.topEmployees[0].employeeId, 'emp_2');
-    assert.equal(snapshot.bottomEmployees[0].employeeId, 'emp_1');
+    // §PHASE0-K2 — with ≤10 scored employees the bottom list is EMPTY
+    // (the whole workforce is already the top list): an employee may
+    // never appear as both a top and a bottom performer. emp_1 remains
+    // fully present in employeeScores with rank 2 above.
+    assert.equal(snapshot.bottomEmployees.length, 0);
   });
 
   it('tie-breaking is deterministic by employeeId', () => {

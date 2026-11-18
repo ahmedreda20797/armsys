@@ -53,9 +53,9 @@ export {
   FOLLOWUP_STRONG_COMPLETION,
   FOLLOWUP_OVERDUE_ATTENTION,
   FOLLOWUP_OVERDUE_AREA,
-  DEAL_FOLLOWUP_OPEN_ATTENTION,
-  DEAL_FOLLOWUP_OPEN_AREA,
-  DEAL_FOLLOWUP_STRONG_COMPLETION,
+  BOOKING_OPEN_ATTENTION,
+  BOOKING_OPEN_AREA,
+  BOOKING_STRONG_COMPLETION,
   QUALITY_DEDUCTIONS_ATTENTION,
   QUALITY_DEDUCTIONS_AREA,
   HR_DEDUCTIONS_DECLINING,
@@ -78,3 +78,21 @@ export type { BuildTeamBenchmarkInput, TeamMemberBenchmarkValues } from './team-
 
 export { getEmployeePerformanceHubDataset } from './service';
 export type { GetPerformanceHubServiceInput } from './service';
+
+export {
+  buildPerformanceGroupReport,
+  GROUP_REPORT_MAX_MEMBERS,
+  GROUP_SELECTION_MAX_IDS,
+  GROUP_BUILD_CONCURRENCY,
+} from './group-report';
+export { createRequestScopedHubLoaders } from './scoped-loaders';
+export type {
+  PerformanceGroupSelection,
+  BuildPerformanceGroupReportInput,
+  PerformanceGroupReport,
+  GroupMemberSummary,
+  GroupDimensionRollup,
+  GroupAttentionEntry,
+  GroupUnitComparison,
+  GroupManagerAnalysis,
+} from './group-report';

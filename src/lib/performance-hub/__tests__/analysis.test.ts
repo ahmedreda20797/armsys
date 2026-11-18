@@ -101,11 +101,16 @@ function emptyDataset(employeeId: string, monthKey: string): EmployeePerformance
       total: 0, byStatus: {}, active: 0, terminal: 0, overdue: 0, dueToday: 0,
       avgOverdueDays: null, completed: 0, completionRate: null, byType: {}, byPriority: {}, monthly: [],
     },
-    customerDealFollowUps: {
+    bookingExecution: {
       relationship: 'CONFIRMED',
       dealsInPeriod: 0, dealsWithItems: 0, totalItems: 0,
       bookedItems: 0, pendingItems: 0, missingItems: 0,
       completionRate: null, dealsWithOpenItems: 0, openItemTypes: [], dealsWithOpenItemIds: [],
+    },
+    customerFollowUpMeasurability: {
+      status: 'NOT_MEASURABLE',
+      reason: 'NO_CUSTOMER_FOLLOW_UP_SOURCE',
+      missingSource: 'Customer/deal follow-up requires a dedicated source.',
     },
     deals: {
       relationship: 'CONFIRMED',
@@ -181,12 +186,18 @@ describe('missing data is never zero (Hub spec §10)', () => {
     assert.equal(followUp.value, null);
   });
 
-  it('1c2 · customer & deal follow-up with no booking items is INSUFFICIENT_DATA', () => {
+  it('1c2 · §METRIC-VALIDATION — customer & deal follow-up is NOT_MEASURABLE (no source exists); booking execution with no items is INSUFFICIENT_DATA', () => {
     const current = emptyDataset('e1', '2026-08');
     const analysis = buildHubAnalysis({ current, previous: null, risk: { current: null, previous: null }, hr: null });
     const dealFu = analysis.dimensions.find((d) => d.key === 'customerDealFollowUp')!;
-    assert.equal(dealFu.status, 'INSUFFICIENT_DATA');
+    assert.equal(dealFu.status, 'NOT_MEASURABLE');
     assert.equal(dealFu.value, null);
+    assert.equal(dealFu.metric, null);
+    assert.equal(dealFu.details.customerDealFollowUp?.status, 'NOT_MEASURABLE');
+    assert.equal(dealFu.details.customerDealFollowUp?.reason, 'NO_CUSTOMER_FOLLOW_UP_SOURCE');
+    const booking = analysis.dimensions.find((d) => d.key === 'bookingExecution')!;
+    assert.equal(booking.status, 'INSUFFICIENT_DATA');
+    assert.equal(booking.value, null);
   });
 
   it('1d · a deals-inactive employee is INSUFFICIENT_DATA on business output', () => {
@@ -281,50 +292,54 @@ describe('dimension status rules (§9/§10)', () => {
     assert.equal(b.dimensions.find((d) => d.key === 'employeeActionFollowUp')!.status, 'STRONG');
   });
 
-  it('3b · §FOLLOWUP-DOMAINS — internal open actions NEVER distort the customer/deal follow-up metric', () => {
+  it('3b · §METRIC-VALIDATION — internal open actions NEVER distort booking execution, and booking items NEVER fabricate customer follow-up', () => {
     // Quality assigned 10 internal action follow-ups; 5 completed, 5 open
-    // (2 overdue). The customer/deal domain has 4 booking items, 3 booked,
-    // 1 pending. The customer/deal completion MUST stay 75% — the 5 open
-    // internal actions must NOT drag it to 50% or anywhere else.
+    // (2 overdue). The booking-execution domain has 4 booking items, 3
+    // booked, 1 pending. Booking completion MUST stay 75% — the 5 open
+    // internal actions must NOT drag it to 50% — and the customer & deal
+    // follow-up dimension must stay NOT_MEASURABLE (no percentage from
+    // either source).
     const cur = emptyDataset('e1', '2026-08');
     cur.followUps = { ...cur.followUps, total: 10, active: 5, overdue: 2, completed: 5, completionRate: 50 };
-    cur.customerDealFollowUps = {
-      ...cur.customerDealFollowUps,
+    cur.bookingExecution = {
+      ...cur.bookingExecution,
       dealsInPeriod: 2, dealsWithItems: 2, totalItems: 4,
       bookedItems: 3, pendingItems: 1, missingItems: 0,
       completionRate: 75, dealsWithOpenItems: 1, openItemTypes: [{ type: 'hotel', count: 1 }], dealsWithOpenItemIds: ['d1'],
     };
     const a = buildHubAnalysis({ current: cur, previous: null, risk: { current: null, previous: null }, hr: null });
     const actionDim = a.dimensions.find((d) => d.key === 'employeeActionFollowUp')!;
+    const bookingDim = a.dimensions.find((d) => d.key === 'bookingExecution')!;
     const dealDim = a.dimensions.find((d) => d.key === 'customerDealFollowUp')!;
     assert.equal(actionDim.value, 50, 'internal completion is 5/10');
-    assert.equal(dealDim.value, 75, 'customer/deal completion stays 3/4 — independent of internal actions');
-    assert.equal(actionDim.details.followUp?.total, 10);
-    assert.equal(dealDim.details.customerDealFollowUp?.totalItems, 4);
-    // Both domains remain separately visible.
-    assert.equal(a.dimensions.filter((d) => d.key === 'employeeActionFollowUp' || d.key === 'customerDealFollowUp').length, 2);
+    assert.equal(bookingDim.value, 75, 'booking completion stays 3/4 — independent of internal actions');
+    assert.equal(bookingDim.details.bookingExecution?.totalItems, 4);
+    assert.equal(dealDim.status, 'NOT_MEASURABLE', 'a booked hotel is NOT customer follow-up — no fabricated rate');
+    assert.equal(dealDim.value, null);
+    // All three domains remain separately visible.
+    assert.equal(a.dimensions.filter((d) => d.key === 'employeeActionFollowUp' || d.key === 'bookingExecution' || d.key === 'customerDealFollowUp').length, 3);
   });
 
-  it('3c · customer & deal follow-up: 5+ open items NEEDS_ATTENTION; all booked STRONG', () => {
+  it('3c · booking execution: 5+ open items NEEDS_ATTENTION; all booked STRONG', () => {
     const cur = emptyDataset('e1', '2026-08');
-    cur.customerDealFollowUps = {
-      ...cur.customerDealFollowUps,
+    cur.bookingExecution = {
+      ...cur.bookingExecution,
       dealsInPeriod: 3, dealsWithItems: 3, totalItems: 10,
       bookedItems: 4, pendingItems: 5, missingItems: 1,
       completionRate: 40, dealsWithOpenItems: 3, openItemTypes: [], dealsWithOpenItemIds: ['d1', 'd2', 'd3'],
     };
     const a = buildHubAnalysis({ current: cur, previous: null, risk: { current: null, previous: null }, hr: null });
-    assert.equal(a.dimensions.find((d) => d.key === 'customerDealFollowUp')!.status, 'NEEDS_ATTENTION');
+    assert.equal(a.dimensions.find((d) => d.key === 'bookingExecution')!.status, 'NEEDS_ATTENTION');
 
     const good = emptyDataset('e2', '2026-08');
-    good.customerDealFollowUps = {
-      ...good.customerDealFollowUps,
+    good.bookingExecution = {
+      ...good.bookingExecution,
       dealsInPeriod: 2, dealsWithItems: 2, totalItems: 6,
       bookedItems: 6, pendingItems: 0, missingItems: 0,
       completionRate: 100, dealsWithOpenItems: 0, openItemTypes: [], dealsWithOpenItemIds: [],
     };
     const b = buildHubAnalysis({ current: good, previous: null, risk: { current: null, previous: null }, hr: null });
-    assert.equal(b.dimensions.find((d) => d.key === 'customerDealFollowUp')!.status, 'STRONG');
+    assert.equal(b.dimensions.find((d) => d.key === 'bookingExecution')!.status, 'STRONG');
   });
 
   it('4 · attendance compliance bands (canonical engine output): 96 STRONG / 90 STABLE / 80 NEEDS_ATTENTION', () => {
@@ -572,5 +587,72 @@ describe('strengths / areas / recommendations (§19-§21)', () => {
     for (const signal of analysis.crossSignals) {
       assert.match(signal.key, /^overlap\./, 'every cross-signal is an association rule');
     }
+  });
+});
+
+// ═════════════════════════════════════════════════════════════
+//  §METRIC-VALIDATION (completion phase) — booking execution is
+//  measurable independently; customer follow-up is never fabricated
+//  from booking items or internal actions.
+// ═════════════════════════════════════════════════════════════
+describe('§METRIC-VALIDATION — customer follow-up is never booking completion', () => {
+  it('13a · completing every booking (hotel, flight, …) does NOT raise any customer-follow-up percentage', () => {
+    const cur = emptyDataset('e1', '2026-08');
+    cur.bookingExecution = {
+      ...cur.bookingExecution,
+      dealsInPeriod: 4, dealsWithItems: 4, totalItems: 12,
+      bookedItems: 12, pendingItems: 0, missingItems: 0,
+      completionRate: 100, dealsWithOpenItems: 0, openItemTypes: [], dealsWithOpenItemIds: [],
+    };
+    const analysis = buildHubAnalysis({ current: cur, previous: null, risk: { current: null, previous: null }, hr: null });
+    const dealDim = analysis.dimensions.find((d) => d.key === 'customerDealFollowUp')!;
+    assert.equal(dealDim.status, 'NOT_MEASURABLE', '100% booked ≠ 100% customer follow-up');
+    assert.equal(dealDim.value, null, 'no fabricated percentage');
+    // Booking execution itself stays measurable.
+    const bookingDim = analysis.dimensions.find((d) => d.key === 'bookingExecution')!;
+    assert.equal(bookingDim.status, 'STRONG');
+    assert.equal(bookingDim.value, 100);
+  });
+
+  it('13b · internal action follow-ups never affect the customer & deal follow-up dimension', () => {
+    const cur = emptyDataset('e1', '2026-08');
+    cur.followUps = { ...cur.followUps, total: 8, active: 8, overdue: 8, completed: 0, completionRate: 0 };
+    const analysis = buildHubAnalysis({ current: cur, previous: null, risk: { current: null, previous: null }, hr: null });
+    const dealDim = analysis.dimensions.find((d) => d.key === 'customerDealFollowUp')!;
+    assert.equal(dealDim.status, 'NOT_MEASURABLE', 'internal actions never proxy customer follow-up');
+    assert.equal(dealDim.value, null);
+  });
+
+  it('13c · overview treats NOT_MEASURABLE like absent data (no measurable-dimension inflation)', () => {
+    // Only the customer-follow-up dimension exists (all others empty):
+    // the overview must stay INSUFFICIENT_DATA, never "stable".
+    const current = emptyDataset('e1', '2026-08');
+    const analysis = buildHubAnalysis({ current, previous: null, risk: { current: null, previous: null }, hr: null });
+    assert.equal(analysis.overview.status, 'INSUFFICIENT_DATA');
+    assert.ok(analysis.overview.reasons.includes('rule.noMeasurableDimensions'));
+  });
+
+  it('13d · booking items drive booking changes/evidence, not customer-follow-up changes', () => {
+    const cur = emptyDataset('e1', '2026-08');
+    cur.bookingExecution = {
+      ...cur.bookingExecution,
+      dealsInPeriod: 2, dealsWithItems: 2, totalItems: 8,
+      bookedItems: 2, pendingItems: 4, missingItems: 2,
+      completionRate: 25, dealsWithOpenItems: 2, openItemTypes: [], dealsWithOpenItemIds: ['d1', 'd2'],
+    };
+    const prev = emptyDataset('e1', '2026-07');
+    prev.bookingExecution = {
+      ...prev.bookingExecution,
+      dealsInPeriod: 2, dealsWithItems: 2, totalItems: 8,
+      bookedItems: 8, pendingItems: 0, missingItems: 0,
+      completionRate: 100, dealsWithOpenItems: 0, openItemTypes: [], dealsWithOpenItemIds: [],
+    };
+    const analysis = buildHubAnalysis({ current: cur, previous: prev, risk: { current: null, previous: null }, hr: null });
+    const completionChange = analysis.changes.find((c) => c.key === 'bookingCompletion');
+    assert.ok(completionChange, 'booking completion is a tracked change');
+    assert.equal(completionChange.domain, 'bookingExecution');
+    assert.equal(completionChange.direction, 'DOWN');
+    assert.equal(completionChange.sources[0].page, 'travel');
+    assert.ok(!analysis.changes.some((c) => c.key.startsWith('customerDealFollowUp')), 'no customer-follow-up change items exist');
   });
 });

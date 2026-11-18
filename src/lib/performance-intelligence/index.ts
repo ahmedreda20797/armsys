@@ -36,7 +36,8 @@ export type {
   ComplaintFacts,
   CapaFacts,
   FollowUpFacts,
-  CustomerDealFollowUpFacts,
+  BookingExecutionFacts,
+  CustomerFollowUpMeasurability,
   TravelDealFacts,
   AttendanceContextFacts,
   // dataset-level metadata
@@ -58,7 +59,8 @@ export {
   aggregateComplaints,
   aggregateCapaCases,
   aggregateFollowUps,
-  aggregateCustomerDealFollowUps,
+  aggregateBookingExecution,
+  assessCustomerFollowUpMeasurability,
   aggregateTravelDeals,
 } from './operations-analysis';
 
@@ -69,6 +71,7 @@ export { buildKpiFacts, buildScoreTrendFacts, deriveTrendDirection } from './kpi
 export {
   PERFORMANCE_INTELLIGENCE_SOURCES,
   defaultPerformanceIntelligenceLoaders,
+  toIdentityRecord,
   attributeRecords,
   monthOfObservation,
   monthOfQualityDeduction,
