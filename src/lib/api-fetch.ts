@@ -117,8 +117,18 @@ export async function apiFetch<T>(url: string, options?: RequestInit): Promise<T
   const res = await fetchWithAuthRetry(url, options);
 
   if (!res.ok) {
-    const error = await res.json().catch(() => ({ error: 'Request failed' }));
-    throw new Error(error.error || `HTTP ${res.status}`);
+    // §ERROR-SHAPES — the app has two error envelopes: the legacy
+    // `{ error: "message" }` (string) and the canonical
+    // `{ error: { code, message, … } }` (api-error.ts). Extract the
+    // human-readable Arabic message from either — throwing the raw
+    // object produced "[object Object]" toasts.
+    const body: unknown = await res.json().catch(() => null);
+    const message = typeof (body as { error?: unknown })?.error === 'string'
+      ? (body as { error: string }).error
+      : typeof (body as { error?: { message?: unknown } })?.error?.message === 'string'
+        ? (body as { error: { message: string } }).error.message
+        : undefined;
+    throw new Error(message || `HTTP ${res.status}`);
   }
 
   return res.json();

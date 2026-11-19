@@ -50,6 +50,7 @@ const TravelPage           = dynamic(() => import('@/components/pages/TravelPage
 const ReportsPage          = dynamic(() => import('@/components/pages/ReportsPage'),          { loading: () => <PageSkeleton />, ssr: false });
 const ControlPanelPage     = dynamic(() => import('@/components/pages/ControlPanelPage'),     { loading: () => <PageSkeleton />, ssr: false });
 const FollowUpsPage        = dynamic(() => import('@/components/pages/FollowUpsPage'),        { loading: () => <PageSkeleton />, ssr: false });
+const ConnectPage          = dynamic(() => import('@/components/pages/ConnectPage'),          { loading: () => <PageSkeleton />, ssr: false });
 const CAPAPage             = dynamic(() => import('@/components/pages/CAPAPage'),             { loading: () => <PageSkeleton />, ssr: false });
 const ComplaintsPage       = dynamic(() => import('@/components/pages/ComplaintsPage'),       { loading: () => <PageSkeleton />, ssr: false });
 const KnowledgeBasePage    = dynamic(() => import('@/components/pages/KnowledgeBasePage'),    { loading: () => <PageSkeleton />, ssr: false });
@@ -173,6 +174,7 @@ function renderPage(currentPage: string): React.ReactNode {
     case 'settings':         return <SettingsPage         key="settings" />;
     case 'profile':          return <ProfilePage          key="profile" />;
     case 'followUps':        return <FollowUpsPage        key="followUps" />;
+    case 'connect':          return <ConnectPage          key="connect" />;
     case 'capa':             return <CAPAPage             key="capa" />;
     case 'complaints':       return <ComplaintsPage       key="complaints" />;
     case 'knowledgeBase':    return <KnowledgeBasePage    key="knowledgeBase" />;

@@ -11,6 +11,7 @@ import { usePermissions } from '@/hooks/usePermissions';
 import { useTheme } from 'next-themes';
 import { logPageVisit } from '@/lib/activity-logger';
 import { PrintReportHost } from '@/components/print/PrintReportDocument';
+import { ConnectFloatingRoot } from '@/components/connect/floating/ConnectFloatingRoot';
 
 // Lazy-load Employee360Page for overlay
 const Employee360Overlay = dynamic(() => import('@/components/pages/Employee360Page'), {
@@ -175,6 +176,15 @@ export function AppLayout({ children }: AppLayoutProps) {
           </div>
         </div>
       </div>
+
+      {/* ══════════════════════════════════════════════════════════
+          QNALYS Connect — floating messaging overlay (far LEFT).
+          Fixed positioning: participates in NO layout, so the page
+          content and the existing RIGHT sidebar keep their exact
+          widths. Mounted ONCE here so the launcher survives page
+          navigation with a single polling subscription.
+          ══════════════════════════════════════════════════════════ */}
+      <ConnectFloatingRoot />
 
       {/* ══════════════════════════════════════════════════════════
           Employee 360 Overlay — Cinematic slide-in with 3D perspective

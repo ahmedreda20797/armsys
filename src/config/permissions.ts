@@ -174,6 +174,17 @@ export const APP_PAGES: PageConfig[] = [
   { id: 'home', title: 'الرئيسية', description: 'نبض الأعمال اليومي وملخص الوضع التشغيلي', titleEn: 'Home', descriptionEn: 'The daily business pulse and operational summary', icon: 'LayoutDashboard', permissionKey: 'home', availableActions: [], groupId: 'daily_ops' },
   { id: 'operationsCenter', title: 'مركز العمليات', description: 'ذكاء تشغيلي موحد — صحة الأقسام، قائمة الإجراءات، والقرارات', titleEn: 'Operations Center', descriptionEn: 'Unified operational intelligence — department health, action list, and decisions', icon: 'Monitor', permissionKey: 'operationsCenter', availableActions: [], groupId: 'daily_ops' },
   { id: 'followUps', title: 'المتابعة اليومية', description: 'إنشاء ومتابعة المتابعات اليومية ومهام الموظفين', titleEn: 'Daily Follow-up', descriptionEn: 'Create and track daily follow-ups and employee tasks', icon: 'ClipboardCheck', permissionKey: 'followUps', availableActions: ['create', 'update', 'delete'], groupId: 'daily_ops' },
+  // ── QNALYS Connect 1.0 — internal messaging. Membership IS the
+  // authorization inside conversations; the page gate ('read' for
+  // every staff role) only opens the module (same doctrine as
+  // notifications: a communication surface, not a data surface).
+  // §CONNECT-FLOATING — the UI is the floating launcher (far left,
+  // mounted globally in AppLayout), NOT a sidebar page. overlayOnly
+  // keeps the permission identity + the 'connect' PageId (deep links
+  // from notifications still route to the page shim, which opens the
+  // overlay) while excluding it from the sidebar/favorites/pins —
+  // the exact doctrine of notifications/employee360 above.
+  { id: 'connect', title: 'تواصل', description: 'المحادثات الداخلية للفريق — رسائل مباشرة ومجموعات وجهات تنظيمية', titleEn: 'Connect', descriptionEn: 'Internal team messaging — direct chats, groups, and department conversations', icon: 'MessagesSquare', permissionKey: 'connect', availableActions: [], groupId: 'daily_ops', overlayOnly: true },
   { id: 'notifications', title: 'مركز الإشعارات', description: 'الإشعارات تُدار من جرس التنبيهات في الشريط العلوي', titleEn: 'Notification Center', descriptionEn: 'Notifications are managed from the header bell', icon: 'Bell', permissionKey: 'notifications', availableActions: ['create', 'update', 'delete'], groupId: 'daily_ops', overlayOnly: true },
   // ═══ 👥 إدارة الموظفين ═══
   { id: 'employees', title: 'الموظفين', description: 'قاعدة بيانات الموظفين — إضافة، تعديل، وحذف السجلات', titleEn: 'Employees', descriptionEn: 'Employee database — add, edit, and delete records', icon: 'Users', permissionKey: 'employees', availableActions: ['create', 'update', 'delete', 'export'], groupId: 'employee_mgmt' },
@@ -336,6 +347,9 @@ export const HR_PERMISSIONS: PermissionsMap = {
   reports: { level: 'edit', actions: { export: false } },
   controlPanel: 'none',
   followUps: 'none',
+  // Connect 1.0 — internal messaging opens for every staff role
+  // ('read' page gate; conversation membership is the real boundary).
+  connect: 'read',
   capa: 'none',
   complaints: 'none',
   knowledgeBase: 'none',
@@ -387,6 +401,9 @@ export const MANAGER_PERMISSIONS: PermissionsMap = {
   reports: { level: 'edit', actions: { export: true } },
   controlPanel: 'none',
   followUps: 'read',
+  // Connect 1.0 — internal messaging opens for every staff role
+  // ('read' page gate; conversation membership is the real boundary).
+  connect: 'read',
   capa: 'read',
   complaints: makeEditWithActions(['create', 'update', 'delete']),
   knowledgeBase: 'read',
@@ -436,6 +453,9 @@ export const QUALITY_PERMISSIONS: PermissionsMap = {
   reports: { level: 'edit', actions: { export: true } },
   controlPanel: 'none',
   followUps: makeEditWithActions(['create', 'update', 'delete']),
+  // Connect 1.0 — internal messaging opens for every staff role
+  // ('read' page gate; conversation membership is the real boundary).
+  connect: 'read',
   capa: makeEditWithActions(['create', 'update', 'delete']),
   complaints: makeEditWithActions(['create', 'update', 'delete']),
   knowledgeBase: makeEditWithActions(['create', 'update', 'delete']),
@@ -486,6 +506,9 @@ export const DEFAULT_PERMISSIONS: PermissionsMap = {
   reports: 'none',
   controlPanel: 'none',
   followUps: 'read',
+  // Connect 1.0 — internal messaging opens for every staff role
+  // ('read' page gate; conversation membership is the real boundary).
+  connect: 'read',
   capa: 'read',
   complaints: 'read',
   knowledgeBase: 'none',
